@@ -5,9 +5,59 @@ import {
   overdueLimitFor,
   paymentSettlementLabel,
   providerBatchLabel,
+  payoutAmounts,
   providerCharges,
   settlementRecordLabel,
 } from './status';
+
+describe('payoutAmounts (C6)', () => {
+  it('shows what the provider kept, what reached the bank, and the difference', () => {
+    expect(
+      payoutAmounts({
+        gross: '1000.0000',
+        fee: '12.0000',
+        deduction: '3.0000',
+        reportedNet: null,
+        declared: '1000.0000',
+      }),
+    ).toEqual({ charges: '15.0000', netSettled: '985.0000', difference: '0.0000' });
+  });
+
+  it('uses the net the provider reported when there is one', () => {
+    expect(
+      payoutAmounts({
+        gross: '1000.0000',
+        fee: '12.0000',
+        deduction: null,
+        reportedNet: '980.0000',
+        declared: '1000.0000',
+      }),
+    ).toEqual({ charges: '12.0000', netSettled: '980.0000', difference: '8.0000' });
+  });
+
+  it('difference is declared minus (settled plus charges): positive means money is missing', () => {
+    const shortPaid = payoutAmounts({
+      gross: '900.0000',
+      fee: '10.0000',
+      deduction: null,
+      reportedNet: null,
+      declared: '1000.0000',
+    });
+    expect(shortPaid.difference).toBe('100.0000');
+  });
+
+  it('treats an unknown fee as no charges rather than guessing', () => {
+    expect(
+      payoutAmounts({
+        gross: '500.0000',
+        fee: null,
+        deduction: null,
+        reportedNet: null,
+        declared: '500.0000',
+      }),
+    ).toEqual({ charges: '0.0000', netSettled: '500.0000', difference: '0.0000' });
+  });
+});
 
 const base = { amount: '200.0000', allocatedAmount: '0', businessDate: '2026-10-10' };
 
@@ -61,7 +111,9 @@ describe('provider charges and old vocabularies', () => {
   });
 
   it('maps both stored vocabularies to the same plain names', () => {
-    expect(settlementRecordLabel('RECORDED')).toBe(paymentSettlementLabel('AWAITING'));
+    // C6: a payout the provider has already made is never "Awaiting settlement".
+    expect(settlementRecordLabel('RECORDED')).toBe('Received, not matched to sales yet');
+    expect(settlementRecordLabel('RECORDED')).not.toBe(paymentSettlementLabel('AWAITING'));
     expect(settlementRecordLabel('PARTIALLY_MATCHED')).toBe('Partly settled');
     expect(settlementRecordLabel('RECONCILED')).toBe('Settled');
     expect(providerBatchLabel('DECLARED')).toBe('Awaiting settlement');

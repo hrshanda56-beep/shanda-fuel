@@ -33,6 +33,7 @@ export const STATION_DAILY_REPORT: TableReportDefinition = {
     { key: 'expenses', label: 'Running expenses (USD)', kind: 'number' },
     { key: 'fixedCosts', label: 'Fixed costs for the day (USD)', kind: 'number' },
     { key: 'totalExpenses', label: 'Total expenses (USD)', kind: 'number' },
+    { key: 'staffFuel', label: 'Fuel given to staff (USD)', kind: 'number' },
     { key: 'operatingProfit', label: 'Operating profit (USD)', kind: 'number' },
     { key: 'notes', label: 'Notes', kind: 'text' },
   ],
@@ -102,6 +103,8 @@ export function buildStationDailyRows(
     sales: readonly DailyReportSale[];
     costs: readonly DailyReportCost[];
     expenses: readonly DailyReportExpense[];
+    /** Staff and management fuel at selling price, per station and business day. */
+    fuelBenefits?: readonly Readonly<{ stationId: string; businessDate: string; amount: string }>[];
   }>,
 ): TableReportRow[] {
   const stationIds = [
@@ -109,6 +112,7 @@ export function buildStationDailyRows(
       ...input.sales.map((sale) => sale.stationId),
       ...input.costs.map((cost) => cost.stationId),
       ...input.expenses.map((expense) => expense.stationId),
+      ...(input.fuelBenefits ?? []).map((benefit) => benefit.stationId),
     ]),
   ];
   const rows: { date: string; station: string; row: TableReportRow }[] = [];
@@ -118,6 +122,9 @@ export function buildStationDailyRows(
       sales: input.sales.filter((sale) => sale.stationId === stationId),
       costs: input.costs.filter((cost) => cost.stationId === stationId),
       expenses,
+      fuelBenefitByDate: (input.fuelBenefits ?? []).filter(
+        (benefit) => benefit.stationId === stationId,
+      ),
     });
     const station =
       input.stationNames.get(stationId) ?? expenses[0]?.stationName ?? 'Unknown station';
@@ -147,6 +154,7 @@ export function buildStationDailyRows(
           expenses: day.combined.expenses,
           fixedCosts: day.combined.fixedCosts,
           totalExpenses,
+          staffFuel: day.combined.fuelBenefit,
           operatingProfit: day.combined.operatingProfit,
           notes: notes || null,
         },

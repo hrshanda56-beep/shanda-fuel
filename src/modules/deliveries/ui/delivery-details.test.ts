@@ -10,6 +10,8 @@ const context = { tenantId: 't', stationId: 's', stationName: 'Arcturus' };
 const detail: DeliveryDetail = {
   stationTimezone: 'Africa/Harare',
   waterTestRequired: true,
+  canConfirm: true,
+  tanks: [{ id: 'tk1', code: 'T1', productId: 'p1', productName: 'Diesel' }],
   delivery: {
     id: 'd1',
     deliveryNoteNumber: 'DN-001',
@@ -22,6 +24,11 @@ const detail: DeliveryDetail = {
     driver: 'T. Moyo',
     truckRegistration: 'ABC 1234',
     status: 'DRAFT',
+    purchaseOrderNumber: null,
+    noPoReason: null,
+    noPoNote: null,
+    supplierId: 's1',
+    tankId: 'tk1',
     noteLitres: '10000',
     receivedLitres: '9990.5',
     shortageExcessLitres: '-9.5',
@@ -50,12 +57,12 @@ describe('delivery detail screens', () => {
         initialData: detail,
       }),
     );
-    expect(html).toContain('Delivery details');
+    expect(html).toContain('Delivery DN-001');
     expect(html).toContain('Partial delivery');
     expect(html).toContain('Short by 9.5 L');
     expect(html).toContain('Your owner needs a water test recorded');
     expect(html).toContain('Truck compartments');
-    expect(html).toContain('The driver confirms these details are correct');
+    expect(html).toContain('Not confirmed by the driver');
   });
 
   it('is read-only once the delivery is confirmed', () => {
@@ -66,15 +73,50 @@ describe('delivery detail screens', () => {
         initialData: { ...detail, delivery: { ...detail.delivery, status: 'CONFIRMED' } },
       }),
     );
-    expect(html).not.toContain('Save compartments');
-    expect(html).not.toContain('Save water test');
-    expect(html).toContain('Save driver confirmation');
+    expect(html).toContain('confirmed and locked');
+    expect(html).not.toContain('Add a compartment');
+    expect(html).not.toContain('Add a seal');
+    expect(html).not.toContain('id="water-result"');
+    expect(html).not.toContain('id="driver-name"');
+    expect(html).toContain('S-1');
+    // Only the driver confirmation can still be changed.
+    expect(html).toContain('Update driver confirmation');
+  });
+
+  it('reads like a document until Edit is pressed, then offers the Edit button for a draft', () => {
+    const html = renderToStaticMarkup(
+      createElement(DeliveryDetails, {
+        context,
+        listHref: '/inventory/deliveries',
+        initialData: detail,
+      }),
+    );
+    expect(html).toContain('>Edit<');
+    expect(html).toContain('Print');
+    expect(html).toContain('Press Edit');
+    // No fields and no save bar until editing starts.
+    expect(html).not.toContain('Add a compartment');
+    expect(html).not.toContain('id="water-result"');
+    expect(html).not.toContain('Save changes');
+  });
+
+  it('offers Confirm delivery only on a draft, and only to people who may manage deliveries', () => {
+    const render = (initialData: DeliveryDetail) =>
+      renderToStaticMarkup(
+        createElement(DeliveryDetails, { context, listHref: '/inventory/deliveries', initialData }),
+      );
+    expect(render(detail)).toContain('>Confirm delivery<');
+    expect(render({ ...detail, canConfirm: false })).not.toContain('Confirm delivery');
+    expect(
+      render({ ...detail, delivery: { ...detail.delivery, status: 'CONFIRMED' } }),
+    ).not.toContain('Confirm delivery');
   });
 
   it('tells the truth when there are no deliveries', () => {
     const empty: DeliveryList = {
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
+      canSetWaterTestRule: false,
       tanks: [],
       deliveries: [],
     };
@@ -88,6 +130,7 @@ describe('delivery detail screens', () => {
     const list: DeliveryList = {
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
+      canSetWaterTestRule: false,
       tanks: [],
       deliveries: [
         {
@@ -113,6 +156,6 @@ describe('delivery detail screens', () => {
     );
     expect(html).toContain('class="row-link"');
     expect(html).toContain('/inventory/deliveries/d1?station=s');
-    expect(html).toContain('Partial delivery');
+    expect(html).toContain('Less than the note');
   });
 });

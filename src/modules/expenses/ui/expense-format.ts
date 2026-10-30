@@ -1,5 +1,7 @@
 import Decimal from 'decimal.js';
 
+import { allocateFixedCosts } from '../../reporting/fixed-cost-allocation';
+
 /** Plain-language wording and pure helpers for the Expenses page. No React, no network. */
 
 export type ExpenseRow = {
@@ -220,6 +222,35 @@ export function sumAmounts(values: readonly string[]): string {
   return values.reduce((sum, value) => sum.add(new Decimal(value)), new Decimal(0)).toFixed(4);
 }
 
+/**
+ * What a regular cost has counted so far this month, by the one allocation rule every screen
+ * shares (monthly amount ÷ days in the month, per active day, from its start date). Nobody has to
+ * add the month: a cost counts from the day it starts. A stopped cost counts nothing here.
+ */
+export function regularCostSoFar(
+  template: { amount: string; startDate: string; endDate: string | null; status: string },
+  month: { from: string; to: string },
+  today: string,
+): { amount: string; days: number } {
+  if (template.status !== 'ACTIVE') return { amount: '0.0000', days: 0 };
+  const through = today < month.to ? today : month.to;
+  const days = allocateFixedCosts(
+    [
+      {
+        id: 'regular-cost',
+        stationId: 'station',
+        amount: template.amount,
+        startDate: template.startDate,
+        endDate: template.endDate,
+      },
+    ],
+    new Set(),
+    month.from,
+    through,
+  );
+  return { amount: sumAmounts(days.map((day) => day.amount)), days: days.length };
+}
+
 export function isStepUpMessage(message: string): boolean {
   return /step-up|strong-authentication/i.test(message);
 }
@@ -274,4 +305,62 @@ export function amountForInput(value: string | null | undefined): string {
   if (!value || !/^\d+(?:\.\d+)?$/.test(value)) return '';
   const exact = new Decimal(value);
   return exact.decimalPlaces() <= 2 ? exact.toFixed(2) : exact.toString();
+}
+
+/** Colours the ring has; any further categories are gathered into one "Other" slice. */
+const MAX_RING_SLICES = 6;
+
+export type CategoryRingSlice = {
+  key: string;
+  label: string;
+  total: string;
+  count: number;
+  /** Replaces the count line under the name: the category's share of the month. */
+  detail: string;
+  tone: number;
+};
+
+function shareWords(amount: Decimal, total: Decimal): string {
+  const percent = amount.div(total).times(100);
+  return percent.lt(1) ? 'Under 1%' : `${percent.toFixed(0)}%`;
+}
+
+/**
+ * The month's spending as ring slices, biggest first. When there are more categories than
+ * colours the smallest are gathered into "Other", so the legend still adds up to the total.
+ */
+export function categoryRingSlices(
+  shares: readonly CategoryShare[],
+  total: string,
+): CategoryRingSlice[] {
+  const whole = new Decimal(total);
+  if (shares.length === 0 || !whole.gt(0)) return [];
+  const kept = shares.length > MAX_RING_SLICES ? shares.slice(0, MAX_RING_SLICES - 1) : shares;
+  const rest = shares.slice(kept.length);
+  const slices = kept.map((row, index) => ({
+    key: row.categoryId,
+    label: row.name,
+    total: row.amount,
+    count: 0,
+    detail: shareWords(new Decimal(row.amount), whole),
+    tone: index,
+  }));
+  if (rest.length > 0) {
+    const other = rest.reduce((sum, row) => sum.add(new Decimal(row.amount)), new Decimal(0));
+    slices.push({
+      key: 'other',
+      label: 'Other',
+      total: other.toFixed(4),
+      count: 0,
+      detail: shareWords(other, whole),
+      tone: kept.length,
+    });
+  }
+  return slices;
+}
+
+/** True when an amount is within a supervisor's limit; no limit means nothing is. Exact. */
+export function withinApprovalLimit(amount: string, limit: string | null | undefined): boolean {
+  if (limit === null || limit === undefined || limit === '') return false;
+  return new Decimal(amount).lte(limit);
 }

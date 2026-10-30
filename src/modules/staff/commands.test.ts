@@ -9,7 +9,10 @@ vi.mock('../../platform/db/transaction', () => ({
   withTenantTransaction: vi.fn(async (_context, work) => work({ execute: transactionExecute })),
 }));
 vi.mock('../tenancy/server', () => ({ resolveTenantExecutionContext: resolveAuthority }));
-vi.mock('../../platform/security/permissions', () => ({ authorize }));
+vi.mock('../../platform/security/permissions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../platform/security/permissions')>()),
+  authorize,
+}));
 vi.mock('../audit/contracts', () => ({ appendSecurityEvent }));
 vi.mock('../../platform/config/env', () => ({
   getAuditSigningKey: vi.fn(() => ({ keyId: 'test', secret: 'test' })),

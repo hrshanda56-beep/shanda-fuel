@@ -2,7 +2,7 @@
 
 import { PageContainer } from '@/design-system/layout';
 import { AuditPanel } from '../../../modules/audit/ui/audit-panel';
-import { CashHandoverPanel } from '../../../modules/cash/ui/cash-handover-panel';
+import { CashHandoverSheet } from '../../../modules/cash/ui/cash-handover-panel';
 import { DocumentAttachments } from '../../../modules/documents/ui/document-attachments';
 import { AlertSettingsPanel } from '../../../modules/setup/ui/alert-settings-panel';
 
@@ -14,7 +14,9 @@ export function V1PanelsPreviewClient() {
     <main>
       <PageContainer width="wide">
         <h1>New screens</h1>
-        <CashHandoverPanel
+        <CashHandoverSheet
+          open
+          onClose={() => undefined}
           context={{ organisationId: tenantId, stationId, allStations: false }}
           currentMembershipId="me"
           canSubmit

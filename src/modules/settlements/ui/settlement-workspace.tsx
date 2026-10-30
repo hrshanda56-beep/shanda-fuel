@@ -29,8 +29,9 @@ import { EcoCashMark, MastercardMark, VisaMark } from './provider-logos';
 import { Modal } from '../../../design-system/modal';
 import { Select } from '../../../design-system/forms';
 import { Icon } from '../../../design-system/icons';
+import { ShowMore, useShowMore } from '../../../design-system/show-more';
 import { CashDonut, type DonutSlice } from '@/modules/cash/ui/cash-visuals';
-import { PAYMENT_SETTLEMENT_LABELS } from '../status';
+import { payoutAmounts } from '../status';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
 import { ProviderDonut } from './provider-donut';
 import {
@@ -158,6 +159,8 @@ export function SettlementWorkspace({
   const [message, setMessage] = useState<string | null>(null);
   const [matchOpen, setMatchOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [payoutsShown, setPayoutsShown] = useShowMore();
+  const [waitingShown, setWaitingShown] = useShowMore();
   const [cardNote, setCardNote] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'exceptions'>('all');
   const [pendingReconciliationId, setPendingReconciliationId] = useState('');
@@ -739,7 +742,7 @@ export function SettlementWorkspace({
                 id="payment"
                 value={paymentId}
                 onChange={(event) => chooseMatch(settlementId, event.target.value)}
-                options={unmatched.map((row) => ({
+                options={unmatched.slice(0, waitingShown).map((row) => ({
                   value: row.paymentId,
                   label: `${methodLabel(row.method)} · ${row.businessDate} · ${money(row.unallocatedAmount)} · ${row.reference ?? row.paymentId.slice(0, 8)}`,
                 }))}
@@ -844,13 +847,15 @@ export function SettlementWorkspace({
               <span>Provider</span>
               <span>Settled</span>
               <span>Gross</span>
+              <span>Charges</span>
+              <span>Net Settled</span>
               <span>Allocated</span>
               <span>Status</span>
               <span>Action</span>
               <span />
             </div>
             <ul className="list-rows" aria-label="Provider payouts">
-              {visibleSettlements.map((row) => {
+              {visibleSettlements.slice(0, payoutsShown).map((row) => {
                 const isPendingReason = pendingReconciliationId === row.settlementId;
                 const open = expandedId === row.settlementId;
                 const hasVariance = !isZeroAmount(row.varianceAmount);
@@ -858,6 +863,13 @@ export function SettlementWorkspace({
                 const notMatchedYet =
                   isZeroAmount(row.allocatedAmount) && row.state !== 'EXCEPTION';
                 const detailsId = `settlement-details-${row.settlementId}`;
+                const amounts = payoutAmounts({
+                  gross: row.grossAmount,
+                  fee: row.providerFeeAmount,
+                  deduction: row.providerDeductionAmount,
+                  reportedNet: row.reportedNetAmount,
+                  declared: row.allocatedAmount,
+                });
                 return (
                   <li
                     key={row.settlementId}
@@ -882,6 +894,12 @@ export function SettlementWorkspace({
                       </span>
                       <span className="list-cell list-amount" data-label="Gross">
                         {money(row.grossAmount, row.currency)}
+                      </span>
+                      <span className="list-cell list-amount" data-label="Charges">
+                        {money(amounts.charges, row.currency)}
+                      </span>
+                      <span className="list-cell list-amount" data-label="Net settled">
+                        {money(amounts.netSettled, row.currency)}
                       </span>
                       <span className="list-cell list-status" data-label="Allocated">
                         <span className="balance-bar" data-kind="progress" aria-hidden="true">
@@ -987,11 +1005,25 @@ export function SettlementWorkspace({
                               : '—'}
                           </dd>
                         </div>
+                        <div
+                          data-tone={
+                            !notMatchedYet && Number(amounts.difference) !== 0
+                              ? 'warning'
+                              : undefined
+                          }
+                        >
+                          <dt>Difference</dt>
+                          <dd>
+                            {notMatchedYet
+                              ? 'Not matched to sales yet'
+                              : `${money(amounts.difference, row.currency)} (sales matched, less what was paid out and kept)`}
+                          </dd>
+                        </div>
                         <div data-tone={hasVariance && !notMatchedYet ? 'warning' : undefined}>
                           <dt>Variance</dt>
                           <dd>
                             {notMatchedYet
-                              ? PAYMENT_SETTLEMENT_LABELS.AWAITING
+                              ? 'Not matched to sales yet'
                               : money(row.varianceAmount, row.currency)}
                           </dd>
                         </div>
@@ -1030,6 +1062,11 @@ export function SettlementWorkspace({
                 );
               })}
             </ul>
+            <ShowMore
+              shown={payoutsShown}
+              total={visibleSettlements.length}
+              onChange={setPayoutsShown}
+            />
           </div>
         ) : null}
       </Card>
@@ -1048,9 +1085,11 @@ export function SettlementWorkspace({
           />
         ) : null}
         {canShowUnmatchedRows ? (
-          <TableScrollRegion label="Unmatched provider payment evidence">
+          <TableScrollRegion label="Card and mobile payments not yet matched to a payout">
             <table className="data-table">
-              <caption className="sr-only">Unmatched provider payment evidence</caption>
+              <caption className="sr-only">
+                Card and mobile payments not yet matched to a payout
+              </caption>
               <thead>
                 <tr>
                   <th scope="col">Method / reference</th>
@@ -1097,6 +1136,9 @@ export function SettlementWorkspace({
               </tbody>
             </table>
           </TableScrollRegion>
+        ) : null}
+        {canShowUnmatchedRows ? (
+          <ShowMore shown={waitingShown} total={unmatched.length} onChange={setWaitingShown} />
         ) : null}
         {loading ? <LoadingState label="Loading unmatched payment evidence" /> : null}
         {error ? (

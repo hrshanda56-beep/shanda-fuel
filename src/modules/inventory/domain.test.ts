@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertMovementFitsTank,
   assertWithinTankCapacity,
   calculateDeliveryShortageExcess,
   calculateTankStockVariance,
@@ -34,6 +35,64 @@ describe('inventory domain', () => {
     expect(() =>
       deriveExpectedTankStock('100', [{ movementType: 'SALE', quantityLitres: '-100.001' }]),
     ).toThrow('negative stock');
+  });
+
+  describe('assertMovementFitsTank', () => {
+    const at = (hour: number) => new Date(`2026-10-28T${String(hour).padStart(2, '0')}:00:00Z`);
+    const history = [
+      { movementType: 'OPENING_BALANCE', quantityLitres: '1000', effectiveAt: at(6) },
+      { movementType: 'SALE', quantityLitres: '-600', effectiveAt: at(12) },
+    ] as const;
+
+    it('accepts a movement that keeps every point between zero and capacity', () => {
+      expect(() =>
+        assertMovementFitsTank(
+          history,
+          { movementType: 'DELIVERY', quantityLitres: '4000', effectiveAt: at(10) },
+          '5000',
+        ),
+      ).not.toThrow();
+    });
+
+    it('refuses an issue dated before the stock that covers it, even though the total stays positive', () => {
+      expect(() =>
+        assertMovementFitsTank(
+          [...history, { movementType: 'DELIVERY', quantityLitres: '2000', effectiveAt: at(14) }],
+          { movementType: 'NEGATIVE_ADJUSTMENT', quantityLitres: '-500', effectiveAt: at(13) },
+          '5000',
+        ),
+      ).toThrow('less than zero litres');
+    });
+
+    it('refuses a delivery that would overfill the tank, and says the capacity', () => {
+      expect(() =>
+        assertMovementFitsTank(
+          history,
+          { movementType: 'DELIVERY', quantityLitres: '4700', effectiveAt: at(7) },
+          '5000',
+        ),
+      ).toThrow('(5000 L)');
+    });
+
+    it('refuses a delivery that would only overfill the tank at a later point', () => {
+      expect(() =>
+        assertMovementFitsTank(
+          history,
+          { movementType: 'DELIVERY', quantityLitres: '4300', effectiveAt: at(11) },
+          '5000',
+        ),
+      ).toThrow('than it can hold');
+    });
+
+    it('does not judge older history when a sale is added', () => {
+      expect(() =>
+        assertMovementFitsTank(
+          [{ movementType: 'OPENING_BALANCE', quantityLitres: '9000', effectiveAt: at(6) }],
+          { movementType: 'SALE', quantityLitres: '-100', effectiveAt: at(7) },
+          '5000',
+        ),
+      ).not.toThrow();
+    });
   });
 
   it('calculates delivery shortage/excess as actual minus note quantity', () => {

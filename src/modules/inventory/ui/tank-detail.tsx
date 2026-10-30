@@ -3,25 +3,45 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import { useConfirm } from '@/design-system/feedback-provider';
+import { useConfirm, useToast } from '@/design-system/feedback-provider';
 import { PageHeader } from '@/design-system/layout';
 import { Notice } from '@/design-system/feedback';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
+import { Modal } from '@/design-system/modal';
 import { Button, Card, EmptyState, Field, StatusBadge } from '@/design-system/primitives';
+import { ShowMore, useShowMore } from '@/design-system/show-more';
 import { TableScrollRegion } from '@/design-system/table';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { StockSignal } from '../../approvals/operations-alerts';
 import { parseCalibrationText } from '../calibration';
 import type { TankDetail } from '../tank-detail';
+import { TankDrum } from './tank-drum';
+import { fuelKind, tankLevel } from './tank-overview-model';
+import {
+  TANK_TABS,
+  dipSentence,
+  fillPercent,
+  runningBalances,
+  tankTabFrom,
+  type TankTab,
+} from './tank-detail-model';
 
 const SIGNAL: Record<
   StockSignal,
-  { tone: 'positive' | 'warning' | 'critical' | 'neutral'; label: string }
+  { tone: 'positive' | 'warning' | 'critical' | 'neutral'; label: string; short: string }
 > = {
-  ok: { tone: 'positive', label: 'Green: matches the books' },
-  watch: { tone: 'warning', label: 'Yellow: explain it' },
-  alert: { tone: 'critical', label: 'Red: urgent' },
-  unjudged: { tone: 'neutral', label: 'Not checked' },
+  ok: { tone: 'positive', label: 'Green: matches the books', short: 'it matched the books' },
+  watch: {
+    tone: 'warning',
+    label: 'Yellow: explain it',
+    short: 'a small difference that needs explaining',
+  },
+  alert: { tone: 'critical', label: 'Red: urgent', short: 'it was well off the books' },
+  unjudged: {
+    tone: 'neutral',
+    label: 'Not checked',
+    short: 'no limit was set to judge it against',
+  },
 };
 
 const MOVEMENT_LABELS: Record<string, string> = {
@@ -56,14 +76,18 @@ export function TankDetailView({
   inventoryHref,
   streamHref,
   initialData,
+  initialTab,
 }: Readonly<{
   context: { tenantId: string; stationId: string; stationName: string };
   inventoryHref: string;
   streamHref: string;
   initialData: TankDetail;
+  /** The tab named in the address, so a refresh stays where the person was. */
+  initialTab?: string;
 }>) {
   const router = useRouter();
   const confirm = useConfirm();
+  const toast = useToast();
   const { tank, dips, movements, canManage, stationTimezone, chart } = initialData;
   const [chartUnit, setChartUnit] = useState(chart?.unit ?? 'mm');
   const [chartText, setChartText] = useState('');
@@ -80,6 +104,64 @@ export function TankDetailView({
   );
   const [stepUpRetry, setStepUpRetry] = useState<'limits' | 'chart' | null>(null);
   const [voidingDipId, setVoidingDipId] = useState<string | null>(null);
+
+  const availableTabs = TANK_TABS.filter((item) => item.value !== 'settings' || canManage);
+  const [tab, setTab] = useState<TankTab>(() => tankTabFrom(initialTab, canManage));
+  const [dipsShown, setDipsShown] = useShowMore();
+  const [movesShown, setMovesShown] = useShowMore();
+  const [dipOpen, setDipOpen] = useState(false);
+  const [dipLitres, setDipLitres] = useState(
+    tank.bookLitres.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''),
+  );
+  const [dipSaving, setDipSaving] = useState(false);
+  const [dipError, setDipError] = useState<string | null>(null);
+
+  function selectTab(next: TankTab) {
+    setTab(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', next);
+    window.history.replaceState(window.history.state, '', url);
+  }
+
+  async function recordDip() {
+    const litresText = dipLitres.trim();
+    if (!LITRES.test(litresText)) {
+      setDipError('Enter the litres you measured, for example 19500.');
+      return;
+    }
+    setDipSaving(true);
+    setDipError(null);
+    try {
+      const response = await fetch('/api/inventory/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+        body: JSON.stringify({
+          commandType: 'RecordTankDip',
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          tankId: tank.id,
+          measuredAt: new Date().toISOString(),
+          physicalLitres: litresText,
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { message?: string };
+      if (!response.ok) {
+        throw new Error(
+          body.message ?? 'The dip could not be saved. Check the litres and try again.',
+        );
+      }
+      setDipOpen(false);
+      toast.success('Dip saved. It has been compared with the books below.');
+      selectTab('dips');
+      router.refresh();
+    } catch (error) {
+      setDipError(
+        error instanceof Error ? error.message : 'The dip could not be saved. Try again.',
+      );
+    } finally {
+      setDipSaving(false);
+    }
+  }
 
   async function voidDip(dipId: string) {
     const reason = window
@@ -112,10 +194,7 @@ export function TankDetailView({
       });
       const body = (await response.json().catch(() => ({}))) as { message?: string };
       if (!response.ok) throw new Error(body.message ?? 'The dip could not be voided.');
-      setMessage({
-        tone: 'positive',
-        text: 'The dip was voided and removed from stock calculations.',
-      });
+      toast.success('Dip voided. It no longer counts in stock calculations.');
       router.refresh();
     } catch (error) {
       setMessage({
@@ -180,7 +259,7 @@ export function TankDetailView({
         return;
       }
       if (!response.ok) throw new Error(body.message ?? 'The limits could not be saved.');
-      setMessage({ tone: 'positive', text: 'The limits were saved.' });
+      toast.success('Limits saved. New dips will be judged against them.');
       router.refresh();
     } catch (error) {
       setMessage({
@@ -229,10 +308,7 @@ export function TankDetailView({
         return;
       }
       if (!response.ok) throw new Error(body.message ?? 'The chart could not be saved.');
-      setChartMessage({
-        tone: 'positive',
-        text: `Chart saved with ${points.length} rows. New dips will use it.`,
-      });
+      toast.success(`Chart saved with ${points.length} rows. New dips will use it.`);
       setChartText('');
       router.refresh();
     } catch (error) {
@@ -245,12 +321,22 @@ export function TankDetailView({
     }
   }
 
+  const percent = fillPercent(tank.bookLitres, tank.capacityLitres);
+  const lastDip = dips[0];
+  const level = tankLevel({
+    physicalLitres: null,
+    expectedLitres: tank.bookLitres,
+    capacityLitres: tank.capacityLitres,
+    reorderLevelLitres: tank.reorderLevelLitres,
+  });
+  const lastSignal = lastDip ? SIGNAL[lastDip.signal] : null;
+  const balances = runningBalances(movements, tank.bookLitres);
+
   return (
-    <div className="stack-lg">
+    <div className="stack stack-lg tank-page">
       <PageHeader
         eyebrow={`${context.stationName} · ${tank.productName}`}
         title={`Tank ${tank.code}`}
-        description={`Holds ${formatLitres(tank.capacityLitres)}. The books say ${formatLitres(tank.bookLitres)} is in it now.`}
         actions={
           <>
             <Link className="button button-quiet" href={streamHref}>
@@ -263,226 +349,342 @@ export function TankDetailView({
         }
       />
 
-      <Card className="form-panel">
-        <h2>When a difference matters</h2>
-        <p className="table-secondary">
-          A dip is compared with the books. Within the yellow limit it is fine. Above yellow it must
-          be explained. Above red it is urgent. Leave red empty to use twice the yellow limit.
-        </p>
-        {canManage ? (
-          <form className="form-stack" onSubmit={saveLimits}>
-            <Field id="tank-yellow" label="Yellow: explain above (litres)" optional>
-              <input
-                id="tank-yellow"
-                inputMode="decimal"
-                value={yellow}
-                onChange={(event) => setYellow(event.target.value)}
-              />
-            </Field>
-            <Field id="tank-red" label="Red: urgent above (litres)" optional>
-              <input
-                id="tank-red"
-                inputMode="decimal"
-                value={red}
-                onChange={(event) => setRed(event.target.value)}
-              />
-            </Field>
-            <Button type="submit" loading={saving}>
-              Save limits
-            </Button>
-          </form>
-        ) : (
-          <p>
-            Yellow above {tank.yellowLitres ? formatLitres(tank.yellowLitres) : 'not set'}. Red
-            above{' '}
-            {tank.redLitres
-              ? formatLitres(tank.redLitres)
-              : tank.yellowLitres
-                ? `${formatLitres(String(Number(tank.yellowLitres) * 2))} (twice yellow)`
-                : 'not set'}
-            .
+      <Card className="tank-hero" data-tone={lastSignal?.tone ?? 'neutral'}>
+        <div
+          className="tank-card tank-hero-tank"
+          data-state={level.state}
+          data-source={level.source}
+          data-fuel={fuelKind(tank.productName, tank.productName)}
+        >
+          <span className="tank-figure">
+            <TankDrum level={level} />
+            <span className="tank-percent">
+              {level.percent === null ? (
+                '—'
+              ) : (
+                <>
+                  {level.percent}
+                  <small>%</small>
+                </>
+              )}
+            </span>
+          </span>
+        </div>
+        <div className="tank-hero-main">
+          <p className="tank-hero-figure">
+            <strong>{formatLitres(tank.bookLitres)}</strong>
+            <span> of {formatLitres(tank.capacityLitres)}</span>
           </p>
-        )}
-        {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
+          <div className="tank-hero-verdict">
+            {lastSignal ? (
+              <StatusBadge tone={lastSignal.tone}>
+                {lastSignal.short.charAt(0).toUpperCase() + lastSignal.short.slice(1)}
+              </StatusBadge>
+            ) : (
+              <span className="tank-hero-note">
+                No dip yet. Record one to check the books against the tank.
+              </span>
+            )}
+            {canManage ? (
+              <Button type="button" onClick={() => setDipOpen(true)}>
+                Record a dip
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <dl className="tank-hero-stats">
+          <div>
+            <dt>Last measured</dt>
+            <dd>{lastDip ? formatLitres(lastDip.physicalLitres) : '—'}</dd>
+          </div>
+          <div className="tank-hero-diff">
+            <dt>Difference</dt>
+            <dd>{lastDip ? signed(lastDip.varianceLitres) : '—'}</dd>
+          </div>
+          <div>
+            <dt>Checked</dt>
+            <dd>{lastDip ? stationDateTime(lastDip.measuredAt, stationTimezone) : '—'}</dd>
+          </div>
+        </dl>
       </Card>
 
-      <Card className="form-panel">
-        <h2>Dipstick chart</h2>
-        <p className="table-secondary">
-          The tank maker&apos;s chart turns a dipstick reading into litres. Type or paste the rows,
-          or import a CSV file with the reading and the litres on each line. A new chart is used for
-          new dips; dips already recorded keep their litres.
-        </p>
-        {chart ? (
-          <TableScrollRegion label={`Dipstick chart for tank ${tank.code}`}>
-            <table className="data-table">
-              <caption className="visually-hidden">Dipstick chart for tank {tank.code}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Reading ({chart.unit})</th>
-                  <th scope="col">Litres</th>
-                </tr>
-              </thead>
-              <tbody>
-                {chart.rows.map((row) => (
-                  <tr key={row.measurement}>
-                    <th scope="row">{row.measurement}</th>
-                    <td data-label="Litres" className="numeric">
-                      {formatLitres(row.litres)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScrollRegion>
-        ) : (
-          <p className="table-secondary">
-            No chart yet. Dips are typed in litres until one is saved.
-          </p>
-        )}
-        {canManage ? (
-          <form className="form-stack" onSubmit={saveChart}>
-            <Field id="chart-unit" label="Readings are in" required>
-              <select
-                id="chart-unit"
-                value={chartUnit}
-                onChange={(event) => setChartUnit(event.target.value)}
-              >
-                <option value="mm">mm</option>
-                <option value="cm">cm</option>
-                <option value="inches">inches</option>
-              </select>
-            </Field>
-            <Field id="chart-file" label="Import a CSV file" optional>
-              <input
-                id="chart-file"
-                type="file"
-                accept=".csv,text/csv,text/plain"
-                onChange={(event) => void importChartFile(event.target.files?.[0])}
-              />
-            </Field>
-            <Field
-              id="chart-rows"
-              label="Chart rows"
-              hint="One row per line: the reading, then the litres. For example 1125, 18400."
-              required
-            >
-              <textarea
-                id="chart-rows"
-                rows={6}
-                value={chartText}
-                onChange={(event) => setChartText(event.target.value)}
-                placeholder={'0, 0\n500, 9200\n1000, 18400'}
-              />
-            </Field>
-            <Button type="submit" loading={chartSaving}>
-              Save chart
-            </Button>
-            {chartMessage ? <Notice tone={chartMessage.tone}>{chartMessage.text}</Notice> : null}
-          </form>
-        ) : null}
-      </Card>
+      <div
+        className="tank-tabs"
+        role="tablist"
+        aria-label="Tank details"
+        data-solo={canManage ? undefined : 'true'}
+      >
+        {availableTabs.map((item) => (
+          <button
+            key={item.value}
+            id={`tank-tab-${item.value}`}
+            type="button"
+            role="tab"
+            className={item.value === 'settings' ? undefined : 'tank-tab-narrow'}
+            aria-selected={tab === item.value}
+            aria-controls="tank-tabpanel"
+            onClick={() => selectTab(item.value)}
+          >
+            {item.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          role="tab"
+          className="tank-tab-wide"
+          aria-selected={tab !== 'settings'}
+          aria-controls="tank-tabpanel"
+          onClick={() => selectTab('dips')}
+        >
+          Dips and movements
+        </button>
+      </div>
 
-      <Card className="form-panel">
-        <h2>Dips and how they compared</h2>
-        {dips.length === 0 ? (
-          <EmptyState title="No dips yet" message="Dips recorded for this tank will show here." />
-        ) : (
-          <TableScrollRegion label={`Dips for tank ${tank.code}`}>
-            <table className="data-table">
-              <caption className="visually-hidden">Dips for tank {tank.code}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">When</th>
-                  <th scope="col">Measured</th>
-                  <th scope="col">Books said</th>
-                  <th scope="col">Difference</th>
-                  <th scope="col">Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dips.map((dip) => (
-                  <tr key={dip.id}>
-                    <th scope="row">
-                      {stationDateTime(dip.measuredAt, stationTimezone)}
-                      {dip.rawMeasurement ? (
+      <div id="tank-tabpanel" role="tabpanel" aria-labelledby={`tank-tab-${tab}`}>
+        {tab !== 'settings' ? (
+          <div className="tank-panels" data-tab={tab}>
+            <Card className="form-panel" data-panel="dips">
+              <h2>Dips and how they compared</h2>
+              {dips.length === 0 ? (
+                <EmptyState
+                  title="No dips yet"
+                  message={
+                    canManage
+                      ? 'Press Record a dip to measure this tank and compare it with the books.'
+                      : 'Dips recorded for this tank will show here.'
+                  }
+                />
+              ) : (
+                <ul className="tank-timeline">
+                  {dips.slice(0, dipsShown).map((dip) => (
+                    <li key={dip.id}>
+                      <div>
+                        <strong>{formatLitres(dip.physicalLitres)} measured</strong>
                         <span className="table-secondary">
-                          {dip.rawMeasurement} {dip.measurementUnit ?? ''} on the dipstick
+                          {stationDateTime(dip.measuredAt, stationTimezone)}
+                          {dip.rawMeasurement
+                            ? ` · ${dip.rawMeasurement} ${dip.measurementUnit ?? ''} on the dipstick`
+                            : ''}
                         </span>
-                      ) : null}
-                    </th>
-                    <td data-label="Measured" className="numeric">
-                      {formatLitres(dip.physicalLitres)}
-                    </td>
-                    <td data-label="Books said" className="numeric">
-                      {formatLitres(dip.bookLitres)}
-                    </td>
-                    <td data-label="Difference" className="numeric">
-                      {signed(dip.varianceLitres)}
-                    </td>
-                    <td data-label="Result">
-                      <StatusBadge tone={SIGNAL[dip.signal].tone}>
-                        {SIGNAL[dip.signal].label}
-                      </StatusBadge>
-                      {canManage ? (
-                        <Button
-                          type="button"
-                          variant="quiet"
-                          loading={voidingDipId === dip.id}
-                          onClick={() => void voidDip(dip.id)}
-                        >
-                          Void
-                        </Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScrollRegion>
-        )}
-      </Card>
+                        <span className="table-secondary">
+                          {dipSentence(dip.varianceLitres, dip.signal)}
+                        </span>
+                      </div>
+                      <div className="tank-timeline-side">
+                        <StatusBadge tone={SIGNAL[dip.signal].tone}>
+                          {SIGNAL[dip.signal].label}
+                        </StatusBadge>
+                        {canManage ? (
+                          <Button
+                            type="button"
+                            variant="quiet"
+                            loading={voidingDipId === dip.id}
+                            onClick={() => void voidDip(dip.id)}
+                          >
+                            Void
+                          </Button>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <ShowMore shown={dipsShown} total={dips.length} onChange={setDipsShown} />
+              {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
+            </Card>
 
-      <Card className="form-panel">
-        <h2>Stock movements</h2>
-        {movements.length === 0 ? (
-          <EmptyState
-            title="No movements yet"
-            message="Opening stock, deliveries and sales will show here."
-          />
-        ) : (
-          <TableScrollRegion label={`Movements for tank ${tank.code}`}>
-            <table className="data-table">
-              <caption className="visually-hidden">Movements for tank {tank.code}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">When</th>
-                  <th scope="col">What</th>
-                  <th scope="col">Litres</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movements.map((movement) => (
-                  <tr key={movement.id}>
-                    <th scope="row">
-                      {stationDateTime(movement.effectiveAt, stationTimezone)}
-                      <span className="table-secondary">
-                        {formatBusinessDate(movement.businessDate)}
-                      </span>
-                    </th>
-                    <td data-label="What">
-                      {MOVEMENT_LABELS[movement.movementType] ?? movement.movementType}
-                    </td>
-                    <td data-label="Litres" className="numeric">
-                      {signed(movement.quantityLitres)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScrollRegion>
-        )}
-      </Card>
+            <Card className="form-panel" data-panel="movements">
+              <h2>Stock movements</h2>
+              {movements.length === 0 ? (
+                <EmptyState
+                  title="No movements yet"
+                  message="Opening stock, deliveries and sales will show here."
+                />
+              ) : (
+                <ul className="tank-timeline">
+                  {movements.slice(0, movesShown).map((movement, index) => {
+                    const quantity = Number(movement.quantityLitres);
+                    return (
+                      <li key={movement.id}>
+                        <div>
+                          <strong>
+                            {MOVEMENT_LABELS[movement.movementType] ?? movement.movementType}
+                          </strong>
+                          <span className="table-secondary">
+                            {stationDateTime(movement.effectiveAt, stationTimezone)} ·{' '}
+                            {formatBusinessDate(movement.businessDate)}
+                          </span>
+                        </div>
+                        <div className="tank-timeline-side tank-movement-side">
+                          <strong data-direction={quantity < 0 ? 'out' : 'in'}>
+                            {signed(movement.quantityLitres)}
+                          </strong>
+                          <span className="table-secondary">
+                            Stock after: {formatLitres(balances[index]!)}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <ShowMore shown={movesShown} total={movements.length} onChange={setMovesShown} />
+            </Card>
+          </div>
+        ) : null}
+
+        {tab === 'settings' && canManage ? (
+          <div className="tank-settings-grid">
+            <Card className="form-panel">
+              <h2>When a difference matters</h2>
+              <p className="table-secondary">
+                A dip is compared with the books. Within the yellow limit it is fine. Above yellow
+                it must be explained. Above red it is urgent. Leave red empty to use twice the
+                yellow limit.
+              </p>
+              <form className="form-stack" onSubmit={saveLimits}>
+                <Field id="tank-yellow" label="Yellow: explain above (litres)" optional>
+                  <input
+                    id="tank-yellow"
+                    inputMode="decimal"
+                    value={yellow}
+                    onChange={(event) => setYellow(event.target.value)}
+                  />
+                </Field>
+                <Field id="tank-red" label="Red: urgent above (litres)" optional>
+                  <input
+                    id="tank-red"
+                    inputMode="decimal"
+                    value={red}
+                    onChange={(event) => setRed(event.target.value)}
+                  />
+                </Field>
+                <Button type="submit" loading={saving}>
+                  Save limits
+                </Button>
+              </form>
+              {message && tab === 'settings' ? (
+                <Notice tone={message.tone}>{message.text}</Notice>
+              ) : null}
+            </Card>
+
+            <Card className="form-panel">
+              <h2>Dipstick chart</h2>
+              <p className="table-secondary">
+                The tank maker&apos;s chart turns a dipstick reading into litres. Type or paste the
+                rows, or import a CSV file with the reading and the litres on each line. A new chart
+                is used for new dips; dips already recorded keep their litres.
+              </p>
+              {chart ? (
+                <TableScrollRegion label={`Dipstick chart for tank ${tank.code}`}>
+                  <table className="data-table">
+                    <caption className="visually-hidden">
+                      Dipstick chart for tank {tank.code}
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Reading ({chart.unit})</th>
+                        <th scope="col">Litres</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {chart.rows.map((row) => (
+                        <tr key={row.measurement}>
+                          <th scope="row">{row.measurement}</th>
+                          <td data-label="Litres" className="numeric">
+                            {formatLitres(row.litres)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TableScrollRegion>
+              ) : (
+                <p className="table-secondary">
+                  No chart yet. Dips are typed in litres until one is saved.
+                </p>
+              )}
+              <form className="form-stack" onSubmit={saveChart}>
+                <Field id="chart-unit" label="Readings are in" required>
+                  <select
+                    id="chart-unit"
+                    value={chartUnit}
+                    onChange={(event) => setChartUnit(event.target.value)}
+                  >
+                    <option value="mm">mm</option>
+                    <option value="cm">cm</option>
+                    <option value="inches">inches</option>
+                  </select>
+                </Field>
+                <Field id="chart-file" label="Import a CSV file" optional>
+                  <input
+                    id="chart-file"
+                    type="file"
+                    accept=".csv,text/csv,text/plain"
+                    onChange={(event) => void importChartFile(event.target.files?.[0])}
+                  />
+                </Field>
+                <Field
+                  id="chart-rows"
+                  label="Chart rows"
+                  hint="One row per line: the reading, then the litres. For example 1125, 18400."
+                  required
+                >
+                  <textarea
+                    id="chart-rows"
+                    rows={6}
+                    value={chartText}
+                    onChange={(event) => setChartText(event.target.value)}
+                    placeholder={'0, 0\n500, 9200\n1000, 18400'}
+                  />
+                </Field>
+                <Button type="submit" loading={chartSaving}>
+                  Save chart
+                </Button>
+                {chartMessage ? (
+                  <Notice tone={chartMessage.tone}>{chartMessage.text}</Notice>
+                ) : null}
+              </form>
+            </Card>
+          </div>
+        ) : null}
+      </div>
+
+      <Modal
+        open={dipOpen}
+        onClose={() => setDipOpen(false)}
+        title="Record a dip"
+        description="Measure the tank and enter the litres. The books' figure is filled in for you; change it to what you measured."
+        dismissible={!dipSaving}
+      >
+        <form
+          className="form-stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void recordDip();
+          }}
+        >
+          <Field id="dip-litres" label="Litres in the tank" required>
+            <input
+              id="dip-litres"
+              inputMode="decimal"
+              value={dipLitres}
+              onChange={(event) => setDipLitres(event.target.value)}
+              required
+            />
+          </Field>
+          {dipError ? (
+            <p className="field-error" role="alert">
+              {dipError}
+            </p>
+          ) : null}
+          <div className="form-actions">
+            <Button type="submit" variant="primary" loading={dipSaving}>
+              Save dip
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       <StepUpDialog
         open={stepUpRetry !== null}

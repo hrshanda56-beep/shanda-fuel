@@ -8,10 +8,19 @@ describe('describeAction', () => {
       action: 'Cash: submit cash handover',
     });
     expect(describeAction('INVENTORY.TANK_DIP_RECORDED')).toEqual({
-      area: 'Inventory',
-      action: 'Inventory: tank dip recorded',
+      area: 'Fuel and stock',
+      action: 'Fuel and stock: tank dip recorded',
     });
     expect(describeAction('LOGIN')).toEqual({ area: 'General', action: 'Login' });
+  });
+
+  it('uses the same plain area names as the filter, never the internal ones (C4)', () => {
+    expect(describeAction('FORECOURT.OpenBusinessDay').action).toBe(
+      'Daily operations: open business day',
+    );
+    expect(describeAction('SETTLEMENT.Confirm').area).toBe('Card and mobile payments');
+    expect(describeAction('SETUP.SaveTank').area).toBe('Station setup');
+    expect(describeAction('FORECOURT.OpenBusinessDay').action).not.toContain('Forecourt');
   });
 });
 

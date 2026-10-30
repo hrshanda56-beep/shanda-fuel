@@ -53,17 +53,34 @@ it('does not load any dashboard data if membership authorization fails', async (
   expect(mocks.sales).not.toHaveBeenCalled();
 });
 
-it('keeps chart dates out of the daily totals scope', async () => {
+it('gives the daily figures the chosen period and the chart its own window (B1)', async () => {
   await GET(
     new Request(
-      `http://localhost/api/dashboard?tenantId=${tenant}&fromDate=2026-10-01&toDate=2026-10-18`,
+      `http://localhost/api/dashboard?tenantId=${tenant}&fromDate=2026-10-29&toDate=2026-10-29&chartFromDate=2026-10-01&chartToDate=2026-10-29`,
     ),
   );
-  expect(mocks.daily).toHaveBeenCalledWith(expect.any(Request), { tenantId: tenant });
+  expect(mocks.daily).toHaveBeenCalledWith(expect.any(Request), {
+    tenantId: tenant,
+    fromDate: '2026-10-29',
+    toDate: '2026-10-29',
+  });
   expect(mocks.sales).toHaveBeenCalledWith(expect.any(Request), {
     tenantId: tenant,
     fromDate: '2026-10-01',
-    toDate: '2026-10-18',
+    toDate: '2026-10-29',
+  });
+});
+
+it('draws the chart over the chosen period when no chart window is given', async () => {
+  await GET(
+    new Request(
+      `http://localhost/api/dashboard?tenantId=${tenant}&fromDate=2026-10-26&toDate=2026-10-29`,
+    ),
+  );
+  expect(mocks.sales).toHaveBeenCalledWith(expect.any(Request), {
+    tenantId: tenant,
+    fromDate: '2026-10-26',
+    toDate: '2026-10-29',
   });
 });
 

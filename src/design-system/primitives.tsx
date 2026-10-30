@@ -171,6 +171,7 @@ export function NumericInput({
   required = false,
   optional = false,
   unit,
+  action,
   ...props
 }: InputHTMLAttributes<HTMLInputElement> & {
   label: string;
@@ -180,6 +181,8 @@ export function NumericInput({
   required?: boolean;
   optional?: boolean;
   unit?: string;
+  /** A small button shown inside the field at the far right, e.g. Save. */
+  action?: ReactNode;
 }) {
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
@@ -193,7 +196,7 @@ export function NumericInput({
           {hint}
         </p>
       ) : null}
-      <div className="numeric-input-wrap">
+      <div className={action ? 'numeric-input-wrap has-action' : 'numeric-input-wrap'}>
         <input
           {...props}
           id={id}
@@ -204,7 +207,8 @@ export function NumericInput({
           aria-required={required ? true : undefined}
           required={required || undefined}
         />
-        {unit ? <span className="numeric-unit">{unit}</span> : null}
+        {unit && !action ? <span className="numeric-unit">{unit}</span> : null}
+        {action ? <span className="numeric-input-action">{action}</span> : null}
       </div>
       <FieldError id={errorId} error={error} />
     </div>

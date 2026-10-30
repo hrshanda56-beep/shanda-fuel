@@ -4,8 +4,16 @@
   min-width: 0;
 }
 
+.summaryCard {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Beside the taller ring card, the button rests at the foot of its own card. */
 .primaryAction {
   flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: auto;
 }
 
 .pair {
@@ -16,9 +24,14 @@
 
 .overview {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-5);
   align-items: stretch;
+}
+
+/* The nothing-yet message sits snugly in its card rather than filling a tall block. */
+.emptyList :global(.state-block) {
+  padding-block: var(--space-6);
 }
 
 .heroAmount {
@@ -371,13 +384,21 @@
   cursor: not-allowed;
 }
 
-@media (min-width: 64rem) {
-  .overview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 48rem) {
+  /* The two overview cards stay side by side; their contents give way instead. */
+  .overview {
+    gap: var(--space-3);
+  }
+
+  .heroAmount {
+    font-size: var(--font-size-lg);
+    overflow-wrap: anywhere;
+  }
+
+  .stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .head {
     display: none;
   }
@@ -411,6 +432,12 @@
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
+  /* A long cost name wraps instead of being cut off with an ellipsis. */
+  .categoryRow .categoryName {
+    overflow: visible;
+    white-space: normal;
+  }
+
   .categoryRow .bar {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -430,6 +457,9 @@
 
   .primaryAction {
     width: 100%;
+    height: auto;
+    white-space: normal;
+    text-align: center;
   }
 
   .rowWrap {
@@ -445,4 +475,14 @@
   .toolbar :global(.list-search) {
     flex: 1 1 100%;
   }
+}
+
+/* The month's spending ring: a smaller total in the middle so it fits a half-width card. */
+.ring :global(.cash-donut-centre strong) {
+  font-size: var(--font-size-lg);
+}
+
+.ring :global(.cash-donut-name) {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

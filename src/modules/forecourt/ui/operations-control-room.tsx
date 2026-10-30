@@ -15,7 +15,9 @@ import {
 import { formatBusinessDate, formatStatusLabel } from '../../../design-system/formatters';
 import { Select } from '../../../design-system/forms';
 import { stationLocalToInstant } from '@/platform/domain/business-time';
+import { SHIFT_EARLY_START_MINUTES } from '../shift-schedule';
 import { eventLabel, isEarlierOpenDay } from './operations-labels';
+import { dailyOperationsLinkFix, dailyOperationsProblem } from './daily-operations-state';
 import { NextStepCard } from './next-step-card';
 import { ReconciliationBoard } from './reconciliation-board';
 
@@ -36,6 +38,8 @@ type Overview = {
   organisation: { name: string };
   currentBusinessDate: string;
   currentBusinessDayId: string | null;
+  /** Plain-words reason the selected closed day cannot be locked yet; null when it can. */
+  lockBlockedReason?: string | null;
   visibility: {
     reconciliations: boolean;
   };
@@ -81,6 +85,7 @@ type Overview = {
     meterClosedAt: string | null;
     completedAt: string | null;
     notOperatedReason: string | null;
+    shiftTemplateId?: string | null;
     attendantCount: number;
   }>;
   reconciliations: Array<{
@@ -168,7 +173,7 @@ export function ShiftPrerequisite({
     return (
       <p className="semantic-note" role="note">
         {canOpenDay
-          ? 'Open the business day with the button at the top of this page, then open the first shift here.'
+          ? 'Choose the first shift here. Opening it also opens the business day.'
           : 'The business day has not been opened. Ask the station supervisor or an owner to open it.'}{' '}
         If the station is still being set up, finish it in{' '}
         <Link href="/settings?tab=readiness">Settings, under Readiness</Link>.
@@ -256,6 +261,8 @@ export function OperationsControlRoom({
   const idempotencyKeys = useRef(new Map<string, string>());
   // One id per visit, so retrying the first shift's opening cannot create two shifts.
   const [firstShiftId] = useState(() => crypto.randomUUID());
+  // Likewise for the next shift of a day that already has one.
+  const [nextShiftId] = useState(() => crypto.randomUUID());
 
   const endpoint = useMemo(() => {
     const params = new URLSearchParams({
@@ -347,6 +354,15 @@ export function OperationsControlRoom({
     );
   }
 
+  function fixLinkFor(message: string) {
+    const fix = dailyOperationsLinkFix(message);
+    return fix ? (
+      <Link className="button button-primary" href={fix.href}>
+        {fix.label}
+      </Link>
+    ) : undefined;
+  }
+
   function commandErrorMessage(caught: unknown, commandType: string) {
     if (
       caught instanceof Error &&
@@ -365,6 +381,8 @@ export function OperationsControlRoom({
     subjectId: string,
     consequence: string,
     success: string,
+    /** Runs first, inside the same confirmed action (for example opening the day before a shift). */
+    before?: () => Promise<unknown>,
   ): Promise<boolean> {
     if (
       !(await confirm({
@@ -384,12 +402,27 @@ export function OperationsControlRoom({
       if (commandType === 'LockBusinessDay') {
         await verifyLockIdentity(context.tenantId);
       }
+      await before?.();
       await command(commandType, values, subjectId);
+      if (commandType === 'CloseMeters') {
+        // Closing the meters finishes the shift: one step for the person, two states on record.
+        await command(
+          'CompleteShift',
+          { ...values, expectedVersion: Number(values.expectedVersion) + 1 },
+          subjectId,
+        );
+      }
       setNotice(success);
       await load();
       return true;
     } catch (caught) {
-      if (isConflictError(caught)) {
+      const specific =
+        caught instanceof Error && isConflictError(caught) && caught.code !== 'IDEMPOTENCY_CONFLICT'
+          ? dailyOperationsProblem(caught.status ?? 409, caught.code, caught.message)
+          : undefined;
+      if (specific && !specific.message.includes('changed elsewhere')) {
+        setError(specific.message);
+      } else if (isConflictError(caught)) {
         await load(true);
         setConflict(
           'This operation changed elsewhere or is stale. The authoritative state has been refreshed; review it before trying again. The command was not retried.',
@@ -419,18 +452,88 @@ export function OperationsControlRoom({
       <ErrorState
         title="Operations unavailable"
         message={error}
-        action={<Button onClick={() => void load()}>Retry</Button>}
+        action={fixLinkFor(error) ?? <Button onClick={() => void load()}>Retry</Button>}
+        secondaryAction={
+          fixLinkFor(error) ? <Button onClick={() => void load()}>Retry</Button> : undefined
+        }
       />
     );
   if (!overview) return null;
 
+  /** Opens a shift from one of the station's scheduled shifts, then goes to its figures. */
+  function openFromTemplate(
+    openDay: NonNullable<Overview['selectedBusinessDay']>,
+    templateId: string,
+    shiftId: string,
+  ) {
+    if (!overview) return;
+    const template = (overview.shiftTemplates ?? []).find(
+      (candidate) => candidate.id === templateId,
+    );
+    const plannedStartAt =
+      template?.startTime && openDay.date
+        ? stationLocalToInstant(
+            `${openDay.date}T${template.startTime.slice(0, 5)}`,
+            overview.station.timezone,
+          )?.toISOString()
+        : undefined;
+    if (!plannedStartAt) {
+      setError(
+        'The selected shift has no valid scheduled start time. Update the shift setup before opening it.',
+      );
+      return;
+    }
+    const values = {
+      tenantId: context.tenantId,
+      stationId: context.stationId,
+      businessDayId: openDay.id,
+      shiftId,
+      expectedVersion: 0,
+      plannedStartAt,
+      shiftTemplateId: templateId,
+    };
+    // Opening the first shift opens the day with it: nobody has to press a separate button first.
+    const dayNeedsOpening = openDay.state !== 'OPEN';
+    void runCommand(
+      'StartShift',
+      values,
+      shiftId,
+      dayNeedsOpening
+        ? 'Open this business day and its first shift now?'
+        : 'Open a shift now for this business day?',
+      'Shift opened.',
+      dayNeedsOpening
+        ? () =>
+            command(
+              'OpenBusinessDay',
+              {
+                tenantId: context.tenantId,
+                stationId: context.stationId,
+                businessDayId: openDay.id,
+                expectedVersion: openDay.version,
+              },
+              openDay.id,
+            )
+        : undefined,
+    ).then((opened) => {
+      // Next: the opening meter readings for each nozzle and who is on duty.
+      if (opened) window.location.assign(dayHref(openDay.id, shiftId));
+    });
+  }
+
   const day = overview.selectedBusinessDay;
+  const usedTemplates = new Set(overview.shifts.map((shift) => shift.shiftTemplateId));
+  const unusedTemplates = (overview.shiftTemplates ?? []).filter(
+    (template) => !usedTemplates.has(template.id),
+  );
   const selectedShift = overview.shifts[0];
-  const isCurrentDay = day?.id === overview.currentBusinessDayId;
   const openDayId = day?.id ?? crypto.randomUUID();
   const openBusinessDay = overview.actions.OpenBusinessDay;
-  const closeBusinessDay = overview.actions.CloseBusinessDay;
   const lockBusinessDay = overview.actions.LockBusinessDay;
+  // The first shift can be opened when the day is open, or when it is not started and the person
+  // may open the day: the first shift then opens the day with it.
+  const canOpenFirstShift =
+    day?.state === 'OPEN' || ((!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute);
   const shiftsForDay = day ? overview.shifts : [];
   const reviewHref = (reconciliationId: string, shiftId: string) =>
     day
@@ -445,48 +548,116 @@ export function OperationsControlRoom({
 
   return (
     <div className="operations-control-room" aria-label="Operations control room">
-      <header className="ops-hero">
-        <div>
-          <p className="eyebrow">
-            {overview.organisation.name} · {overview.station.name}
-          </p>
-          <h2>{formatBusinessDate(day ? day.date : overview.currentBusinessDate)}</h2>
-          <p>
-            {focus === 'operations'
-              ? 'Run the shifts, review what comes back and close the records before the day ends.'
-              : 'Every shift reconciliation for this station, exceptions first.'}
-          </p>
-        </div>
-        <div className="ops-hero-side">
-          <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
-            {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
-          </StatusBadge>
-          {focus === 'reconciliations' && overview.visibility.reconciliations ? (
-            <button
-              type="button"
-              className={`button ${statementOpen ? 'button-secondary' : 'button-primary'}`}
-              aria-pressed={statementOpen}
-              onClick={() => setStatementOpen((current) => !current)}
-            >
-              {statementOpen ? 'Back to overview' : 'View statement'}
-            </button>
-          ) : null}
-        </div>
-      </header>
-
       {focus === 'operations' ? (
-        <NextStepCard
-          tenantId={context.tenantId}
-          stationId={context.stationId}
-          onChanged={() => void load()}
-        />
+        <div className="ops-top">
+          <header className="ops-hero">
+            <h2>{formatBusinessDate(day ? day.date : overview.currentBusinessDate)}</h2>
+            <div className="ops-hero-side">
+              <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
+                {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
+              </StatusBadge>
+            </div>
+            {focus === 'operations' ? (
+              <div className="ops-hero-details">
+                {day ? (
+                  <dl className="ops-hero-times">
+                    <div>
+                      <dt>Opened</dt>
+                      <dd>
+                        {day.openedAt
+                          ? formatTimestamp(day.openedAt, overview.station.timezone)
+                          : 'Not opened'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Closed</dt>
+                      <dd>
+                        {day.closedAt
+                          ? formatTimestamp(day.closedAt, overview.station.timezone)
+                          : 'Not closed'}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="panel-detail">
+                    No business day yet. Open the station’s current business day to begin.
+                  </p>
+                )}
+                {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
+                  <Button
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void runCommand(
+                        'OpenBusinessDay',
+                        {
+                          tenantId: context.tenantId,
+                          stationId: context.stationId,
+                          businessDayId: openDayId,
+                          expectedVersion: day?.version ?? 0,
+                        },
+                        openDayId,
+                        'Open this business day?',
+                        'Business day opened.',
+                      )
+                    }
+                  >
+                    Open business day
+                  </Button>
+                ) : null}
+                {day?.state === 'CLOSED' && lockBusinessDay.permissionGranted ? (
+                  <Button
+                    variant="danger"
+                    disabled={busy || Boolean(overview.lockBlockedReason)}
+                    onClick={() =>
+                      void runCommand(
+                        'LockBusinessDay',
+                        {
+                          tenantId: context.tenantId,
+                          stationId: context.stationId,
+                          businessDayId: day.id,
+                          expectedVersion: day.version,
+                        },
+                        day.id,
+                        'Lock this business day? This is irreversible and prevents ordinary changes.',
+                        'Business day locked.',
+                      )
+                    }
+                  >
+                    Lock business day
+                  </Button>
+                ) : null}
+                {day?.state === 'CLOSED' && overview.lockBlockedReason ? (
+                  <p className="semantic-note" role="status" data-testid="lock-blocked-reason">
+                    <strong>Not ready to lock.</strong> {overview.lockBlockedReason}
+                  </p>
+                ) : null}
+                {day?.state === 'CLOSED' ? (
+                  <p className="semantic-note">
+                    <strong>Locking is permanent.</strong> After it, a change needs a recorded
+                    correction.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </header>
+
+          <NextStepCard
+            tenantId={context.tenantId}
+            stationId={context.stationId}
+            onChanged={() => void load()}
+          />
+        </div>
       ) : null}
 
       {error ? (
         <ErrorState
           title="Action needs attention"
           message={error}
-          action={<Button onClick={() => void load()}>Refresh</Button>}
+          action={fixLinkFor(error) ?? <Button onClick={() => void load()}>Refresh</Button>}
+          secondaryAction={
+            fixLinkFor(error) ? <Button onClick={() => void load()}>Refresh</Button> : undefined
+          }
         />
       ) : null}
       {conflict ? (
@@ -517,6 +688,7 @@ export function OperationsControlRoom({
               items={overview.reconciliations}
               timezone={overview.station.timezone}
               statementOpen={statementOpen}
+              onToggleStatement={() => setStatementOpen((current) => !current)}
               tone={tone}
               shiftLabel={shiftLabel}
               formatTimestamp={formatTimestamp}
@@ -564,64 +736,38 @@ export function OperationsControlRoom({
                       message={
                         day?.state === 'OPEN'
                           ? 'No shift has been opened for this business day yet.'
-                          : 'Open the business day first, then you can open a shift.'
+                          : 'No shift has been opened yet. Opening the first shift also opens the business day.'
                       }
                     />
                     <ShiftPrerequisite
-                      dayOpen={day?.state === 'OPEN'}
+                      dayOpen={canOpenFirstShift}
                       canOpenDay={openBusinessDay.canExecute}
                       canStartShift={overview.actions.StartShift.canExecute}
                     />
-                    {day?.state === 'OPEN' && overview.actions.StartShift.canExecute ? (
+                    {canOpenFirstShift && overview.actions.StartShift.canExecute ? (
                       <OpenFirstShift
                         templates={overview.shiftTemplates ?? []}
                         busy={busy}
-                        onOpen={(templateId) => {
-                          const template = (overview.shiftTemplates ?? []).find(
-                            (candidate) => candidate.id === templateId,
-                          );
-                          const plannedStartAt =
-                            template?.startTime && day.date
-                              ? stationLocalToInstant(
-                                  `${day.date}T${template.startTime.slice(0, 5)}`,
-                                  overview.station.timezone,
-                                )?.toISOString()
-                              : undefined;
-                          if (!plannedStartAt) {
-                            setError(
-                              'The selected shift has no valid scheduled start time. Update the shift setup before opening it.',
-                            );
-                            return;
-                          }
-                          const values = {
-                            tenantId: context.tenantId,
-                            stationId: context.stationId,
-                            businessDayId: day.id,
-                            shiftId: firstShiftId,
-                            expectedVersion: 0,
-                            plannedStartAt,
-                            shiftTemplateId: templateId,
-                          };
-                          void runCommand(
-                            'StartShift',
-                            values,
+                        onOpen={(templateId) =>
+                          openFromTemplate(
+                            day ?? {
+                              id: openDayId,
+                              date: overview.currentBusinessDate,
+                              state: 'NOT_STARTED',
+                              version: 0,
+                              openedAt: null,
+                              closedAt: null,
+                            },
+                            templateId,
                             firstShiftId,
-                            'Open a shift now for this business day?',
-                            'Shift opened.',
-                          ).then((opened) => {
-                            // Next: the opening meter readings for each nozzle and who is on duty.
-                            if (opened) window.location.assign(dayHref(day.id, firstShiftId));
-                          });
-                        }}
+                          )
+                        }
                       />
                     ) : null}
                   </>
                 ) : (
                   <div className="operations-list">
                     {overview.shifts.map((shift) => {
-                      const reconciliation = overview.reconciliations.find(
-                        (item) => item.shiftId === shift.id,
-                      );
                       const values = {
                         tenantId: context.tenantId,
                         stationId: context.stationId,
@@ -682,12 +828,12 @@ export function OperationsControlRoom({
                                     'CloseMeters',
                                     values,
                                     shift.id,
-                                    'Close meters for this shift? Meter evidence must already be complete.',
-                                    'Shift meters closed.',
+                                    'Close this shift? The pump readings entered for it become the official meter records, and the shift is finished. This cannot be undone from here.',
+                                    'Shift closed.',
                                   )
                                 }
                               >
-                                Close meters
+                                Close Shift
                               </Button>
                             ) : null}
                             {shift.state === 'METER_CLOSED' &&
@@ -700,32 +846,13 @@ export function OperationsControlRoom({
                                     'CompleteShift',
                                     values,
                                     shift.id,
-                                    'Complete this shift? This records the close boundary as complete.',
-                                    'Shift completed.',
+                                    'Close this shift? The meters are already closed; this finishes the shift.',
+                                    'Shift closed.',
                                   )
                                 }
                               >
-                                Complete shift
+                                Close Shift
                               </Button>
-                            ) : null}
-                            <a className="text-link" href={dayHref(day.id, shift.id)}>
-                              Open workspace
-                            </a>
-                            {reconciliation ? (
-                              <a
-                                className="text-link"
-                                href={`/operations/reconciliations/${reconciliation.id}?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: shift.id }).toString()}`}
-                              >
-                                Reconciliation
-                              </a>
-                            ) : null}
-                            {reconciliation ? (
-                              <a
-                                className="text-link"
-                                href={`/operations/reconciliations/${reconciliation.id}/report?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
-                              >
-                                Daily report
-                              </a>
                             ) : null}
                           </div>
                         </article>
@@ -733,6 +860,26 @@ export function OperationsControlRoom({
                     })}
                   </div>
                 )}
+                {day?.state === 'OPEN' &&
+                overview.shifts.length > 0 &&
+                !overview.shifts.some(
+                  (item) => item.state === 'OPEN' || item.state === 'METER_CLOSED',
+                ) &&
+                overview.actions.StartShift.canExecute &&
+                unusedTemplates.length > 0 ? (
+                  <div className="semantic-note">
+                    <p>
+                      Open the next shift when it is due. A shift can be opened up to{' '}
+                      {SHIFT_EARLY_START_MINUTES} minutes before it is scheduled to start, so a
+                      handover can overlap.
+                    </p>
+                    <OpenFirstShift
+                      templates={unusedTemplates}
+                      busy={busy}
+                      onOpen={(templateId) => openFromTemplate(day, templateId, nextShiftId)}
+                    />
+                  </div>
+                ) : null}
                 {selectedShift?.state === 'EXCEPTIONALLY_CLOSED' ? (
                   <p className="semantic-note">
                     This shift was closed as an exception. A manager should review it.
@@ -740,187 +887,55 @@ export function OperationsControlRoom({
                 ) : null}
               </Card>
             ) : null}
-            <Card
-              as="section"
-              className="card panel cash-panel"
-              aria-labelledby="approval-queue-title"
-            >
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Review</p>
-                  <h2 id="approval-queue-title">Reconciliations</h2>
-                </div>
+          </div>
+          <Card
+            as="section"
+            className="card panel cash-panel"
+            aria-labelledby="approval-queue-title"
+          >
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Review</p>
+                <h2 id="approval-queue-title">Reconciliations</h2>
               </div>
-              {!overview.visibility.reconciliations ? (
-                <EmptyState
-                  title="Reconciliation details restricted"
-                  message="You do not have permission to view reconciliation details for this station."
-                />
-              ) : overview.reconciliations.length === 0 ? (
-                <EmptyState
-                  title="No reconciliations yet"
-                  message="A reconciliation appears here once one is started for a shift."
-                />
-              ) : (
-                <div className="operations-list">
-                  {overview.reconciliations.map((item) => (
-                    <div className="operations-list-row" key={item.id}>
-                      <span>
-                        <strong>{formatStatusLabel(item.state)}</strong>
-                        <small>
-                          Revision {item.revision ?? '—'} · updated{' '}
-                          {formatTimestamp(item.updatedAt, overview.station.timezone)}
-                        </small>
-                      </span>
-                      <StatusBadge tone={tone(item.state)}>
-                        {item.revisionState ? formatStatusLabel(item.revisionState) : 'No revision'}
-                      </StatusBadge>
-                      {item.shiftId && day ? (
-                        <a
-                          className="text-link"
-                          href={`/operations/reconciliations/${item.id}/review?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: item.shiftId }).toString()}`}
-                        >
-                          Review
-                        </a>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </div>
-          <div className="operations-layout-side">
-            {focus === 'operations' ? (
-              <Card
-                as="section"
-                className="card panel cash-panel"
-                aria-labelledby="current-day-title"
-              >
-                <div className="panel-heading">
-                  <h2 id="current-day-title">Day controls</h2>
-                </div>
-                {day ? (
-                  <dl className="operational-summary">
-                    <div>
-                      <dt>Opened</dt>
-                      <dd>
-                        {day.openedAt
-                          ? formatTimestamp(day.openedAt, overview.station.timezone)
-                          : 'Not opened'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Closed</dt>
-                      <dd>
-                        {day.closedAt
-                          ? formatTimestamp(day.closedAt, overview.station.timezone)
-                          : 'Not closed'}
-                      </dd>
-                    </div>
-                  </dl>
-                ) : (
-                  <EmptyState
-                    title="No business day yet"
-                    message="Open the station’s current business day to begin."
-                  />
-                )}
-                <div className="form-actions">
-                  {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
-                    <Button
-                      variant="primary"
-                      disabled={busy}
-                      onClick={() =>
-                        void runCommand(
-                          'OpenBusinessDay',
-                          {
-                            tenantId: context.tenantId,
-                            stationId: context.stationId,
-                            businessDayId: openDayId,
-                            expectedVersion: day?.version ?? 0,
-                          },
-                          openDayId,
-                          'Open this business day?',
-                          'Business day opened.',
-                        )
-                      }
-                    >
-                      Open business day
-                    </Button>
-                  ) : null}
-                  {day?.state === 'OPEN' && closeBusinessDay.canExecute ? (
-                    <Button
-                      variant="danger"
-                      disabled={busy}
-                      onClick={() => {
-                        const reconciled = overview.reconciliations.some((item) =>
-                          ['APPROVED', 'POSTED', 'LOCKED'].includes(item.state),
-                        );
-                        const reason = reconciled
-                          ? undefined
-                          : (
-                              window.prompt(
-                                'This day has no approved reconciliation. Why is it being closed anyway? The reason is kept in the activity log.',
-                              ) ?? ''
-                            ).trim();
-                        if (reason !== undefined && reason.length < 5) {
-                          setError(
-                            'Closing without a reconciliation needs a reason (at least 5 characters). The day was not closed.',
-                          );
-                          return;
-                        }
-                        void runCommand(
-                          'CloseBusinessDay',
-                          {
-                            tenantId: context.tenantId,
-                            stationId: context.stationId,
-                            businessDayId: day.id,
-                            expectedVersion: day.version,
-                            ...(reason ? { reasonWithoutReconciliation: reason } : {}),
-                          },
-                          day.id,
-                          'Close this business day? Every operated shift must have complete meter readings.',
-                          'Business day closed.',
-                        );
-                      }}
-                    >
-                      Close business day
-                    </Button>
-                  ) : null}
-                  {day?.state === 'CLOSED' && lockBusinessDay.permissionGranted ? (
-                    <Button
-                      variant="danger"
-                      disabled={busy}
-                      onClick={() =>
-                        void runCommand(
-                          'LockBusinessDay',
-                          {
-                            tenantId: context.tenantId,
-                            stationId: context.stationId,
-                            businessDayId: day.id,
-                            expectedVersion: day.version,
-                          },
-                          day.id,
-                          'Lock this business day? This is irreversible and prevents ordinary changes.',
-                          'Business day locked.',
-                        )
-                      }
-                    >
-                      Lock business day
-                    </Button>
-                  ) : null}
-                </div>
-                {day?.state === 'CLOSED' ? (
-                  <p className="semantic-note">
-                    <strong>Lock is irreversible.</strong> Corrections require named compensating
-                    workflows.
-                  </p>
-                ) : null}
-                {isCurrentDay ? (
-                  <p className="panel-detail">This is the station’s current business date.</p>
-                ) : null}
-              </Card>
-            ) : null}
-          </div>
+            </div>
+            {!overview.visibility.reconciliations ? (
+              <EmptyState
+                title="Reconciliation details restricted"
+                message="You do not have permission to view reconciliation details for this station."
+              />
+            ) : overview.reconciliations.length === 0 ? (
+              <EmptyState
+                title="No reconciliations yet"
+                message="A reconciliation appears here once one is started for a shift."
+              />
+            ) : (
+              <div className="operations-list">
+                {overview.reconciliations.map((item) => (
+                  <div className="operations-list-row" key={item.id}>
+                    <span>
+                      <strong>{formatStatusLabel(item.state)}</strong>
+                      <small>
+                        Revision {item.revision ?? '—'} · updated{' '}
+                        {formatTimestamp(item.updatedAt, overview.station.timezone)}
+                      </small>
+                    </span>
+                    <StatusBadge tone={tone(item.state)}>
+                      {item.revisionState ? formatStatusLabel(item.revisionState) : 'No revision'}
+                    </StatusBadge>
+                    {item.shiftId && day ? (
+                      <a
+                        className="text-link"
+                        href={`/operations/reconciliations/${item.id}/review?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: day.id, shiftId: item.shiftId }).toString()}`}
+                      >
+                        Review
+                      </a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         </div>
       ) : null}
     </div>

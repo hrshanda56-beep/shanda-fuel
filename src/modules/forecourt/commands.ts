@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { meterSegments } from '../../platform/db/schema/a3';
-import { litres, money, unitPrice } from '../../platform/domain/primitives';
+import { ExactDecimal, litres, money, unitPrice } from '../../platform/domain/primitives';
 import { deriveBusinessDate, stationLocalToInstant } from '../../platform/domain/business-time';
 import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import {
@@ -62,6 +62,13 @@ import {
   type SellingPrice,
 } from './domain';
 import { resolveForecourtCommandContext } from './application';
+import { shiftOpensAt } from './shift-schedule';
+import { readLockBlockers } from './lock-blockers';
+import { ensureDefaultExpenseCategories } from '../expenses/default-categories';
+import {
+  describeUnvaluedOpeningStock,
+  tanksWithUnvaluedOpeningStock,
+} from '../setup/unvalued-opening-stock';
 
 const exceptionResolutionPrefix = 'RESOLVES:';
 
@@ -160,6 +167,276 @@ async function assertShiftMeterCloseCompleteness(
     throw new AppError('CONFLICT', 'An unresolved meter-unavailable exception blocks meter close');
 }
 
+function isExclusionViolation(error: unknown): boolean {
+  const code = (error as { code?: string; cause?: { code?: string } })?.code;
+  const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
+  return code === '23P01' || causeCode === '23P01';
+}
+
+/**
+ * Closing the meters of a shift whose figures were entered in the shift workspace: the pump
+ * readings saved on its reconciliation become the sealed meter records that sales, stock and
+ * approval read. Nothing else creates them.
+ *
+ * It acts only when the shift has no meter records at all, so a shift that already has boundaries,
+ * segments or exceptions is left exactly as it was, and when the figures have been submitted. In
+ * every other case it does nothing and the completeness check that follows decides. Each reading
+ * is sealed as one segment from the moment the shift was opened to now, at the price the figures
+ * were entered with. A reading it cannot seal safely stops the close with a plain reason and
+ * changes nothing (the whole command is one transaction).
+ */
+async function sealMetersFromSavedReadings(
+  transaction: ForecourtTransaction,
+  context: ForecourtCommandContext,
+  businessDayId: string,
+  shiftId: string,
+): Promise<void> {
+  const existing = await transaction.execute<{ count: number }>(sql`
+    select (
+      (select count(*) from app.meter_segments
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and shift_id = ${shiftId})
+      + (select count(*) from app.meter_boundaries
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and shift_id = ${shiftId})
+    )::int as count
+  `);
+  if (Number(existing[0]?.count ?? 0) > 0) return;
+
+  const reconciliations = await transaction.execute<{ id: string; state: string }>(sql`
+    select id, state from app.reconciliations
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and shift_id = ${shiftId}
+    for update
+  `);
+  const reconciliation = reconciliations[0];
+  if (!reconciliation || reconciliation.state === 'DRAFT' || reconciliation.state === 'RETURNED')
+    return;
+
+  const readings = await transaction.execute<{
+    nozzle_id: string;
+    product_id: string;
+    opening_reading: string;
+    closing_reading: string;
+    selling_price_id: string;
+  }>(sql`
+    select nozzle_id, product_id, opening_reading, closing_reading, selling_price_id
+    from app.reconciliation_meter_readings
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+      and reconciliation_id = ${reconciliation.id} and shift_id = ${shiftId}
+    order by nozzle_id, id
+  `);
+  if (readings.length === 0) return;
+
+  const shiftRows = await transaction.execute<{ opened_at: Date | string | null }>(sql`
+    select opened_at from app.shifts
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${shiftId}
+  `);
+  const openedAt = shiftRows[0]?.opened_at;
+  if (!openedAt) return;
+  const startAt = new Date(openedAt).toISOString();
+  const now = await serverNow(transaction);
+
+  const pumpLabel = async (nozzleId: string): Promise<string> => {
+    const rows = await transaction.execute<{ pump_number: string; nozzle_number: string }>(sql`
+      select p.number as pump_number, n.number as nozzle_number
+      from app.nozzles n
+      join app.pumps p on p.tenant_id = n.tenant_id and p.station_id = n.station_id and p.id = n.pump_id
+      where n.tenant_id = ${context.tenantId} and n.station_id = ${context.stationId} and n.id = ${nozzleId}
+    `);
+    const row = rows[0];
+    return row ? `pump ${row.pump_number} nozzle ${row.nozzle_number}` : 'one of the pumps';
+  };
+  const cannotClose = (reason: string) =>
+    new AppError('CONFLICT', `This shift cannot be closed yet: ${reason}`);
+
+  if (Date.parse(now) <= Date.parse(startAt))
+    throw cannotClose('it was only just started. Wait a moment, then press Close Shift again.');
+
+  const seen = new Set<string>();
+  for (const reading of readings) {
+    if (seen.has(reading.nozzle_id))
+      throw cannotClose(
+        `${await pumpLabel(reading.nozzle_id)} has more than one reading. Keep one reading per pump on the Pump readings step, then press Close Shift again.`,
+      );
+    seen.add(reading.nozzle_id);
+  }
+
+  for (const reading of readings) {
+    const label = await pumpLabel(reading.nozzle_id);
+    const installations = await transaction.execute<{
+      installation_id: string;
+      meter_id: string;
+    }>(sql`
+      select i.id as installation_id, i.meter_id
+      from app.meter_installations i
+      join app.nozzles n on n.tenant_id = i.tenant_id and n.station_id = i.station_id and n.id = i.nozzle_id
+      join app.meters m on m.tenant_id = i.tenant_id and m.id = i.meter_id
+      where i.tenant_id = ${context.tenantId} and i.station_id = ${context.stationId}
+        and i.nozzle_id = ${reading.nozzle_id} and i.effective_to is null
+        and i.effective_from <= ${startAt}::timestamptz
+        and n.status = 'ACTIVE' and m.status = 'ACTIVE' and n.product_id = ${reading.product_id}
+      limit 1
+      for update of i
+    `);
+    const installation = installations[0];
+    if (!installation)
+      throw cannotClose(
+        `the meter for ${label} is not set up as working for this shift. Ask the owner to check the pump setup.`,
+      );
+
+    const prices = await transaction.execute<{
+      id: string;
+      unit_price: string;
+      currency: 'USD';
+    }>(sql`
+      select id, unit_price, currency from app.selling_prices
+      where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+        and id = ${reading.selling_price_id} and product_id = ${reading.product_id}
+        and state = 'ACTIVE' and effective_from <= ${startAt}::timestamptz
+        and (effective_to is null or effective_to >= ${now}::timestamptz)
+      for share
+    `);
+    const price = prices[0];
+    if (!price)
+      throw cannotClose(
+        `the selling price used for ${label} changed during this shift. Ask the owner or a manager to close it.`,
+      );
+
+    const prior = await transaction.execute<BoundaryRow>(sql`
+      select * from app.meter_boundaries
+      where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+        and nozzle_id = ${reading.nozzle_id} and meter_installation_id = ${installation.installation_id}
+        and reading_status = 'AVAILABLE'
+      order by effective_at desc, id desc limit 1
+      for update
+    `);
+    const priorReading = prior[0] ? boundaryFromRow(prior[0]).reading : undefined;
+    if (
+      priorReading?.status === 'AVAILABLE' &&
+      !new ExactDecimal(priorReading.value).equals(new ExactDecimal(reading.opening_reading))
+    )
+      throw cannotClose(
+        `the opening reading for ${label} (${reading.opening_reading}) is not where that meter last closed (${priorReading.value}). Correct the opening reading on the Pump readings step, then press Close Shift again.`,
+      );
+
+    const attendantId = context.actor.membershipId;
+    const opening = confirmBoundary({
+      id: randomUUID(),
+      tenantId: context.tenantId,
+      stationId: context.stationId,
+      nozzleId: reading.nozzle_id,
+      meterInstallationId: installation.installation_id,
+      businessDayId,
+      shiftId,
+      reason: 'SHIFT_OPEN',
+      reading: { status: 'AVAILABLE', value: reading.opening_reading },
+      priorSealedReading: priorReading,
+      effectiveAt: startAt,
+      confirmedAt: now,
+      actor: context.actor,
+      responsibleAttendantId: attendantId,
+      exceptionReason: priorReading
+        ? undefined
+        : 'First sealed reading for this meter, taken from the shift figures entered in the workspace',
+    });
+    const closing = confirmBoundary({
+      id: randomUUID(),
+      tenantId: context.tenantId,
+      stationId: context.stationId,
+      nozzleId: reading.nozzle_id,
+      meterInstallationId: installation.installation_id,
+      businessDayId,
+      shiftId,
+      reason: 'SHIFT_CLOSE',
+      reading: { status: 'AVAILABLE', value: reading.closing_reading },
+      effectiveAt: now,
+      confirmedAt: now,
+      actor: context.actor,
+      responsibleAttendantId: attendantId,
+    });
+    const segment = sealMeterSegment({
+      id: randomUUID(),
+      tenantId: context.tenantId,
+      stationId: context.stationId,
+      nozzleId: reading.nozzle_id,
+      meterInstallationId: installation.installation_id,
+      meterId: installation.meter_id,
+      businessDayId,
+      shiftId,
+      openingBoundary: opening,
+      closingBoundary: closing,
+      productId: reading.product_id,
+      attendantId,
+      actor: context.actor,
+      unitPrice: price.unit_price,
+      sellingPriceId: price.id,
+      currency: price.currency,
+      startAt,
+      endAt: now,
+      sealedAt: now,
+    });
+    for (const boundary of [opening, closing]) {
+      if (boundary.reading.status !== 'AVAILABLE') continue;
+      await transaction.execute(sql`
+        insert into app.meter_boundaries
+          (id, tenant_id, station_id, nozzle_id, meter_installation_id, business_day_id, shift_id,
+           reason, reading_status, reading_value, effective_at, confirmed_at, confirmed_by, entered_by,
+           attendant_id, on_behalf_of, exception_reason, version)
+        values (${boundary.id}, ${boundary.tenantId}, ${boundary.stationId}, ${boundary.nozzleId},
+          ${boundary.meterInstallationId}, ${boundary.businessDayId}, ${boundary.shiftId}, ${boundary.reason},
+          'AVAILABLE', ${boundary.reading.value}, ${boundary.effectiveAt}::timestamptz,
+          ${boundary.confirmedAt}::timestamptz, ${boundary.confirmedBy}, ${boundary.enteredBy},
+          ${boundary.attendantId}, ${boundary.onBehalfOf ?? null}, ${boundary.exceptionReason ?? null}, 0)
+      `);
+    }
+    try {
+      await transaction.insert(meterSegments).values({
+        id: segment.id,
+        tenantId: segment.tenantId,
+        stationId: segment.stationId,
+        nozzleId: segment.nozzleId,
+        meterInstallationId: segment.meterInstallationId,
+        businessDayId: segment.businessDayId,
+        shiftId: segment.shiftId,
+        openingBoundaryId: segment.openingBoundaryId,
+        closingBoundaryId: segment.closingBoundaryId,
+        productId: segment.productId,
+        attendantId: segment.attendantId,
+        enteredBy: segment.enteredBy,
+        onBehalfOf: segment.onBehalfOf,
+        openingReading: segment.openingReading,
+        closingReading: segment.closingReading,
+        litres: segment.litres.toString(),
+        unitPrice: segment.unitPrice.toString(),
+        sellingPriceId: segment.sellingPriceId,
+        expectedSaleValue: segment.expectedSaleValue.amount.toString(),
+        currency: segment.currency,
+        boundaryReason: segment.boundaryReason,
+        segmentStartAt: new Date(segment.startAt),
+        segmentEndAt: new Date(segment.endAt),
+        sealedAt: new Date(segment.sealedAt),
+        state: 'OPEN',
+        version: 0,
+      });
+    } catch (error) {
+      if (isExclusionViolation(error))
+        throw cannotClose(
+          `the readings for ${label} overlap another shift on the same pump. Check that the earlier shift on this pump is closed, then press Close Shift again.`,
+        );
+      throw error;
+    }
+    const sealed = await transaction.execute(sql`
+      select app.seal_meter_segment(${context.tenantId}, ${context.stationId}, ${segment.id}, 0) as id
+    `);
+    if (sealed.length !== 1 || !sealed[0]?.id)
+      throw cannotClose(`the meter records for ${label} could not be sealed. Nothing was changed.`);
+    await transaction.execute(sql`
+      update app.meter_installations
+      set version = version + 1
+      where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+        and id = ${installation.installation_id}
+    `);
+  }
+}
+
 async function assertBusinessDayOperationalCompleteness(
   transaction: ForecourtTransaction,
   context: ForecourtCommandContext,
@@ -206,7 +483,7 @@ async function assertBusinessDayOperationalCompleteness(
   if (Number(invalid[0]?.count ?? 0) > 0)
     throw new AppError(
       'CONFLICT',
-      'Every operated shift must be completed with authoritative sealed meter-close evidence, or explicitly marked NOT_OPERATED',
+      'A shift is not finished yet. Close the meters and complete every shift in the list below, or mark a shift as not operated, then close the day.',
     );
   const unresolved = await transaction.execute<{ count: number }>(sql`
     select count(*)::int as count
@@ -899,11 +1176,26 @@ export async function activateStationFromRequest(request: Request, input: unknow
           'Activation requires at least one active shift and a station time zone',
         );
       }
+      // Stock that is in a tank but has no cost cannot be valued, so profit would be wrong from the
+      // first day. Going live waits until every opening quantity has a cost (B3).
+      const unvalued = await tanksWithUnvaluedOpeningStock(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+      });
+      if (unvalued.length > 0) {
+        throw new AppError('CONFLICT', describeUnvaluedOpeningStock(unvalued));
+      }
       await transaction.execute(sql`
         update app.stations set status = 'ACTIVE', updated_at = now()
         where tenant_id = ${context.tenantId} and id = ${context.stationId}
           and status = 'ONBOARDING'
       `);
+      // A company that is starting to trade gets the standard expense categories, so a bill is
+      // filed where a person would look for it. Anything it already has is left as it is.
+      await ensureDefaultExpenseCategories(transaction, {
+        tenantId: context.tenantId,
+        createdBy: context.actor.membershipId,
+      });
       return {
         result: { stationId: context.stationId, status: 'ACTIVE' as const },
         after: { status: 'ACTIVE' },
@@ -1084,6 +1376,46 @@ async function runShiftLifecycleCommand(
             'INVARIANT_VIOLATION',
             'The shift start instant does not fall within this business day in the station timezone',
           );
+        if (payload.shiftTemplateId) {
+          // The day row is locked above, so two supervisors cannot both open the same shift.
+          const taken = await transaction.execute<{ id: string }>(sql`
+            select id from app.shifts
+            where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+              and business_day_id = ${payload.businessDayId}
+              and shift_template_id = ${payload.shiftTemplateId}
+              and state <> 'CANCELLED_BEFORE_START'
+            limit 1
+          `);
+          if (taken.length > 0)
+            throw new AppError(
+              'CONFLICT',
+              'This shift has already been opened for this business day. Open the next shift instead.',
+            );
+          // A shift can be opened a little before its scheduled start (an overlapping handover),
+          // but not hours ahead. Opening late is always allowed.
+          if (station.clockScheduleEnabled && shiftTemplateStartTime) {
+            const opensAt = shiftOpensAt(resolvedPlannedStartAt);
+            if (new Date(await serverNow(transaction)).getTime() < opensAt.getTime())
+              throw new AppError(
+                'CONFLICT',
+                `This shift is scheduled for ${shiftTemplateStartTime.slice(0, 5)}. It can be opened from ${stationClockTime(opensAt.toISOString(), station.timezone)}.`,
+              );
+          }
+        }
+        // Shifts opened from a template (every real shift) may not overlap another shift.
+        const overlapping = payload.shiftTemplateId
+          ? await transaction.execute<{ conflict: boolean }>(sql`
+              select app.shift_schedule_conflict(
+                ${context.tenantId}::uuid, ${context.stationId}::uuid, ${payload.shiftId}::uuid,
+                ${resolvedPlannedStartAt}::timestamptz, ${resolvedPlannedEndAt}::timestamptz
+              ) as conflict
+            `)
+          : [];
+        if (overlapping[0]?.conflict)
+          throw new AppError(
+            'CONFLICT',
+            'Another shift at this station already covers part of this time. Finish or cancel it first, or pick the shift that follows it.',
+          );
         try {
           await transaction.execute(sql`
             insert into app.shifts
@@ -1126,6 +1458,14 @@ async function runShiftLifecycleCommand(
           'INVARIANT_VIOLATION',
           'Shift business date must match its business day',
         );
+      if (commandType === 'CloseMeters' && row.state === 'OPEN') {
+        await sealMetersFromSavedReadings(
+          transaction,
+          context,
+          payload.businessDayId,
+          payload.shiftId,
+        );
+      }
       if (commandType === 'CloseMeters' || commandType === 'CompleteShift') {
         await assertShiftMeterCloseCompleteness(
           transaction,
@@ -3292,6 +3632,13 @@ export async function lockBusinessDayFromRequest(request: Request, input: unknow
       `);
       const row = rows[0];
       if (!row) throw new AppError('NOT_FOUND', 'Business day was not found');
+      const blockers = await readLockBlockers(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: payload.businessDayId,
+      });
+      if (blockers.reason)
+        throw new AppError('CONFLICT', `This day cannot be locked yet. ${blockers.reason}`);
       await assertBusinessDayOperationalCompleteness(transaction, context, payload.businessDayId);
       const posted = await transaction.execute<{
         id: string;

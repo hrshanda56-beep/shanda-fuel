@@ -41,11 +41,20 @@ function words(text: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/** Internal event areas, in the words the filter and the rest of the app use. */
+const AREA_NAMES: Readonly<Record<string, string>> = {
+  FORECOURT: 'Daily operations',
+  INVENTORY: 'Fuel and stock',
+  SETTLEMENT: 'Card and mobile payments',
+  SETUP: 'Station setup',
+};
+
 /** "CASH.SubmitCashHandover" becomes area "Cash" and action "Cash: Submit cash handover". */
 export function describeAction(code: string): { area: string; action: string } {
   const dot = code.indexOf('.');
   if (dot <= 0) return { area: 'General', action: words(code) };
-  const area = words(code.slice(0, dot));
+  const prefix = code.slice(0, dot);
+  const area = AREA_NAMES[prefix.toUpperCase()] ?? words(prefix);
   return { area, action: `${area}: ${words(code.slice(dot + 1)).toLowerCase()}` };
 }
 

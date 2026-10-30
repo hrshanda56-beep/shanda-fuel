@@ -68,6 +68,21 @@ describe('report document contents match the CSV they come from', () => {
     expect((sheet.match(/<row /g) ?? []).length).toBe(3);
   });
 
+  it('shows money and litres at two decimals and prices at three, keeping exact values (B9)', () => {
+    const files = readZip(
+      buildXlsxFromCsv('Item,Money,Litres,Price,Count\nA,450.0000,1200.500,1.455000,12'),
+    );
+    const sheet = files.get('xl/worksheets/sheet1.xml')!;
+    const styles = files.get('xl/styles.xml')!;
+    // Stored values are untouched; only the display format differs.
+    expect(sheet).toContain('<c r="B2" s="1" t="n"><v>450.0000</v></c>');
+    expect(sheet).toContain('<c r="C2" s="1" t="n"><v>1200.500</v></c>');
+    expect(sheet).toContain('<c r="D2" s="2" t="n"><v>1.455000</v></c>');
+    expect(sheet).toContain('<c r="E2" t="n"><v>12</v></c>');
+    expect(styles).toContain('numFmtId="4"');
+    expect(styles).toContain('formatCode="#,##0.000"');
+  });
+
   it('neutralises spreadsheet formulas in the XLSX and keeps the text', () => {
     const sheet = readZip(buildXlsxFromCsv(csv)).get('xl/worksheets/sheet1.xml')!;
     expect(sheet).not.toMatch(/<t[^>]*>=1\+1</);

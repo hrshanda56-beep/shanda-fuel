@@ -17,6 +17,12 @@ const SIGNAL: Record<ReturnType<typeof classifyStockVariance>, [StatusTone, stri
   unjudged: ['neutral', 'Not checked yet'],
 };
 
+/** Tanks measured in litres start at what the books expect, so a dip that matches is one tap. */
+function prefill(tank: Tank, dip: unknown) {
+  if (dip || tank.hasMillimetreChart || !tank.expectedLitres) return '';
+  return String(Number(tank.expectedLitres));
+}
+
 function newKey(tankId: string) {
   return `ui-tank-dip-${tankId}-${crypto.randomUUID()}`;
 }
@@ -65,7 +71,13 @@ export function DailyTankDips({
   }
 
   async function save(tank: Tank) {
-    const reading = (entries[tank.tankId] ?? '').trim();
+    const reading = (
+      entries[tank.tankId] ??
+      prefill(
+        tank,
+        record.dips.find((entry) => entry.tankId === tank.tankId),
+      )
+    ).trim();
     if (!/^\d+(\.\d+)?$/.test(reading)) {
       setError(
         `Enter the ${tank.hasMillimetreChart ? 'dipstick reading' : 'litres'} for tank ${tank.code} as a number.`,
@@ -101,7 +113,10 @@ export function DailyTankDips({
         expectedVersion: record.version,
         dips: [...kept, { dipId: dip.dipId, tankId: tank.tankId, productId: tank.productId }],
       });
-      setEntries((current) => ({ ...current, [tank.tankId]: '' }));
+      setEntries((current) => {
+        const { [tank.tankId]: _saved, ...rest } = current;
+        return rest;
+      });
       setMessage(`Tank ${tank.code} dip saved.`);
       await onChanged();
     } catch (cause) {
@@ -169,7 +184,20 @@ export function DailyTankDips({
                         id={`dip-${tank.tankId}`}
                         label={tank.hasMillimetreChart ? 'Dipstick (mm)' : 'Litres in tank'}
                         inputMode="decimal"
-                        value={entries[tank.tankId] ?? ''}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' && busyTank === null) void save(tank);
+                        }}
+                        action={
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void save(tank)}
+                            disabled={busyTank !== null}
+                          >
+                            {busyTank === tank.tankId ? 'Saving…' : 'Save dip'}
+                          </Button>
+                        }
+                        value={entries[tank.tankId] ?? prefill(tank, dip)}
                         onChange={(event) =>
                           setEntries((current) => ({
                             ...current,
@@ -177,14 +205,11 @@ export function DailyTankDips({
                           }))
                         }
                       />
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => void save(tank)}
-                        disabled={busyTank !== null}
-                      >
-                        {busyTank === tank.tankId ? 'Saving…' : 'Save dip'}
-                      </Button>
+                      {tank.expectedLitres ? (
+                        <p className="muted-small">
+                          Books expect {formatLitres(tank.expectedLitres)}, including deliveries.
+                        </p>
+                      ) : null}
                     </td>
                   ) : null}
                 </tr>

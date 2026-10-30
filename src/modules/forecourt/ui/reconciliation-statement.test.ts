@@ -106,9 +106,17 @@ describe('statementToCsv', () => {
       currency: 'USD',
       statement,
     });
-    expect(csv).toContain('Organisation,"Acme, Ltd"');
+    const lines = csv.trimEnd().split('\r\n');
+    expect(lines[0]).toBe(
+      'Organisation,Station,Business date,Shift,Section,Description,Amount (USD)',
+    );
+    expect(lines[1]).toContain('"Acme, Ltd",Main,15 Oct 2026,06:00 – 14:00,Sales,');
     expect(csv).toContain('06:00 – 14:00,Accounted by,cash,150.15');
-    expect(csv).toContain('Total,Sales,Expected sales,180.75');
+    expect(csv).toContain(',Total,Sales,Expected sales,180.75');
+    // One plain table: every row has the same number of columns.
+    expect(new Set(lines.map((row) => row.replace(/"[^"]*"/g, 'x').split(',').length))).toEqual(
+      new Set([7]),
+    );
     expect(csv.endsWith('\r\n')).toBe(true);
   });
 
@@ -132,9 +140,9 @@ describe('statementToCsv', () => {
       currency: 'USD',
       statement,
     });
-    expect(csv).toContain('A,Cash,Counted cash,Not recorded');
-    expect(csv).toContain('B,Sales,Figures could not be loaded,Not available');
-    expect(csv).toContain('Total,Cash,Counted cash,Not recorded');
+    expect(csv).toContain(',A,Cash,Counted cash,Not recorded');
+    expect(csv).toContain(',B,Sales,Figures could not be loaded,Not available');
+    expect(csv).toContain(',Total,Cash,Counted cash,Not recorded');
     expect(csv).toContain('Totals exclude 1 shift(s) whose figures could not be loaded');
     expect(csv).toContain('Cash totals exclude 1 shift(s) with no counted cash');
   });

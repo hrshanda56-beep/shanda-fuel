@@ -3,9 +3,10 @@
 import { useRef, useState, type FormEvent } from 'react';
 import type { ContextSelection } from '@/modules/context';
 import { Select } from '../../../design-system/forms';
+import { useToast } from '../../../design-system/feedback-provider';
+import { Modal } from '../../../design-system/modal';
 import {
   Button,
-  Card,
   EmptyState,
   Field,
   NumericInput,
@@ -48,6 +49,8 @@ type Props = {
   canResolve: boolean;
   hidden: boolean;
   onChanged: () => Promise<void>;
+  open: boolean;
+  onClose: () => void;
 };
 
 const ACTION_LABELS: Readonly<Record<HandoverAction, string>> = {
@@ -59,9 +62,12 @@ const ACTION_LABELS: Readonly<Record<HandoverAction, string>> = {
 /**
  * Cash changing hands inside a station: an attendant hands the day's cash to the supervisor, and
  * the supervisor hands it on to the admin or owner. Each step needs a different person to accept.
+ * It opens as a side sheet from the Cash on hand card, with the hand-over form and whatever is
+ * waiting to be accepted.
  */
-export function CashHandoverPanel(props: Props) {
+export function CashHandoverSheet(props: Props) {
   const { context, handovers, locations, onChanged } = props;
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [counted, setCounted] = useState('');
@@ -126,6 +132,8 @@ export function CashHandoverPanel(props: Props) {
       form.reset();
       setCounted('');
       setExpected('');
+      toast.success('Cash handed over. The other person now needs to accept it.');
+      props.onClose();
     }
   }
 
@@ -155,13 +163,14 @@ export function CashHandoverPanel(props: Props) {
   const recent = handovers.filter((h) => h.state !== 'SUBMITTED' && h.state !== 'DISPUTED');
 
   return (
-    <Card as="section" className="panel cash-panel" aria-labelledby="cash-handover-title">
-      <div className="panel-heading">
-        <div>
-          <h2 id="cash-handover-title">Handing over cash</h2>
-        </div>
-      </div>
-
+    <Modal
+      open={props.open}
+      onClose={props.onClose}
+      title={props.canSubmit ? 'Hand over cash' : 'Cash handovers'}
+      presentation="side"
+      dismissible={!busy}
+      className="cash-sheet"
+    >
       {message ? (
         <p role={message.tone === 'error' ? 'alert' : 'status'} className="field-hint">
           {message.text}
@@ -170,6 +179,9 @@ export function CashHandoverPanel(props: Props) {
 
       {props.canSubmit ? (
         <form onSubmit={submit} className={styles.form}>
+          <p className="cash-sheet-intro">
+            Hand cash from one place to another. The person receiving it has to accept it.
+          </p>
           <div className={styles.route}>
             <Field id="handover-from" label="Cash is coming from" required>
               <Select
@@ -276,7 +288,7 @@ export function CashHandoverPanel(props: Props) {
           </ul>
         </section>
       ) : null}
-    </Card>
+    </Modal>
   );
 }
 

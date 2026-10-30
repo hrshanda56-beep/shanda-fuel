@@ -4,6 +4,7 @@ import {
   confirmDeliveryFromRequest,
   correctDeliverySupplierFromRequest,
   createDeliveryFromRequest,
+  updateDeliveryFromRequest,
   createTankFromRequest,
   setTankVarianceLimitsFromRequest,
   deactivateTankFromRequest,
@@ -30,6 +31,7 @@ const COMMANDS = [
   'VoidTankDip',
   'SetTankCalibration',
   'CreateDelivery',
+  'UpdateDelivery',
   'ConfirmDelivery',
   'CorrectDeliverySupplier',
   'PostInventoryAdjustment',
@@ -81,6 +83,9 @@ export const POST = withRequestObservability(
           break;
         case 'CreateDelivery':
           result = await createDeliveryFromRequest(request, body);
+          break;
+        case 'UpdateDelivery':
+          result = await updateDeliveryFromRequest(request, body);
           break;
         case 'ConfirmDelivery':
           result = await confirmDeliveryFromRequest(request, body);

@@ -107,6 +107,18 @@ function columnName(column: number): string {
   return name;
 }
 
+/**
+ * How a number is shown in Excel; the stored value is never rounded. Money and litres (three or
+ * four decimals) show two, a price per litre (five or more) shows three, whole numbers and values
+ * that already have one or two decimals are left as they are.
+ */
+function numberStyle(value: string): 0 | 1 | 2 {
+  const decimals = value.split('.')[1]?.length ?? 0;
+  if (decimals >= 5) return 2;
+  if (decimals >= 3) return 1;
+  return 0;
+}
+
 function worksheetXml(rows: readonly (readonly string[])[]): string {
   const rowXml = rows
     .map(
@@ -115,7 +127,8 @@ function worksheetXml(rows: readonly (readonly string[])[]): string {
           .map((value, columnIndex) => {
             const reference = `${columnName(columnIndex)}${rowIndex + 1}`;
             if (isSpreadsheetNumber(value)) {
-              return `<c r="${reference}" t="n"><v>${value}</v></c>`;
+              const style = numberStyle(value);
+              return `<c r="${reference}"${style ? ` s="${style}"` : ''} t="n"><v>${value}</v></c>`;
             }
             return `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(spreadsheetText(value))}</t></is></c>`;
           })
@@ -246,7 +259,7 @@ export function buildXlsxFromCsv(csv: string): Buffer {
     {
       name: 'xl/styles.xml',
       data: Buffer.from(
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf/></cellXfs></styleSheet>',
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.000"/></numFmts><fonts count="1"><font><sz val="11"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf/><xf numFmtId="4" applyNumberFormat="1"/><xf numFmtId="164" applyNumberFormat="1"/></cellXfs></styleSheet>',
         'utf8',
       ),
     },

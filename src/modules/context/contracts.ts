@@ -13,6 +13,8 @@ export type ContextLegalEntity = Readonly<{
   id: string;
   name: string;
   stations: readonly ContextStation[];
+  /** Set when the person can select stations here but not the legal entity as a whole. */
+  stationsOnly?: true;
 }>;
 
 export type ContextOrganisation = Readonly<{

@@ -3,9 +3,26 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
+import { isPermissionGranted, type PermissionCode } from '../../platform/security/permissions';
 import { authorizeInventoryCommand, withInventoryReadContext } from '../inventory/application';
 import { classifyCompartmentVariance, classifyDeliveryReceipt } from './domain';
 import type { CompartmentVarianceKind, DeliveryReceiptKind } from './domain';
+
+/**
+ * Whether the person's role allows this, for deciding which buttons to show. These permissions
+ * also need a recent identity check, but that is asked for when they press the button, so a
+ * missing check must not hide the button.
+ */
+function roleAllows(
+  context: Parameters<typeof authorizeInventoryCommand>[0],
+  permissionCode: PermissionCode,
+): boolean {
+  return isPermissionGranted({
+    actor: context.authority.authorization,
+    permissionCode,
+    requestedScope: context.scope,
+  });
+}
 
 const scopeInput = z.object({ tenantId: z.string().uuid(), stationId: z.string().uuid() });
 
@@ -37,6 +54,8 @@ export type DeliveryTank = Readonly<{
 export type DeliveryList = Readonly<{
   stationTimezone: string;
   waterTestRequired: boolean;
+  /** Only owners may change the water test rule, so only they are shown it. */
+  canSetWaterTestRule: boolean;
   /** Active tanks, for the Record delivery form. */
   tanks: readonly DeliveryTank[];
   deliveries: readonly DeliveryListItem[];
@@ -110,6 +129,7 @@ export async function queryDeliveryList(input: {
       return {
         stationTimezone: context.stationTimezone,
         waterTestRequired: settings[0]?.water_test_required ?? false,
+        canSetWaterTestRule: roleAllows(context, 'tenant.manage'),
         tanks: tanks.map((row) => ({
           id: row.id,
           code: row.code,
@@ -140,6 +160,10 @@ export async function queryDeliveryList(input: {
 export type DeliveryDetail = Readonly<{
   stationTimezone: string;
   waterTestRequired: boolean;
+  /** Only people who may manage deliveries are offered the Confirm button. */
+  canConfirm: boolean;
+  /** Tanks of this delivery's fuel that it can go into, for the edit form. */
+  tanks: readonly DeliveryTank[];
   delivery: Readonly<{
     id: string;
     deliveryNoteNumber: string;
@@ -152,6 +176,14 @@ export type DeliveryDetail = Readonly<{
     driver: string | null;
     truckRegistration: string | null;
     status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+    /** The purchase order this delivery is linked to, if any. */
+    purchaseOrderNumber: string | null;
+    /** Why there is no purchase order, when the delivery was recorded without one. */
+    noPoReason: string | null;
+    noPoNote: string | null;
+    supplierId: string | null;
+    /** The tank receiving the fuel; null when the delivery is split across several tanks. */
+    tankId: string | null;
     noteLitres: string;
     receivedLitres: string;
     shortageExcessLitres: string;
@@ -206,13 +238,23 @@ export async function queryDeliveryDetail(input: {
         driver: string | null;
         truck_registration: string | null;
         status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+        no_po_reason: string | null;
+        no_po_note: string | null;
+        supplier_id: string | null;
+        purchase_order_number: string | null;
         note_litres: string;
         received_litres: string;
         shortage_excess_litres: string;
       }>(sql`
         select d.id, d.delivery_note_number, d.delivered_at, d.business_date, d.product_id,
           p.name as product_name, s.legal_name as supplier_name, d.transporter, d.driver,
-          d.truck_registration, d.status,
+          d.truck_registration, d.status, d.no_po_reason, d.no_po_note, d.supplier_id,
+          (select po.order_number
+            from app.purchase_order_delivery_links l
+            join app.purchase_orders po
+              on po.tenant_id = l.tenant_id and po.id = l.purchase_order_id
+            where l.tenant_id = d.tenant_id and l.delivery_id = d.id and l.state = 'ACTIVE'
+            limit 1) as purchase_order_number,
           d.note_quantity_litres::text as note_litres,
           d.actual_quantity_litres::text as received_litres,
           d.shortage_excess_litres::text as shortage_excess_litres
@@ -224,6 +266,27 @@ export async function queryDeliveryDetail(input: {
       `);
       const delivery = deliveries[0];
       if (!delivery) throw new AppError('NOT_FOUND', 'The requested delivery was not found');
+      const allocations = await transaction.execute<{ tank_id: string }>(sql`
+        select tank_id from app.fuel_delivery_allocations
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and delivery_id = ${parsed.deliveryId}
+      `);
+      /** Only a delivery going into one tank can be edited as a whole; several tanks cannot. */
+      const tankId = allocations.length === 1 ? (allocations[0]?.tank_id ?? null) : null;
+      const tanks = await transaction.execute<{
+        id: string;
+        code: string;
+        product_id: string;
+        product_name: string;
+      }>(sql`
+        select t.id, t.code, t.product_id, p.name as product_name
+        from app.tanks t
+        join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
+        where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}
+          and t.product_id = ${delivery.product_id}
+          and (t.status = 'ACTIVE' or t.id = ${tankId})
+        order by t.code
+      `);
       const compartments = await transaction.execute<{
         id: string;
         compartment_number: number;
@@ -281,6 +344,13 @@ export async function queryDeliveryDetail(input: {
       return {
         stationTimezone: context.stationTimezone,
         waterTestRequired: settings[0]?.water_test_required ?? false,
+        canConfirm: roleAllows(context, 'inventory.delivery.manage'),
+        tanks: tanks.map((row) => ({
+          id: row.id,
+          code: row.code,
+          productId: row.product_id,
+          productName: row.product_name,
+        })),
         delivery: {
           id: delivery.id,
           deliveryNoteNumber: delivery.delivery_note_number,
@@ -293,6 +363,11 @@ export async function queryDeliveryDetail(input: {
           driver: delivery.driver,
           truckRegistration: delivery.truck_registration,
           status: delivery.status,
+          purchaseOrderNumber: delivery.purchase_order_number,
+          noPoReason: delivery.no_po_reason,
+          noPoNote: delivery.no_po_note,
+          supplierId: delivery.supplier_id,
+          tankId,
           noteLitres: delivery.note_litres,
           receivedLitres: delivery.received_litres,
           shortageExcessLitres: delivery.shortage_excess_litres,

@@ -162,7 +162,7 @@ it('renders valuation and tank data together without a loading stream', () => {
       },
     }),
   );
-  expect(html).not.toContain('Loading valuation streams');
+  expect(html).not.toContain('Loading stock costs');
   expect(html).toContain('Tanks');
 });
 
@@ -197,7 +197,8 @@ it('renders Operations overview without fetching it again on mount', () => {
     }),
   );
   expect(html).not.toContain('Loading operations');
-  expect(html).toContain('Test station');
+  // The hero shows the business date; the station name lives in the page header.
+  expect(html).toContain('18 Oct 2026');
 });
 it('renders an initial daily draft and skips all initial summary fetches', () => {
   const html = renderToStaticMarkup(
@@ -254,6 +255,8 @@ it('renders initial dashboard sections without requesting the bundle or chart ag
       stationId: 'station',
       initialData: {
         key: 'tenant|station|30D',
+        period: { period: 'today', fromDate: '2026-10-29', toDate: '2026-10-29', phrase: 'today' },
+        asOf: '2026-10-29T12:05:00Z',
         daily: { status: 'ready', data: { rows: [] } },
         customers: { status: 'ready', data: { customers: [] } },
         operations: null,
@@ -270,6 +273,8 @@ it('does not wait for station operations in an all-stations dashboard', () => {
       tenantId: 'tenant',
       initialData: {
         key: 'tenant||30D',
+        period: { period: 'today', fromDate: '2026-10-29', toDate: '2026-10-29', phrase: 'today' },
+        asOf: '2026-10-29T12:05:00Z',
         daily: { status: 'ready', data: { rows: [] } },
         customers: { status: 'ready', data: { customers: [] } },
         operations: null,

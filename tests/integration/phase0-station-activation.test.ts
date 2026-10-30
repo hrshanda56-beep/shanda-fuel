@@ -159,6 +159,23 @@ describe('Phase 0 station activation in PostgreSQL', () => {
       status: 'ACTIVE',
     });
 
+    // B8: a company that starts trading has the standard expense categories.
+    const categories = await client<{ code: string; classification: string }[]>`
+      select code, classification from app.expense_categories
+      where tenant_id = ${ids.tenant} order by code
+    `;
+    expect(categories.map((row) => row.code)).toEqual(
+      expect.arrayContaining([
+        'BANK_CHARGES',
+        'CLEANING',
+        'FUEL_TRANSPORT',
+        'MAINTENANCE',
+        'OTHER',
+        'SECURITY',
+        'UTILITIES',
+      ]),
+    );
+
     const editedSchedule = await postCommand(
       {
         commandType: 'DefineShiftTemplate',
@@ -252,34 +269,72 @@ describe('Phase 0 station activation in PostgreSQL', () => {
     );
     expect(unscheduled.status).toBe(400);
 
+    // A scheduled shift opens from 30 minutes before its start, so which of the two shifts may be
+    // opened depends on the Harare time when this test runs.
+    const harare = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+      timeZone: 'Africa/Harare',
+    }).formatToParts(new Date());
+    const localMinutes =
+      Number(harare.find((part) => part.type === 'hour')?.value) * 60 +
+      Number(harare.find((part) => part.type === 'minute')?.value);
+    const startScheduled = (shiftTemplateId: string, startUtc: string, shiftId: string) =>
+      postCommand(
+        {
+          commandType: 'StartShift',
+          tenantId: ids.tenant,
+          stationId: ids.onboarding,
+          businessDayId,
+          shiftId,
+          expectedVersion: 0,
+          plannedStartAt: `${businessDate}T${startUtc}:00.000Z`,
+          shiftTemplateId,
+        },
+        `phase0-start-${shiftId}`,
+      );
+    const nightOpen = localMinutes >= 17 * 60 + 30;
+    const dayOpen = nightOpen || localMinutes >= 5 * 60 + 30;
     const shiftId = randomUUID();
-    const night = await postCommand(
-      {
-        commandType: 'StartShift',
-        tenantId: ids.tenant,
-        stationId: ids.onboarding,
-        businessDayId,
-        shiftId,
-        expectedVersion: 0,
-        plannedStartAt: `${businessDate}T16:00:00.000Z`,
-        shiftTemplateId: ids.nightTemplate,
-      },
-      `phase0-night-${shiftId}`,
-    );
-    expect(night.status, await night.clone().text()).toBe(200);
-    const interval = await client<{ start_local: string; end_local: string }[]>`
-      select to_char(planned_start_at at time zone 'Africa/Harare', 'YYYY-MM-DD HH24:MI') as start_local,
-        to_char(planned_end_at at time zone 'Africa/Harare', 'YYYY-MM-DD HH24:MI') as end_local
-      from app.shifts where tenant_id = ${ids.tenant} and station_id = ${ids.onboarding} and id = ${shiftId}
-    `;
-    const followingDate = new Date(`${businessDate}T12:00:00Z`);
-    followingDate.setUTCDate(followingDate.getUTCDate() + 1);
-    expect(interval).toEqual([
-      {
-        start_local: `${businessDate} 18:00`,
-        end_local: `${followingDate.toISOString().slice(0, 10)} 06:00`,
-      },
-    ]);
+    const opening = nightOpen
+      ? { template: ids.nightTemplate, startUtc: '16:00', local: '18:00' }
+      : dayOpen
+        ? { template: ids.dayTemplate, startUtc: '04:00', local: '06:00' }
+        : null;
+    if (opening) {
+      const started = await startScheduled(opening.template, opening.startUtc, shiftId);
+      expect(started.status, await started.clone().text()).toBe(200);
+      const interval = await client<{ start_local: string; end_local: string }[]>`
+        select to_char(planned_start_at at time zone 'Africa/Harare', 'YYYY-MM-DD HH24:MI') as start_local,
+          to_char(planned_end_at at time zone 'Africa/Harare', 'YYYY-MM-DD HH24:MI') as end_local
+        from app.shifts where tenant_id = ${ids.tenant} and station_id = ${ids.onboarding} and id = ${shiftId}
+      `;
+      const followingDate = new Date(`${businessDate}T12:00:00Z`);
+      followingDate.setUTCDate(followingDate.getUTCDate() + 1);
+      expect(interval).toEqual([
+        {
+          start_local: `${businessDate} ${opening.local}`,
+          end_local: nightOpen
+            ? `${followingDate.toISOString().slice(0, 10)} 06:00`
+            : `${businessDate} 18:00`,
+        },
+      ]);
+      // The same scheduled shift cannot be opened twice on one day.
+      const again = await startScheduled(opening.template, opening.startUtc, randomUUID());
+      expect(again.status).toBe(409);
+      await expect(again.json()).resolves.toMatchObject({
+        message: expect.stringContaining('already been opened'),
+      });
+    }
+    if (!nightOpen) {
+      // More than 30 minutes before its start, a shift is refused and told when it can be opened.
+      const early = await startScheduled(ids.nightTemplate, '16:00', randomUUID());
+      expect(early.status).toBe(409);
+      await expect(early.json()).resolves.toMatchObject({
+        message: expect.stringContaining('can be opened from 17:30'),
+      });
+    }
     const preservedSchedule = await client<{ start_time: string; active: boolean }[]>`
       select to_char(start_time, 'HH24:MI') as start_time, active
       from app.shift_templates

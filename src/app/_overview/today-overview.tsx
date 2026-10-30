@@ -1,6 +1,5 @@
 'use client';
 import { useContextFetch } from '@/modules/context/client-context';
-import { NextStepCard } from '@/modules/forecourt/ui/next-step-card';
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
@@ -10,6 +9,7 @@ import { Icon, type IconName } from '@/design-system/icons';
 import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primitives';
 import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
+import { NextStepCard } from '@/modules/forecourt/ui/next-step-card';
 
 import { businessToday } from '@/modules/reporting/period';
 import { addExact } from '@/modules/reporting/domain';
@@ -35,11 +35,13 @@ import {
 } from './dashboard-figures';
 import { FinanceTiles } from '@/modules/owner/ui/finance-tiles';
 import type { FinanceTile } from '@/modules/reporting/finance-tiles';
-import {
-  countDaysWithoutReport,
-  type DashboardSnapshot,
-} from '@/modules/reporting/dashboard-snapshot';
+import type { DashboardSnapshot } from '@/modules/reporting/dashboard-snapshot';
 
+import {
+  asAtLabel,
+  resolveDashboardPeriod,
+  type ResolvedDashboardPeriod,
+} from './dashboard-period';
 import { PerformanceChart } from './performance-chart';
 import {
   approvalLabel,
@@ -123,11 +125,9 @@ export function TodayOverview({
   stationId: urlStationId,
   initialContext,
   initialData,
-  showQuickActions = true,
 }: Scope & {
   initialContext?: Scope;
   initialData?: DashboardInitialData;
-  showQuickActions?: boolean;
 }) {
   const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
   const resolvedContext = initialContext ?? fallback;
@@ -150,6 +150,15 @@ export function TodayOverview({
     initialData?.finance ?? { status: 'loading' },
   );
   const [attempt, setAttempt] = useState(0);
+
+  // One period for every period figure; the server read the records for exactly this window.
+  const period = useMemo(
+    () => initialData?.period ?? resolveDashboardPeriod({}, businessToday()),
+    [initialData],
+  );
+  const [asAt] = useState(() =>
+    asAtLabel(initialData?.asOf ? new Date(initialData.asOf) : new Date()),
+  );
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
@@ -174,11 +183,13 @@ export function TodayOverview({
       setOperations({ status: 'loading' });
       setFinance({ status: 'loading' });
     }, 0);
-    const initialWindow = chartBuckets('30D', businessToday());
+    const chartWindow = chartBuckets('30D', businessToday());
     const params = new URLSearchParams({
       tenantId,
-      fromDate: initialWindow.fromDate,
-      toDate: initialWindow.toDate,
+      fromDate: period.fromDate,
+      toDate: period.toDate,
+      chartFromDate: chartWindow.fromDate,
+      chartToDate: chartWindow.toDate,
     });
     if (stationId) params.set('stationId', stationId);
     load<{
@@ -212,7 +223,7 @@ export function TodayOverview({
       window.clearTimeout(reset);
       controller.abort();
     };
-  }, [tenantId, stationId, attempt, initialData]);
+  }, [tenantId, stationId, attempt, initialData, period]);
 
   useEffect(() => {
     if (
@@ -352,22 +363,12 @@ export function TodayOverview({
 
   return (
     <>
-      {showQuickActions && stationId ? (
-        <NextStepCard tenantId={tenantId} stationId={stationId} />
-      ) : null}
       <div className="today today-dashboard">
         <section
           className="today-section today-figures-section"
           aria-labelledby="today-figures-heading"
         >
           <h2 id="today-figures-heading">Key figures</h2>
-          <p className="today-figures-note">
-            {stationId ? '' : 'All stations · '}Approved figures for{' '}
-            {daily.status === 'ready' && daily.data.filters?.fromDate
-              ? formatBusinessDate(daily.data.filters.fromDate)
-              : 'today'}
-            .
-          </p>
           <dl
             className="today-figures"
             // One size for all four cards, from the longest figure shown.
@@ -380,7 +381,7 @@ export function TodayOverview({
             }
           >
             <Figure
-              label="Sales today"
+              label={`Sales ${period.phrase}`}
               href={reportsHref}
               icon="dollar"
               state={figureState}
@@ -392,11 +393,6 @@ export function TodayOverview({
               icon="drop"
               state={figureState}
               value={figureValues[1] ?? null}
-              sub={
-                totals && !stationId
-                  ? `${totals.stationCount} ${totals.stationCount === 1 ? 'station' : 'stations'} approved`
-                  : null
-              }
             />
             <Figure
               label="Cash variance"
@@ -404,7 +400,6 @@ export function TodayOverview({
               icon="wallet"
               state={figureState}
               value={figureValues[2] ?? null}
-              sub={totals ? CASH_VARIANCE_WORDS[varianceTone(totals.cashVariance)] : null}
               tone={totals ? varianceTone(totals.cashVariance) : undefined}
             />
             <Figure
@@ -413,26 +408,29 @@ export function TodayOverview({
               icon="users"
               state={figureState}
               value={figureValues[3] ?? null}
-              sub={totals ? 'Credit and prepaid accounts' : null}
             />
           </dl>
           {snapshot.status === 'ready' ? (
             <SnapshotTiles
               snapshot={snapshot.data}
               daysWithoutReport={
-                daily.status === 'ready'
-                  ? countDaysWithoutReport(daily.data.rows, daily.data.expectedBusinessDays)
-                  : null
+                daily.status === 'ready' ? (daily.data.missingReportDays ?? null) : null
               }
               reportsHref={reportsHref}
               dailyHref={dailyHref}
               inventoryHref={inventoryHref}
+              periodPhrase={period.phrase}
+              asAt={asAt}
             />
           ) : null}
           {/* Money at a glance: only for people allowed to see the management figures. */}
           {finance.status === 'ready' ? (
             <div style={{ marginBlockStart: 'var(--space-6)' }}>
-              <FinanceTiles tiles={contextualFinanceTiles} />
+              <FinanceTiles
+                tiles={contextualFinanceTiles}
+                periodPhrase={period.phrase}
+                asAt={asAt}
+              />
             </div>
           ) : null}
         </section>
@@ -459,7 +457,15 @@ export function TodayOverview({
                 }
               />
             ) : (
-              <OperationsRow operations={operations.data} href={dailyHref} />
+              <>
+                <OperationsRow operations={operations.data} href={dailyHref} />
+                <NextStepCard
+                  embedded
+                  tenantId={tenantId}
+                  stationId={stationId}
+                  onChanged={retry}
+                />
+              </>
             )}
           </section>
 
@@ -500,7 +506,7 @@ export function TodayOverview({
             <h2 id="today-stats-heading">
               Sales performance <span className="today-stats-sub">Litres</span>
             </h2>
-            <div className="today-periods" role="group" aria-label="Period">
+            <div className="today-periods" role="group" aria-label="Chart range">
               {CHART_RANGES.map((option) => (
                 <button
                   key={option}
@@ -568,15 +574,9 @@ export function TodayOverview({
   );
 }
 
-const CASH_VARIANCE_WORDS = {
-  none: 'No cash variance',
-  short: 'Cash short',
-  over: 'Cash over',
-} as const;
-
 type DailyReport = {
   filters?: { fromDate?: string };
-  expectedBusinessDays?: number;
+  missingReportDays?: readonly { stationId: string; businessDate: string }[];
   rows: readonly DailyRow[];
 };
 
@@ -587,6 +587,17 @@ const FIGURE_CAPTION: Partial<Record<FigureState, string>> = {
   error: 'Unavailable',
   none: 'No approved report yet',
 };
+
+/** Shows a leading currency code ("USD 5,961.45") smaller than the amount so the figure fits one row. */
+function renderFigureValue(value: string) {
+  const match = /^([A-Z]{3})\s+(\S.*)$/.exec(value);
+  if (!match) return value;
+  return (
+    <>
+      <span className="today-figure-currency">{match[1]}</span> {match[2]}
+    </>
+  );
+}
 
 function Figure({
   label,
@@ -621,7 +632,7 @@ function Figure({
           <Skeleton lines={1} label={`Loading ${label.toLowerCase()}`} />
         ) : value !== null ? (
           <>
-            <span className="today-figure-value">{value}</span>
+            <span className="today-figure-value">{renderFigureValue(value)}</span>
             {sub ? <span className="today-figure-caption">{sub}</span> : null}
           </>
         ) : (
@@ -643,28 +654,38 @@ function SnapshotTiles({
   reportsHref,
   dailyHref,
   inventoryHref,
+  periodPhrase,
+  asAt,
 }: {
   snapshot: DashboardSnapshot;
-  daysWithoutReport: number | null;
+  daysWithoutReport: readonly { stationId: string; businessDate: string }[] | null;
   reportsHref: string;
   dailyHref: string;
   inventoryHref: string;
+  /** The chosen period in words, for the tiles that are totals over it. */
+  periodPhrase: string;
+  /** "As at 14:05", for the tiles that are a position right now. */
+  asAt: string;
 }) {
   const { cash, stockVariance } = snapshot;
   const litres = snapshot.litresByProduct.length
     ? snapshot.litresByProduct
         .map((row) => `${row.productName} ${formatTileLitres(row.litres)}`)
         .join(' · ')
-    : 'No fuel sold yet';
+    : '';
   return (
     <section
       className="metric-grid"
       aria-label="Litres, cash and stock"
       style={{ marginBlockStart: 'var(--space-6)' }}
     >
-      <MetricCard label="Litres sold by fuel" value={litres} href={reportsHref} />
       <MetricCard
-        label="Cash expected"
+        label={`Litres sold by fuel, ${periodPhrase}`}
+        value={snapshot.litresByProduct.length ? litres : `No fuel sold ${periodPhrase}`}
+        href={reportsHref}
+      />
+      <MetricCard
+        label={`Cash expected, ${periodPhrase}`}
         value={formatTileMoney(cash.expected)}
         meta={`Collected ${formatTileMoney(cash.collected)} · ${
           varianceTone(cash.difference) === 'none'
@@ -677,22 +698,26 @@ function SnapshotTiles({
       <MetricCard
         label="Stock variance"
         value={stockVariance.litres === null ? 'Not available' : signedLitres(stockVariance.litres)}
-        meta={
+        meta={`${asAt} · ${
           stockVariance.litres === null
-            ? 'No tank has a dip reading yet.'
+            ? 'No tank has a dip reading for the last day yet.'
             : `${stockVariance.tanksMeasured} of ${stockVariance.tanksTotal} tanks measured`
-        }
+        }`}
         href={inventoryHref}
       />
       <MetricCard
         label="Reports not submitted"
-        value={daysWithoutReport === null ? 'Not available' : String(daysWithoutReport)}
+        value={daysWithoutReport === null ? 'Not available' : String(daysWithoutReport.length)}
         meta={
-          daysWithoutReport === 0
-            ? 'Every day has a report.'
-            : 'Days with activity but no approved report'
+          daysWithoutReport === null
+            ? undefined
+            : `${asAt} · ${
+                daysWithoutReport.length === 0
+                  ? 'Every day has a report.'
+                  : `Oldest missing: ${formatBusinessDate(daysWithoutReport.map((day) => day.businessDate).sort()[0]!)}`
+              }`
         }
-        tone={daysWithoutReport ? 'critical' : 'default'}
+        tone={daysWithoutReport?.length ? 'critical' : 'default'}
         href={dailyHref}
       />
     </section>
@@ -796,6 +821,9 @@ function ChartTableView({ points, range }: { points: LitresPoint[]; range: Chart
 
 export type DashboardInitialData = {
   key: string;
+  /** The period the figures were read for, and when they were read. */
+  period: ResolvedDashboardPeriod;
+  asOf: string;
   daily: Section<DailyReport>;
   customers: Section<{ customers: readonly { status: string }[] }>;
   operations: Section<TodayOperations> | null;

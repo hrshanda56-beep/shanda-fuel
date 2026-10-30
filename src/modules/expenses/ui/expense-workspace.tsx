@@ -17,6 +17,7 @@ import { Icon } from '@/design-system/icons';
 import { Modal } from '@/design-system/modal';
 import { Checkbox } from '@/design-system/forms';
 import { formatTileMoney } from '@/modules/reporting/format';
+import { CashDonut } from '@/modules/cash/ui/cash-visuals';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import {
   EXPENSE_PAYMENT_METHODS,
@@ -30,6 +31,7 @@ import {
   PERIODS,
   amountForInput,
   categoryCodeFromName,
+  categoryRingSlices,
   categoryShares,
   formatFriendlyDate,
   friendlyError,
@@ -41,9 +43,11 @@ import {
   monthTitle,
   parseAmount,
   periodRange,
+  regularCostSoFar,
   statusView,
   sumAmounts,
   todayInBusinessTime,
+  withinApprovalLimit,
   type ExpenseFilter,
   type ExpenseRow,
   type PeriodKey,
@@ -168,6 +172,11 @@ const SOURCE_WORDS: Record<string, string> = {
   MOBILE_MONEY: 'EcoCash',
   REIMBURSEMENT: 'Paid back to staff',
 };
+
+/** True for an amount that is nothing, however many zeros the database wrote. */
+function isZeroMoney(value: string): boolean {
+  return /^-?0*\.?0*$/.test(value);
+}
 
 function newKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -740,7 +749,11 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       ) : null}
 
       <div className={styles.overview}>
-        <Card as="section" className="panel" aria-labelledby="expense-spent-title">
+        <Card
+          as="section"
+          className={`panel ${styles.summaryCard}`}
+          aria-labelledby="expense-spent-title"
+        >
           <div className="panel-heading">
             <h2 id="expense-spent-title">Spent in {monthTitle(month.from)}</h2>
           </div>
@@ -768,7 +781,11 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
               aria-label="Not paid yet. Show these expenses."
             >
               <span>Not paid yet</span>
-              <strong>{formatTileMoney(summary.payables.postedExpensesOutstanding)}</strong>
+              <strong>
+                {isZeroMoney(summary.payables.postedExpensesOutstanding)
+                  ? 'None'
+                  : formatTileMoney(summary.payables.postedExpensesOutstanding)}
+              </strong>
             </button>
           </div>
           {caps?.submit ? (
@@ -794,17 +811,15 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           {shares.length === 0 ? (
             <p className={styles.muted}>Nothing recorded this month yet.</p>
           ) : (
-            <ul className={styles.categories}>
-              {shares.map((row) => (
-                <li key={row.categoryId} className={styles.categoryRow}>
-                  <span className={styles.categoryName}>{row.name}</span>
-                  <span className={styles.bar} aria-hidden="true">
-                    <span style={{ width: `${row.percent}%` }} />
-                  </span>
-                  <span className={styles.amount}>{formatTileMoney(row.amount)}</span>
-                </li>
-              ))}
-            </ul>
+            <div className={styles.ring}>
+              <CashDonut
+                slices={categoryRingSlices(shares, spent)}
+                currency="USD"
+                centreLabel="Spent"
+                centreValue={formatTileMoney(spent)}
+                selectOpensDialog={false}
+              />
+            </div>
           )}
         </Card>
       </div>
@@ -821,15 +836,14 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           </div>
           {(reference.templates ?? []).length === 0 ? (
             <p className={styles.muted}>
-              Costs that repeat each month, like rent, are listed here once added.
+              Costs that repeat each month, like rent, are listed here once added. They count
+              automatically from the day they start, a share each day, and are kept apart from what
+              was spent.
             </p>
           ) : (
             <ul className={styles.categories} aria-label="Regular costs">
               {(reference.templates ?? []).map((template) => {
-                const thisMonth = (reference.periods ?? []).find(
-                  (row) => row.templateId === template.templateId && row.periodStart === month.from,
-                );
-                const counted = thisMonth ? Number(thisMonth.recognizedAmount) > 0 : false;
+                const soFar = regularCostSoFar(template, month, today);
                 return (
                   <li key={template.templateId} className={styles.categoryRow}>
                     <span className={styles.categoryName}>
@@ -842,47 +856,14 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                     <span>
                       {template.status !== 'ACTIVE' ? (
                         <StatusBadge tone="neutral">Stopped</StatusBadge>
-                      ) : !thisMonth && caps?.manageRecurring ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={busy}
-                          onClick={() =>
-                            void send(
-                              {
-                                commandType: 'GenerateRecurringCostPeriod',
-                                ...scope(template.stationId),
-                                templateId: template.templateId,
-                                periodStart: month.from,
-                              },
-                              `${monthTitle(month.from)} added for ${template.name}.`,
-                            )
-                          }
-                        >
-                          Add {monthTitle(month.from)}
-                        </Button>
-                      ) : thisMonth && counted ? (
-                        <StatusBadge tone="positive">Counted this month</StatusBadge>
-                      ) : thisMonth && caps?.recogniseRecurring ? (
-                        <Button
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            void send(
-                              {
-                                commandType: 'RecognizeRecurringCost',
-                                ...scope(template.stationId),
-                                periodId: thisMonth.periodId,
-                                recognitionDate: today,
-                              },
-                              `${template.name} now counts in this month’s spending.`,
-                            )
-                          }
-                        >
-                          Count in spending
-                        </Button>
+                      ) : soFar.days > 0 ? (
+                        <StatusBadge tone="positive">
+                          {formatTileMoney(soFar.amount)} so far this month
+                        </StatusBadge>
                       ) : (
-                        <StatusBadge tone="pending">Waiting to be counted</StatusBadge>
+                        <StatusBadge tone="pending">
+                          Starts {formatFriendlyDate(template.startDate)}
+                        </StatusBadge>
                       )}
                     </span>
                   </li>
@@ -1032,23 +1013,22 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
 
         {refreshing && items.length === 0 ? <LoadingState label="Loading expenses" /> : null}
         {items.length === 0 && !refreshing ? (
-          <EmptyState
-            layout="block"
-            icon="receipt"
-            title="No expenses yet"
-            action={
-              caps?.submit ? (
-                <Button variant="secondary" size="sm" onClick={() => openSheet({ kind: 'new' })}>
-                  Enter an expense
-                </Button>
-              ) : undefined
-            }
-            message={
-              caps?.submit
-                ? 'Enter the first one when money is spent.'
-                : 'Expenses entered by your team show here.'
-            }
-          />
+          <div className={styles.emptyList}>
+            <EmptyState
+              layout="block"
+              icon="receipt"
+              title="No expenses yet"
+              message={`${
+                caps?.submit
+                  ? 'Enter the first one when money is spent.'
+                  : 'Expenses entered by your team show here.'
+              }${
+                isZeroMoney(spent) || !(caps?.manageRecurring || caps?.recogniseRecurring)
+                  ? ''
+                  : ' Regular costs are counted in the total above.'
+              }`}
+            />
+          </div>
         ) : null}
         {items.length > 0 && visible.length === 0 ? (
           <EmptyState
@@ -1570,7 +1550,7 @@ function capsForRow(
 ): ExpenseCapabilities | undefined {
   if (!caps || !caps.approve || caps.approveAnyAmount) return caps;
   const limit = policy?.supervisorApprovalLimit;
-  const within = limit != null && Number(row.amount) <= Number(limit);
+  const within = limit != null && withinApprovalLimit(row.amount, limit);
   return within ? caps : { ...caps, approve: false };
 }
 

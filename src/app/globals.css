@@ -335,6 +335,23 @@
   gap: var(--space-5);
 }
 
+.operations-layout-wide {
+  grid-column: 1 / -1;
+}
+
+/* Shifts and Reconciliations share one row: both cards stretch to the taller one. */
+@media (min-width: 64rem) {
+  .operations-control-room .operations-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  .operations-control-room .operations-layout > .operations-layout-main {
+    grid-auto-rows: 1fr;
+    align-content: stretch;
+  }
+}
+
 .operations-attention {
   display: grid;
   gap: var(--space-2);
@@ -421,7 +438,7 @@ a.operations-attention-row:hover {
 
 @media (min-width: 64rem) {
   .operations-layout {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .operations-history-grid {
@@ -901,6 +918,34 @@ a.operations-attention-row:hover {
   padding: var(--space-1) 0;
 }
 
+/* On the overview cards the drawing is cropped tight and runs closer to the
+   card edges, so it is larger while the card keeps its height. */
+.tank-overview .tank-figure {
+  margin-inline: calc(-1 * var(--space-3));
+  padding: 0;
+}
+
+/* The date sits beside the title, and the room it frees goes to wider, fixed-width cards, so a larger
+   drawing fits in the same overall height. */
+.tank-overview-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-3);
+}
+
+.tank-overview-title .tank-asof {
+  margin: 0;
+}
+
+.tank-overview .tank-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
+}
+
+.tank-overview .tank-drum {
+  max-width: none;
+}
+
 .tank-drum {
   width: 100%;
   max-width: 13rem;
@@ -1226,57 +1271,8 @@ a.operations-attention-row:hover {
   }
 }
 
-/* Valuation overview below the tanks: one calm stat strip and quiet empty
-   states, in the same soft-card language as the tank cards. */
-.valuation-overview .page-heading {
-  align-items: center;
-  padding: 0 var(--space-1);
-}
-
-.valuation-overview .page-heading p {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-
-.valuation-overview .metric-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(
-    180deg,
-    var(--bg-surface) 40%,
-    color-mix(in srgb, var(--accent) 7%, var(--bg-surface))
-  );
-}
-
-.valuation-overview .metric-grid > .metric-card {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  transition: background-color 0.15s ease;
-}
-
-.valuation-overview .metric-grid > .metric-card + .metric-card {
-  border-left: 1px solid var(--border-subtle);
-}
-
-.valuation-overview .metric-grid > a.metric-card:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-
-.valuation-overview .metric-label {
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.valuation-overview .metric-meta {
-  font-size: var(--font-size-xs);
-}
-
+/* Valuation overview below the tanks: quiet empty states, in the same
+   soft-card language as the tank cards. */
 .valuation-overview .state-block {
   gap: var(--space-2);
   padding: var(--space-8) var(--space-6);
@@ -1297,14 +1293,36 @@ a.operations-attention-row:hover {
   padding: var(--space-6);
 }
 
-@media (max-width: 40rem) {
-  .valuation-overview .metric-grid {
-    grid-template-columns: minmax(0, 1fr);
+/* Statuses read as a coloured dot and a word here, not as pills. */
+.valuation-overview .status,
+.valuation-overview .tank-card-head .status {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.valuation-overview .tank-card-head .status {
+  font-size: 0.75rem;
+}
+
+.valuation-overview td .status {
+  font-size: var(--font-size-sm);
+}
+
+/* Wide screens: every column after the first is centred, heading and values alike. */
+@media (min-width: 48rem) {
+  .valuation-overview .data-table :is(th, td):nth-child(n + 2),
+  .valuation-overview .data-table td.cell-action {
+    text-align: center;
   }
 
-  .valuation-overview .metric-grid > .metric-card + .metric-card {
-    border-top: 1px solid var(--border-subtle);
-    border-left: 0;
+  .valuation-overview .data-table td > .status {
+    justify-content: center;
+  }
+
+  .valuation-overview .data-table td > .table-secondary {
+    display: block;
   }
 }
 
@@ -1414,6 +1432,17 @@ a.operations-attention-row:hover {
 
 .cash-panel > .panel-heading {
   margin-bottom: 0;
+}
+
+/* Beside a taller card, the wallet sits in the middle of the space and the actions stay at the
+   foot, so the card is not left with an empty strip at the bottom. */
+.cash-panel-fill {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: stretch;
+}
+
+.cash-panel-fill > .cash-wallet-block {
+  align-self: center;
 }
 
 /* Wallet: modelled on a physical card wallet. Everything scales from one unit
@@ -1993,7 +2022,7 @@ a.operations-attention-row:hover {
   text-align: center;
 }
 
-/* Cash actions: compact pills in the same shape as the other soft controls. */
+/* Cash actions: compact buttons with the same rounded corners as the other controls. */
 .cash-panel .cash-action-bar {
   gap: var(--space-2);
 }
@@ -2001,7 +2030,7 @@ a.operations-attention-row:hover {
 .cash-panel .cash-action-bar .button {
   min-height: 0;
   padding: 0.375rem 0.875rem;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   font-size: var(--font-size-xs);
   font-weight: 600;
 }
@@ -2323,7 +2352,7 @@ h3,
 /* Supplier balances: money columns of equal width, numbers right-aligned. */
 .supplier-table .list-head,
 .supplier-table .list-row {
-  grid-template-columns: minmax(12rem, 2fr) minmax(8rem, 1.1fr) repeat(3, minmax(6rem, 1fr)) 2.5rem;
+  grid-template-columns: minmax(12rem, 2fr) minmax(8rem, 1.1fr) repeat(5, minmax(6rem, 1fr)) 2.5rem;
 }
 
 .supplier-table .list-row::after {
@@ -2798,29 +2827,29 @@ h3,
 .settlement-list .list-head,
 .settlement-row {
   grid-template-columns:
-    minmax(11rem, 2fr) minmax(6rem, 1fr) minmax(6rem, 1fr) minmax(8rem, 1.3fr)
+    minmax(11rem, 2fr) minmax(6rem, 1fr) repeat(3, minmax(5.5rem, 0.9fr)) minmax(8rem, 1.3fr)
     minmax(6.5rem, 1fr) minmax(7rem, 1fr) 2rem;
-  column-gap: var(--space-6);
+  column-gap: var(--space-4);
 }
 
-/* Breathing room between the money column and the progress bar beside it. */
+/* Breathing room between the money columns and the progress bar beside them. */
 .settlement-row .list-amount,
-.settlement-list .list-head span:nth-child(3) {
-  padding-right: var(--space-4);
+.settlement-list .list-head span:nth-child(n + 3):nth-child(-n + 5) {
+  padding-right: var(--space-2);
 }
 
-.settlement-list .list-head span:nth-child(4),
+.settlement-list .list-head span:nth-child(6),
 .settlement-row .list-status {
   padding-left: var(--space-2);
 }
 
-.settlement-list .list-head span:nth-child(6),
+.settlement-list .list-head span:nth-child(8),
 .settlement-row [data-label='Action'] {
   justify-items: center;
   text-align: center;
 }
 
-.settlement-list .list-head span:nth-child(3) {
+.settlement-list .list-head span:nth-child(n + 3):nth-child(-n + 5) {
   text-align: right;
 }
 
@@ -2934,13 +2963,36 @@ h3,
 
 /* Daily Operations and Reconciliations: one calm header card, four position
    tiles, an attention banner, then the work. Same language as Cash and Banking. */
+.ops-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (min-width: 64rem) {
+  .ops-top:has(.next-step) {
+    grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr);
+    align-items: stretch;
+  }
+
+  .ops-top > .ops-hero,
+  .ops-top > .next-step {
+    height: 100%;
+    box-sizing: border-box;
+  }
+
+  .ops-top > .next-step {
+    align-content: center;
+  }
+}
+
 .ops-hero {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-6);
+  padding: var(--space-3) var(--space-6);
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
@@ -2954,13 +3006,6 @@ h3,
   margin: 0;
   font-size: var(--font-size-2xl);
   letter-spacing: -0.01em;
-}
-
-.ops-hero p:last-child {
-  max-width: 40rem;
-  margin: var(--space-2) 0 0;
-  color: var(--text-secondary);
-  font-size: var(--font-size-md);
 }
 
 .operations-control-room .operations-summary > div[data-tone='warning'] {
@@ -3069,27 +3114,9 @@ h3,
 /* Reconciliation overview: how many sit in each state, as bars against the total. */
 
 /* Exception queue: filter tabs, a list to pick from, the picked one beside it. */
-.recon-queue-open {
-  display: inline-flex;
+.recon-queue > .panel-heading {
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-}
-
-.recon-queue-dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--tone-warning-fg);
-}
-
-.recon-queue-open[data-clear] .recon-queue-dot {
-  background: var(--tone-positive-fg);
 }
 
 .recon-tabs {
@@ -3134,6 +3161,59 @@ h3,
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Plain status: a coloured dot and the word, not a pill. */
+.recon-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--tone-neutral-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.recon-status-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--tone-neutral-fg);
+}
+
+.recon-status[data-tone='positive'],
+.recon-status[data-tone='locked'] {
+  color: var(--tone-positive-text);
+}
+
+.recon-status[data-tone='positive'] .recon-status-dot,
+.recon-status[data-tone='locked'] .recon-status-dot {
+  background: var(--tone-positive-fg);
+}
+
+.recon-status[data-tone='warning'],
+.recon-status[data-tone='pending'] {
+  color: var(--tone-warning-text);
+}
+
+.recon-status[data-tone='warning'] .recon-status-dot,
+.recon-status[data-tone='pending'] .recon-status-dot {
+  background: var(--tone-warning-fg);
+}
+
+.recon-status[data-tone='critical'] {
+  color: var(--tone-critical-text);
+}
+
+.recon-status[data-tone='critical'] .recon-status-dot {
+  background: var(--tone-critical-fg);
+}
+
+.recon-status[data-tone='informational'] {
+  color: var(--tone-info-text);
+}
+
+.recon-status[data-tone='informational'] .recon-status-dot {
+  background: var(--tone-info-fg);
 }
 
 .recon-empty {
@@ -3210,16 +3290,88 @@ h3,
   gap: var(--space-3);
 }
 
+/* Day times and day actions sit under the date, inside the same card. */
+.ops-hero-details {
+  display: grid;
+  flex-basis: 100%;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ops-hero-times {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.ops-hero-times > div {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.ops-hero-times dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.ops-hero-times dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .recon-charts {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
-@media (min-width: 64rem) {
+/* Two cards side by side only when each has room for the ring beside its legend. */
+@media (min-width: 66rem) {
   .recon-charts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+@media (min-width: 48rem) {
+  /* Side by side and short: the ring beside its legend, so the table stays on the first screen. */
+  .recon-charts .cash-donut {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-8);
+    align-items: center;
+    justify-items: stretch;
+  }
+
+  .recon-charts .cash-donut-ring {
+    width: 11.5rem;
+  }
+
+  .recon-charts .cash-donut-legend {
+    padding-left: var(--space-4);
+  }
+}
+
+/* Both cards share one height; the chart grows to fill whatever the ring card needs. */
+.recon-charts > .card {
+  display: flex;
+  flex-direction: column;
+}
+
+.recon-charts .recon-bars {
+  flex: 1;
+  grid-template-rows: auto 1fr auto;
+}
+
+/* The ring is large enough that its centre text sits inside the hole without touching it. */
+.recon-charts .cash-donut-centre {
+  inset: 22%;
+  text-align: center;
+}
+
+.recon-charts .cash-donut-centre span {
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .recon-bars {
@@ -3232,7 +3384,14 @@ h3,
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: var(--space-3);
-  min-height: 13rem;
+  min-height: 15rem;
+}
+
+.recon-bars-unit {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
 }
 
 .recon-bars-axis {
@@ -3246,6 +3405,11 @@ h3,
   text-align: right;
 }
 
+/* Zero line height centres each figure on its gridline instead of hanging it below the line. */
+.recon-bars-axis span {
+  line-height: 0;
+}
+
 .recon-bars-columns {
   display: flex;
   align-items: stretch;
@@ -3256,7 +3420,7 @@ h3,
   background: repeating-linear-gradient(
     to bottom,
     var(--border-subtle) 0 1px,
-    transparent 1px calc((100% - var(--recon-label-h, 1.75rem)) / 2)
+    transparent 1px calc((100% - var(--recon-label-h, 1.75rem)) / var(--recon-ticks, 2))
   );
 }
 
@@ -3278,8 +3442,27 @@ h3,
   width: 100%;
 }
 
+.recon-bar-slot {
+  position: relative;
+  width: min(3.5rem, 40%);
+}
+
+.recon-bar-value {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  padding-bottom: var(--space-1);
+  transform: translateX(-50%);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .recon-bar {
-  width: min(var(--recon-label-h, 1.75rem), 40%);
+  display: block;
+  width: 100%;
+  height: 100%;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: var(--accent);
 }
@@ -3533,7 +3716,8 @@ h3,
   margin-bottom: var(--space-4);
 }
 
-@media (min-width: 48rem) {
+/* The table needs a full-width card; narrower than this each shift stacks into labelled rows. */
+@media (min-width: 64rem) {
   .recon-table-head,
   .recon-row {
     grid-template-columns:
@@ -3542,9 +3726,11 @@ h3,
     gap: var(--space-3);
   }
 
+  /* Rows sit inside a 3px tone stripe and a 1px border; the header repeats that
+     inset so every column starts exactly above its values. */
   .recon-table-head {
     display: grid;
-    padding: 0 var(--space-4);
+    padding: 0 calc(var(--space-4) + var(--border-width)) 0 calc(var(--space-4) + 3px);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: 600;
@@ -3570,7 +3756,20 @@ h3,
 
   .recon-cell-action {
     display: flex;
-    justify-content: flex-end;
+    justify-content: center;
+  }
+
+  /* Status and the three amounts: heading and values share one centre line. */
+  .recon-table-head > :nth-child(n + 2):nth-child(-n + 6),
+  .recon-row > .recon-cell:nth-child(n + 3):nth-child(-n + 7) {
+    text-align: center;
+  }
+}
+
+@media (min-width: 48rem) {
+  .recon-tab {
+    flex: 0 0 auto;
+    padding: 0 var(--space-5);
   }
 
   .recon-expand .recon-facts {
@@ -4774,6 +4973,11 @@ h3,
   cursor: pointer;
 }
 
+/* The row sits at the edge of a scrolling table, which would cut a ring drawn outside the button. */
+.cash-toggle:focus-visible {
+  outline-offset: -2px;
+}
+
 .cash-toggle svg {
   width: 1rem;
   height: 1rem;
@@ -4793,14 +4997,28 @@ h3,
   padding: 0 0 var(--space-3);
 }
 
+/* Details of one collection or deposit: three facts across so the rows line up, with no rules
+   between them. Long entries (lists) take the whole row. */
 .cash-details {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 var(--space-8);
   margin: 0;
-  padding: var(--space-3) var(--space-4) var(--space-4);
+  padding: var(--space-2) var(--space-6) var(--space-4);
   background: var(--bg-subtle);
   border-radius: var(--radius-md);
+}
+
+@media (min-width: 36rem) {
+  .cash-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 64rem) {
+  .cash-details {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .cash-details > div {
@@ -4808,6 +5026,7 @@ h3,
   align-content: start;
   gap: var(--space-1);
   min-width: 0;
+  padding-block: var(--space-3);
 }
 
 .cash-details > div[data-wide] {
@@ -4824,9 +5043,15 @@ h3,
 
 .cash-details dd {
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+
+/* A list of records inside one entry: one line each, evenly spaced. */
+.cash-details dd > div + div {
+  margin-top: var(--space-1);
 }
 
 @media (max-width: 47.99rem) {
@@ -4968,7 +5193,7 @@ h3,
   margin: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 @media (max-width: 47.99rem) {
   .portfolio-grid {
@@ -5607,4 +5832,1706 @@ h3,
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
+}
+
+/* Tank page: headline card, three figures, tabs and timelines. */
+.tank-hero {
+  --tank-hero-tone: var(--accent);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--tank-hero-tone) 7%, var(--bg-surface)),
+    var(--bg-surface) 60%
+  );
+  box-shadow: var(--shadow-sm);
+}
+
+/* The drawing reuses the tank card's colours but sits bare inside the hero. */
+.tank-card.tank-hero-tank {
+  display: block;
+  width: 100%;
+  max-width: 12rem;
+  margin-inline: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.tank-hero-tank .tank-drum {
+  max-width: none;
+}
+
+.tank-hero[data-tone='warning'] {
+  --tank-hero-tone: var(--tone-warning-fg);
+}
+
+.tank-hero[data-tone='critical'] {
+  --tank-hero-tone: var(--tone-critical-fg);
+}
+
+.tank-hero-main {
+  display: grid;
+  align-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.tank-hero-side {
+  display: grid;
+  align-content: space-between;
+  justify-items: end;
+  gap: var(--space-3);
+}
+
+.tank-hero-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Three figures in one panel with hairline dividers, centred against the drawing. */
+.tank-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-surface) 70%, transparent);
+}
+
+.tank-hero-stats > div {
+  display: grid;
+  gap: var(--space-0-5);
+  padding: var(--space-3) var(--space-4);
+}
+
+.tank-hero-stats > div:last-child {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.tank-hero-stats > div:nth-child(2) {
+  border-left: 1px solid var(--border-subtle);
+}
+
+@media (min-width: 40rem) {
+  .tank-hero {
+    grid-template-columns: 12rem minmax(0, 1fr) auto;
+    gap: var(--space-5);
+  }
+
+  /* Beside the drawing the figures drop to their own full-width row. */
+  .tank-hero-stats {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tank-hero-stats > div:last-child {
+    grid-column: auto;
+    border-top: 0;
+    border-left: 1px solid var(--border-subtle);
+  }
+
+  .tank-card.tank-hero-tank {
+    margin-inline: 0;
+  }
+}
+
+@media (min-width: 64rem) {
+  .tank-hero {
+    grid-template-columns: 15rem minmax(0, 1fr) auto;
+  }
+
+  .tank-hero-stats {
+    grid-column: auto;
+    grid-template-columns: repeat(3, auto);
+  }
+
+  /* Larger drawing that borrows the card's padding above and below, so the card keeps its height. */
+  .tank-card.tank-hero-tank {
+    max-width: none;
+    margin-block: calc(-1 * var(--space-4));
+  }
+}
+
+.tank-hero-stats dt {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.tank-hero-stats dd {
+  margin: 0;
+  font-size: 1.125rem;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.tank-hero-diff dd {
+  color: var(--tank-hero-tone);
+}
+
+.tank-hero-note {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.tank-hero-figure {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.tank-hero-figure strong {
+  color: var(--text-primary);
+  font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.tank-bar {
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+}
+
+.tank-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tank-hero-tone);
+  transition: width var(--duration-slow) var(--ease-out);
+}
+
+.tank-tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  overflow-x: auto;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.tank-tabs button {
+  min-height: 2.5rem;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.tank-tabs button[aria-selected='true'] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.tank-tab-wide {
+  display: none;
+}
+
+/* Both cards are columns: the list on top, the footer pinned to the bottom, so the two
+   footers line up however many rows each list has. */
+.tank-panels > [data-panel] {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Every row is the same height in both lists, whatever it holds. */
+.tank-panels .tank-timeline > li {
+  box-sizing: border-box;
+  align-items: center;
+}
+
+@media (min-width: 40rem) {
+  .tank-panels .tank-timeline > li {
+    min-height: 6rem;
+    flex-wrap: nowrap;
+  }
+
+  .tank-panels .tank-timeline-side {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+    justify-content: flex-end;
+  }
+}
+
+.show-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Inside the two tank lists the footer stays at the foot of its panel. */
+.tank-panels .show-more {
+  margin-top: auto;
+}
+
+.show-more-count {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.show-more-buttons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Phones and tablets: one list at a time, picked by the tabs. */
+@media (max-width: 63.99rem) {
+  .tank-panels[data-tab='dips'] > [data-panel='movements'],
+  .tank-panels[data-tab='movements'] > [data-panel='dips'] {
+    display: none;
+  }
+}
+
+/* Desktop: dips and movements sit side by side, so those two tabs merge into one. */
+@media (min-width: 64rem) {
+  .tank-panels {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: var(--space-4);
+  }
+
+  .tank-tab-narrow {
+    display: none;
+  }
+
+  .tank-tab-wide {
+    display: block;
+    order: -1;
+  }
+
+  /* With no Settings tab there is nothing to switch between, so the bar goes. */
+  .tank-tabs[data-solo] {
+    display: none;
+  }
+}
+
+.tank-timeline {
+  display: grid;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tank-timeline > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.tank-timeline > li:first-child {
+  border-top: 0;
+}
+
+.tank-timeline > li > div:first-child {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.tank-timeline-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tank-movement-side {
+  display: grid;
+  justify-items: end;
+}
+
+.tank-movement-side strong[data-direction='in'] {
+  color: var(--tone-positive-text);
+}
+
+.tank-movement-side strong[data-direction='out'] {
+  color: var(--tone-critical-text);
+}
+
+/* An empty slot in the tank row: quiet, and a way in to adding a tank. */
+.tank-card-ghost {
+  display: grid;
+  flex: 1;
+  place-content: center;
+  gap: var(--space-1);
+  min-height: 12rem;
+  padding: var(--space-4);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-xl);
+  color: var(--text-secondary);
+  text-align: center;
+  text-decoration: none;
+  transition: var(--transition-colors);
+}
+
+.tank-card-ghost strong {
+  color: var(--text-primary);
+}
+
+.tank-card-ghost:hover,
+.tank-card-ghost:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+}
+
+@media (max-width: 40rem) {
+  .tank-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .tank-hero-side {
+    justify-items: stretch;
+  }
+
+  .tank-tabs {
+    width: 100%;
+  }
+}
+
+.tank-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-4);
+}
+
+@media (max-width: 60rem) {
+  .tank-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.today-dashboard > * {
+  min-width: 0;
+}
+
+/* Phones: give the page name room. The station pill shrinks first and the title
+   steps down a size, so names like "Reconciliations" are not cut off. */
+@media (max-width: 29.99rem) {
+  .shell-header .shell-page-heading h1 {
+    font-size: var(--font-size-xl);
+  }
+
+  .shell-header .shell-header-controls .shell-context-selector {
+    max-width: 34vw;
+  }
+}
+
+/* Filter tabs wrap into even rows on narrow screens. */
+@media (max-width: 47.99rem) {
+  .recon-tabs {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  }
+}
+
+/* Fuel Deliveries: one card with the title, count and main action together. */
+.deliveries-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.deliveries-head h2 {
+  margin: 0;
+}
+.deliveries-head p {
+  margin: var(--space-1) 0 0;
+}
+.deliveries-count {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+.deliveries-card .table-scroll-region,
+.deliveries-card .deliveries-empty {
+  margin-top: var(--space-4);
+}
+.deliveries-empty {
+  margin: 0;
+  padding: var(--space-3) 0 var(--space-1);
+}
+.deliveries-rules summary {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  cursor: pointer;
+}
+.form-panel-bare {
+  display: grid;
+  gap: var(--space-3);
+}
+.form-panel-bare fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+/* Record delivery: the essentials first, everything else folded away. */
+.rd-form,
+.rd-fieldset {
+  display: grid;
+  gap: var(--space-5);
+}
+.rd-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.rd-group {
+  display: grid;
+  gap: var(--space-3);
+}
+.rd-group h3,
+.rd-more h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+.rd-more {
+  display: grid;
+  gap: var(--space-2);
+}
+.rd-more h3 {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+.rd-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+.rd-difference {
+  margin: 0;
+}
+.rd-difference[data-tone='critical'] {
+  color: var(--tone-critical-text);
+  font-weight: 600;
+}
+.rd-section {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-4);
+}
+.rd-section summary {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+  font-weight: 600;
+}
+.rd-section-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}
+.rd-section-note[data-tone='warning'] {
+  color: var(--tone-critical-text);
+}
+.rd-section-body {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-1) 0 var(--space-4);
+}
+.rd-compartment {
+  display: grid;
+  gap: var(--space-2);
+}
+.rd-restore {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  font-size: var(--font-size-sm);
+}
+.rd-restore p {
+  margin: 0;
+}
+.rd-restore-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+/* Delivery details: one sheet, like a printed delivery record. No cards. */
+.dd-page {
+  gap: var(--space-4);
+}
+.dd-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.dd-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+}
+.dd-state {
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.dd-page > .notice,
+.dd-page > [role='alert'],
+.dd-page > [role='status'] {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+}
+.dd-sheet {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding: var(--space-6) var(--space-5);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgb(0 0 0 / 8%));
+}
+@media (min-width: 40rem) {
+  .dd-sheet {
+    padding: var(--space-8) var(--space-8) var(--space-6);
+  }
+}
+.dd-sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: var(--border-width-strong) solid var(--border-strong);
+}
+.dd-sheet-head h2 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+}
+.dd-kicker {
+  margin: 0 0 var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.dd-station {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+}
+.dd-section {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  padding-top: var(--space-6);
+}
+.dd-section:last-child {
+  padding-bottom: 0;
+}
+.dd-section h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+.dd-intro {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+/* Label on the left, value or field on the right. */
+.dd-lines {
+  display: grid;
+  gap: 0 var(--space-6);
+  margin: 0;
+}
+.dd-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+.dd-line dt {
+  display: grid;
+  gap: var(--space-0-5, 0.125rem);
+  padding-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.dd-line dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding-top: var(--space-1);
+}
+.dd-line dd > .dd-hint {
+  flex: 1 0 100%;
+}
+.dd-line dd > :is(textarea, select, input[type='text']) {
+  flex: 1 1 100%;
+}
+.dd-line textarea,
+.dd-line input[type='text'],
+.dd-line select {
+  width: 100%;
+}
+/* Label beside its value only when the line is wide enough; on a phone the label sits above. */
+@media (min-width: 40rem) {
+  .dd-line {
+    grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr);
+  }
+}
+/* Values read as the answer, labels as small quiet captions above or beside them. */
+.dd-line dd {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium, 500);
+}
+.dd-line dt {
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+/* Short facts: label stacked above its value, three across, easy to run an eye over. */
+.dd-lines-3 .dd-line {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  padding-block: var(--space-3);
+}
+.dd-lines-3 .dd-line dd {
+  padding-top: 0;
+}
+.dd-lines-3 .dd-line-wide {
+  grid-column: 1 / -1;
+}
+@media (min-width: 40rem) {
+  .dd-lines-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 64rem) {
+  .dd-lines-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* Each section: title on the left, its state on the right, so what is outstanding shows at once. */
+/* Every section opens with a shaded band, so where one ends and the next begins is obvious. */
+.dd-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2-5, 0.625rem) var(--space-4);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+.dd-section-head h3 {
+  font-size: var(--font-size-lg);
+}
+/* Water test and driver confirmation are short, so they sit side by side when there is room. */
+.dd-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 var(--space-6);
+}
+.dd-pair .dd-line {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+}
+@media (min-width: 64rem) {
+  .dd-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.dd-hint {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular, 400);
+}
+.dd-empty {
+  color: var(--text-tertiary);
+}
+.dd-diff[data-tone='ok'] {
+  color: var(--tone-positive-text);
+}
+.dd-diff[data-tone='bad'] {
+  color: var(--tone-warning-text);
+  font-weight: var(--font-weight-semibold);
+}
+/* Compartments: a real table on wide screens, labelled blocks on phones. */
+.dd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-md);
+}
+@media (min-width: 48rem) {
+  .dd-table {
+    table-layout: fixed;
+  }
+  .dd-table th:nth-child(1) {
+    width: 12%;
+  }
+  .dd-table th:nth-child(2),
+  .dd-table th:nth-child(3) {
+    width: 20%;
+  }
+  .dd-table th:nth-child(4) {
+    width: 18%;
+  }
+}
+.dd-table th,
+.dd-table td {
+  padding: var(--space-2) var(--space-2);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  text-align: center;
+  vertical-align: middle;
+}
+.dd-table th:last-child,
+.dd-table td:last-child {
+  vertical-align: top;
+}
+.dd-table thead th {
+  border-bottom-color: var(--border-strong);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-semibold);
+}
+.dd-table tbody th,
+.dd-table tfoot th {
+  font-weight: var(--font-weight-semibold);
+}
+.dd-table tfoot th,
+.dd-table tfoot td {
+  border-bottom: 0;
+  border-top: var(--border-width-strong) solid var(--border-strong);
+  font-weight: var(--font-weight-semibold);
+}
+.dd-table th:last-child,
+.dd-table td:last-child {
+  text-align: left;
+}
+.dd-table tbody th .dd-link {
+  display: block;
+  margin-inline: auto;
+}
+.dd-input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.dd-input input {
+  width: 7rem;
+  text-align: right;
+}
+.dd-seals {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
+  padding: 0;
+  list-style: none;
+}
+.dd-seals li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dd-seals input[type='text'] {
+  width: 9rem;
+}
+.dd-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-link);
+  font-size: var(--font-size-sm);
+  text-decoration: underline;
+}
+.dd-add {
+  justify-self: start;
+}
+@media (max-width: 47.99rem) {
+  .dd-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .dd-table,
+  .dd-table tbody,
+  .dd-table tfoot,
+  .dd-table tr,
+  .dd-table th,
+  .dd-table td {
+    display: block;
+  }
+  .dd-table tr {
+    padding: var(--space-3) 0;
+    border-bottom: var(--border-width) solid var(--border-default);
+  }
+  .dd-table th,
+  .dd-table td,
+  .dd-table tfoot th,
+  .dd-table tfoot td,
+  .dd-table th:last-child,
+  .dd-table td:last-child {
+    display: grid;
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    gap: var(--space-3);
+    padding: var(--space-1) 0;
+    border: 0;
+    text-align: left;
+  }
+  .dd-table tbody th {
+    justify-items: start;
+  }
+  .dd-table td::before,
+  .dd-table tbody th::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-regular, 400);
+  }
+  .dd-table tfoot th {
+    grid-template-columns: 1fr;
+  }
+}
+/* Unsaved changes: one clear place to save or throw away what was typed. */
+.dd-savebar {
+  position: sticky;
+  bottom: var(--space-3);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--accent-border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
+}
+.dd-savebar p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.dd-savebar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .dd-sheet,
+  .dd-sheet * {
+    visibility: visible;
+  }
+
+  .dd-sheet {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-width: none;
+    padding: 0 !important;
+    border: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    color: #111 !important;
+  }
+
+  .dd-section {
+    break-inside: avoid;
+  }
+
+  .dd-link {
+    display: none;
+  }
+}
+.rd-form[hidden] {
+  display: none;
+}
+.rd-saved {
+  display: grid;
+  gap: var(--space-5);
+}
+.rd-saved-head {
+  display: grid;
+  gap: var(--space-1-5);
+}
+.rd-saved-head h3,
+.rd-saved-head p {
+  margin: 0;
+}
+.rd-saved-head h3 {
+  font-size: var(--font-size-lg);
+}
+.rd-saved-summary {
+  font-weight: 600;
+}
+/* The attachment block, tidied to sit inside the dialog: one column, clear gaps. */
+.rd-saved .doc-attach {
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+.rd-saved .doc-attach-head {
+  display: grid;
+  gap: var(--space-1);
+}
+.rd-saved .doc-attach-head h4 {
+  font-size: var(--font-size-md);
+}
+.rd-saved .doc-attach-form {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+.rd-saved .doc-attach-add {
+  width: 100%;
+}
+.rd-actions {
+  position: sticky;
+  bottom: 0;
+  padding: var(--space-3) 0;
+  background: var(--bg-surface);
+}
+.rd-actions .button {
+  width: 100%;
+}
+@media (max-width: 29.99rem) {
+  .deliveries-head > .button,
+  .deliveries-head > button {
+    width: 100%;
+  }
+}
+
+/* Reports page */
+/* Without the right-hand rail (roles that cannot see finance figures) the list takes the full width
+   instead of leaving an empty column beside it. */
+.reports-layout:not(:has(.reports-rail)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* A description may use two lines, so nothing is cut off with "…" mid-sentence. */
+.reports-layout .report-row-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+}
+.reports-layout .report-row {
+  padding-block: var(--space-4);
+}
+/* Phones: the period sits under the text as a compact control, in line with the title, not as a
+   full-width bar on every row. */
+@media (max-width: 47.99rem) {
+  .reports-layout .report-row {
+    align-items: start;
+    row-gap: var(--space-3);
+  }
+  .reports-layout .report-row-description {
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+  .reports-layout .report-row-period {
+    grid-column: 2;
+    grid-row: 2;
+    width: fit-content;
+    min-width: 9.5rem;
+    max-width: 100%;
+  }
+  .reports-layout .report-row-actions {
+    grid-row: 1;
+    grid-column: 3;
+  }
+}
+
+/* Page header controls: search, station and account stay in one place on every
+   page. They are anchored to the right edge with fixed sizes (a page with no
+   title or a longer station name cannot nudge them), share one height, one
+   hairline border and one corner radius, and are not pill shaped. The account
+   stays a round avatar. */
+.shell-header .shell-header-controls {
+  --header-control-height: 2.5rem;
+  --header-control-radius: 0.625rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+@media (pointer: coarse), (max-width: 74.99rem) {
+  .shell-header .shell-header-controls {
+    --header-control-height: 2.75rem;
+  }
+}
+
+.shell-header .shell-header-controls .global-search,
+.shell-header .shell-header-controls .shell-context-pill {
+  box-sizing: border-box;
+  height: var(--header-control-height);
+  min-height: var(--header-control-height);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--header-control-radius);
+  background: var(--bg-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+}
+
+.shell-header .shell-header-controls .global-search:hover,
+.shell-header .shell-header-controls .shell-context-pill:hover {
+  border-color: var(--border-default);
+  background: var(--bg-hover);
+}
+
+.shell-header .shell-header-controls .global-search > span {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-regular, 400);
+}
+
+.shell-header .shell-header-controls .global-search kbd {
+  min-width: 0;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.375rem;
+  background: var(--bg-subtle);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+}
+
+.shell-header .shell-header-controls .shell-account-trigger {
+  box-sizing: border-box;
+  width: var(--header-control-height);
+  height: var(--header-control-height);
+  min-height: var(--header-control-height);
+}
+
+@media (min-width: 48rem) {
+  .shell-header .shell-header-controls .shell-context-selector {
+    flex: 0 0 auto;
+    width: 12.5rem;
+  }
+
+  .shell-header .shell-header-controls .shell-context-pill {
+    width: 100%;
+    max-width: none;
+    justify-content: space-between;
+    padding: 0 var(--space-3) 0 var(--space-4);
+  }
+}
+
+@media (min-width: 64rem) {
+  .shell-header .shell-header-controls .global-search {
+    flex: 0 0 auto;
+    width: 20rem;
+    padding: 0 var(--space-3) 0 var(--space-4);
+  }
+}
+
+/* The header never slides away on phones either. */
+@media (max-width: 47.99rem) {
+  .shell-header[data-hidden] {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .shell-header .shell-header-controls .shell-context-pill {
+    border-radius: var(--header-control-radius);
+  }
+}
+
+/* The controls sit in a fixed-height band at the top, so a page with a subtitle
+   or a two-line title cannot move them up or down. */
+@media (min-width: 48rem) {
+  .shell-main .shell-header {
+    --header-band: 3.5rem;
+    min-height: var(--header-band);
+    padding-block: 0;
+    align-items: flex-start;
+  }
+
+  .shell-header .shell-page-heading {
+    align-self: center;
+  }
+
+  .shell-header .shell-header-controls {
+    align-self: flex-start;
+    margin-block: calc((var(--header-band) - var(--header-control-height)) / 2) 0;
+  }
+}
+
+@media (min-width: 75rem) {
+  .shell-main .shell-header {
+    --header-band: 4rem;
+  }
+}
+
+/* Key figure cards: the icon and the card name share the top row, and there
+   is no divider line between the top row and the figure. */
+.today-figures .today-figure {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-3);
+}
+
+.today-figures .today-figure-line {
+  display: none;
+}
+
+.today-figures .today-figure-icon {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.today-figures .today-figure dt {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.today-figures .today-figure dd {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  align-self: end;
+}
+
+/* The currency code is secondary to the amount, and the figure stays on one row. */
+.today-figures .today-figure-value {
+  white-space: nowrap;
+}
+
+.today-figures .today-figure-currency {
+  font-size: 0.5em;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+/* The amount scales with the card so it never overflows, however narrow. */
+.today-figures .today-figure {
+  container-type: inline-size;
+}
+
+.today-figures .today-figure-value {
+  font-size: clamp(1.125rem, 15cqi, 2.25rem);
+}
+
+/* Shorter key figure cards: with no caption line they need less height. */
+.today-figures > .today-figure:nth-child(n) {
+  min-height: 8rem;
+}
+
+@media (min-width: 64rem) {
+  .today-figures > .today-figure:nth-child(n) {
+    min-height: 9.5rem;
+  }
+}
+
+/* The shift steps live inside the Daily operations card, not as a card of their own. */
+.today-section > .next-step.next-step--embedded {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: var(--space-4) 0 0;
+  border: 0;
+  border-top: var(--border-width) solid var(--border-subtle);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.next-step--embedded > .next-step-detail,
+.next-step--embedded > .next-step-action {
+  grid-column: 1 / -1;
+  grid-row: auto;
+}
+
+/* "Step 3 of 4" and the step's name share one row. */
+.today-section > .next-step.next-step--embedded {
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: baseline;
+}
+
+.next-step--embedded > .next-step-count {
+  grid-column: 1;
+}
+
+.next-step--embedded > h2 {
+  grid-column: 2;
+  font-size: var(--font-size-lg);
+}
+
+.next-step--embedded > h2:first-child,
+.next-step--embedded > .field-error,
+.next-step--embedded > [role='status'] {
+  grid-column: 1 / -1;
+}
+
+.next-step--embedded > .next-step-action {
+  justify-self: stretch;
+  min-width: 0;
+  margin-top: var(--space-1);
+}
+
+.next-step--embedded .next-step-trail {
+  display: none;
+}
+
+.next-step--embedded > .next-step-count {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Sales performance on a phone or tablet: same card padding as its neighbours, a calm range switch, tidy footer. */
+@media (max-width: 63.99rem) {
+  .today-section.today-stats {
+    padding: var(--space-4) var(--space-4) var(--space-3);
+  }
+
+  .today-stats .today-stats-head {
+    gap: var(--space-3);
+    width: 100%;
+  }
+
+  .today-stats .today-stats-head h2 {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
+
+  .today-stats .today-stats-sub {
+    margin-left: 0;
+  }
+
+  .today-stats .today-periods {
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border-radius: var(--radius-lg);
+    background: var(--bg-hover);
+  }
+
+  .today-stats .today-period {
+    min-height: 2.5rem;
+    border-radius: var(--radius-md);
+    background: transparent;
+    font-size: var(--font-size-sm);
+  }
+
+  .today-stats .today-period[data-active] {
+    background: var(--text-primary);
+    color: var(--bg-canvas);
+  }
+
+  .today-stats .perf-chart {
+    margin: var(--space-3) 0;
+  }
+
+  .today-stats .today-stats-summary {
+    margin: 0 0 var(--space-1);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+  }
+
+  .today-stats .today-chart-table {
+    margin: 0;
+  }
+
+  .today-stats > .today-note {
+    margin: 0;
+    padding-top: var(--space-2);
+    border-top: var(--border-width) solid var(--border-subtle);
+  }
+
+  .today-stats > .today-note a {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+  }
+}
+
+/* Reconciliation statement: a clear headline, a quiet summary, shift ledgers that read like a receipt. */
+.recon-statement-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: var(--space-5) 0;
+}
+
+.recon-statement-hero > div {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.recon-statement-hero span,
+.recon-statement-hero small {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.recon-statement-hero strong {
+  font-size: var(--font-size-2xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.recon-statement-hero [data-tone='positive'] strong,
+.recon-statement-hero [data-tone='positive'] small {
+  color: var(--tone-positive-text);
+}
+
+.recon-statement-hero [data-tone='critical'] {
+  border-color: var(--tone-critical-text);
+}
+
+.recon-statement-hero [data-tone='critical'] strong,
+.recon-statement-hero [data-tone='critical'] small {
+  color: var(--tone-critical-text);
+}
+
+@media (min-width: 40rem) {
+  .recon-statement-hero {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.recon-statement .recon-summary {
+  margin-bottom: var(--space-6);
+}
+
+.recon-statement .recon-ledgers:has(> :only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.recon-statement .recon-ledger {
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+.recon-statement .recon-ledger-head {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+.recon-statement .recon-ledger-state {
+  padding: 0.125rem var(--space-3);
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.recon-statement .recon-ledger table {
+  margin: 0;
+}
+
+.recon-statement .recon-ledger tr > :first-child {
+  padding-left: var(--space-5);
+}
+
+.recon-statement .recon-ledger tr > :last-child {
+  padding-right: var(--space-5);
+}
+
+.recon-statement .recon-ledger th,
+.recon-statement .recon-ledger td {
+  padding-block: var(--space-3);
+}
+
+.recon-statement .recon-ledger tr[data-strong] {
+  background: var(--bg-subtle);
+}
+
+.recon-statement .recon-ledger tr:last-child th,
+.recon-statement .recon-ledger tr:last-child td {
+  border-bottom: 0;
+}
+
+@media print {
+  .recon-statement-hero > div,
+  .recon-statement .recon-ledger-head,
+  .recon-statement .recon-ledger tr[data-strong] {
+    background: transparent !important;
+  }
+}
+
+/* Summary columns: equal widths, headings and figures centred so every column lines up. */
+@media (min-width: 40.01rem) {
+  .recon-statement .recon-summary {
+    table-layout: fixed;
+  }
+
+  .recon-statement .recon-summary th:first-child {
+    width: 28%;
+  }
+
+  .recon-statement .recon-summary thead th:not(:first-child),
+  .recon-statement .recon-summary td {
+    padding-inline: var(--space-3);
+    text-align: center;
+  }
+}
+
+.recon-statement .recon-ledger tr,
+.recon-statement .recon-ledger th,
+.recon-statement .recon-ledger td {
+  background: transparent;
+}
+
+.recon-statement .recon-ledger tr[data-strong],
+.recon-statement .recon-ledger tr[data-strong] th,
+.recon-statement .recon-ledger tr[data-strong] td {
+  background: var(--bg-subtle);
+}
+
+.recon-statement .recon-statement-hero > div {
+  background: transparent;
+}
+
+.recon-statement .recon-ledger {
+  background: transparent;
+}
+
+/* Statement as two cards: the summary on one side, the shift details on the other. */
+.recon-statement-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .recon-statement-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recon-statement-grid .recon-statement-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recon-statement-grid .recon-statement-hero {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  .recon-statement-grid .recon-statement-hero > div {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .recon-statement-grid .recon-statement-hero strong {
+    font-size: var(--font-size-lg);
+  }
+
+  .recon-statement-grid .recon-ledgers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media print {
+  .recon-statement-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recon-statement-grid > .card {
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+}
+
+.recon-statement-grid > .card:first-child > .panel-heading {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.recon-statement-grid .recon-summary td {
+  white-space: nowrap;
+}
+
+@media (min-width: 40.01rem) {
+  .recon-statement-grid .recon-summary th:first-child {
+    width: 22%;
+  }
+
+  .recon-statement-grid .recon-summary thead th:not(:first-child),
+  .recon-statement-grid .recon-summary td {
+    padding-inline: var(--space-1);
+  }
+}
+
+.recon-statement .recon-ledger-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.recon-statement .recon-ledger-date {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* Statement actions: smaller, on the right of the title. */
+.recon-statement-grid > .card:first-child > .panel-heading {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.recon-statement-grid .recon-statement-actions {
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.recon-statement-grid .recon-statement-actions .button {
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.recon-statement-grid .recon-statement-meta + .recon-summary {
+  margin-top: var(--space-5);
+}
+
+@media (max-width: 40rem) {
+  .recon-statement-grid .recon-statement-actions {
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+}
+
+/* Same-width figure blocks, centred under their headings, so decimals line up row to row. */
+@media (min-width: 40.01rem) {
+  .recon-statement .recon-figure {
+    display: inline-block;
+    min-width: 7rem;
+    text-align: right;
+  }
+
+  .recon-statement-grid .recon-summary th:first-child {
+    width: 20%;
+  }
+}
+
+/* Figures keep one weight and one width in every row so each column lines up exactly;
+   the Total row is marked by its label and rule instead. */
+@media (min-width: 40.01rem) {
+  .recon-statement .recon-figure {
+    display: inline;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .recon-statement .recon-summary tfoot td {
+    font-weight: var(--font-weight-regular);
+  }
+
+  .recon-statement .recon-summary tbody th,
+  .recon-statement .recon-summary tfoot th {
+    white-space: nowrap;
+  }
+
+  .recon-statement-grid .recon-summary th:first-child {
+    width: 23%;
+  }
+}
+
+.recon-statement .recon-summary tfoot th {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Statement details: quiet small labels, strong values, so the two never read as one. */
+.recon-statement .recon-statement-meta dt {
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.08em;
+}
+
+.recon-statement .recon-statement-meta dd {
+  margin-top: var(--space-1);
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.3;
 }

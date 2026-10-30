@@ -23,10 +23,11 @@ import {
 } from './application';
 import { databaseForecourtPorts, loadForecourtStation } from './persistence';
 import { resolveForecourtCommandContext } from './application';
-import { authorize } from '../../platform/security/permissions';
+import { authorize, isPermissionGranted } from '../../platform/security/permissions';
 import { deriveSegmentSaleAllocations } from './segment-sale-chronology';
 import { postCanonicalSaleRevenueInTransaction } from '../revenue';
 import { expectedClosingStock } from '../inventory/expected-closing-stock';
+import { describeMissingDips, tanksMissingClosingDip } from './closing-shift-dips';
 
 const uuid = z.string().uuid();
 export const productionReconciliationPaymentMethods = [
@@ -307,20 +308,22 @@ export async function setReconciliationAttendantsFromRequest(request: Request, i
     'SetAttendants',
     'reconciliation_attendants',
     async (transaction, context) => {
-      for (const attendantId of payload.attendantIds) {
-        const eligible = await transaction.execute<{ id: string }>(sql`
-        select m.id
-        from app.memberships m
-        join app.membership_role_assignments a
-          on a.tenant_id = m.tenant_id and a.membership_id = m.id
-        where m.tenant_id = ${context.tenantId} and m.id = ${attendantId} and m.status = 'ACTIVE'
-          and a.scope_type = 'STATION' and a.station_id = ${context.stationId}
-          and a.role_code = 'ATTENDANT'
-          and (a.expires_at is null or a.expires_at > now())
-        limit 1
+      // A supervisor cannot read other people's membership rows, so the roster comes from the
+      // same definer function the Team step lists from.
+      const roster = await transaction.execute<{ id: string }>(sql`
+        select id from app.station_attendants(${context.tenantId}::uuid, ${context.stationId}::uuid, now())
       `);
-        if (!eligible[0])
-          throw new AppError('FORBIDDEN', 'An attendant is not assigned to this station');
+      // An attendant from another of the organisation's stations may cover a shift here.
+      const visitors = await transaction.execute<{ id: string }>(sql`
+        select id from app.other_station_attendants(${context.tenantId}::uuid, ${context.stationId}::uuid, now())
+      `);
+      const eligible = new Set([...roster, ...visitors].map((row) => row.id));
+      for (const attendantId of payload.attendantIds) {
+        if (!eligible.has(attendantId))
+          throw new AppError(
+            'FORBIDDEN',
+            'That person is not an active attendant in this organisation. Untick them, or ask a manager to set them up.',
+          );
       }
       await replaceRows(
         transaction,
@@ -349,7 +352,11 @@ const meterReading = z.object({
   closingReading: z.string(),
   sellingPriceId: uuid,
 });
-const meterPayload = basePayload.extend({ readings: z.array(meterReading).max(100) });
+const meterPayload = basePayload.extend({
+  readings: z.array(meterReading).max(100),
+  /** Required when an administrator changes an opening reading that was already recorded. */
+  openingCorrectionReason: z.string().trim().max(500).optional(),
+});
 export async function saveReconciliationMeterReadingsFromRequest(request: Request, input: unknown) {
   const payload = meterPayload.parse(input);
   return runEditableDetailCommand(
@@ -358,6 +365,48 @@ export async function saveReconciliationMeterReadingsFromRequest(request: Reques
     'SaveMeterReadings',
     'reconciliation_meter_readings',
     async (transaction, context) => {
+      // Opening readings are recorded once, when the shift opens. After that they are fixed:
+      // the figures screen can add closing readings but never change an opening one.
+      const recorded = await transaction.execute<{
+        nozzle_id: string;
+        opening_reading: string;
+      }>(sql`
+        select nozzle_id, opening_reading from app.reconciliation_meter_readings
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and reconciliation_id = ${payload.reconciliationId}
+      `);
+      const recordedOpening = new Map(recorded.map((row) => [row.nozzle_id, row.opening_reading]));
+      // Only an administrator may correct a recorded opening, and the change is written to the
+      // audit trail with who it was, what it was and why.
+      const mayCorrectOpening = isPermissionGranted({
+        actor: context.authority.authorization,
+        permissionCode: 'station.manage',
+        requestedScope: context.scope,
+      });
+      const openingCorrections: Array<{ nozzleId: string; from: string; to: string }> = [];
+      for (const reading of payload.readings) {
+        const fixed = recordedOpening.get(reading.nozzleId);
+        if (
+          fixed !== undefined &&
+          !new ExactDecimal(reading.openingReading).equals(new ExactDecimal(fixed))
+        ) {
+          if (!mayCorrectOpening)
+            throw new AppError(
+              'CONFLICT',
+              'The opening readings were recorded when the shift opened. Only an administrator can correct them. Reload the page to see them, or ask an administrator.',
+            );
+          openingCorrections.push({
+            nozzleId: reading.nozzleId,
+            from: fixed,
+            to: new ExactDecimal(reading.openingReading).toString(),
+          });
+        }
+      }
+      if (openingCorrections.length > 0 && (payload.openingCorrectionReason ?? '').length < 5)
+        throw new AppError(
+          'VALIDATION_FAILED',
+          'Say why the opening reading is being corrected (at least 5 characters). Nothing was changed.',
+        );
       await replaceRows(
         transaction,
         'reconciliation_meter_readings',
@@ -404,7 +453,12 @@ export async function saveReconciliationMeterReadingsFromRequest(request: Reques
           ${sold.toString()}, ${reading.sellingPriceId}, ${price[0].unit_price}, ${sales.toString()}, ${context.actor.membershipId})
       `);
       }
-      return { readingCount: payload.readings.length };
+      return {
+        readingCount: payload.readings.length,
+        ...(openingCorrections.length > 0
+          ? { openingCorrections, openingCorrectionReason: payload.openingCorrectionReason }
+          : {}),
+      };
     },
   );
 }
@@ -1485,6 +1539,13 @@ async function transitionProductionReconciliation(
             'Select at least one attendant before submitting this reconciliation.',
           );
         }
+        const unmeasured = await tanksMissingClosingDip(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          reconciliationId: payload.reconciliationId,
+        });
+        if (unmeasured.length > 0)
+          throw new AppError('VALIDATION_FAILED', describeMissingDips(unmeasured));
         await requireExplanations(transaction, context, payload.reconciliationId, metrics);
       } else if (header.state !== 'SUBMITTED') {
         throw new AppError('CONFLICT', 'Only a submitted reconciliation can be returned');
@@ -1620,8 +1681,33 @@ export async function getProductionReconciliationFromRequest(
         t.acceptable_variance_litres::text as "toleranceLitres",
         t.variance_red_litres::text as "redLitres",
         exists (select 1 from app.tank_calibration_points c
-          where c.tenant_id = t.tenant_id and c.tank_id = t.id and c.measurement_unit = 'mm') as "hasMillimetreChart"
+          where c.tenant_id = t.tenant_id and c.tank_id = t.id and c.measurement_unit = 'mm') as "hasMillimetreChart",
+        -- What the books say is in the tank at the end of this day: opening stock, plus every
+        -- delivery, minus every litre sold, plus approved adjustments. Left empty when the tank has
+        -- no opening balance or shares its fuel with another tank, because then it cannot be told.
+        case
+          when exists (select 1 from app.inventory_movements m
+              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.tank_id=t.id
+                and m.movement_type = 'OPENING_BALANCE' and m.business_date <= bd.business_date)
+            and (select count(*) from app.tanks o
+              where o.tenant_id=t.tenant_id and o.station_id=t.station_id
+                and o.product_id=t.product_id and o.status='ACTIVE') = 1
+          then (
+            coalesce((select sum(m.quantity_litres) from app.inventory_movements m
+              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.tank_id=t.id
+                and m.business_date <= bd.business_date
+                and m.movement_type in ('OPENING_BALANCE', 'DELIVERY', 'TRANSFER_IN',
+                  'POSITIVE_ADJUSTMENT', 'NEGATIVE_ADJUSTMENT', 'TRANSFER_OUT')), 0)
+            - coalesce((select sum(m.litres_sold) from app.reconciliation_meter_readings m
+              join app.reconciliations rec2 on rec2.tenant_id=m.tenant_id and rec2.station_id=m.station_id and rec2.id=m.reconciliation_id
+              join app.station_business_days sale_bd on sale_bd.tenant_id=rec2.tenant_id and sale_bd.station_id=rec2.station_id and sale_bd.id=rec2.business_day_id
+              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.product_id=t.product_id
+                and sale_bd.business_date <= bd.business_date), 0)
+          )::numeric(18,3)::text
+        end as "expectedLitres"
       from app.tanks t join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
+      join app.reconciliations cur on cur.tenant_id=t.tenant_id and cur.station_id=t.station_id and cur.id=${input.reconciliationId}
+      join app.station_business_days bd on bd.tenant_id=cur.tenant_id and bd.station_id=cur.station_id and bd.id=cur.business_day_id
       where t.tenant_id=${context.tenantId} and t.station_id=${context.stationId} and t.status='ACTIVE'
       order by p.name, t.code
     `);
@@ -1643,6 +1729,13 @@ export async function getProductionReconciliationFromRequest(
         stationId: context.stationId,
         excludeMembershipId: context.actor.membershipId,
       }));
+    // Which review buttons this person may use, so a button is never shown that the server refuses.
+    const may = (permissionCode: 'reconciliation.approve' | 'reconciliation.return') =>
+      isPermissionGranted({
+        actor: context.authority.authorization,
+        permissionCode,
+        requestedScope: context.scope,
+      });
     // Who can be charged at this station, with what they may still spend, so a credit or prepaid
     // row can be entered by name and the person sees the room left before saving.
     const customerAccounts = await transaction.execute<RecordData['customerAccounts'][number]>(sql`
@@ -1669,6 +1762,13 @@ export async function getProductionReconciliationFromRequest(
       ...header,
       version: Number(header.version),
       approvalBlocked,
+      canApprove: may('reconciliation.approve'),
+      canReturn: may('reconciliation.return'),
+      canCorrectOpening: isPermissionGranted({
+        actor: context.authority.authorization,
+        permissionCode: 'station.manage',
+        requestedScope: context.scope,
+      }),
       customerAccounts,
       attendants,
       readings,
