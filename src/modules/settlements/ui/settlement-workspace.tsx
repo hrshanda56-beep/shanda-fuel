@@ -539,6 +539,13 @@ export function SettlementWorkspace({
   const shares = providerShares(settlements);
   const dataReady = !loading && !error;
   const canMatch = dataReady && unmatched.length > 0 && settlements.length > 0 && Boolean(context);
+  const matchBlockedReason = !dataReady
+    ? null
+    : settlements.length === 0
+      ? 'No provider statement has been received yet, so there is nothing to match payments against.'
+      : unmatched.length === 0
+        ? 'Every payment is already matched.'
+        : null;
 
   const shareCurrencies = new Set(shares.map((share) => share.currency));
   const providerSlices: DonutSlice[] = shares.map((share, index) => {
@@ -700,6 +707,7 @@ export function SettlementWorkspace({
             Refresh
           </Button>
         </div>
+        {matchBlockedReason ? <p className="field-hint">{matchBlockedReason}</p> : null}
 
         <Modal
           open={matchOpen}
