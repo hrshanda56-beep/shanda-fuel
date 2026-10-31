@@ -72,6 +72,14 @@ describe('pickCurrentShift', () => {
     expect(picked?.id).toBe('running');
   });
 
+  it('keeps a shift that was opened days ago and never closed', () => {
+    const picked = pickCurrentShift(
+      [row('stale-open', 'OPEN', '2026-10-06T04:00:00Z', '2026-10-06T16:00:00Z')],
+      now,
+    );
+    expect(picked?.id).toBe('stale-open');
+  });
+
   it('falls back to the planned shift covering now, then the next upcoming one', () => {
     expect(pickCurrentShift([row('a', 'PLANNED', START, END)], now)?.id).toBe('a');
     const later = row('later', 'PLANNED', '2026-10-09T16:00:00Z', '2026-10-10T04:00:00Z');
@@ -175,6 +183,35 @@ describe('deriveMyShiftView', () => {
     );
     expect(view.phase).toBe('finished');
     expect(view.next.kind).toBe('none');
+  });
+});
+
+describe('overdue open shift', () => {
+  const recorded = (value: string) => ({
+    status: 'RECORDED' as const,
+    value,
+    recordedAt: NOW,
+  });
+
+  it('says the supervisor must close the shift once every reading is in', () => {
+    const view = deriveMyShiftView(
+      data({ meters: [meter({ opening: recorded('1000.000'), closing: recorded('1200.000') })] }),
+    );
+    expect(view.next).toEqual({
+      kind: 'none',
+      message: 'All your readings are recorded. Your supervisor still needs to close this shift.',
+    });
+  });
+
+  it('says so plainly when an open shift is past its planned end', () => {
+    const view = deriveMyShiftView(
+      data({
+        now: '2026-10-11T09:00:00.000Z',
+        meters: [meter({ opening: recorded('1000.000'), closing: recorded('1200.000') })],
+      }),
+    );
+    expect(view.headline).toBe('Your shift is past its planned end and is still open.');
+    expect(view.phase).toBe('running');
   });
 });
 
