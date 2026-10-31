@@ -9,7 +9,7 @@ import { Notice } from '@/design-system/feedback';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
 import { Modal } from '@/design-system/modal';
 import { Button, Card, EmptyState, Field, StatusBadge } from '@/design-system/primitives';
-import { ShowMore, useShowMore } from '@/design-system/show-more';
+import { Pagination, usePagination } from '@/design-system/pagination';
 import { TableScrollRegion } from '@/design-system/table';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { StockSignal } from '../../approvals/operations-alerts';
@@ -25,6 +25,7 @@ import {
   tankTabFrom,
   type TankTab,
 } from './tank-detail-model';
+import { InfoTip } from '@/design-system/info-tip';
 
 const SIGNAL: Record<
   StockSignal,
@@ -107,8 +108,8 @@ export function TankDetailView({
 
   const availableTabs = TANK_TABS.filter((item) => item.value !== 'settings' || canManage);
   const [tab, setTab] = useState<TankTab>(() => tankTabFrom(initialTab, canManage));
-  const [dipsShown, setDipsShown] = useShowMore();
-  const [movesShown, setMovesShown] = useShowMore();
+  const dipPage = usePagination(dips);
+  const movePage = usePagination(movements);
   const [dipOpen, setDipOpen] = useState(false);
   const [dipLitres, setDipLitres] = useState(
     tank.bookLitres.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''),
@@ -337,6 +338,8 @@ export function TankDetailView({
       <PageHeader
         eyebrow={`${context.stationName} · ${tank.productName}`}
         title={`Tank ${tank.code}`}
+        headingLevel="h2"
+        titleId="tank-detail-title"
         actions={
           <>
             <Link className="button button-quiet" href={streamHref}>
@@ -456,7 +459,7 @@ export function TankDetailView({
                 />
               ) : (
                 <ul className="tank-timeline">
-                  {dips.slice(0, dipsShown).map((dip) => (
+                  {dipPage.rows.map((dip) => (
                     <li key={dip.id}>
                       <div>
                         <strong>{formatLitres(dip.physicalLitres)} measured</strong>
@@ -489,7 +492,7 @@ export function TankDetailView({
                   ))}
                 </ul>
               )}
-              <ShowMore shown={dipsShown} total={dips.length} onChange={setDipsShown} />
+              <Pagination slice={dipPage} label="Dip readings pages" noun="readings" />
               {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
             </Card>
 
@@ -502,7 +505,7 @@ export function TankDetailView({
                 />
               ) : (
                 <ul className="tank-timeline">
-                  {movements.slice(0, movesShown).map((movement, index) => {
+                  {movePage.rows.map((movement, index) => {
                     const quantity = Number(movement.quantityLitres);
                     return (
                       <li key={movement.id}>
@@ -528,7 +531,7 @@ export function TankDetailView({
                   })}
                 </ul>
               )}
-              <ShowMore shown={movesShown} total={movements.length} onChange={setMovesShown} />
+              <Pagination slice={movePage} label="Stock movements pages" noun="movements" />
             </Card>
           </div>
         ) : null}
@@ -537,11 +540,11 @@ export function TankDetailView({
           <div className="tank-settings-grid">
             <Card className="form-panel">
               <h2>When a difference matters</h2>
-              <p className="table-secondary">
+              <InfoTip>
                 A dip is compared with the books. Within the yellow limit it is fine. Above yellow
                 it must be explained. Above red it is urgent. Leave red empty to use twice the
                 yellow limit.
-              </p>
+              </InfoTip>
               <form className="form-stack" onSubmit={saveLimits}>
                 <Field id="tank-yellow" label="Yellow: explain above (litres)" optional>
                   <input
@@ -570,11 +573,11 @@ export function TankDetailView({
 
             <Card className="form-panel">
               <h2>Dipstick chart</h2>
-              <p className="table-secondary">
+              <InfoTip>
                 The tank maker&apos;s chart turns a dipstick reading into litres. Type or paste the
                 rows, or import a CSV file with the reading and the litres on each line. A new chart
                 is used for new dips; dips already recorded keep their litres.
-              </p>
+              </InfoTip>
               {chart ? (
                 <TableScrollRegion label={`Dipstick chart for tank ${tank.code}`}>
                   <table className="data-table">

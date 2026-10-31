@@ -56,6 +56,8 @@ export type DeliveryList = Readonly<{
   waterTestRequired: boolean;
   /** Only owners may change the water test rule, so only they are shown it. */
   canSetWaterTestRule: boolean;
+  /** Whether this person may record a delivery; finance can see deliveries but not record them. */
+  canRecord: boolean;
   /** Active tanks, for the Record delivery form. */
   tanks: readonly DeliveryTank[];
   deliveries: readonly DeliveryListItem[];
@@ -130,6 +132,7 @@ export async function queryDeliveryList(input: {
         stationTimezone: context.stationTimezone,
         waterTestRequired: settings[0]?.water_test_required ?? false,
         canSetWaterTestRule: roleAllows(context, 'tenant.manage'),
+        canRecord: roleAllows(context, 'inventory.delivery.manage'),
         tanks: tanks.map((row) => ({
           id: row.id,
           code: row.code,

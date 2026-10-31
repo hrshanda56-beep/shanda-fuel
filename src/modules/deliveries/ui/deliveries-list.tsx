@@ -8,10 +8,12 @@ import { Checkbox } from '@/design-system/forms';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
 import { Modal } from '@/design-system/modal';
 import { Button, Card, StatusBadge } from '@/design-system/primitives';
-import { ShowMore, useShowMore } from '@/design-system/show-more';
+import { Pagination, usePagination } from '@/design-system/pagination';
 import { TableScrollRegion } from '@/design-system/table';
 import type { DeliveryList } from '../queries';
 import { RecordDelivery } from './record-delivery';
+import { InfoTip } from '@/design-system/info-tip';
+import { NotchedCard } from '@/design-system/notched-card';
 
 export function DeliveriesList({
   context,
@@ -61,7 +63,7 @@ export function DeliveriesList({
 
   const { deliveries } = initialData;
   const [recording, setRecording] = useState(false);
-  const [shown, setShown] = useShowMore();
+  const page = usePagination(deliveries);
   const missing = (delivery: (typeof deliveries)[number]) =>
     [
       delivery.compartmentCount === 0 ? 'truck compartments' : null,
@@ -70,26 +72,33 @@ export function DeliveriesList({
     ].filter(Boolean) as string[];
   return (
     <div className="pg">
-      <Card className="pg-card deliveries-card">
-        <div className="deliveries-head">
-          <div>
-            <h2>
-              Deliveries
-              {deliveries.length > 0 ? (
-                <span className="deliveries-count"> {deliveries.length}</span>
-              ) : null}
-            </h2>
+      <NotchedCard
+        title={
+          <>
+            Deliveries
             {deliveries.length > 0 ? (
-              <p className="table-secondary">Open a delivery to see its full details.</p>
+              <span className="deliveries-count"> {deliveries.length}</span>
             ) : null}
-          </div>
-          <Button type="button" onClick={() => setRecording(true)}>
-            Record delivery
-          </Button>
-        </div>
+          </>
+        }
+        titleId="deliveries-title"
+        titleAside={
+          deliveries.length > 0 ? <InfoTip>Open a delivery to see its full details.</InfoTip> : null
+        }
+        className="pg-card deliveries-card"
+        notchWidth={10.5}
+        actions={
+          initialData.canRecord ? (
+            <Button type="button" onClick={() => setRecording(true)}>
+              Record delivery
+            </Button>
+          ) : null
+        }
+      >
         {deliveries.length === 0 ? (
           <p className="deliveries-empty table-secondary">
-            No deliveries yet. Record one when a fuel truck arrives.
+            No deliveries yet.
+            {initialData.canRecord ? ' Record one when a fuel truck arrives.' : ''}
           </p>
         ) : (
           <>
@@ -106,7 +115,7 @@ export function DeliveriesList({
                   </tr>
                 </thead>
                 <tbody>
-                  {deliveries.slice(0, shown).map((delivery) => {
+                  {page.rows.map((delivery) => {
                     const gaps = delivery.status === 'DRAFT' ? missing(delivery) : [];
                     return (
                       <tr key={delivery.id}>
@@ -160,17 +169,17 @@ export function DeliveriesList({
                 </tbody>
               </table>
             </TableScrollRegion>
-            <ShowMore shown={shown} total={deliveries.length} onChange={setShown} />
+            <Pagination slice={page} label="Deliveries pages" noun="deliveries" />
           </>
         )}
-      </Card>
+      </NotchedCard>
       {initialData.canSetWaterTestRule ? (
         <Card className="pg-card">
           <details className="deliveries-rules">
             <summary>Delivery rules</summary>
-            <p className="table-secondary">
+            <InfoTip>
               Only an owner can change this. It applies to every station in the organisation.
-            </p>
+            </InfoTip>
             <Checkbox
               label="A delivery cannot be confirmed until its water test is recorded"
               hint="Left off, the water test is still recorded but never stops a delivery."

@@ -107,7 +107,16 @@ function fieldLabel(path: readonly PropertyKey[]): string {
 }
 
 /** Library defaults ("Invalid input: expected ...") are not for people; our own messages are. */
-function issueMessage(issue: { message: string; path: readonly PropertyKey[] }): string {
+function issueMessage(issue: {
+  message: string;
+  path: readonly PropertyKey[];
+  code?: string;
+  maximum?: number | bigint;
+  origin?: string;
+}): string {
+  if (issue.code === 'too_big' && issue.origin === 'string' && issue.maximum !== undefined) {
+    return `The ${fieldLabel(issue.path)} is too long. Use at most ${issue.maximum} characters.`;
+  }
   if (/^(Invalid|Too (small|big)|Expected|Required|Unrecognized)/i.test(issue.message)) {
     return `Check the ${fieldLabel(issue.path)}: it is missing or not in the expected form.`;
   }

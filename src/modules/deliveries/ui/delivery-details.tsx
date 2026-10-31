@@ -12,6 +12,7 @@ import { Button, StatusBadge } from '@/design-system/primitives';
 import { StepUpDialog } from '../../setup/ui/step-up-dialog';
 import { RecordDelivery, type DeliveryEdit } from './record-delivery';
 import type { DeliveryDetail } from '../queries';
+import { InfoTip } from '@/design-system/info-tip';
 
 export type DeliveryDetailsContext = Readonly<{
   tenantId: string;
@@ -195,7 +196,7 @@ function Line({
       <dt>{htmlFor ? <label htmlFor={htmlFor}>{label}</label> : label}</dt>
       <dd>
         {children}
-        {hint ? <span className="dd-hint">{hint}</span> : null}
+        {hint ? <InfoTip>{hint}</InfoTip> : null}
       </dd>
     </div>
   );
@@ -563,10 +564,10 @@ export function DeliveryDetails({
             <h3 id="dd-s2">2. Truck compartments</h3>
             {compartmentsBadge}
           </div>
-          <p className="dd-intro">
+          <InfoTip>
             One line per truck compartment. Together they must match the litres on the note and the
             litres received.
-          </p>
+          </InfoTip>
           <table className="dd-table">
             <thead>
               <tr>
@@ -782,11 +783,11 @@ export function DeliveryDetails({
               <h3 id="dd-s3">3. Water test</h3>
               {waterBadge}
             </div>
-            <p className="dd-intro">
+            <InfoTip>
               {data.waterTestRequired
                 ? 'Your owner needs a water test recorded before this delivery can be confirmed.'
                 : 'Record the water test when it is done. It does not stop the delivery from being confirmed.'}
-            </p>
+            </InfoTip>
             {data.waterTest?.result === 'FAIL' ? (
               <Notice tone="warning" title="The water test failed">
                 Tell the manager before the fuel goes into a tank.
@@ -857,10 +858,10 @@ export function DeliveryDetails({
               <h3 id="dd-s4">4. Driver confirmation</h3>
               {driverBadge}
             </div>
-            <p className="dd-intro">
+            <InfoTip>
               This is the driver saying the details are right. It is kept apart from your own
               confirmation of the delivery. No signature is needed.
-            </p>
+            </InfoTip>
             <dl className="dd-lines">
               <Line label="Driver's name" htmlFor="driver-name">
                 {driverEditable ? (
@@ -888,10 +889,10 @@ export function DeliveryDetails({
                   'Not confirmed by the driver'
                 )}
                 {data.driverConfirmation?.confirmed && data.driverConfirmation.confirmedAt ? (
-                  <span className="dd-hint">
+                  <InfoTip>
                     Confirmed{' '}
                     {stationDateTime(data.driverConfirmation.confirmedAt, data.stationTimezone)}
-                  </span>
+                  </InfoTip>
                 ) : null}
               </Line>
               <Line label="Notes" htmlFor="driver-notes">

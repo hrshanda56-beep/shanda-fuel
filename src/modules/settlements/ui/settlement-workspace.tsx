@@ -29,20 +29,21 @@ import { EcoCashMark, MastercardMark, VisaMark } from './provider-logos';
 import { Modal } from '../../../design-system/modal';
 import { Select } from '../../../design-system/forms';
 import { Icon } from '../../../design-system/icons';
-import { ShowMore, useShowMore } from '../../../design-system/show-more';
+import { Pagination, usePagination } from '../../../design-system/pagination';
 import { CashDonut, type DonutSlice } from '@/modules/cash/ui/cash-visuals';
 import { payoutAmounts } from '../status';
 import type { ProviderSettlementSummaryRow, UnmatchedProviderPaymentRow } from '../contracts';
 import { ProviderDonut } from './provider-donut';
 import {
   allocatedPercent,
-  initials,
   methodLabel,
   methodTotals,
   providerShares,
   settlementCounts,
   settlementStateLabel,
 } from './settlement-summary';
+import { InfoTip } from '@/design-system/info-tip';
+import { TabbedCard } from '@/design-system/tabbed-card';
 
 function money(value: string, currency = 'USD'): string {
   return formatTileMoney(value, currency);
@@ -159,10 +160,17 @@ export function SettlementWorkspace({
   const [message, setMessage] = useState<string | null>(null);
   const [matchOpen, setMatchOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [payoutsShown, setPayoutsShown] = useShowMore();
-  const [waitingShown, setWaitingShown] = useShowMore();
   const [cardNote, setCardNote] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'exceptions'>('all');
+  const visibleSettlements = settlements.filter((row) =>
+    statusFilter === 'open'
+      ? row.state !== 'RECONCILED'
+      : statusFilter === 'exceptions'
+        ? row.state === 'EXCEPTION'
+        : true,
+  );
+  const payoutPage = usePagination(visibleSettlements, { resetKey: statusFilter });
+  const waitingPage = usePagination(unmatched);
   const [pendingReconciliationId, setPendingReconciliationId] = useState('');
   const [reconciliationReason, setReconciliationReason] = useState('');
   const attemptKeys = useRef(new Map<string, AttemptKeys>());
@@ -532,13 +540,6 @@ export function SettlementWorkspace({
 
   const methods = methodTotals(unmatched);
   const counts = settlementCounts(settlements);
-  const visibleSettlements = settlements.filter((row) =>
-    statusFilter === 'open'
-      ? row.state !== 'RECONCILED'
-      : statusFilter === 'exceptions'
-        ? row.state === 'EXCEPTION'
-        : true,
-  );
   const shares = providerShares(settlements);
   const dataReady = !loading && !error;
   const canMatch = dataReady && unmatched.length > 0 && settlements.length > 0 && Boolean(context);
@@ -742,7 +743,7 @@ export function SettlementWorkspace({
                 id="payment"
                 value={paymentId}
                 onChange={(event) => chooseMatch(settlementId, event.target.value)}
-                options={unmatched.slice(0, waitingShown).map((row) => ({
+                options={unmatched.map((row) => ({
                   value: row.paymentId,
                   label: `${methodLabel(row.method)} · ${row.businessDate} · ${money(row.unallocatedAmount)} · ${row.reference ?? row.paymentId.slice(0, 8)}`,
                 }))}
@@ -812,339 +813,351 @@ export function SettlementWorkspace({
         )}
       </Card>
 
-      <Card as="section" className="panel content-span" aria-labelledby="settlements-title">
-        <div className="panel-heading">
-          <div className="heading-inline">
-            <h2 id="settlements-title">Provider Payouts</h2>
-            <span className="heading-hint">Provider statements</span>
-          </div>
-        </div>
-        {statusFilter !== 'all' ? (
-          <p className="filter-chip" role="status">
-            {visibleSettlements.length === 0
-              ? `Nothing ${statusFilter === 'open' ? 'not yet paid out' : 'variance'} right now.`
-              : `Showing ${statusFilter === 'open' ? 'not yet paid out' : 'variance'} (${visibleSettlements.length})`}
-            <button type="button" onClick={() => setStatusFilter('all')}>
-              Show all
-            </button>
-          </p>
-        ) : null}
-        {matchOpen ? null : stateNotice}
-        {message && !matchOpen ? (
-          <p role="status" aria-live="polite">
-            {message}
-          </p>
-        ) : null}
-        {!loading && !error && settlements.length === 0 ? (
-          <EmptyState
-            title="No provider payouts yet"
-            message="They show here once a provider statement is recorded."
-          />
-        ) : null}
-        {canShowSettlementRows && visibleSettlements.length > 0 ? (
-          <div className="list-table settlement-list">
-            <div className="list-head" aria-hidden="true">
-              <span>Provider</span>
-              <span>Settled</span>
-              <span>Gross</span>
-              <span>Charges</span>
-              <span>Net Settled</span>
-              <span>Allocated</span>
-              <span>Status</span>
-              <span>Action</span>
-              <span />
-            </div>
-            <ul className="list-rows" aria-label="Provider payouts">
-              {visibleSettlements.slice(0, payoutsShown).map((row) => {
-                const isPendingReason = pendingReconciliationId === row.settlementId;
-                const open = expandedId === row.settlementId;
-                const hasVariance = !isZeroAmount(row.varianceAmount);
-                // Nothing matched yet: the gap is just the amount still to match.
-                const notMatchedYet =
-                  isZeroAmount(row.allocatedAmount) && row.state !== 'EXCEPTION';
-                const detailsId = `settlement-details-${row.settlementId}`;
-                const amounts = payoutAmounts({
-                  gross: row.grossAmount,
-                  fee: row.providerFeeAmount,
-                  deduction: row.providerDeductionAmount,
-                  reportedNet: row.reportedNetAmount,
-                  declared: row.allocatedAmount,
-                });
-                return (
-                  <li
-                    key={row.settlementId}
-                    className="settlement-item"
-                    data-open={open || undefined}
-                  >
-                    <div
-                      className="list-row settlement-row"
-                      onClick={() => setExpandedId(open ? null : row.settlementId)}
-                    >
-                      <span className="list-name">
-                        <span className="list-avatar" aria-hidden="true">
-                          {initials(row.providerName)}
-                        </span>
-                        <span>
-                          <strong>{row.providerName}</strong>
-                          <small>{displaySettlementReference(row)}</small>
-                        </span>
-                      </span>
-                      <span className="list-cell" data-label="Settled">
-                        {row.settlementDate}
-                      </span>
-                      <span className="list-cell list-amount" data-label="Gross">
-                        {money(row.grossAmount, row.currency)}
-                      </span>
-                      <span className="list-cell list-amount" data-label="Charges">
-                        {money(amounts.charges, row.currency)}
-                      </span>
-                      <span className="list-cell list-amount" data-label="Net settled">
-                        {money(amounts.netSettled, row.currency)}
-                      </span>
-                      <span className="list-cell list-status" data-label="Allocated">
-                        <span className="balance-bar" data-kind="progress" aria-hidden="true">
-                          <span style={{ width: `${allocatedPercent(row)}%` }} />
-                        </span>
-                        <span>{money(row.unallocatedProviderAmount, row.currency)} left</span>
-                      </span>
-                      <span className="list-cell" data-label="Status">
-                        <StatusBadge tone={settlementTone(row.state)}>
-                          {settlementStateLabel(row.state)}
-                        </StatusBadge>
-                      </span>
-                      <span className="list-cell" data-label="Action">
-                        {row.state !== 'RECONCILED' ? (
-                          <Button
-                            variant="quiet"
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void reconcile(row);
-                            }}
-                            disabled={working}
-                          >
-                            {isPendingReason ? 'Confirm now' : 'Confirm'}
-                          </Button>
-                        ) : (
-                          <span>Done</span>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        className="settlement-toggle"
-                        aria-expanded={open}
-                        aria-controls={detailsId}
-                        aria-label={`${open ? 'Hide' : 'Show'} details for ${displaySettlementReference(row)}`}
-                      >
-                        <Icon name="chevron-down" />
-                      </button>
+      <TabbedCard
+        title="Payouts"
+        className="content-span"
+        tabs={[
+          {
+            id: 'payouts',
+            label: 'Provider Payouts',
+            aside: <InfoTip>Provider statements</InfoTip>,
+            content: (
+              <>
+                {statusFilter !== 'all' ? (
+                  <p className="filter-chip" role="status">
+                    {visibleSettlements.length === 0
+                      ? `Nothing ${statusFilter === 'open' ? 'not yet paid out' : 'variance'} right now.`
+                      : `Showing ${statusFilter === 'open' ? 'not yet paid out' : 'variance'} (${visibleSettlements.length})`}
+                    <button type="button" onClick={() => setStatusFilter('all')}>
+                      Show all
+                    </button>
+                  </p>
+                ) : null}
+                {matchOpen ? null : stateNotice}
+                {message && !matchOpen ? (
+                  <p role="status" aria-live="polite">
+                    {message}
+                  </p>
+                ) : null}
+                {!loading && !error && settlements.length === 0 ? (
+                  <EmptyState
+                    title="No provider payouts yet"
+                    message="They show here once a provider statement is recorded."
+                  />
+                ) : null}
+                {canShowSettlementRows && visibleSettlements.length > 0 ? (
+                  <div className="list-table settlement-list">
+                    <div className="list-head" aria-hidden="true">
+                      <span>Provider</span>
+                      <span>Settled</span>
+                      <span>Gross</span>
+                      <span>Charges</span>
+                      <span>Net Settled</span>
+                      <span>Allocated</span>
+                      <span>Status</span>
+                      <span>Action</span>
+                      <span />
                     </div>
-                    {open ? (
-                      <dl className="settlement-details" id={detailsId}>
-                        <div>
-                          <dt>Account</dt>
-                          <dd>{row.accountReference}</dd>
-                        </div>
-                        {row.batchReference ? (
-                          <div>
-                            <dt>Batch reference</dt>
-                            <dd>{row.batchReference}</dd>
-                          </div>
-                        ) : null}
-                        <div>
-                          <dt>Transaction date</dt>
-                          <dd>{row.transactionDate}</dd>
-                        </div>
-                        <div>
-                          <dt>Allocated</dt>
-                          <dd>{money(row.allocatedAmount, row.currency)}</dd>
-                        </div>
-                        <div>
-                          <dt>Provider fee</dt>
-                          <dd>
-                            {row.providerFeeAmount
-                              ? money(row.providerFeeAmount, row.currency)
-                              : '—'}
-                          </dd>
-                        </div>
-                        {row.expectedFeeAmount ? (
-                          <div>
-                            <dt>Charge it should have taken</dt>
-                            <dd>{money(row.expectedFeeAmount, row.currency)}</dd>
-                          </div>
-                        ) : null}
-                        {row.feeDifferenceAmount ? (
-                          <div
-                            data-tone={
-                              Number(row.feeDifferenceAmount) !== 0 ? 'warning' : undefined
-                            }
+                    <ul className="list-rows" aria-label="Provider payouts">
+                      {payoutPage.rows.map((row) => {
+                        const isPendingReason = pendingReconciliationId === row.settlementId;
+                        const open = expandedId === row.settlementId;
+                        const hasVariance = !isZeroAmount(row.varianceAmount);
+                        // Nothing matched yet: the gap is just the amount still to match.
+                        const notMatchedYet =
+                          isZeroAmount(row.allocatedAmount) && row.state !== 'EXCEPTION';
+                        const detailsId = `settlement-details-${row.settlementId}`;
+                        const amounts = payoutAmounts({
+                          gross: row.grossAmount,
+                          fee: row.providerFeeAmount,
+                          deduction: row.providerDeductionAmount,
+                          reportedNet: row.reportedNetAmount,
+                          declared: row.allocatedAmount,
+                        });
+                        return (
+                          <li
+                            key={row.settlementId}
+                            className="settlement-item"
+                            data-open={open || undefined}
                           >
-                            <dt>Charge difference</dt>
-                            <dd>
-                              {Number(row.feeDifferenceAmount) === 0
-                                ? 'None: it took what it should'
-                                : Number(row.feeDifferenceAmount) > 0
-                                  ? `${money(row.feeDifferenceAmount, row.currency)} more than it should`
-                                  : `${money(row.feeDifferenceAmount.replace(/^-/, ''), row.currency)} less than it should`}
-                            </dd>
-                          </div>
-                        ) : null}
-                        <div>
-                          <dt>Deduction</dt>
-                          <dd>
-                            {row.providerDeductionAmount
-                              ? money(row.providerDeductionAmount, row.currency)
-                              : '—'}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Reported net</dt>
-                          <dd>
-                            {row.reportedNetAmount
-                              ? money(row.reportedNetAmount, row.currency)
-                              : '—'}
-                          </dd>
-                        </div>
-                        <div
-                          data-tone={
-                            !notMatchedYet && Number(amounts.difference) !== 0
-                              ? 'warning'
-                              : undefined
-                          }
-                        >
-                          <dt>Difference</dt>
-                          <dd>
-                            {notMatchedYet
-                              ? 'Not matched to sales yet'
-                              : `${money(amounts.difference, row.currency)} (sales matched, less what was paid out and kept)`}
-                          </dd>
-                        </div>
-                        <div data-tone={hasVariance && !notMatchedYet ? 'warning' : undefined}>
-                          <dt>Variance</dt>
-                          <dd>
-                            {notMatchedYet
-                              ? 'Not matched to sales yet'
-                              : money(row.varianceAmount, row.currency)}
-                          </dd>
-                        </div>
-                      </dl>
-                    ) : null}
-                    {isPendingReason ? (
-                      <div className="settlement-reason">
-                        <Field
-                          id={`reconcile-reason-${row.settlementId}`}
-                          label="Variance reason"
-                          hint="Required because allocated evidence differs from the settlement gross amount."
-                          required
-                        >
-                          <input
-                            id={`reconcile-reason-${row.settlementId}`}
-                            value={reconciliationReason}
-                            onChange={(event) => setReconciliationReason(event.target.value)}
-                            maxLength={500}
-                            required
-                          />
-                        </Field>
-                        <Button
-                          variant="quiet"
-                          type="button"
-                          onClick={() => {
-                            setPendingReconciliationId('');
-                            setReconciliationReason('');
-                          }}
-                          disabled={working}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-            <ShowMore
-              shown={payoutsShown}
-              total={visibleSettlements.length}
-              onChange={setPayoutsShown}
-            />
-          </div>
-        ) : null}
-      </Card>
-
-      <Card as="section" className="panel content-span" aria-labelledby="matching-title">
-        <div className="panel-heading">
-          <div className="heading-inline">
-            <h2 id="matching-title">Payments Waiting</h2>
-            <span className="heading-hint">Waiting for a payout</span>
-          </div>
-        </div>
-        {!loading && !error && unmatched.length === 0 ? (
-          <EmptyState
-            title="No EcoCash or card payments waiting"
-            message="Approved EcoCash and card payments show here until matched."
-          />
-        ) : null}
-        {canShowUnmatchedRows ? (
-          <TableScrollRegion label="Card and mobile payments not yet matched to a payout">
-            <table className="data-table">
-              <caption className="sr-only">
-                Card and mobile payments not yet matched to a payout
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Method / reference</th>
-                  <th scope="col">Business date</th>
-                  <th scope="col">Amount</th>
-                  <th scope="col">Remaining</th>
-                </tr>
-              </thead>
-              <tbody>
-                {unmatched.map((row) => (
-                  <tr
-                    key={row.paymentId}
-                    className={canMatch ? 'row-action' : undefined}
-                    onClick={canMatch ? () => openMatch(row.paymentId) : undefined}
-                    onKeyDown={
-                      canMatch
-                        ? (event) => {
-                            if (event.target !== event.currentTarget) return;
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              openMatch(row.paymentId);
+                            <div
+                              className="list-row settlement-row"
+                              onClick={() => setExpandedId(open ? null : row.settlementId)}
+                            >
+                              <span className="list-name">
+                                <span>
+                                  <strong>{row.providerName}</strong>
+                                  <small>{displaySettlementReference(row)}</small>
+                                </span>
+                              </span>
+                              <span className="list-cell" data-label="Settled">
+                                {row.settlementDate}
+                              </span>
+                              <span className="list-cell list-amount" data-label="Gross">
+                                {money(row.grossAmount, row.currency)}
+                              </span>
+                              <span className="list-cell list-amount" data-label="Charges">
+                                {money(amounts.charges, row.currency)}
+                              </span>
+                              <span className="list-cell list-amount" data-label="Net settled">
+                                {money(amounts.netSettled, row.currency)}
+                              </span>
+                              <span className="list-cell list-status" data-label="Allocated">
+                                <span
+                                  className="balance-bar"
+                                  data-kind="progress"
+                                  aria-hidden="true"
+                                >
+                                  <span style={{ width: `${allocatedPercent(row)}%` }} />
+                                </span>
+                                <span>
+                                  {money(row.unallocatedProviderAmount, row.currency)} left
+                                </span>
+                              </span>
+                              <span className="list-cell" data-label="Status">
+                                <StatusBadge tone={settlementTone(row.state)}>
+                                  {settlementStateLabel(row.state)}
+                                </StatusBadge>
+                              </span>
+                              <span className="list-cell" data-label="Action">
+                                {row.state !== 'RECONCILED' ? (
+                                  <Button
+                                    variant="quiet"
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void reconcile(row);
+                                    }}
+                                    disabled={working}
+                                  >
+                                    {isPendingReason ? 'Confirm now' : 'Confirm'}
+                                  </Button>
+                                ) : (
+                                  <span>Done</span>
+                                )}
+                              </span>
+                              <button
+                                type="button"
+                                className="settlement-toggle"
+                                aria-expanded={open}
+                                aria-controls={detailsId}
+                                aria-label={`${open ? 'Hide' : 'Show'} details for ${displaySettlementReference(row)}`}
+                              >
+                                <Icon name="chevron-down" />
+                              </button>
+                            </div>
+                            {open ? (
+                              <dl className="settlement-details" id={detailsId}>
+                                <div>
+                                  <dt>Account</dt>
+                                  <dd>{row.accountReference}</dd>
+                                </div>
+                                {row.batchReference ? (
+                                  <div>
+                                    <dt>Batch reference</dt>
+                                    <dd>{row.batchReference}</dd>
+                                  </div>
+                                ) : null}
+                                <div>
+                                  <dt>Transaction date</dt>
+                                  <dd>{row.transactionDate}</dd>
+                                </div>
+                                <div>
+                                  <dt>Allocated</dt>
+                                  <dd>{money(row.allocatedAmount, row.currency)}</dd>
+                                </div>
+                                <div>
+                                  <dt>Provider fee</dt>
+                                  <dd>
+                                    {row.providerFeeAmount
+                                      ? money(row.providerFeeAmount, row.currency)
+                                      : '—'}
+                                  </dd>
+                                </div>
+                                {row.expectedFeeAmount ? (
+                                  <div>
+                                    <dt>Charge it should have taken</dt>
+                                    <dd>{money(row.expectedFeeAmount, row.currency)}</dd>
+                                  </div>
+                                ) : null}
+                                {row.feeDifferenceAmount ? (
+                                  <div
+                                    data-tone={
+                                      Number(row.feeDifferenceAmount) !== 0 ? 'warning' : undefined
+                                    }
+                                  >
+                                    <dt>Charge difference</dt>
+                                    <dd>
+                                      {Number(row.feeDifferenceAmount) === 0
+                                        ? 'None: it took what it should'
+                                        : Number(row.feeDifferenceAmount) > 0
+                                          ? `${money(row.feeDifferenceAmount, row.currency)} more than it should`
+                                          : `${money(row.feeDifferenceAmount.replace(/^-/, ''), row.currency)} less than it should`}
+                                    </dd>
+                                  </div>
+                                ) : null}
+                                <div>
+                                  <dt>Deduction</dt>
+                                  <dd>
+                                    {row.providerDeductionAmount
+                                      ? money(row.providerDeductionAmount, row.currency)
+                                      : '—'}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>Reported net</dt>
+                                  <dd>
+                                    {row.reportedNetAmount
+                                      ? money(row.reportedNetAmount, row.currency)
+                                      : '—'}
+                                  </dd>
+                                </div>
+                                <div
+                                  data-tone={
+                                    !notMatchedYet && Number(amounts.difference) !== 0
+                                      ? 'warning'
+                                      : undefined
+                                  }
+                                >
+                                  <dt>Difference</dt>
+                                  <dd>
+                                    {notMatchedYet
+                                      ? 'Not matched to sales yet'
+                                      : `${money(amounts.difference, row.currency)} (sales matched, less what was paid out and kept)`}
+                                  </dd>
+                                </div>
+                                <div
+                                  data-tone={hasVariance && !notMatchedYet ? 'warning' : undefined}
+                                >
+                                  <dt>Variance</dt>
+                                  <dd>
+                                    {notMatchedYet
+                                      ? 'Not matched to sales yet'
+                                      : money(row.varianceAmount, row.currency)}
+                                  </dd>
+                                </div>
+                              </dl>
+                            ) : null}
+                            {isPendingReason ? (
+                              <div className="settlement-reason">
+                                <Field
+                                  id={`reconcile-reason-${row.settlementId}`}
+                                  label="Variance reason"
+                                  hint="Required because allocated evidence differs from the settlement gross amount."
+                                  required
+                                >
+                                  <input
+                                    id={`reconcile-reason-${row.settlementId}`}
+                                    value={reconciliationReason}
+                                    onChange={(event) =>
+                                      setReconciliationReason(event.target.value)
+                                    }
+                                    maxLength={500}
+                                    required
+                                  />
+                                </Field>
+                                <Button
+                                  variant="quiet"
+                                  type="button"
+                                  onClick={() => {
+                                    setPendingReconciliationId('');
+                                    setReconciliationReason('');
+                                  }}
+                                  disabled={working}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <Pagination slice={payoutPage} label="Payouts pages" noun="payouts" />
+                  </div>
+                ) : null}
+              </>
+            ),
+          },
+          {
+            id: 'waiting',
+            label: 'Payments Waiting',
+            aside: <InfoTip>Waiting for a payout</InfoTip>,
+            content: (
+              <>
+                {!loading && !error && unmatched.length === 0 ? (
+                  <EmptyState
+                    title="No EcoCash or card payments waiting"
+                    message="Approved EcoCash and card payments show here until matched."
+                  />
+                ) : null}
+                {canShowUnmatchedRows ? (
+                  <TableScrollRegion label="Card and mobile payments not yet matched to a payout">
+                    <table className="data-table">
+                      <caption className="sr-only">
+                        Card and mobile payments not yet matched to a payout
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Method / reference</th>
+                          <th scope="col">Business date</th>
+                          <th scope="col">Amount</th>
+                          <th scope="col">Remaining</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {waitingPage.rows.map((row) => (
+                          <tr
+                            key={row.paymentId}
+                            className={canMatch ? 'row-action' : undefined}
+                            onClick={canMatch ? () => openMatch(row.paymentId) : undefined}
+                            onKeyDown={
+                              canMatch
+                                ? (event) => {
+                                    if (event.target !== event.currentTarget) return;
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                      event.preventDefault();
+                                      openMatch(row.paymentId);
+                                    }
+                                  }
+                                : undefined
                             }
-                          }
-                        : undefined
-                    }
-                    tabIndex={canMatch ? 0 : undefined}
-                  >
-                    <th scope="row" data-label="Method / reference">
-                      <strong>{methodLabel(row.method)}</strong>
-                      <br />
-                      {row.reference ?? row.paymentId.slice(0, 12)}
-                    </th>
-                    <td data-label="Business date" className="numeric">
-                      <span className="numeric">{row.businessDate}</span>
-                    </td>
-                    <td data-label="Amount" className="numeric">
-                      {money(row.amount)}
-                    </td>
-                    <td data-label="Remaining" className="numeric">
-                      {money(row.unallocatedAmount)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScrollRegion>
-        ) : null}
-        {canShowUnmatchedRows ? (
-          <ShowMore shown={waitingShown} total={unmatched.length} onChange={setWaitingShown} />
-        ) : null}
-        {loading ? <LoadingState label="Loading unmatched payment evidence" /> : null}
-        {error ? (
-          <p className="field-hint">Matching is unavailable until the latest figures load.</p>
-        ) : null}
-      </Card>
+                            tabIndex={canMatch ? 0 : undefined}
+                          >
+                            <th scope="row" data-label="Method / reference">
+                              <strong>{methodLabel(row.method)}</strong>
+                              <br />
+                              {row.reference ?? row.paymentId.slice(0, 12)}
+                            </th>
+                            <td data-label="Business date" className="numeric">
+                              <span className="numeric">{row.businessDate}</span>
+                            </td>
+                            <td data-label="Amount" className="numeric">
+                              {money(row.amount)}
+                            </td>
+                            <td data-label="Remaining" className="numeric">
+                              {money(row.unallocatedAmount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableScrollRegion>
+                ) : null}
+                {canShowUnmatchedRows ? (
+                  <Pagination slice={waitingPage} label="Waiting payments pages" noun="payments" />
+                ) : null}
+                {loading ? <LoadingState label="Loading unmatched payment evidence" /> : null}
+                {error ? (
+                  <p className="field-hint">
+                    Matching is unavailable until the latest figures load.
+                  </p>
+                ) : null}
+              </>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

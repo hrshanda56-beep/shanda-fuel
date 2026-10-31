@@ -7,6 +7,7 @@ import { useConfirm } from '../../../design-system/feedback-provider';
 import { Button } from '../../../design-system/primitives';
 import { dailyOperationsProblem } from './daily-operations-state';
 import {
+  canRunShift,
   nextStep,
   TRAIL,
   trailActions,
@@ -69,7 +70,7 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
     return () => clearTimeout(timer);
   }, [load]);
 
-  if (hidden || !overview) return null;
+  if (hidden || !overview || !canRunShift(overview)) return null;
 
   const step = nextStep(overview, { tenantId, stationId }, () => crypto.randomUUID());
   const { action } = step;

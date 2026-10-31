@@ -66,7 +66,7 @@ export async function ServerDataPage<T>({
       <AuthorizedAppShell {...shell} shellAccess={access}>
         <ErrorState
           title="Selection needs review"
-          message="The selected organisation or station is not available to your account. Open the station selector to review your access."
+          message="This page needs a station or organisation you have access to. Open the station selector above and choose one, or use the menu to find the page you need."
         />
       </AuthorizedAppShell>
     );

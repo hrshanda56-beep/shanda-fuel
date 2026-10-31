@@ -117,6 +117,7 @@ describe('delivery detail screens', () => {
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
       canSetWaterTestRule: false,
+      canRecord: true,
       tanks: [],
       deliveries: [],
     };
@@ -126,11 +127,28 @@ describe('delivery detail screens', () => {
     expect(html).toContain('No deliveries yet');
   });
 
+  it('does not offer to record a delivery to someone who may not', () => {
+    const empty: DeliveryList = {
+      stationTimezone: 'Africa/Harare',
+      waterTestRequired: false,
+      canSetWaterTestRule: false,
+      canRecord: false,
+      tanks: [],
+      deliveries: [],
+    };
+    const html = renderToStaticMarkup(
+      createElement(DeliveriesList, { context, contextQuery: '', initialData: empty }),
+    );
+    expect(html).not.toContain('Record delivery');
+    expect(html).not.toContain('Record one');
+  });
+
   it('makes each delivery row one link to its details', () => {
     const list: DeliveryList = {
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
       canSetWaterTestRule: false,
+      canRecord: true,
       tanks: [],
       deliveries: [
         {

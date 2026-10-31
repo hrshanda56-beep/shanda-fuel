@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { nextStep, type StepOverview } from './next-step';
+import { canRunShift, nextStep, type StepOverview } from './next-step';
 
 const ctx = { tenantId: 't', stationId: 's' };
 const allowed = { canExecute: true };
@@ -287,5 +287,35 @@ describe('nextStep with scheduled shifts', () => {
       at('16:05'),
     );
     expect(result.action).toMatchObject({ commandType: 'CloseBusinessDay' });
+  });
+});
+
+describe('canRunShift', () => {
+  const none = { canExecute: false, permissionGranted: false };
+  const noneAllowed = {
+    OpenBusinessDay: none,
+    CloseBusinessDay: none,
+    StartShift: none,
+    CloseMeters: none,
+    CompleteShift: none,
+  };
+
+  it('is true for someone who runs the shift', () => {
+    expect(canRunShift(base)).toBe(true);
+  });
+
+  it('is false for someone who holds none of the shift permissions (finance)', () => {
+    expect(canRunShift({ ...base, actions: noneAllowed })).toBe(false);
+  });
+
+  it('ignores permissions the card never uses, such as locking a day', () => {
+    const lock = { canExecute: false, permissionGranted: true };
+    const actions = { ...noneAllowed, LockBusinessDay: lock } as unknown as StepOverview['actions'];
+    expect(canRunShift({ ...base, actions })).toBe(false);
+  });
+
+  it('stays true when the permission is held but a step cannot run right now', () => {
+    const held = { canExecute: false, permissionGranted: true };
+    expect(canRunShift({ ...base, actions: { ...noneAllowed, CompleteShift: held } })).toBe(true);
   });
 });

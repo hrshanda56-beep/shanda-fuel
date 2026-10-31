@@ -1,14 +1,13 @@
 'use client';
 
-import { useState } from 'react';
 import { Card, EmptyState } from '../../../../design-system/primitives';
-import { ShowMore, useShowMore } from '../../../../design-system/show-more';
+import { formatDecimal } from '../../../../design-system/formatters';
+import { Pagination, usePagination } from '../../../../design-system/pagination';
 import { TableScrollRegion } from '../../../../design-system/table';
 import type { TableReportDefinition, TableReportRow } from '../definitions';
 
-/** Rows a report shows to start with, and how many each press of Show more adds. */
-const FIRST_ROWS = 20;
-const MORE_ROWS = 20;
+/** Rows a report shows on each page. Other lists keep the shorter default page. */
+export const REPORT_PAGE_SIZE = 20;
 
 /** Longer text (an explanation, a reason) wraps; anything shorter stays on one line. */
 const ONE_LINE_MAX = 32;
@@ -22,9 +21,15 @@ function cellClass(kind: 'text' | 'number', value: string | null | undefined) {
   return !value || value.length <= ONE_LINE_MAX ? 'cell-nowrap' : undefined;
 }
 
+/** A number column gets thousands separators; its digits are never rounded or changed. */
+function cellText(kind: 'text' | 'number', value: string | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  return kind === 'number' && /^-?\d+(?:\.\d+)?$/.test(value) ? formatDecimal(value) : value;
+}
+
 /**
- * The report as one plain table. Numbers are shown exactly as the database holds them. Long
- * reports start with the first few rows and grow with "Show more"; the download has every row.
+ * The report as one plain table. Numbers are shown with the digits the database holds. Long
+ * reports are split into pages; the download has every row.
  */
 export function TableReportTable({
   definition,
@@ -38,19 +43,13 @@ export function TableReportTable({
   /** The most rows a report holds; said on the page when the report was cut short. */
   rowLimit: number;
 }) {
-  const [shown, setShown] = useShowMore(FIRST_ROWS);
-  const [seenRows, setSeenRows] = useState(rows);
-  if (seenRows !== rows) {
-    // New figures arrived (other dates or stations): start again from the first rows.
-    setSeenRows(rows);
-    setShown(FIRST_ROWS);
-  }
+  const page = usePagination(rows, { pageSize: REPORT_PAGE_SIZE, resetKey: rows });
   if (rows.length === 0) {
     return <EmptyState title="Nothing to show" message={definition.emptyMessage} />;
   }
   return (
     <Card as="section" className="panel content-span" aria-label={definition.title}>
-      {truncated || rows.length <= FIRST_ROWS ? (
+      {truncated || rows.length <= REPORT_PAGE_SIZE ? (
         <p className="field-hint" role="status">
           {rows.length.toLocaleString('en-US')} {rows.length === 1 ? 'row' : 'rows'}
           {truncated
@@ -75,7 +74,7 @@ export function TableReportTable({
             </tr>
           </thead>
           <tbody>
-            {rows.slice(0, shown).map((row, index) => (
+            {page.rows.map((row, index) => (
               <tr key={index}>
                 {definition.columns.map((column) => (
                   <td
@@ -83,7 +82,7 @@ export function TableReportTable({
                     data-label={column.label}
                     className={cellClass(column.kind, row[column.key])}
                   >
-                    {row[column.key] ?? '—'}
+                    {cellText(column.kind, row[column.key])}
                   </td>
                 ))}
               </tr>
@@ -91,13 +90,7 @@ export function TableReportTable({
           </tbody>
         </table>
       </TableScrollRegion>
-      <ShowMore
-        shown={shown}
-        total={rows.length}
-        onChange={setShown}
-        first={FIRST_ROWS}
-        step={MORE_ROWS}
-      />
+      <Pagination slice={page} label="Report pages" noun="rows" />
     </Card>
   );
 }

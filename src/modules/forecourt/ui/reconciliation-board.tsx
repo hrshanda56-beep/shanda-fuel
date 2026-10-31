@@ -16,6 +16,7 @@ import {
   type Statement,
   type StatementSection,
 } from './reconciliation-statement';
+import { InfoTip } from '@/design-system/info-tip';
 
 export type QueueItem = Readonly<{
   id: string;
@@ -452,10 +453,10 @@ function StatementView({
                 Marked “{NOT_RECORDED}” above, not counted as zero.
               </p>
             ) : null}
-            <p className="recon-statement-note">
+            <InfoTip>
               Every figure is the one the system calculated for that shift. Totals add the shifts
               together; nothing here changes a record.
-            </p>
+            </InfoTip>
           </>
         </section>
       ) : null}

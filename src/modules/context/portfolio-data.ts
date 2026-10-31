@@ -6,6 +6,7 @@ import { getCashStationSummaryFromRequest } from '@/modules/cash/queries';
 import { getSettlementOverviewFromRequest } from '@/modules/settlements/queries';
 import { loadActionCenterFacts } from '@/modules/approvals/action-center';
 import { buildActionCenter } from '@/modules/approvals';
+import { formatDecimal } from '@/design-system/formatters';
 import type { ContextSelection } from './contracts';
 import type { PortfolioArea } from './portfolio';
 import { cashFacts } from './portfolio-cash-facts';
@@ -46,7 +47,7 @@ export async function loadPortfolioStation(
     const data = await getInventoryValuationReadModel(request, input);
     return data.streams.map((row) => ({
       label: `${row.tank.code} · ${row.product.name}`,
-      value: `${row.quantityLitres} L · ${row.valuationStatus}`,
+      value: `${formatDecimal(row.quantityLitres, ' L')} · ${row.valuationStatus}`,
       href: `/inventory/valuation/streams/${encodeURIComponent(row.tank.id)}/${encodeURIComponent(row.product.id)}?${new URLSearchParams(input)}`,
     }));
   }

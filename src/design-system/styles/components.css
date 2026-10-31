@@ -667,11 +667,18 @@ input[type='radio']:focus-visible {
 }
 
 .field > label,
+.field-label-row > label,
 .field-label {
   color: var(--text-primary);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
   line-height: var(--line-height-snug);
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .field-required {
@@ -757,20 +764,24 @@ input[type='radio']:focus-visible {
 
 /* The file picker is drawn as a field of the same height as the dropdown and the Add button. */
 .doc-attach-file {
+  display: flex;
+  align-items: center;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  min-height: var(--control-height-md);
-  padding: 0 var(--space-1-5);
-  border: var(--border-width) solid var(--border-default);
+  height: var(--control-height-md);
+  padding: var(--space-1);
+  border: var(--border-width) solid var(--border-control);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
-  color: var(--text-tertiary);
+  box-shadow: var(--shadow-inset-control);
+  color: var(--text-secondary);
   font: inherit;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-snug);
   text-overflow: ellipsis;
   cursor: pointer;
-  transition: border-color 120ms ease;
+  transition: var(--transition-colors);
 }
 
 .doc-attach-file:hover {
@@ -782,18 +793,21 @@ input[type='radio']:focus-visible {
   outline-offset: 1px;
 }
 
+/* The button is a quiet secondary button set inside the field, with its own edge so it reads as one. */
 .doc-attach-file::file-selector-button {
-  margin-right: var(--space-3);
-  padding: var(--space-1) var(--space-3);
-  border: 0;
+  box-sizing: border-box;
+  height: calc(var(--control-height-md) - 2 * var(--border-width) - 2 * var(--space-1));
+  margin: 0 var(--space-3) 0 0;
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
   color: var(--text-primary);
   font: inherit;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color 120ms ease;
+  transition: var(--transition-colors);
 }
 
 .doc-attach-file:hover::file-selector-button {
@@ -1376,7 +1390,7 @@ tr:has(.row-link):active {
   max-width: 100%;
   padding: 0 var(--space-2);
   border: var(--border-width) solid var(--tone-neutral-border);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: var(--tone-neutral-bg);
   color: var(--tone-neutral-text);
   font-size: var(--font-size-xs);
@@ -1465,6 +1479,22 @@ tr:has(.row-link):active {
 
 .status-offline::before {
   background: var(--tone-offline-fg);
+}
+
+/* In a table a status is only its words: no pill, no tint, no dot. Cards and headings keep the pill. */
+:is(table, .responsive-table, .data-table) td .status {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+:is(table, .responsive-table, .data-table) td .status::before {
+  display: none;
 }
 
 /* Notices (inline notifications) ---------------------------------------- */
@@ -1604,7 +1634,7 @@ tr:has(.row-link):active {
   height: 1.375rem;
   place-items: center;
   padding: 0 var(--space-1-5);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: var(--bg-muted);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -2017,7 +2047,7 @@ tr:has(.row-link):active {
   gap: var(--space-1);
   padding: 0 var(--space-1-5);
   border: var(--border-width) dashed var(--border-strong);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
@@ -2774,4 +2804,52 @@ tr:has(.row-link):active {
   :is(.dropdown-panel, .station-picker-panel) {
     animation: none;
   }
+}
+
+/* InfoTip: a small "?" that holds an explanation. Shown instantly, with no delay or fade. */
+.info-tip {
+  display: inline-grid;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
+  place-items: center;
+  margin-inline-start: var(--space-1-5);
+  padding: 0;
+  border: var(--border-width) solid var(--border-default);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  vertical-align: middle;
+  cursor: help;
+}
+.info-tip:hover,
+.info-tip[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.info-tip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.info-tip-bubble {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(20rem, calc(100vw - 1.5rem));
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  pointer-events: none;
 }

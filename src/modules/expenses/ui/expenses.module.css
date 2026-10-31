@@ -385,8 +385,9 @@
 }
 
 @media (max-width: 48rem) {
-  /* The two overview cards stay side by side; their contents give way instead. */
+  /* On a phone the two overview cards stack, so the ring and its key have room. */
   .overview {
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
   }
 
@@ -485,4 +486,36 @@
 .ring :global(.cash-donut-name) {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.addChoices {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.addChoice {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.addChoice:hover,
+.addChoice:focus-visible {
+  border-color: var(--text-secondary);
+}
+
+.addChoice span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.listTabs {
+  margin-bottom: var(--space-3);
 }

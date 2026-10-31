@@ -8,6 +8,7 @@ import { Modal } from '@/design-system/modal';
 import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { StepUpDialog } from '../../setup/ui/step-up-dialog';
 import type { SettingsLegalEntity, SettingsStation } from '../contracts';
+import { InfoTip } from '@/design-system/info-tip';
 
 const COMMON_ZONES = [
   'Africa/Harare',
@@ -384,10 +385,10 @@ export function AddStation({
             />
           </Field>
           <ZoneField id="station-zone" value={zone} onChange={setZone} />
-          <p className="field-hint">
+          <InfoTip>
             The station starts in setup. Add its fuels, tanks and pumps under Station setup, then
             switch it on.
-          </p>
+          </InfoTip>
           {fieldError ? (
             <p className="field-error" role="alert">
               {fieldError}

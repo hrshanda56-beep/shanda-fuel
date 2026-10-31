@@ -13,6 +13,7 @@ import {
   saveDraft,
 } from '../../../platform/drafts/local-draft';
 import { compartmentSumProblem, shortageOrExcess, type CompartmentRow } from '../record-delivery';
+import { InfoTip } from '@/design-system/info-tip';
 
 export const NO_PO_REASONS = [
   { value: '', label: 'I will link a purchase order later' },
@@ -584,11 +585,11 @@ export function RecordDelivery({
   return (
     <Frame framed={framed}>
       {recorded ? null : (
-        <p className="table-secondary">
+        <InfoTip>
           {edit
             ? 'Change what needs changing, then save. Only what you changed is saved.'
             : 'The first two sections are all you need. Add the rest if you have it.'}
-        </p>
+        </InfoTip>
       )}
       {restored && deliveryId === null ? (
         <div className="rd-restore" role="status">
@@ -951,10 +952,10 @@ export function RecordDelivery({
               {deliveryNote.trim()} · {receivedLitres.trim()} L
               {tank ? ` of ${tank.productName} into tank ${tank.code}` : ''}
             </p>
-            <p className="table-secondary">
+            <InfoTip>
               Add a photo of the delivery note if you have one, then confirm. Confirming puts the
               fuel on the tank&apos;s books and records you as the supervisor who checked it.
-            </p>
+            </InfoTip>
           </div>
           <DocumentAttachments
             tenantId={tenantId}

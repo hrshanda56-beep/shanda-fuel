@@ -1248,7 +1248,6 @@ export async function approveProductionReconciliationFromRequest(request: Reques
                 and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
             )
           order by m.segment_start_at, m.id
-          for update of m
         `);
         const allocations = deriveSegmentSaleAllocations(
           {
@@ -1292,7 +1291,6 @@ export async function approveProductionReconciliationFromRequest(request: Reques
                 and movement_type='SALE'
                 and source_type='METER_SEGMENT_SALE'
                 and source_id=${allocation.segmentId}
-              for update
             `);
             if (existingMovement.length > 0) {
               throw new AppError(
@@ -1729,6 +1727,18 @@ export async function getProductionReconciliationFromRequest(
         stationId: context.stationId,
         excludeMembershipId: context.actor.membershipId,
       }));
+    // Who submitted the day, so the person reviewing it can see. A person cannot read other
+    // people's membership rows, so the name comes from a narrow function that returns only a
+    // display name and the time for this one reconciliation.
+    const submittedBy = await transaction.execute<{
+      name: string | null;
+      submitted_at: Date | string | null;
+    }>(sql`
+      select name, submitted_at
+      from app.reconciliation_submitter(
+        ${context.tenantId}::uuid, ${context.stationId}::uuid, ${input.reconciliationId}::uuid)
+    `);
+    const submitterRow = submittedBy[0];
     // Which review buttons this person may use, so a button is never shown that the server refuses.
     const may = (permissionCode: 'reconciliation.approve' | 'reconciliation.return') =>
       isPermissionGranted({
@@ -1762,6 +1772,14 @@ export async function getProductionReconciliationFromRequest(
       ...header,
       version: Number(header.version),
       approvalBlocked,
+      submitter: submitterRow?.name
+        ? {
+            name: submitterRow.name,
+            submittedAt: submitterRow.submitted_at
+              ? new Date(submitterRow.submitted_at).toISOString()
+              : null,
+          }
+        : null,
       canApprove: may('reconciliation.approve'),
       canReturn: may('reconciliation.return'),
       canCorrectOpening: isPermissionGranted({

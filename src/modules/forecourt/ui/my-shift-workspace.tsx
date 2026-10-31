@@ -29,6 +29,7 @@ import {
   summariseFigures,
   type AttentionItem,
 } from '../my-shift-summary';
+import { InfoTip } from '@/design-system/info-tip';
 
 type Scope = { tenantId: string; stationId: string };
 
@@ -563,9 +564,9 @@ function CaptureForm({
   if (isOpening && previous && !different) {
     return (
       <div className="my-shift-form" role="group" aria-label={`Opening reading for ${view.label}`}>
-        <p className="my-shift-form-help">
+        <InfoTip>
           The last shift left {view.label} at <strong>{previous} L</strong>. Look at the meter.
-        </p>
+        </InfoTip>
         {error ? (
           <p className="field-error" role="alert">
             {error}
@@ -663,9 +664,7 @@ function CaptureForm({
           Cancel
         </Button>
       </div>
-      <p className="my-shift-form-help">
-        Cannot read the meter? Do not guess. Tell your supervisor.
-      </p>
+      <InfoTip>Cannot read the meter? Do not guess. Tell your supervisor.</InfoTip>
     </form>
   );
 }

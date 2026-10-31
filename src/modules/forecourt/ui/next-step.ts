@@ -32,10 +32,25 @@ export type StepOverview = Readonly<{
   actions: Readonly<
     Record<
       'OpenBusinessDay' | 'CloseBusinessDay' | 'StartShift' | 'CloseMeters' | 'CompleteShift',
-      Readonly<{ canExecute: boolean }>
+      Readonly<{ canExecute: boolean; permissionGranted?: boolean }>
     >
   >;
 }>;
+
+/**
+ * Whether this person runs the shift at all. Someone who holds none of the five permissions the
+ * card offers (a finance user, for example) has nothing to do on it, so it is not shown to them.
+ */
+export function canRunShift(overview: Pick<StepOverview, 'actions'>): boolean {
+  const { actions } = overview;
+  return [
+    actions.OpenBusinessDay,
+    actions.CloseBusinessDay,
+    actions.StartShift,
+    actions.CloseMeters,
+    actions.CompleteShift,
+  ].some((action) => action.permissionGranted ?? action.canExecute);
+}
 
 export type StepContext = Readonly<{ tenantId: string; stationId: string }>;
 

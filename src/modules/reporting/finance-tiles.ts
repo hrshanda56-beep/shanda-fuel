@@ -62,7 +62,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
       label: 'Gross profit',
       value: report.grossMargin,
       unavailableReason: profitReason,
-      href: '/daily-profit',
+      href: '/profitability?view=daily',
     },
     {
       id: 'operatingProfit',
@@ -70,7 +70,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
       label: 'Operating profit',
       value: operating,
       unavailableReason: profitReason,
-      href: '/daily-profit',
+      href: '/profitability?view=daily',
     },
     {
       id: 'stockValue',
@@ -79,10 +79,11 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
       value: own?.stockValue ?? null,
       unavailableReason: own
         ? own.stockValue === null
-          ? 'Some stock has no cost yet.'
+          ? 'Some stock has no cost yet. Open Inventory to add it.'
           : undefined
         : 'Not available.',
-      href: '/financial-position',
+      href:
+        own && own.stockValue === null ? '/inventory/valuation' : '/profitability?view=position',
     },
     {
       id: 'cashAtStations',
@@ -92,21 +93,21 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
         report.cash.custody?.atStation ??
         report.cash.atStation ??
         report.cash.collectedButNotBanked,
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'cashBanked',
       basis: 'period',
       label: 'Cash banked',
       value: report.cash.banked,
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'posAwaiting',
       basis: 'as-at',
       label: 'Card and mobile payments awaiting settlement',
       value: report.providers.unmatchedEvidenceAmount,
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'debtors',
@@ -116,14 +117,14 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
       unavailableReason: customersKnown
         ? undefined
         : 'Choose all stations to see customer balances.',
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'creditors',
       basis: 'as-at',
       label: 'Owed to suppliers',
       value: report.suppliers.outstandingBalance,
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'netPosition',
@@ -136,7 +137,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
             ? 'Not every figure is known yet.'
             : 'Choose all stations to see the net position.'
           : undefined,
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'expensesAwaitingApproval',

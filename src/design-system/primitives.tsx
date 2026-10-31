@@ -16,6 +16,7 @@ import {
 } from 'react';
 
 import { Icon, type IconName } from './icons';
+import { InfoTip } from './info-tip';
 import { FOCUSABLE_SELECTOR, Modal } from './modal';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger';
@@ -133,23 +134,28 @@ function FieldLabel({
   label,
   required,
   optional,
+  hint,
 }: {
   htmlFor: string;
   label: string;
   required: boolean;
   optional: boolean;
+  hint?: string;
 }) {
   return (
-    <label htmlFor={htmlFor}>
-      {label}
-      {required ? (
-        <span className="field-required" aria-hidden="true">
-          {' '}
-          *
-        </span>
-      ) : null}
-      {optional && !required ? <span className="field-optional"> (optional)</span> : null}
-    </label>
+    <span className="field-label-row">
+      <label htmlFor={htmlFor}>
+        {label}
+        {required ? (
+          <span className="field-required" aria-hidden="true">
+            {' '}
+            *
+          </span>
+        ) : null}
+        {optional && !required ? <span className="field-optional"> (optional)</span> : null}
+      </label>
+      {hint ? <InfoTip text={hint} /> : null}
+    </span>
   );
 }
 
@@ -271,9 +277,9 @@ export function Field({
 
   return (
     <div className="field">
-      <FieldLabel htmlFor={id} label={label} required={required} optional={optional} />
+      <FieldLabel htmlFor={id} label={label} required={required} optional={optional} hint={hint} />
       {hint ? (
-        <p className="field-hint" id={descriptionId}>
+        <p className="visually-hidden" id={descriptionId}>
           {hint}
         </p>
       ) : null}

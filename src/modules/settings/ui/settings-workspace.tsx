@@ -19,7 +19,6 @@ import styles from './settings-workspace.module.css';
 
 type Tab =
   | 'organisation'
-  | 'companies'
   | 'stations'
   | 'setup'
   | 'readiness'
@@ -31,7 +30,6 @@ type Tab =
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
-  { value: 'companies', label: 'Companies', icon: 'receipt' },
   { value: 'stations', label: 'Stations', icon: 'fuel' },
   { value: 'setup', label: 'Station setup', icon: 'settings' },
   { value: 'readiness', label: 'Readiness', icon: 'check-circle' },
@@ -268,6 +266,7 @@ export function SettingsWorkspace({
   /** A section to open first, e.g. from a link on the readiness list. */
   initialTab?: string;
 }) {
+  // Companies are part of the Organisation section, so an older link to them lands there.
   const [tab, setTab] = useState<Tab>(
     TABS.some((item) => item.value === initialTab) ? (initialTab as Tab) : 'organisation',
   );
@@ -349,8 +348,7 @@ export function SettingsWorkspace({
         <div className={styles.content}>
           <header className={styles.contentHeader}>
             <h2 className={styles.contentTitle}>{active.label}</h2>
-            {shown === 'organisation' ||
-            (shown === 'companies' && !view.access?.canManageCompanies) ||
+            {(shown === 'organisation' && !view.access?.canManageCompanies) ||
             (shown === 'stations' && !view.access?.canManageStations) ? (
               <p className={styles.note}>These details are read-only on this screen.</p>
             ) : null}
@@ -362,7 +360,7 @@ export function SettingsWorkspace({
             </Section>
           ) : null}
 
-          {shown === 'companies' ? (
+          {shown === 'organisation' ? (
             <Section headingId="companies" title="Companies">
               {view.access?.canManageCompanies ? <AddCompany tenantId={organisation.id} /> : null}
               {legalEntities.length > 0 ? (

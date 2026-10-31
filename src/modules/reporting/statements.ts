@@ -466,7 +466,7 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
       value: extra?.stockValue ?? null,
       note:
         extra && extra.stockValue === null
-          ? `${extra.unvaluedStockStreams} tank(s) hold fuel with no cost yet.`
+          ? `${extra.unvaluedStockStreams} tank(s) hold fuel with no cost yet. Open Inventory to add the cost.`
           : extra
             ? undefined
             : 'Not available.',

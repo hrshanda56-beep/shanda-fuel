@@ -239,8 +239,14 @@ export function PurchaseOrderDetail({
 
       {order ? (
         <>
-          <Card as="section" className="panel content-span" aria-labelledby="po-lines-title">
-            <h3 id="po-lines-title">Fuel on this order</h3>
+          <Card
+            as="section"
+            className="panel profit-panel content-span"
+            aria-labelledby="po-lines-title"
+          >
+            <h2 id="po-lines-title" className="profit-title">
+              Fuel on this order
+            </h2>
             <div className={`${styles.table} ${styles.stack}`}>
               <div className={styles.head + ' list-head'} aria-hidden="true">
                 <span>Fuel</span>
@@ -298,9 +304,15 @@ export function PurchaseOrderDetail({
             </div>
           </Card>
 
-          <Card as="section" className="panel content-span" aria-labelledby="po-deliveries-title">
+          <Card
+            as="section"
+            className="panel profit-panel content-span"
+            aria-labelledby="po-deliveries-title"
+          >
             <div className={styles.toolbar}>
-              <h3 id="po-deliveries-title">Deliveries linked to this order</h3>
+              <h2 id="po-deliveries-title" className="profit-title">
+                Deliveries linked to this order
+              </h2>
               {canLink ? (
                 <Button
                   className={styles.toolbarEnd}
@@ -349,9 +361,15 @@ export function PurchaseOrderDetail({
             )}
           </Card>
 
-          <Card as="section" className="panel content-span" aria-labelledby="po-details-title">
+          <Card
+            as="section"
+            className="panel profit-panel content-span"
+            aria-labelledby="po-details-title"
+          >
             <div className={styles.toolbar}>
-              <h3 id="po-details-title">Order details</h3>
+              <h2 id="po-details-title" className="profit-title">
+                Order details
+              </h2>
               {canEdit || canCancel || canClose ? (
                 <div className={`${styles.actions} ${styles.toolbarEnd}`}>
                   {canEdit ? (
@@ -435,8 +453,14 @@ export function PurchaseOrderDetail({
           </Card>
 
           {order.revisions.filter((revision) => revision.reason).length > 0 ? (
-            <Card as="section" className="panel content-span" aria-labelledby="po-history-title">
-              <h3 id="po-history-title">Changes made to this order</h3>
+            <Card
+              as="section"
+              className="panel profit-panel content-span"
+              aria-labelledby="po-history-title"
+            >
+              <h2 id="po-history-title" className="profit-title">
+                Changes made to this order
+              </h2>
               <ul className={styles.subRows} aria-label="Order changes">
                 {order.revisions
                   .filter((revision) => revision.reason)

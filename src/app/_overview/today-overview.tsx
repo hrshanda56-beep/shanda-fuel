@@ -734,7 +734,8 @@ function OperationsRow({ operations, href }: { operations: TodayOperations; href
       </span>
       <span className="today-hero-title">{operations.station.name}</span>
       <span className="today-hero-detail">
-        {formatBusinessDate(operations.currentBusinessDate)} · {shiftSummary(operations.shifts)}
+        {formatBusinessDate(operations.selectedBusinessDay?.date ?? operations.currentBusinessDate)}{' '}
+        · {shiftSummary(operations.shifts)}
         {approval ? ` · ${approval}` : ''}
       </span>
       <span className="today-hero-status">

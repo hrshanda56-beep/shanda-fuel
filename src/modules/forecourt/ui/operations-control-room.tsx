@@ -19,7 +19,9 @@ import { SHIFT_EARLY_START_MINUTES } from '../shift-schedule';
 import { eventLabel, isEarlierOpenDay } from './operations-labels';
 import { dailyOperationsLinkFix, dailyOperationsProblem } from './daily-operations-state';
 import { NextStepCard } from './next-step-card';
+import { canRunShift } from './next-step';
 import { ReconciliationBoard } from './reconciliation-board';
+import { InfoTip } from '@/design-system/info-tip';
 
 type Context = Readonly<{ tenantId: string; stationId: string; businessDayId?: string }>;
 type ActionAvailability = {
@@ -534,6 +536,10 @@ export function OperationsControlRoom({
   // may open the day: the first shift then opens the day with it.
   const canOpenFirstShift =
     day?.state === 'OPEN' || ((!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute);
+  // The day card is for the person running the day. Someone who cannot (finance) sees it only when
+  // there is something for them to do on it: a closed day they may lock.
+  const showDayCard =
+    canRunShift(overview) || (day?.state === 'CLOSED' && lockBusinessDay.permissionGranted);
   const shiftsForDay = day ? overview.shifts : [];
   const reviewHref = (reconciliationId: string, shiftId: string) =>
     day
@@ -550,97 +556,106 @@ export function OperationsControlRoom({
     <div className="operations-control-room" aria-label="Operations control room">
       {focus === 'operations' ? (
         <div className="ops-top">
-          <header className="ops-hero">
-            <h2>{formatBusinessDate(day ? day.date : overview.currentBusinessDate)}</h2>
-            <div className="ops-hero-side">
-              <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
-                {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
-              </StatusBadge>
-            </div>
-            {focus === 'operations' ? (
-              <div className="ops-hero-details">
-                {day ? (
-                  <dl className="ops-hero-times">
-                    <div>
-                      <dt>Opened</dt>
-                      <dd>
-                        {day.openedAt
-                          ? formatTimestamp(day.openedAt, overview.station.timezone)
-                          : 'Not opened'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Closed</dt>
-                      <dd>
-                        {day.closedAt
-                          ? formatTimestamp(day.closedAt, overview.station.timezone)
-                          : 'Not closed'}
-                      </dd>
-                    </div>
-                  </dl>
-                ) : (
-                  <p className="panel-detail">
-                    No business day yet. Open the station’s current business day to begin.
-                  </p>
-                )}
-                {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
-                  <Button
-                    variant="primary"
-                    disabled={busy}
-                    onClick={() =>
-                      void runCommand(
-                        'OpenBusinessDay',
-                        {
-                          tenantId: context.tenantId,
-                          stationId: context.stationId,
-                          businessDayId: openDayId,
-                          expectedVersion: day?.version ?? 0,
-                        },
-                        openDayId,
-                        'Open this business day?',
-                        'Business day opened.',
-                      )
-                    }
-                  >
-                    Open business day
-                  </Button>
-                ) : null}
-                {day?.state === 'CLOSED' && lockBusinessDay.permissionGranted ? (
-                  <Button
-                    variant="danger"
-                    disabled={busy || Boolean(overview.lockBlockedReason)}
-                    onClick={() =>
-                      void runCommand(
-                        'LockBusinessDay',
-                        {
-                          tenantId: context.tenantId,
-                          stationId: context.stationId,
-                          businessDayId: day.id,
-                          expectedVersion: day.version,
-                        },
-                        day.id,
-                        'Lock this business day? This is irreversible and prevents ordinary changes.',
-                        'Business day locked.',
-                      )
-                    }
-                  >
-                    Lock business day
-                  </Button>
-                ) : null}
-                {day?.state === 'CLOSED' && overview.lockBlockedReason ? (
-                  <p className="semantic-note" role="status" data-testid="lock-blocked-reason">
-                    <strong>Not ready to lock.</strong> {overview.lockBlockedReason}
-                  </p>
-                ) : null}
-                {day?.state === 'CLOSED' ? (
-                  <p className="semantic-note">
-                    <strong>Locking is permanent.</strong> After it, a change needs a recorded
-                    correction.
-                  </p>
-                ) : null}
+          {showDayCard ? (
+            <header className="ops-hero">
+              <h2>{formatBusinessDate(day ? day.date : overview.currentBusinessDate)}</h2>
+              <div className="ops-hero-side">
+                <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
+                  {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
+                </StatusBadge>
               </div>
-            ) : null}
-          </header>
+              {focus === 'operations' ? (
+                <div className="ops-hero-details">
+                  {day ? (
+                    <dl className="ops-hero-times">
+                      <div>
+                        <dt>Opened</dt>
+                        <dd>
+                          {day.openedAt
+                            ? formatTimestamp(day.openedAt, overview.station.timezone)
+                            : 'Not opened'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Closed</dt>
+                        <dd>
+                          {day.closedAt
+                            ? formatTimestamp(day.closedAt, overview.station.timezone)
+                            : 'Not closed'}
+                        </dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <p className="panel-detail">
+                      No business day yet. Open the station’s current business day to begin.
+                    </p>
+                  )}
+                  {day && day.state === 'OPEN' && day.date < overview.currentBusinessDate ? (
+                    <p className="panel-detail" role="status">
+                      This day is still open. It started on {formatBusinessDate(day.date)} and today
+                      is {formatBusinessDate(overview.currentBusinessDate)}. Close its shifts and
+                      the day so the figures are complete.
+                    </p>
+                  ) : null}
+                  {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
+                    <Button
+                      variant="primary"
+                      disabled={busy}
+                      onClick={() =>
+                        void runCommand(
+                          'OpenBusinessDay',
+                          {
+                            tenantId: context.tenantId,
+                            stationId: context.stationId,
+                            businessDayId: openDayId,
+                            expectedVersion: day?.version ?? 0,
+                          },
+                          openDayId,
+                          'Open this business day?',
+                          'Business day opened.',
+                        )
+                      }
+                    >
+                      Open business day
+                    </Button>
+                  ) : null}
+                  {day?.state === 'CLOSED' && lockBusinessDay.permissionGranted ? (
+                    <Button
+                      variant="danger"
+                      disabled={busy || Boolean(overview.lockBlockedReason)}
+                      onClick={() =>
+                        void runCommand(
+                          'LockBusinessDay',
+                          {
+                            tenantId: context.tenantId,
+                            stationId: context.stationId,
+                            businessDayId: day.id,
+                            expectedVersion: day.version,
+                          },
+                          day.id,
+                          'Lock this business day? This is irreversible and prevents ordinary changes.',
+                          'Business day locked.',
+                        )
+                      }
+                    >
+                      Lock business day
+                    </Button>
+                  ) : null}
+                  {day?.state === 'CLOSED' && overview.lockBlockedReason ? (
+                    <p className="semantic-note" role="status" data-testid="lock-blocked-reason">
+                      <strong>Not ready to lock.</strong> {overview.lockBlockedReason}
+                    </p>
+                  ) : null}
+                  {day?.state === 'CLOSED' ? (
+                    <InfoTip>
+                      <strong>Locking is permanent.</strong> After it, a change needs a recorded
+                      correction.
+                    </InfoTip>
+                  ) : null}
+                </div>
+              ) : null}
+            </header>
+          ) : null}
 
           <NextStepCard
             tenantId={context.tenantId}
@@ -881,9 +896,9 @@ export function OperationsControlRoom({
                   </div>
                 ) : null}
                 {selectedShift?.state === 'EXCEPTIONALLY_CLOSED' ? (
-                  <p className="semantic-note">
+                  <InfoTip>
                     This shift was closed as an exception. A manager should review it.
-                  </p>
+                  </InfoTip>
                 ) : null}
               </Card>
             ) : null}

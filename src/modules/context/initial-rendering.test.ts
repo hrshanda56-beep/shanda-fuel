@@ -171,9 +171,10 @@ import { OperationsControlRoom } from '../forecourt/ui/operations-control-room';
 import { DailyOperationsWorkspace } from '../forecourt/ui/daily-operations-workspace';
 import { MyShiftWorkspace } from '../forecourt/ui/my-shift-workspace';
 import { TodayOverview } from '@/app/_overview/today-overview';
-it('renders Operations overview without fetching it again on mount', () => {
-  const action = { canExecute: false, permissionGranted: false, requiresStepUp: false };
-  const html = renderToStaticMarkup(
+function renderControlRoom(runsTheDay: boolean) {
+  const none = { canExecute: false, permissionGranted: false, requiresStepUp: false };
+  const open = runsTheDay ? { ...none, canExecute: true, permissionGranted: true } : none;
+  return renderToStaticMarkup(
     createElement(OperationsControlRoom, {
       context: { tenantId: 'tenant', stationId: 'station' },
       initialData: {
@@ -183,12 +184,12 @@ it('renders Operations overview without fetching it again on mount', () => {
         currentBusinessDayId: null,
         visibility: { reconciliations: false },
         actions: {
-          OpenBusinessDay: action,
-          CloseBusinessDay: action,
-          LockBusinessDay: action,
-          StartShift: action,
-          CloseMeters: action,
-          CompleteShift: action,
+          OpenBusinessDay: open,
+          CloseBusinessDay: none,
+          LockBusinessDay: none,
+          StartShift: none,
+          CloseMeters: none,
+          CompleteShift: none,
         },
         businessDays: [],
         shifts: [],
@@ -196,9 +197,17 @@ it('renders Operations overview without fetching it again on mount', () => {
       },
     }),
   );
+}
+it('renders Operations overview without fetching it again on mount', () => {
+  const html = renderControlRoom(true);
   expect(html).not.toContain('Loading operations');
   // The hero shows the business date; the station name lives in the page header.
   expect(html).toContain('18 Oct 2026');
+});
+it('keeps the day card from someone who cannot run the day', () => {
+  const html = renderControlRoom(false);
+  expect(html).not.toContain('Loading operations');
+  expect(html).not.toContain('18 Oct 2026');
 });
 it('renders an initial daily draft and skips all initial summary fetches', () => {
   const html = renderToStaticMarkup(

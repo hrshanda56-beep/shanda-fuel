@@ -21,6 +21,7 @@ import {
   handoverTone,
   type HandoverAction,
 } from '../handover-view';
+import { InfoTip } from '@/design-system/info-tip';
 
 export type HandoverSummary = {
   handoverId: string;
@@ -179,9 +180,9 @@ export function CashHandoverSheet(props: Props) {
 
       {props.canSubmit ? (
         <form onSubmit={submit} className={styles.form}>
-          <p className="cash-sheet-intro">
+          <InfoTip>
             Hand cash from one place to another. The person receiving it has to accept it.
-          </p>
+          </InfoTip>
           <div className={styles.route}>
             <Field id="handover-from" label="Cash is coming from" required>
               <Select

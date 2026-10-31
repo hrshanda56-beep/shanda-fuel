@@ -2,6 +2,8 @@ export type RecordData = {
   state: string;
   version: number;
   approvalBlocked?: boolean;
+  /** Who submitted the day and when; null until it has been submitted, or when the name is not known. */
+  submitter?: { name: string; submittedAt: string | null } | null;
   /** What this person may do on a submitted reconciliation; absent means not known. */
   canApprove?: boolean;
   canReturn?: boolean;

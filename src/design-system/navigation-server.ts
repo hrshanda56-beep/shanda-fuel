@@ -136,10 +136,13 @@ export const getServerShellAccess = cache(async function getServerShellAccess(
     const resolution = await resolveCurrentContext(request);
     if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
     if (!resolution.current) throw new AppError('FORBIDDEN', 'A valid work context is required');
-    const projection = await buildServerNavigationProjection(request, resolution.current);
+    // Independent reads, so they wait on the database together rather than one after the other.
+    const [projection, accountName] = await Promise.all([
+      buildServerNavigationProjection(request, resolution.current),
+      readAccountName(request),
+    ]);
     if (projection === null)
       throw new AppError('FORBIDDEN', 'Navigation access could not be verified');
-    const accountName = await readAccountName(request);
     return {
       status: 'ready' as const,
       projection,

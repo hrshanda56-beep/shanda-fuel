@@ -1088,7 +1088,7 @@ a.operations-attention-row:hover {
   gap: 1px;
   padding: 0.2rem 0.8rem 0.22rem;
   border: 1px solid var(--tank-pill-border);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: var(--tank-pill-bg);
   backdrop-filter: blur(10px) saturate(1.3);
   box-shadow:
@@ -2153,7 +2153,7 @@ h3,
   min-height: 2.5rem;
   padding: 0 var(--space-3);
   border: var(--border-width) solid var(--border-default);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
   color: var(--text-secondary);
 }
@@ -2180,7 +2180,7 @@ h3,
   flex-wrap: wrap;
   gap: var(--space-1);
   padding: var(--space-1);
-  border-radius: 999px;
+  border-radius: var(--radius-lg);
   background: var(--bg-subtle);
 }
 
@@ -2191,7 +2191,7 @@ h3,
   min-height: 2rem;
   padding: 0 var(--space-3);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
@@ -2352,7 +2352,9 @@ h3,
 /* Supplier balances: money columns of equal width, numbers right-aligned. */
 .supplier-table .list-head,
 .supplier-table .list-row {
-  grid-template-columns: minmax(12rem, 2fr) minmax(8rem, 1.1fr) repeat(5, minmax(6rem, 1fr)) 2.5rem;
+  grid-template-columns:
+    minmax(12rem, 2fr) minmax(8rem, 1.1fr) repeat(4, minmax(6.5rem, 1fr))
+    2.5rem;
 }
 
 .supplier-table .list-row::after {
@@ -2716,7 +2718,7 @@ h3,
 .channel-pill {
   justify-self: start;
   padding: 0.15rem var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: var(--bg-subtle);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -2764,7 +2766,7 @@ h3,
   flex: none;
   min-width: 2rem;
   padding: 0.1rem var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: var(--bg-subtle);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -4074,9 +4076,15 @@ h3,
 .daily-operations-workspace:has(.entry-head) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'head' 'notices' 'steps' 'side' 'flow';
+  grid-template-areas: 'back' 'head' 'notices' 'body';
   gap: var(--space-4);
   align-items: start;
+}
+
+.daily-operations-workspace > .back-link {
+  grid-area: back;
+  justify-self: start;
+  margin: 0;
 }
 
 .daily-operations-workspace > .entry-head {
@@ -4089,18 +4097,60 @@ h3,
   gap: var(--space-3);
 }
 
-.entry-steps {
-  grid-area: steps;
+/*
+ * The card and its Back and Next buttons. On wide screens the card gives up its bottom-right corner
+ * (the same cut the Profits cards make at the top) and the buttons sit in the gap, outside the card.
+ * --notch-w holds the two buttons plus a little air. Narrow screens keep a whole card and the
+ * buttons follow below it.
+ */
+.entry-card-wrap {
+  --notch-w: 16rem;
+  --notch-h: 4.25rem;
+  --notch-r: 1.25rem;
+  grid-area: body;
+  display: grid;
+  gap: var(--space-3);
+  position: relative;
+  min-width: 0;
+}
+
+/* The first and last steps have one button, so the gap is cut for one and leaves no empty place. */
+.entry-card-wrap[data-actions='1'] {
+  --notch-w: 8.5rem;
+}
+
+.entry-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'side' 'flow';
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+/* The step's own cards sit flat inside the one card, so there is a single surface. */
+.entry-body .entry-flow .panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+}
+
+.entry-rail {
+  display: contents;
 }
 
 .entry-side {
   grid-area: side;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
-}
-
-.entry-side > .eyebrow {
-  display: none;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
 }
 
 .entry-flow {
@@ -4113,174 +4163,130 @@ h3,
 @media (min-width: 64rem) {
   .daily-operations-workspace:has(.entry-head) {
     grid-template-columns: minmax(0, 1fr) 20rem;
-    grid-template-areas: 'head head' 'notices notices' 'steps steps' 'flow side';
+    grid-template-areas: 'back back' 'head head' 'notices notices' 'body body';
   }
 
+  .entry-body {
+    grid-template-columns: minmax(0, 1fr) 18rem;
+    grid-template-areas: 'flow side';
+    gap: var(--space-6);
+    clip-path: shape(
+      from var(--radius-2xl) 0,
+      hline to calc(100% - var(--radius-2xl)),
+      arc to 100% var(--radius-2xl) of var(--radius-2xl) cw,
+      vline to calc(100% - var(--notch-h) - var(--notch-r)),
+      arc to calc(100% - var(--notch-r)) calc(100% - var(--notch-h)) of var(--notch-r) cw,
+      hline to calc(100% - var(--notch-w) + var(--notch-r)),
+      arc to calc(100% - var(--notch-w)) calc(100% - var(--notch-h) + var(--notch-r)) of
+        var(--notch-r) ccw,
+      vline to calc(100% - var(--notch-r)),
+      arc to calc(100% - var(--notch-w) - var(--notch-r)) 100% of var(--notch-r) cw,
+      hline to var(--radius-2xl),
+      arc to 0 calc(100% - var(--radius-2xl)) of var(--radius-2xl) cw,
+      vline to var(--radius-2xl),
+      arc to var(--radius-2xl) 0 of var(--radius-2xl) cw,
+      close
+    );
+  }
+
+  /* The totals stay in the right-hand column, clear of the gap cut for the buttons. */
   .entry-side {
     position: sticky;
     top: var(--space-4);
-    gap: var(--space-3);
-    padding: var(--space-6);
-    border: var(--border-width) solid var(--border-subtle);
-    border-radius: var(--radius-xl);
-    background: var(--bg-surface);
+    align-self: start;
+    margin-bottom: var(--notch-h);
+    min-width: 0;
   }
 
-  .entry-side > .eyebrow {
-    display: block;
-    margin: 0;
-  }
-
-  .entry-side .entry-totals {
-    position: static;
-    grid-template-columns: 1fr;
-    gap: var(--space-3);
-  }
-
-  .entry-side .entry-totals > div {
-    padding: var(--space-3) 0;
+  /* Back and Next sit in the gap, flush with the card's right edge. */
+  .entry-card-wrap > .entry-footer {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: var(--notch-w);
+    height: var(--notch-h);
+    align-items: center;
+    padding: 0;
     border: 0;
-    border-bottom: var(--border-width) solid var(--border-subtle);
-    border-radius: 0;
     background: none;
+    box-shadow: none;
   }
 
-  .entry-side .entry-totals > div:last-child {
-    border-bottom: 0;
-  }
-
-  .entry-side .entry-totals dd {
-    font-size: var(--font-size-2xl);
-  }
-
-  .entry-side .entry-totals-note {
-    margin: 0;
+  /* The divider belongs to the step side, so it runs the full height of the card. */
+  .entry-body .entry-flow {
+    grid-row: 1;
+    padding-right: var(--space-6);
+    border-right: 1px solid var(--border-subtle);
   }
 }
 
+/* The station and date on the left, the steps in the same switcher the other screens use on the right. */
 .entry-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-5) var(--space-6);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
-}
-
-.entry-head h2 {
-  margin: 0;
-  font-size: var(--font-size-2xl);
-  letter-spacing: -0.01em;
-}
-
-.entry-steps ol {
-  display: flex;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.entry-steps li {
-  flex: 1 1 0;
   min-width: 0;
 }
 
-.entry-steps button {
-  display: flex;
+.entry-head .workspace-status {
+  margin-right: auto;
+}
+
+.entry-head .entry-steps {
+  margin-left: auto;
+  min-width: 0;
+}
+
+.entry-head .entry-steps button {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: var(--space-2);
-  width: 100%;
-  min-height: 2.75rem;
-  padding: 0 var(--space-2);
-  border: var(--border-width) solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-sm);
-  transition: var(--transition-colors);
+  padding-inline: var(--space-3);
 }
 
-.entry-steps button span {
-  display: grid;
-  place-items: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  border-radius: 50%;
-  background: var(--bg-subtle);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
+.entry-head .entry-steps {
+  border: 1px solid var(--border-subtle);
 }
 
-.entry-steps button[data-done] span {
-  background: color-mix(in srgb, var(--tone-positive-fg) 25%, transparent);
-  color: var(--tone-positive-text);
-}
-
-.entry-steps button[aria-current='step'] {
-  border-color: color-mix(in srgb, var(--accent) 60%, var(--border-subtle));
-  background: var(--bg-selected);
+.entry-head .entry-steps button:hover:not(:disabled):not([aria-current='step']) {
+  background: var(--bg-surface);
   color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
 }
 
-.entry-steps button:disabled {
+.entry-head .entry-steps button[aria-current='step'] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* A click does not leave a ring behind; the keyboard still gets one. */
+.entry-head .entry-steps button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.entry-head .entry-steps button:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: -2px;
+}
+
+.entry-head .entry-steps button:disabled {
   cursor: default;
   opacity: 0.6;
 }
 
-.entry-totals {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-2);
-  margin: 0;
-}
-
-.entry-totals > div {
-  min-width: 0;
-  padding: var(--space-3) var(--space-4);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-}
-
-.entry-totals dt {
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.entry-totals dd {
-  margin: var(--space-1) 0 0;
-  font-size: var(--font-size-lg);
-  font-variant-numeric: tabular-nums;
+/* The running totals are plain rows in a card, like the figures on Profits. */
+.entry-side .profit-row dd {
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
-  overflow-wrap: anywhere;
 }
 
-.entry-totals > div[data-tone='warning'] {
-  border-color: color-mix(in srgb, var(--tone-warning-fg) 45%, var(--border-subtle));
-}
-
-.entry-totals > div[data-tone='warning'] dd {
+.entry-side .profit-row[data-tone='warning'] dd {
   color: var(--tone-warning-text);
 }
 
-.entry-totals-note {
-  margin: calc(var(--space-2) * -1) 0 0;
-  color: var(--text-tertiary);
+.meter-card .eyebrow {
+  margin: 0;
+  color: var(--text-secondary);
   font-size: var(--font-size-sm);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .quick-add {
@@ -4303,6 +4309,78 @@ h3,
 
 .entry-sum strong {
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Who submitted the day and when: the first thing a reviewer looks for, so it leads the Team step. */
+.submitted-by {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+/* On a phone the time sits under the name; from tablet up it closes the same line on the right. */
+.submitted-by-name {
+  grid-column: 2;
+}
+
+.submitted-by-when {
+  grid-column: 2;
+}
+
+@media (min-width: 48rem) {
+  .submitted-by {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .submitted-by > .submitted-by-avatar {
+    grid-row: 1;
+  }
+
+  .submitted-by-when {
+    grid-column: 3;
+    grid-row: 1;
+    margin-left: var(--space-4);
+  }
+}
+
+.submitted-by-avatar {
+  display: grid;
+  grid-row: 1 / span 2;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
+}
+
+.submitted-by p {
+  margin: 0;
+  line-height: var(--line-height-snug);
+}
+
+.submitted-by-name {
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+}
+
+.submitted-by-name strong {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.submitted-by-when {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4346,8 +4424,8 @@ h3,
   bottom: 0;
   z-index: 2;
   display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
+  justify-content: flex-end;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-xl);
@@ -4366,24 +4444,20 @@ h3,
 }
 
 @media (max-width: 40rem) {
-  .entry-head {
-    padding: var(--space-4);
+  /* The seven steps sit four and three across, so none is hidden off the side. */
+  .entry-head .entry-steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+    margin-left: 0;
+    overflow: visible;
   }
 
-  .entry-steps button {
-    flex-direction: column;
-    gap: var(--space-1);
-    min-height: 3.25rem;
+  .entry-head .entry-steps button {
+    justify-content: center;
+    min-height: 2.75rem;
     padding: var(--space-1);
     font-size: var(--font-size-xs);
-  }
-
-  .entry-totals > div {
-    padding: var(--space-2) var(--space-3);
-  }
-
-  .entry-totals dd {
-    font-size: var(--font-size-md);
   }
 }
 
@@ -4476,7 +4550,7 @@ h3,
   justify-self: end;
   min-width: 12rem;
   min-height: 3rem;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   font-weight: var(--font-weight-semibold);
   box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--accent) 80%, black);
   transition: transform 0.15s ease;
@@ -4504,7 +4578,7 @@ h3,
 
 .next-step-trail li {
   display: flex;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   color: var(--text-tertiary);
   font-size: var(--font-size-sm);
 }
@@ -4519,7 +4593,7 @@ h3,
   min-height: 2.25rem;
   padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
   border: 0;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: none;
   color: inherit;
   font: inherit;
@@ -4852,7 +4926,7 @@ h3,
 
 .finance-table-count {
   padding: 0 var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: var(--bg-hover);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -5085,7 +5159,8 @@ h3,
 }
 
 /* Match sheet: small caps labels, bold dark entries, faint hints and placeholders. */
-.payout-sheet .field > label {
+.payout-sheet .field > label,
+.payout-sheet .field-label-row > label {
   color: var(--text-secondary);
   font-size: 0.6875rem;
   font-weight: var(--font-weight-medium);
@@ -5656,55 +5731,8 @@ h3,
   gap: var(--space-2);
   margin-top: var(--space-2);
 }
-.profit-split-bar {
-  display: flex;
-  gap: 3px;
-  height: 0.875rem;
-  overflow: hidden;
-  border-radius: 999px;
-}
-.profit-split-bar span {
-  display: block;
-  height: 100%;
-  min-width: 4px;
-}
-.profit-split [data-part='cost'] {
-  --part: #4f83ee;
-}
-.profit-split [data-part='expenses'] {
-  --part: #e8a13c;
-}
-.profit-split [data-part='profit'] {
-  --part: #56b6a8;
-}
-.profit-split-bar span {
-  background: var(--part);
-}
-.profit-split-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-5);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.profit-split-legend li {
-  display: grid;
-  gap: 2px;
-  font-size: var(--font-size-sm);
-}
-.profit-split-legend li span {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-secondary);
-}
-.profit-split-legend li span::before {
-  content: '';
-  width: 0.625rem;
-  height: 0.625rem;
-  border-radius: 50%;
-  background: var(--part);
+.profit-split .cash-donut-centre strong {
+  font-size: var(--font-size-md);
 }
 .profit-rows {
   display: grid;
@@ -5722,11 +5750,12 @@ h3,
   border-bottom: 0;
 }
 .profit-row dt {
-  display: grid;
+  display: block;
   color: var(--text-secondary);
 }
 .profit-row dd {
   margin: 0;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -5738,7 +5767,8 @@ h3,
 .profit-row[data-tone='bad'] dd {
   color: var(--status-critical, #b42318);
 }
-.profit-row[data-tone='missing'] dd {
+.profit-row[data-tone='missing'] dd,
+.profit-row[data-tone='zero'] dd {
   color: var(--text-secondary);
 }
 .profit-body {
@@ -5779,10 +5809,148 @@ h3,
 .profit-table td[data-negative] {
   color: var(--status-critical, #b42318);
 }
+:is(section, article, .panel):has(> .pager, > * > .pager) {
+  scroll-margin-top: var(--space-4);
+}
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+.pager-range {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.pager-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.pager-pages {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pager-page {
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg, 12px);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.pager-page:hover:not([aria-current='page']) {
+  background: rgb(20 32 30 / 6%);
+}
+.pager-page[aria-current='page'] {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+  cursor: default;
+}
+.pager-page:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pager-gap {
+  display: inline-block;
+  min-width: 1.5rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.pager .button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+@media (max-width: 40rem) {
+  .pager {
+    justify-content: center;
+  }
+  .pager-range {
+    width: 100%;
+    text-align: center;
+  }
+  .pager-pages {
+    display: none;
+  }
+}
 .profit-links {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+/*
+ * Sales by fuel gives up its top-right corner on wide cards so the page links sit in the gap,
+ * outside the card. --notch-r rounds the cut and its two ends; the card's own corners keep the
+ * usual radius. Narrow cards keep a whole shape and the links follow below.
+ */
+.profit-fuel-wrap {
+  --notch-w: 20.5rem;
+  --notch-h: 3.75rem;
+  --notch-r: 1.25rem;
+  display: grid;
+  gap: var(--space-3);
+  position: relative;
+  container-type: inline-size;
+}
+@container (min-width: 30rem) {
+  .profit-fuel-card {
+    clip-path: shape(
+      from var(--radius-2xl) 0,
+      hline to calc(100% - var(--notch-w) - var(--notch-r)),
+      arc to calc(100% - var(--notch-w)) var(--notch-r) of var(--notch-r) cw,
+      vline to calc(var(--notch-h) - var(--notch-r)),
+      arc to calc(100% - var(--notch-w) + var(--notch-r)) var(--notch-h) of var(--notch-r) ccw,
+      hline to calc(100% - var(--notch-r)),
+      arc to 100% calc(var(--notch-h) + var(--notch-r)) of var(--notch-r) cw,
+      vline to calc(100% - var(--radius-2xl)),
+      arc to calc(100% - var(--radius-2xl)) 100% of var(--radius-2xl) cw,
+      hline to var(--radius-2xl),
+      arc to 0 calc(100% - var(--radius-2xl)) of var(--radius-2xl) cw,
+      vline to var(--radius-2xl),
+      arc to var(--radius-2xl) 0 of var(--radius-2xl) cw,
+      close
+    );
+  }
+  .profit-fuel-card .profit-table,
+  .profit-fuel-card .profit-rows {
+    margin-top: var(--space-3);
+  }
+  .profit-fuel-wrap > .profit-links {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: var(--notch-w);
+    height: var(--notch-h);
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+  }
+}
+/* A wide gap needs a wide card; below that the whole shape returns and the links follow below. */
+@container (max-width: 35.99rem) {
+  .profit-fuel-wrap:not([data-narrow-notch]) > .profit-fuel-card {
+    clip-path: none;
+  }
+  .profit-fuel-wrap:not([data-narrow-notch]) > .profit-links {
+    position: static;
+    width: auto;
+    height: auto;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
 }
 @media (min-width: 64rem) {
   .profit-overview {
@@ -6009,22 +6177,24 @@ h3,
   transition: width var(--duration-slow) var(--ease-out);
 }
 
-.tank-tabs {
+.tank-tabs,
+.profit-tabs {
   display: flex;
   gap: var(--space-1);
   padding: var(--space-1);
   overflow-x: auto;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-lg);
   background: var(--bg-muted);
   width: fit-content;
   max-width: 100%;
 }
 
-.tank-tabs button {
+.tank-tabs button,
+.profit-tabs button {
   min-height: 2.5rem;
   padding: 0 var(--space-4);
   border: 0;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
@@ -6034,7 +6204,8 @@ h3,
   transition: var(--transition-colors);
 }
 
-.tank-tabs button[aria-selected='true'] {
+.tank-tabs button[aria-selected='true'],
+.profit-tabs button[aria-selected='true'] {
   background: var(--bg-surface);
   color: var(--text-primary);
   box-shadow: var(--shadow-sm);
@@ -7290,7 +7461,7 @@ h3,
 
 .recon-statement .recon-ledger-state {
   padding: 0.125rem var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: var(--bg-hover);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -7534,4 +7705,577 @@ h3,
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
   line-height: 1.3;
+}
+
+.heading-with-tip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.heading-with-tip > h2 {
+  margin: 0;
+}
+.profit-column {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.profit-fuel-card .profit-rows,
+.profit-overview > .profit-panel .profit-rows {
+  margin-top: var(--space-1);
+}
+.fp-stock-table td:nth-child(3),
+.fp-stock-table th:nth-child(3),
+.fp-stock-table td:last-child,
+.fp-stock-table th:last-child {
+  text-align: right;
+}
+
+/* Net position closes the "owes" card: the one figure that needs both lists. */
+.fp-net {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+.fp-net h3 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.fp-net-figure {
+  margin: 0 0 0 auto;
+  font-size: var(--font-size-xl, 1.5rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.fp-net[data-tone='good'] .fp-net-figure {
+  color: var(--status-success, #3fae8a);
+}
+.fp-net[data-tone='bad'] .fp-net-figure {
+  color: var(--status-critical, #b42318);
+}
+.fp-net[data-tone='missing'] .fp-net-figure {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.fp-empty-row dd {
+  color: var(--text-secondary);
+}
+.profit-split {
+  container-type: inline-size;
+}
+@container (min-width: 30rem) {
+  .profit-split .cash-donut {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    justify-items: stretch;
+    gap: var(--space-6);
+  }
+  .profit-split .cash-donut-ring {
+    width: 13rem;
+  }
+  .profit-split .cash-donut-centre strong {
+    font-size: var(--font-size-sm);
+  }
+}
+/* A card between a phone and a roomy desktop keeps ring and legend side by side, with the legend trimmed to fit. */
+@container (min-width: 30rem) and (max-width: 36rem) {
+  .profit-split .cash-donut {
+    gap: var(--space-4);
+  }
+  .profit-split .cash-donut-ring {
+    width: 12rem;
+  }
+  .profit-split .cash-donut-centre strong {
+    font-size: var(--font-size-xs);
+  }
+  .profit-split .cash-donut-row {
+    gap: var(--space-2);
+    padding-inline: var(--space-1);
+  }
+  .profit-split .cash-donut-name {
+    font-size: var(--font-size-sm);
+  }
+  .profit-split .cash-donut-value {
+    white-space: nowrap;
+  }
+}
+@media (min-width: 48rem) {
+  .profit-table td {
+    white-space: nowrap;
+  }
+}
+
+/* An explanation mark follows its heading on the same line. */
+:is(h2, h3, h4):has(+ .info-tip) {
+  display: inline-block;
+  vertical-align: middle;
+}
+.account-controls-grid {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+@media (min-width: 64rem) {
+  .account-controls-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* A tab switcher in a card heading never pushes past the card; it scrolls inside instead. */
+.panel-heading > .profit-tabs {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* The Purchasing switcher has no period text beside it, so it sits at the far right. */
+.purchasing-tabs {
+  margin-left: auto;
+  min-width: 0;
+}
+.profit-top.content-span {
+  min-width: 0;
+}
+/* On a phone the four sections sit two by two, so none is hidden off the side. */
+@media (max-width: 40rem) {
+  .purchasing-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    margin-left: 0;
+    overflow: visible;
+  }
+  .purchasing-tabs button {
+    padding: 0 var(--space-2);
+  }
+}
+
+/* A one-series column chart: wider columns, labels that wrap, an amber column for what is late. */
+.column-chart {
+  --recon-label-h: 2.75rem;
+}
+.column-chart .recon-bars-col {
+  max-width: none;
+}
+.column-chart .recon-bar-slot {
+  width: min(4.5rem, 60%);
+}
+.column-chart .recon-bars-label {
+  white-space: normal;
+  line-height: 1.25;
+}
+.column-chart .recon-bar[data-tone='warning'] {
+  background: var(--status-warning, #d99a1c);
+}
+@media (max-width: 40rem) {
+  .column-chart {
+    --recon-label-h: 4.25rem;
+  }
+  .column-chart .recon-bars-axis {
+    font-size: 0.6875rem;
+  }
+}
+/* Gridlines stop at the zero line, which is drawn here, so nothing runs through the labels. */
+.column-chart .recon-bars-columns {
+  border-bottom: 0;
+  background:
+    linear-gradient(var(--border-subtle), var(--border-subtle)) 0
+      calc(100% - var(--recon-label-h)) / 100% 1px no-repeat,
+    repeating-linear-gradient(
+        to bottom,
+        var(--border-subtle) 0 1px,
+        transparent 1px calc(100% / var(--recon-ticks, 2))
+      )
+      top / 100% calc(100% - var(--recon-label-h)) no-repeat;
+}
+
+/* Room for the columns to breathe: taller than the shift chart it was borrowed from. */
+.column-chart .recon-bars-plot {
+  min-height: 17rem;
+}
+.column-chart {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* Supplier page: contact details and credit limit sit side by side on a wide screen. */
+.supplier-pair {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 64rem) {
+  .supplier-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+}
+.supplier-pair p {
+  margin: 0;
+}
+/* Buttons keep their own width instead of stretching across the card. */
+.supplier-pair .profit-panel > .button {
+  justify-self: start;
+}
+/* The limit box and its button share a row; on a phone the button drops below. */
+.supplier-limit-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+}
+@media (max-width: 30rem) {
+  .supplier-limit-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A figure with a quieter second line under it, right-aligned like the other money columns. */
+.list-stack {
+  justify-items: end;
+}
+.list-stack small {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+/* The supplier's name on the left and its actions on the right, in one row. */
+@media (min-width: 48.01rem) {
+  .supplier-hero {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  .supplier-hero-id {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .supplier-hero-top {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .supplier-hero .supplier-figures {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 48rem) {
+  .supplier-hero-id {
+    order: -1;
+  }
+  .supplier-hero-top {
+    justify-content: flex-start;
+  }
+}
+.profit-panel > .panel-heading {
+  align-items: center;
+}
+/* Stacked rows read left to right, so the credit figure follows the other values. */
+@media (max-width: 48rem) {
+  .list-stack {
+    justify-items: start;
+  }
+}
+@container record-list (max-width: 48rem) {
+  .list-stack {
+    justify-items: start;
+  }
+}
+
+/* A step's title keeps a little air above the first field. */
+.entry-flow .heading-with-tip {
+  margin-bottom: var(--space-2);
+}
+
+/* The station's own attendants and visitors from another station are each a labelled list. */
+.attendant-fieldset {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.attendant-group {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.attendant-group-label {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Side by side when there is room; stacked on a phone. */
+@media (min-width: 48rem) {
+  .attendant-fieldset:has(.attendant-group-label) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+/* Both lists use one row height, so a name with a second line does not make its neighbour shorter. */
+.attendant-fieldset .choice-card {
+  min-height: 4.5rem;
+}
+
+/* The step's own panel is see-through inside the one card; its blur would show as a lighter patch. */
+.entry-body .entry-flow .panel {
+  backdrop-filter: none;
+}
+
+/*
+ * Pump readings. Each pump is one ledger line: the fuel and its nozzle, then opening, closing,
+ * litres sold and sales value as four even columns along one baseline. Opening is a fact recorded
+ * when the shift opened, so it is shown as a readout; only a closing reading that can still be
+ * typed becomes a field. A readout has a field's label size and height, so a row that mixes the two
+ * still lines up.
+ */
+.meter-list:has(.pump-row) {
+  gap: var(--space-8);
+}
+
+/* The pumps are told apart by the space between them, not by a rule. */
+.pump-row {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* The fuel and its nozzle and price: the heading of the line. */
+.pump-row-head h3 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-snug);
+}
+
+.pump-row-meta {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+}
+
+/*
+ * The four figures of a pump. On a phone they are a short ledger, label left and value right, with
+ * litres sold as the total line; a closing field takes the whole width, so a reading is never cut
+ * off. From tablet up they sit side by side on one baseline.
+ */
+.pump-row-readings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.pump-readout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.pump-readout-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-snug);
+}
+
+.pump-readout-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--space-1-5);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pump-readout-unit {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.pump-readout[data-result] {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pump-readout[data-result] .pump-readout-value {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Litres sold opens the totals under one rule; the sales value that follows the price closes them. */
+.pump-readout[data-result]:last-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* The button that opens a correction, and the correction's reason and cancel, are sized to their words. */
+.meter-list:has(.pump-row) > .button {
+  justify-self: start;
+}
+
+.meter-list:has(.pump-row) > .form-grid > .button {
+  justify-self: start;
+}
+
+@media (min-width: 48rem) {
+  .meter-list:has(.pump-row) > .form-grid {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+}
+
+/*
+ * The figures follow the width of their own row, not the screen: a closing field needs room for a
+ * whole reading, so all five columns only where each is wide enough; in between, what was read on
+ * one line and what it works out to on the next; and the ledger on a phone.
+ */
+.pump-row {
+  container-type: inline-size;
+}
+
+@container (min-width: 30rem) {
+  .pump-row-readings {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+    gap: var(--space-4);
+  }
+
+  .pump-readout {
+    grid-template-columns: none;
+    align-items: stretch;
+    gap: var(--space-1-5);
+  }
+
+  .pump-readout-value {
+    justify-content: flex-start;
+  }
+
+  .pump-readout[data-result] {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  /*
+   * Where a field sits in the row, the readouts take its height and centre on its text, so a number
+   * reads level with what is typed beside it. A row of readouts alone stays close to its labels.
+   */
+  .pump-row-readings:has(.field) .pump-readout-value {
+    flex-wrap: wrap;
+    align-content: center;
+    min-height: 2.5rem;
+  }
+}
+
+/* Opening and closing on the first line; litres, price and value start the second. */
+@container (max-width: 43.99rem) {
+  .pump-readout:nth-child(3) {
+    grid-column: 1;
+  }
+}
+
+@container (min-width: 44rem) {
+  .pump-row-readings {
+    grid-template-columns:
+      minmax(8.5rem, 1fr) minmax(10.5rem, 1.3fr) minmax(5rem, 0.7fr) minmax(6rem, 0.8fr)
+      minmax(7.5rem, 1fr);
+  }
+}
+
+/*
+ * Tank dips. A tank is laid out like a pump: its fuel and tank code as the heading, then the dip,
+ * what the books expect, the difference and the result as columns, and below them the field for a
+ * new dip. Tanks are told apart by the space between them, not by a rule. The figures reuse the
+ * pump readout, so labels, sizes and the phone ledger match the Pumps step.
+ */
+.tank-list {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.tank-row {
+  container-type: inline-size;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.tank-row-readings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+/* The result is a badge with words, so it may wrap rather than push the row wider. */
+.tank-row-readings .pump-readout-value {
+  flex-wrap: wrap;
+  white-space: normal;
+}
+
+.tank-row-entry {
+  max-width: 26rem;
+}
+
+@container (min-width: 30rem) {
+  .tank-row-readings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: var(--space-4);
+  }
+}
+
+@container (min-width: 44rem) {
+  .tank-row-readings {
+    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(6rem, 0.8fr) minmax(
+        12rem,
+        1.6fr
+      );
+  }
+}
+
+/* Deliveries are a short ledger under the tanks: the note, then the litres received. */
+.tank-deliveries {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 28rem;
+}
+
+.tank-deliveries h3 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-snug);
+}
+
+/*
+ * The submit checklist: what is done and what is not, as a plain list set apart by spacing. It
+ * runs in two columns where the card is wide enough.
+ */
+.entry-checklist {
+  gap: var(--space-3) var(--space-8);
+  margin-bottom: var(--space-4);
+}
+
+.entry-checklist li {
+  padding: 0;
+  background: none;
+}
+
+@media (min-width: 48rem) {
+  .entry-checklist {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* The explanations sit side by side where there is room; a lone one takes the whole width. */
+.entry-flow .explanation-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-4) var(--space-6);
+  align-items: start;
 }

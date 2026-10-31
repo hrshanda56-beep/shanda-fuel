@@ -9,7 +9,7 @@ const tiles: FinanceTile[] = [
     id: 'grossProfit',
     label: 'Gross profit',
     value: '12.5000',
-    href: '/daily-profit',
+    href: '/profitability?view=daily',
     basis: 'period',
   },
   {
@@ -17,7 +17,7 @@ const tiles: FinanceTile[] = [
     label: 'Fuel stock value',
     value: null,
     unavailableReason: 'Some stock has no cost yet.',
-    href: '/financial-position',
+    href: '/profitability?view=position',
     basis: 'as-at',
   },
   {
@@ -36,7 +36,7 @@ describe('FinanceTiles', () => {
   );
 
   it('makes each whole tile a link and shows unknown figures as not available, not zero', () => {
-    expect(html).toContain('href="/daily-profit"');
+    expect(html).toContain('href="/profitability?view=daily"');
     expect(html).toContain('Not available');
     expect(html).toContain('Some stock has no cost yet.');
     expect(html).not.toContain('USD 0.00');

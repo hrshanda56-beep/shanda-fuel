@@ -1196,6 +1196,14 @@ describe('A5 production daily reconciliation persistence and approval', () => {
         and source_id in ('${sealed.segmentIds[1]}', '${sealed.segmentIds[2]}')
     `);
     expect(revenueCountAfterRetry).toEqual([{ count: '2' }]);
+    // The revenue validator runs as the table owner (0097), so it only sees rows inside a tenant
+    // session, as it does for a real request. A bare superuser connection has no tenant.
+    await client.unsafe(`
+      select set_config('app.tenant_id', '${ids.tenant}', false);
+      select set_config('app.actor_id', '${ids.managerActor}', false);
+      select set_config('app.membership_id', '${ids.managerMembership}', false);
+      select set_config('app.station_id', '${ids.station}', false);
+    `);
     await expect(
       client.unsafe(`
         insert into app.sale_recognition_movements (
@@ -2162,6 +2170,41 @@ describe('A5 production daily reconciliation persistence and approval', () => {
       canApprove: true,
       canReturn: false,
     });
+
+    // Whoever reviews the day can see who submitted it. These reviewers hold station-scoped roles,
+    // so they cannot read other people's membership rows; the name comes through a narrow function.
+    const submitterSeenBy = async (token: string) =>
+      (
+        (await (await readReconciliation(reconciliationId, token)).json()) as {
+          submitter?: { name: string; submittedAt: string | null } | null;
+        }
+      ).submitter;
+    const seenByApprover = await submitterSeenBy('a5-approver-session-token');
+    expect(seenByApprover).toMatchObject({ name: 'A5 Manager' });
+    expect(Number.isNaN(Date.parse(seenByApprover?.submittedAt ?? ''))).toBe(false);
+    expect(await submitterSeenBy('a5-supervisor-session-token')).toMatchObject({
+      name: 'A5 Manager',
+    });
+
+    // The function itself refuses anyone who may not view the station's reconciliations, and any
+    // tenant other than the caller's own, so it cannot be used to look people up.
+    const submitterFor = async (membershipId: string, actorId: string, tenantId: string) => {
+      await client.unsafe(`
+        select set_config('app.tenant_id', '${ids.tenant}', false);
+        select set_config('app.actor_id', '${actorId}', false);
+        select set_config('app.membership_id', '${membershipId}', false);
+        select set_config('app.station_id', '${ids.station}', false);
+      `);
+      return client.unsafe<{ name: string | null }[]>(`
+        select name from app.reconciliation_submitter(
+          '${tenantId}'::uuid, '${ids.station}'::uuid, '${reconciliationId}'::uuid)
+      `);
+    };
+    expect(await submitterFor(ids.approverMembership, ids.approverActor, ids.tenant)).toEqual([
+      { name: 'A5 Manager' },
+    ]);
+    expect(await submitterFor(ids.approverMembership, ids.approverActor, randomUUID())).toEqual([]);
+    expect(await submitterFor(ids.attendantMembership, ids.attendantActor, ids.tenant)).toEqual([]);
   });
 
   it('requires the approving manager to supply the note for a red stock variance', async () => {

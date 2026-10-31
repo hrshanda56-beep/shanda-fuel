@@ -61,8 +61,7 @@ export async function postCanonicalSaleRevenueInTransaction(
         eq(saleRecognitionMovements.sourceId, input.meterSegmentId),
         eq(saleRecognitionMovements.classification, input.classification),
       ),
-    )
-    .for('update');
+    );
   if (existing[0]) {
     const row = existing[0];
     if (

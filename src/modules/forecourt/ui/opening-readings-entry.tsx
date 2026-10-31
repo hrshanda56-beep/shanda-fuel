@@ -7,6 +7,7 @@ import { useToast } from '../../../design-system/feedback-provider';
 import { Modal } from '../../../design-system/modal';
 import { Button, Card, NumericInput } from '../../../design-system/primitives';
 import { dailyOperationsProblem } from './daily-operations-state';
+import { InfoTip } from '@/design-system/info-tip';
 
 type Pump = Readonly<{
   nozzleId: string;
@@ -125,7 +126,7 @@ export function OpeningReadingsEntry({
       <Card as="section" className="card panel cash-panel" aria-labelledby="opening-readings-title">
         <p className="eyebrow">Shift opened</p>
         <h2 id="opening-readings-title">Opening readings needed</h2>
-        <p className="panel-detail">Enter what each pump meter shows now to start the shift.</p>
+        <InfoTip>Enter what each pump meter shows now to start the shift.</InfoTip>
         <div className="form-actions">
           <Button variant="primary" onClick={() => setOpen(true)}>
             Enter opening readings

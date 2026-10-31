@@ -143,6 +143,17 @@ async function forecourtCommand(input: Record<string, unknown>, key: string) {
 
 describe('A10 management reporting PostgreSQL read model', () => {
   let client: Sql;
+  /** Runs one statement as a request does: the allocation guard runs as its owner, so it sees only the session's tenant. */
+  const asTenant = (statement: string) =>
+    client.begin(async (transaction) => {
+      await transaction`
+        select set_config('app.tenant_id', ${ids.tenant}, true),
+               set_config('app.actor_id', ${ids.actor}, true),
+               set_config('app.membership_id', ${ids.membership}, true),
+               set_config('app.station_id', ${ids.station}, true)
+      `;
+      await transaction.unsafe(statement);
+    });
 
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
@@ -417,7 +428,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const approvalBody = (await approval.json()) as Record<string, unknown>;
     expect(approval.status, JSON.stringify(approvalBody)).toBe(200);
 
-    await client.unsafe(`
+    await asTenant(`
       insert into app.provider_settlement_allocations
         (id, tenant_id, station_id, settlement_id, reconciliation_payment_id, amount, allocation_key, state, allocated_by)
       values ('${ids.factSettlementAllocation}', '${ids.tenant}', '${ids.station}', '${ids.factSettlement}', '${ids.factPosPayment}', 20.0000, 'A10-SETTLEMENT-ALLOCATION', 'POSTED', '${ids.membership}')
@@ -518,7 +529,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     ] as const;
 
     for (const revaluation of revaluations) {
-      await client.unsafe(`
+      await asTenant(`
         insert into app.inventory_cost_revaluations
           (id, tenant_id, station_id, tank_id, product_id, reason, status, source_type, source_id,
            amount, currency, effective_at, business_date, requested_by, requested_at)
@@ -861,7 +872,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(body.dateBasis.expenses).toBe('expense_recognition_movements.recognition_date');
     expect(body.dateBasis.bankedCash).toBe('A6 bank_deposits.deposited_at UTC calendar date');
 
-    await client.unsafe(`
+    await asTenant(`
       insert into app.provider_settlement_allocations
         (id, tenant_id, station_id, settlement_id, reconciliation_payment_id, amount, allocation_key, state, reversal_of_id, allocated_by)
       values ('${ids.factSettlementReversal}', '${ids.tenant}', '${ids.station}', '${ids.factSettlement}', '${ids.factPosPayment}', 20.0000, 'A10-SETTLEMENT-ALLOCATION-REVERSAL', 'REVERSED', '${ids.factSettlementAllocation}', '${ids.membership}')
