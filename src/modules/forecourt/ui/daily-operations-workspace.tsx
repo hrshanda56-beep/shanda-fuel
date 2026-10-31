@@ -1866,7 +1866,11 @@ export function DailyOperationsWorkspace({
           >
             <SectionHeading
               eyebrow="Final check"
-              title="Explain any differences, then submit"
+              title={
+                role === 'MANAGEMENT' && state === 'SUBMITTED'
+                  ? 'Review the figures, then approve or return'
+                  : 'Explain any differences, then submit'
+              }
               headingId="operations-review-title"
             />
             <ul className="entry-checklist" aria-label="Before you submit">
@@ -1961,8 +1965,7 @@ export function DailyOperationsWorkspace({
               <Field
                 id="management-return-reason"
                 label="Return reason"
-                hint="Required when sending this reconciliation back for correction."
-                required
+                hint="Only needed if you send this reconciliation back for correction."
               >
                 <textarea
                   id="management-return-reason"
