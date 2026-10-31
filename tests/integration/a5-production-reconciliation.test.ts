@@ -1217,6 +1217,35 @@ describe('A5 production daily reconciliation persistence and approval', () => {
     const approved = await expectOk(await readReconciliation(reconciliationId));
     expect(approved.state).toBe('APPROVED');
     expect(approved.version).toBe(11);
+
+    // The cash expense typed into the shift report is now a posted, already-paid expense that
+    // reaches the expense book, and approving again never creates a second one.
+    const shiftExpenses = await client.unsafe<
+      {
+        id: string;
+        state: string;
+        amount: string;
+        payment_method: string;
+        description: string;
+        recognised: string;
+        paid: string;
+      }[]
+    >(`
+      select e.id, e.state, e.amount::text, e.payment_method, e.description,
+             (select coalesce(sum(m.amount), 0)::text from app.expense_recognition_movements m where m.source_id = e.id) as recognised,
+             (select coalesce(sum(p.amount), 0)::text from app.expense_payments p where p.expense_id = e.id and p.state = 'RECORDED') as paid
+      from app.expenses e
+      where e.tenant_id='${ids.tenant}' and e.station_id='${ids.station}' and e.reference like 'SHIFTREPORT-%'
+    `);
+    expect(shiftExpenses).toHaveLength(1);
+    expect(shiftExpenses[0]).toMatchObject({
+      state: 'POSTED',
+      amount: '25.0000',
+      payment_method: 'STATION_CASH',
+      description: 'STATION_SUPPLIES: Receipt paper',
+      recognised: '25.0000',
+      paid: '25.0000',
+    });
     const receiptRetryAfterSales = await postInventoryCommand(
       {
         commandType: 'RecordReceiptCost',

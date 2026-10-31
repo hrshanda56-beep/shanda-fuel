@@ -27,6 +27,7 @@ import { authorize } from '../../platform/security/permissions';
 import { deriveSegmentSaleAllocations } from './segment-sale-chronology';
 import { postCanonicalSaleRevenueInTransaction } from '../revenue';
 import { expectedClosingStock } from '../inventory/expected-closing-stock';
+import { postShiftExpensesInTransaction } from './shift-expense-posting';
 
 const uuid = z.string().uuid();
 export const productionReconciliationPaymentMethods = [
@@ -1428,6 +1429,10 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       `);
       if (!approvedRevision[0])
         throw new AppError('CONFLICT', 'The reconciliation revision became stale');
+      await postShiftExpensesInTransaction(transaction, context, {
+        reconciliationId: payload.reconciliationId,
+        businessDate: header.business_date,
+      });
       return {
         result: {
           reconciliationId: payload.reconciliationId,
