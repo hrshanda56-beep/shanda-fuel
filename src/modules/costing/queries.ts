@@ -71,7 +71,7 @@ function streamFromRow(row: DbRow) {
     blockingReason:
       status === 'UNVALUED'
         ? source
-          ? 'Authoritative cost is missing for this source movement. Sale-cost posting and reconciliation approval remain blocked until the source is valued.'
+          ? 'The cost of this stock is missing. Sale costs cannot be worked out until the stock is valued.'
           : 'The stream does not have a complete authoritative cost chronology. Review its cost events before approving reconciliation.'
         : null,
     sourceMovementRequiringCost: source,

@@ -3,10 +3,10 @@ export function mapA12OperatorError(
   message: string | undefined,
 ): string | null {
   if (message?.includes('UNVALUED')) {
-    return 'Inventory valuation is blocking this operation. Open Inventory → Valuation for the affected stream, resolve the source movement requiring cost, then retry.';
+    return 'Stock valuation is blocking this. Open Inventory → Valuation, add the missing cost for the stock shown there, then try again.';
   }
   if (message?.includes('already has a revaluation workflow')) {
-    return 'This source movement already has a revaluation workflow. Open its valuation history and refresh before trying again.';
+    return 'This stock is already being revalued. Open its valuation history and refresh before trying again.';
   }
   if (message?.includes('Only a requested')) {
     return 'This revaluation changed before approval. Refresh the valuation history to review the current status.';

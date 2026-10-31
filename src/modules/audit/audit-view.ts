@@ -152,7 +152,7 @@ export function toAuditItem(
   return {
     id: row.id,
     occurredAt: row.occurredAt,
-    who: row.actorName?.trim() || 'Unknown person',
+    who: row.actorName?.trim() || 'Name not recorded',
     action,
     area,
     subject: subjectLabel(subjectType, subjectId, names),
