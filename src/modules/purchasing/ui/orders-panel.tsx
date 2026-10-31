@@ -201,7 +201,7 @@ export function OrdersPanel({
               <span>Order</span>
               <span>Status</span>
               <span>Fuel</span>
-              <span className={styles.numeric}>Total</span>
+              <span className={styles.numeric}>Litres</span>
               <span className={styles.numeric}>Fuel expected by</span>
             </div>
             <ul className="list-rows" aria-label="Purchase orders">
@@ -229,7 +229,7 @@ export function OrdersPanel({
                       <span className={styles.cell} data-label="Fuel">
                         {orderFuelSummary(order.lines) || '—'}
                       </span>
-                      <span className={`${styles.numeric} ${styles.cell}`} data-label="Total">
+                      <span className={`${styles.numeric} ${styles.cell}`} data-label="Litres">
                         {litresText(totalOrderedLitres(order.lines))}
                       </span>
                       <span
