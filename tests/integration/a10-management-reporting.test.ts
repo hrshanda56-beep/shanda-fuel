@@ -255,6 +255,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
           ('${ids.factCreditPayment}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'CUSTOMER_CREDIT', 10.0000, 'A10-CREDIT', '${ids.membership}'),
           ('${ids.factPrepaidPayment}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'PREPAID', 5.0000, 'A10-PREPAID', '${ids.membership}')
         on conflict (id) do nothing;
+      -- The reference marks this expense as the one already posted from the report line below, so
+      -- approving the reconciliation does not post it a second time.
       insert into app.reconciliation_expenses
         (id, tenant_id, station_id, reconciliation_id, category, description, amount, payment_method, entered_by)
         values ('${ids.factExpense}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'A10_TEST', 'A10 test expense', 2.0000, 'CASH', '${ids.membership}')
@@ -264,9 +266,9 @@ describe('A10 management reporting PostgreSQL read model', () => {
         values ('${ids.factExpenseCategory}', '${ids.tenant}', 'A10_TEST', 'A10 test expense', 'OPERATING', 'ACTIVE', '${ids.membership}')
         on conflict (id) do nothing;
       insert into app.expenses
-        (id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description, amount, submitted_by)
+        (id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description, amount, submitted_by, reference)
         values ('${ids.factExpense}', '${ids.tenant}', '${ids.legal}', '${ids.station}', '${ids.factExpenseCategory}',
-         '2026-09-20', 'A10 test expense', 2.0000, '${ids.membership}')
+         '2026-09-20', 'A10 test expense', 2.0000, '${ids.membership}', 'SHIFTREPORT-2026-09-20-a10b0000')
         on conflict (id) do nothing;
       insert into app.expense_recognition_movements
         (id, tenant_id, legal_entity_id, station_id, category_id, classification, movement_type,
@@ -774,6 +776,24 @@ describe('A10 management reporting PostgreSQL read model', () => {
       saleCount: 0,
     });
     expect(priorBusinessDateBody.grossMargin).toBeNull();
+
+    // Cash at the station is a balance: it does not depend on which days the report covers.
+    // 60.00 was collected on 20 Sep and 40.00 was deposited on 22 Sep, so 20.00 is still there
+    // for a window that starts after the collection, and the whole 60.00 for one that ends before
+    // the deposit.
+    for (const [fromDate, toDate, atStation, inTransit] of [
+      ['2026-09-21', '2026-09-30', '20.0000', '0.0000'],
+      ['2026-09-19', '2026-09-21', '60.0000', '0.0000'],
+    ] as const) {
+      const windowResponse = await managementReportGet(
+        new Request(
+          `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=${fromDate}&toDate=${toDate}`,
+          { headers: { ...clerkHeaders(await signedCookie()) } },
+        ),
+      );
+      const windowBody = (await windowResponse.json()) as Record<string, any>;
+      expect(windowBody.cash, `${fromDate}..${toDate}`).toMatchObject({ atStation, inTransit });
+    }
 
     expect(body.costing).toMatchObject({
       currency: 'USD',
