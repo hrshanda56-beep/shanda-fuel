@@ -201,7 +201,11 @@ export function TankOverview({
                           Estimated
                         </span>
                       ) : (
-                        <StatusBadge tone="informational">Last dip</StatusBadge>
+                        <StatusBadge tone="informational">
+                          {tank.physicalDate
+                            ? `Last dip · ${formatBusinessDate(tank.physicalDate)}`
+                            : 'Last dip'}
+                        </StatusBadge>
                       )}
                     </span>
                   </Link>

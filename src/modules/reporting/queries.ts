@@ -686,6 +686,7 @@ async function readInventory(
     variance_red: string | null;
     expected: string;
     physical: string | null;
+    physical_date: string | null;
     variance: string | null;
     delivery_litres: string;
     delivery_value: string;
@@ -699,7 +700,8 @@ async function readInventory(
       where tenant_id = ${filters.tenantId} and business_date <= ${filters.toDate}
       group by station_id, tank_id, product_id
     ), latest_dips as (
-      select distinct on (station_id, tank_id) station_id, tank_id, physical_litres::text as physical
+      select distinct on (station_id, tank_id) station_id, tank_id, physical_litres::text as physical,
+        business_date as physical_date
       from app.tank_dips
       where tenant_id = ${filters.tenantId}
         and voided_at is null
@@ -719,7 +721,7 @@ async function readInventory(
       t.capacity_litres::text as capacity, t.reorder_level_litres::text as reorder_level,
       t.acceptable_variance_litres::text as acceptable_variance,
       t.variance_red_litres::text as variance_red,
-      coalesce(m.expected, '0') as expected, d.physical,
+      coalesce(m.expected, '0') as expected, d.physical, d.physical_date,
       case when d.physical is null then null else (d.physical::numeric - coalesce(m.expected, '0')::numeric)::text end as variance,
       coalesce(del.delivery_litres, '0') as delivery_litres,
       coalesce(del.delivery_value, '0') as delivery_value,
@@ -748,6 +750,7 @@ async function readInventory(
     varianceRedLitres: row.variance_red === null ? null : formatLitres(row.variance_red),
     expectedLitres: formatLitres(row.expected),
     physicalLitres: row.physical === null ? null : formatLitres(row.physical),
+    physicalDate: row.physical === null ? null : row.physical_date,
     varianceLitres: row.variance === null ? null : formatLitres(row.variance),
     deliveryLitres: formatLitres(row.delivery_litres),
     deliveryValue: formatMoney(row.delivery_value),

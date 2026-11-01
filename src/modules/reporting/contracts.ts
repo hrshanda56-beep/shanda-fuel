@@ -211,6 +211,8 @@ export type InventoryPosition = Readonly<{
     varianceRedLitres?: ReportLitres | null;
     expectedLitres: ReportLitres;
     physicalLitres: ReportLitres | null;
+    /** Business date of the dip behind `physicalLitres`. */
+    physicalDate?: string | null;
     varianceLitres: ReportLitres | null;
     deliveryLitres: ReportLitres;
     deliveryValue: ReportMoney;

@@ -285,6 +285,7 @@ export async function getInventoryValuationReadModel(
           t.reorder_level_litres::text as "reorderLevelLitres",
           coalesce(m.expected, 0)::text as "expectedLitres",
           d.physical_litres::text as "physicalLitres",
+          d.business_date as "physicalDate",
           (d.physical_litres - coalesce(m.expected, 0))::text as "varianceLitres"
         from app.tanks t
         join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
@@ -295,7 +296,7 @@ export async function getInventoryValuationReadModel(
             and m.business_date <= (now() at time zone ${context.stationTimezone})::date::text
         ) m on true
         left join lateral (
-          select physical_litres from app.tank_dips d
+          select physical_litres, business_date from app.tank_dips d
           where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id
             and d.voided_at is null
             and d.measured_at < (((now() at time zone ${context.stationTimezone})::date + 1)::timestamp
