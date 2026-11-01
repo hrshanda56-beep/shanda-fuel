@@ -625,7 +625,6 @@ export function SettlementWorkspace({
                       className="channel-card channel-card-action"
                       data-waiting={total ? 'true' : undefined}
                       aria-haspopup={actionable ? 'dialog' : undefined}
-                      aria-label={`${actionable ? 'Match' : 'Check'} ${label} payments, ${money(total?.remaining ?? '0')} waiting`}
                       onClick={() => {
                         if (actionable) {
                           setCardNote(null);
@@ -673,7 +672,6 @@ export function SettlementWorkspace({
                       className="status-tile status-tile-action"
                       data-tone={tone}
                       aria-pressed={statusFilter === tile.key}
-                      aria-label={`Show ${tile.label.toLowerCase()}, ${tile.count}`}
                       onClick={() => {
                         setCardNote(null);
                         setStatusFilter(tile.key);
