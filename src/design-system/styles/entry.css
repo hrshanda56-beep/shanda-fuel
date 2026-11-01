@@ -159,7 +159,7 @@
 
 .entry-form .button {
   min-height: var(--touch-target-min);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
 }

@@ -14,12 +14,14 @@ import {
   type ForecourtCommandType,
   type ForecourtTransaction,
 } from './application';
+import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import { loadForecourtStationInTransaction } from './persistence';
 import { deriveBusinessDate } from '../../platform/domain/business-time';
 import { projectOperationsStatus } from './operations-status';
 import { createTrustedTenantTransactionContext } from '../../platform/db/tenant-context';
 import { type AuthenticatedActorContext } from '../identity';
 import { resolveStationReadAuthority } from '../context/read-authority';
+import { readLockBlockers } from './lock-blockers';
 
 const uuid = z.string().uuid();
 
@@ -222,6 +224,12 @@ async function loadOperationsOverview(
     tenantName: string;
     now: Date | string;
     days: BusinessDayRow[];
+    shiftTemplates?: Array<{
+      id: string;
+      name: string;
+      startTime: string | null;
+      durationMinutes: number | string;
+    }>;
   }>(
     transaction,
     sql`
@@ -234,7 +242,13 @@ async function loadOperationsOverview(
         from app.station_business_days
         where tenant_id = s.tenant_id and station_id = s.id
         order by business_date desc limit 30
-      ) recent_days), '[]'::json) as days
+      ) recent_days), '[]'::json) as days,
+      coalesce((select json_agg(templates) from (
+        select t.id, t.name, t.start_time::text as "startTime", t.duration_minutes as "durationMinutes"
+        from app.shift_templates t
+        where t.tenant_id = s.tenant_id and t.station_id = s.id and t.active
+        order by t.start_time nulls last, t.code
+      ) templates), '[]'::json) as "shiftTemplates"
     from app.stations s
     join app.tenants t on t.id = s.tenant_id
     where s.tenant_id=${context.tenantId} and s.id=${context.stationId}
@@ -273,7 +287,15 @@ async function loadOperationsOverview(
   }
 
   if (!selectedDay) {
+    // Before the first day exists the screen still has to offer the station's scheduled shift,
+    // never a free-form one, so the templates come back here too (read with the station above).
     return {
+      shiftTemplates: (station.shiftTemplates ?? []).map((template) => ({
+        id: template.id,
+        name: template.name,
+        startTime: template.startTime ? template.startTime.slice(0, 5) : null,
+        durationMinutes: Number(template.durationMinutes),
+      })),
       station: {
         id: station.id,
         code: station.code,
@@ -305,6 +327,7 @@ async function loadOperationsOverview(
     meterClosedAt: Date | string | null;
     completedAt: Date | string | null;
     notOperatedReason: string | null;
+    shiftTemplateId: string | null;
     attendantCount: number | string;
   };
   type ReconciliationRow = {
@@ -318,6 +341,7 @@ async function loadOperationsOverview(
     returnedAt: Date | string | null;
     approvedAt: Date | string | null;
     returnReason: string | null;
+    submittedBy: string | null;
     revision: number | string | null;
     revisionState: string | null;
   };
@@ -326,6 +350,7 @@ async function loadOperationsOverview(
            s.planned_start_at as "plannedStartAt", s.planned_end_at as "plannedEndAt",
            s.version, s.opened_at as "openedAt", s.meter_closed_at as "meterClosedAt",
            s.completed_at as "completedAt", s.not_operated_reason as "notOperatedReason",
+           s.shift_template_id as "shiftTemplateId",
            count(distinct ra.attendant_id)::int as "attendantCount"
     from app.shifts s
     left join app.reconciliations r
@@ -343,6 +368,7 @@ async function loadOperationsOverview(
            r.created_at as "createdAt", r.updated_at as "updatedAt",
            r.submitted_at as "submittedAt", r.returned_at as "returnedAt",
            r.approved_at as "approvedAt", r.return_reason as "returnReason",
+           r.submitted_by as "submittedBy",
            latest.revision, latest.state as "revisionState"
     from app.reconciliations r
     left join lateral (
@@ -396,9 +422,43 @@ async function loadOperationsOverview(
   markReadTiming('operations.shifts.loaded');
   markReadTiming('operations.reconciliations.loaded');
 
+  // Whether this person may approve each waiting reconciliation, by the same rule the approve
+  // command enforces: they hold the permission, and did not submit it while someone else can approve.
+  const myMembershipId = context.authority.authorization.membershipId;
+  const mayApproveAtStation = isPermissionGranted({
+    actor: context.authority.authorization,
+    permissionCode: 'reconciliation.approve',
+    requestedScope: context.scope,
+  });
+  const waitingOnMe = reconciliations.some(
+    (item) =>
+      ['SUBMITTED', 'PENDING_APPROVAL'].includes(item.state) && item.submittedBy === myMembershipId,
+  );
+  const someoneElseCanApprove =
+    mayApproveAtStation && waitingOnMe
+      ? await hasAlternateApprover(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          excludeMembershipId: myMembershipId,
+        })
+      : false;
+
+  // Why a closed day cannot be locked yet, from the same query the lock command uses.
+  const lockBlockedReason =
+    selectedDay.state === 'CLOSED'
+      ? (
+          await readLockBlockers(transaction, {
+            tenantId: context.tenantId,
+            stationId: context.stationId,
+            businessDayId: selectedDay.id,
+          })
+        ).reason
+      : null;
+
   return {
     station: { id: station.id, code: station.code, name: station.name, timezone: station.timezone },
     organisation: { id: station.tenantId, name: station.tenantName },
+    lockBlockedReason,
     currentBusinessDate,
     currentBusinessDayId: days.find((day) => day.date === currentBusinessDate)?.id ?? null,
     status: projectOperationsStatus({
@@ -441,6 +501,7 @@ async function loadOperationsOverview(
       meterClosedAt: iso(shift.meterClosedAt),
       completedAt: iso(shift.completedAt),
       notOperatedReason: shift.notOperatedReason,
+      shiftTemplateId: shift.shiftTemplateId,
       attendantCount: Number(shift.attendantCount),
     })),
     shiftTemplates,
@@ -457,6 +518,10 @@ async function loadOperationsOverview(
       returnedAt: iso(item.returnedAt),
       approvedAt: iso(item.approvedAt),
       returnReason: item.returnReason,
+      youMayApprove:
+        mayApproveAtStation &&
+        ['SUBMITTED', 'PENDING_APPROVAL'].includes(item.state) &&
+        !(item.submittedBy === myMembershipId && someoneElseCanApprove),
     })),
   };
 }

@@ -52,8 +52,10 @@ const BACK_WAVE = wavePath(-1);
  * comes from the card's data-fuel; the steel from design-system tokens. Surface
  * depth follows the volume of a horizontal cylinder, not a straight percentage.
  * The liquid gently sloshes unless the visitor prefers reduced motion.
+ * `tight` crops the empty margin round the drawing so it can render larger in a
+ * card of the same height.
  */
-export function TankDrum({ level }: { level: TankLevel }) {
+export function TankDrum({ level, tight = false }: { level: TankLevel; tight?: boolean }) {
   const id = useId();
   const clip = `${id}-clip`;
   const liquid = `${id}-liquid`;
@@ -67,7 +69,7 @@ export function TankDrum({ level }: { level: TankLevel }) {
   return (
     <svg
       className="tank-drum"
-      viewBox="0 0 160 108"
+      viewBox={tight ? '4 16 152 88' : '0 0 160 108'}
       aria-hidden="true"
       focusable="false"
       overflow="visible"

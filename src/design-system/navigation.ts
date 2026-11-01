@@ -26,8 +26,6 @@ export type NavigationKey =
   | 'purchasing'
   | 'expenses'
   | 'profitability'
-  | 'daily-profit'
-  | 'financial-position'
   | 'fuel-deliveries'
   | 'payments-due'
   | 'reports'
@@ -194,30 +192,12 @@ export const navigationSections: readonly NavigationSection[] = [
       },
       {
         key: 'profitability',
-        label: 'Profit',
-        searchLabel: 'Profit',
+        label: 'Profits',
+        searchLabel: 'Profits',
         icon: 'chart',
         destination: { kind: 'route', path: '/profitability' },
         availability: 'active',
         match: [/^\/profitability(\/|$)/],
-      },
-      {
-        key: 'daily-profit',
-        label: 'Daily profit',
-        searchLabel: 'Daily profit',
-        icon: 'chart',
-        destination: { kind: 'route', path: '/daily-profit' },
-        availability: 'active',
-        match: [/^\/daily-profit(\/|$)/],
-      },
-      {
-        key: 'financial-position',
-        label: 'Financial position',
-        searchLabel: 'Financial position',
-        icon: 'wallet',
-        destination: { kind: 'route', path: '/financial-position' },
-        availability: 'active',
-        match: [/^\/financial-position(\/|$)/],
       },
       {
         key: 'customers',

@@ -2,11 +2,13 @@
 
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent } from 'react';
+import { useToast } from '@/design-system/feedback-provider';
 import { Select } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
 import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { StepUpDialog } from '../../setup/ui/step-up-dialog';
 import type { SettingsLegalEntity, SettingsStation } from '../contracts';
+import { InfoTip } from '@/design-system/info-tip';
 
 const COMMON_ZONES = [
   'Africa/Harare',
@@ -21,6 +23,7 @@ const COMMON_ZONES = [
 /** Sends one settings command. A retry of the same form keeps its key, so it never saves twice. */
 function useSettingsCommand(tenantId: string, onSaved: () => void) {
   const router = useRouter();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Changing the business structure needs a fresh identity check; the form waits while it runs.
@@ -50,6 +53,7 @@ function useSettingsCommand(tenantId: string, onSaved: () => void) {
         throw new Error(message);
       }
       attempt.current = null;
+      toast.success('Saved. Your change is now in effect.');
       onSaved();
       router.refresh();
       return true;
@@ -381,10 +385,10 @@ export function AddStation({
             />
           </Field>
           <ZoneField id="station-zone" value={zone} onChange={setZone} />
-          <p className="field-hint">
+          <InfoTip>
             The station starts in setup. Add its fuels, tanks and pumps under Station setup, then
             switch it on.
-          </p>
+          </InfoTip>
           {fieldError ? (
             <p className="field-error" role="alert">
               {fieldError}

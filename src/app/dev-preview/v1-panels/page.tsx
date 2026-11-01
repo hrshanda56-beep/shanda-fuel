@@ -9,7 +9,13 @@ export const metadata = { title: { absolute: 'New screens preview · Shanda Fuel
  * signed-in shell (development only). They read and write through the normal API routes, so
  * Playwright answers those with its own sample data.
  */
-export default function V1PanelsPreview() {
+export default async function V1PanelsPreview({
+  searchParams,
+}: {
+  searchParams: Promise<{ sheet?: string }>;
+}) {
   if (!isDevOnlySurfaceAvailable()) notFound();
-  return <V1PanelsPreviewClient />;
+  const { sheet } = await searchParams;
+  // `?sheet=closed` leaves the handover sheet shut so the panels behind it can be used.
+  return <V1PanelsPreviewClient handoverOpen={sheet !== 'closed'} />;
 }

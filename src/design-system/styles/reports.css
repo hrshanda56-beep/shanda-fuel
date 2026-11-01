@@ -1318,3 +1318,79 @@
 .income-heading ~ .income-detail th {
   font-weight: var(--font-weight-regular, 400);
 }
+
+/* Table-report toolbar: the Filters button and every narrowing select share one height,
+ * radius, border and baseline, so the row reads as a single set of controls. */
+.table-report-page {
+  gap: var(--space-3);
+  margin-top: 0;
+}
+
+.table-report-page > p {
+  margin: 0;
+}
+
+.table-report-toolbar {
+  position: relative;
+  z-index: 2; /* the Filters panel opens over the table below */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.table-report-toolbar .filters-menu {
+  flex: none;
+}
+
+/* Open from the button's left edge, into the page, not leftwards under the sidebar. */
+.table-report-toolbar .filters-panel {
+  inset-inline: 0 auto;
+}
+
+.table-report-field {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.table-report-field select {
+  width: auto;
+  min-width: 11rem;
+  max-width: 100%;
+  min-height: 2.5rem;
+  padding: var(--space-2) var(--space-8) var(--space-2) var(--space-3);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  font-size: var(--font-size-sm);
+}
+
+.table-report-field select:hover:not(:disabled, :focus) {
+  border-color: var(--border-control);
+}
+
+.table-report-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+
+@media (max-width: 640px) {
+  .table-report-field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+  }
+
+  .table-report-field,
+  .table-report-field select {
+    width: 100%;
+  }
+
+  .table-report-downloads {
+    margin-inline-start: 0;
+  }
+}

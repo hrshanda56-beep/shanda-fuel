@@ -21,6 +21,7 @@ import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-s
 import { getServerShellAccess } from '@/design-system/navigation-server';
 
 import { TodayOverview } from './_overview/today-overview';
+import { resolveDashboardPeriod, type ResolvedDashboardPeriod } from './_overview/dashboard-period';
 import {
   dashboardScopeFromCurrentContext,
   type AttentionRow,
@@ -39,9 +40,15 @@ export default async function OverviewPage({
     legalEntityId?: string;
     stationId?: string;
     allStations?: string;
+    period?: string;
+    fromDate?: string;
+    toDate?: string;
   }>;
 }) {
-  const { tenantId, legalEntityId, stationId, allStations } = await searchParams;
+  const { tenantId, legalEntityId, stationId, allStations, period, fromDate, toDate } =
+    await searchParams;
+  // One period for every period figure on the page; Today unless the person chose another (B1).
+  const dashboardPeriod = resolveDashboardPeriod({ period, fromDate, toDate }, businessToday());
 
   // Someone whose permissions are only shift and meter work lands on My Shift
   // instead of an empty management dashboard. Decided from resolved permissions.
@@ -108,16 +115,15 @@ export default async function OverviewPage({
       ? dashboardScopeFromCurrentContext(access.current)
       : undefined;
 
-  // Quick actions are for people who run shifts. Owners, administrators and finance see
-  // Suppliers in their navigation; supervisors do not, so this follows resolved permissions.
-  const managesBusiness =
-    access.status === 'ready' &&
-    Boolean(access.projection?.some((entry) => entry.key === 'suppliers' && entry.visible));
-
   return (
     <AppShell searchPlacement="header" shellAccess={access}>
       <Suspense
-        key={JSON.stringify(validatedContext ?? [tenantId, stationId])}
+        key={JSON.stringify([
+          validatedContext ?? [tenantId, stationId],
+          dashboardPeriod.period,
+          dashboardPeriod.fromDate,
+          dashboardPeriod.toDate,
+        ])}
         fallback={<p role="status">Loading dashboard…</p>}
       >
         <DashboardContent
@@ -131,7 +137,7 @@ export default async function OverviewPage({
           stationId={validatedContext ? validatedContext.stationId : stationId}
           initialContext={initialContext}
           available={access.status === 'ready' ? access.resolution?.available : undefined}
-          showQuickActions={!managesBusiness}
+          period={dashboardPeriod}
         />
       </Suspense>
     </AppShell>
@@ -145,7 +151,7 @@ async function DashboardContent({
   stationId,
   initialContext,
   available,
-  showQuickActions,
+  period,
 }: {
   request: Request | null;
   tenantId?: string;
@@ -153,7 +159,7 @@ async function DashboardContent({
   stationId?: string;
   initialContext?: { tenantId: string; legalEntityId?: string; stationId?: string };
   available?: AvailableContext;
-  showQuickActions: boolean;
+  period: ResolvedDashboardPeriod;
 }) {
   const scope = tenantId ? { tenantId, legalEntityId, stationId } : initialContext;
   if (!request || !scope?.tenantId)
@@ -163,26 +169,32 @@ async function DashboardContent({
         legalEntityId={legalEntityId}
         stationId={stationId}
         initialContext={initialContext}
-        showQuickActions={showQuickActions}
       />
     );
-  const window = chartBuckets('30D', businessToday());
+  // The chart keeps its own 30-day window; everything else follows the chosen period.
+  const chartWindow = chartBuckets('30D', businessToday());
   const data = await getDashboardFromRequest(request, {
     ...scope,
-    fromDate: window.fromDate,
-    toDate: window.toDate,
+    fromDate: period.fromDate,
+    toDate: period.toDate,
+    chartFromDate: chartWindow.fromDate,
+    chartToDate: chartWindow.toDate,
   });
   const work = await loadWorkItems(request, scope, available);
   return (
     <TodayOverview
-      key={`${scope.tenantId}|${scope.stationId ?? ''}`}
+      key={`${scope.tenantId}|${scope.stationId ?? ''}|${period.period}|${period.fromDate}|${period.toDate}`}
       workItems={work.items}
       workUnavailable={work.unavailable}
       tenantId={scope.tenantId}
       legalEntityId={scope.legalEntityId}
       stationId={scope.stationId}
-      initialData={{ ...data, key: `${scope.tenantId}|${scope.stationId ?? ''}|30D` }}
-      showQuickActions={showQuickActions}
+      initialData={{
+        ...data,
+        key: `${scope.tenantId}|${scope.stationId ?? ''}|30D`,
+        period,
+        asOf: new Date().toISOString(),
+      }}
     />
   );
 }

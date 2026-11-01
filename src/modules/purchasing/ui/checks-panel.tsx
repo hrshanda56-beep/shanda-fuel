@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon } from '@/design-system/icons';
+import { InfoTip } from '@/design-system/info-tip';
 import { Checkbox } from '@/design-system/forms';
 import {
   Button,
@@ -88,11 +89,6 @@ export function ChecksPanel({
 
   return (
     <div className={styles.stack}>
-      <p className={styles.intro}>
-        When the supplier sends an invoice, we compare it with what was ordered and what actually
-        arrived. Anything that is more than your settings allow shows here, so you can query it
-        before you pay.
-      </p>
       {loading ? <LoadingState label="Loading" /> : null}
       {error ? (
         <ErrorState
@@ -101,12 +97,15 @@ export function ChecksPanel({
         />
       ) : null}
       {data && !loading && !error ? (
-        <Card as="section" className="panel" aria-labelledby="po-checks-title">
+        <Card as="section" className="panel profit-panel" aria-labelledby="po-checks-title">
           <div className={styles.toolbar}>
             <div className={styles.headline}>
-              <h3 id="po-checks-title" className={styles.sectionTitle}>
-                Deliveries and invoices
-              </h3>
+              <span className="heading-with-tip">
+                <h2 id="po-checks-title" className="profit-title">
+                  Deliveries And Invoices
+                </h2>
+                <InfoTip text="When the supplier sends an invoice, we compare it with what was ordered and what actually arrived. Anything more than your settings allow shows here, so you can query it before you pay." />
+              </span>
               <p className={styles.muted}>
                 {problemCount === 0
                   ? `Nothing needs a look right now.${unlinkedNote}`

@@ -22,9 +22,11 @@ type RowPeriod = { period: ReportPeriod; customFrom: string; customTo: string };
 export function ReportList({
   tenantId,
   financeReports = true,
+  canExport = true,
 }: {
   tenantId: string;
   financeReports?: boolean;
+  canExport?: boolean;
 }) {
   const searchParams = useSearchParams();
   const actions = useReportActions();
@@ -70,6 +72,7 @@ export function ReportList({
               stationIds={pageFilters.stationIds}
               rowPeriod={rowPeriod}
               busy={actions.busy}
+              canExport={canExport}
               onShare={(target) => void actions.share(target, report.title)}
               onExport={(target, format) => void actions.exportCsv(target, false, format)}
               onPeriod={(next) => setOverrides((current) => ({ ...current, [report.slug]: next }))}
@@ -88,6 +91,7 @@ function ReportRow({
   stationIds,
   rowPeriod,
   busy,
+  canExport,
   onShare,
   onExport,
   onPeriod,
@@ -98,6 +102,7 @@ function ReportRow({
   stationIds: readonly string[];
   rowPeriod: RowPeriod;
   busy: boolean;
+  canExport: boolean;
   onShare: (target: ReportActionTarget) => void;
   onExport: (target: ReportActionTarget, format: ExportFormat) => void;
   onPeriod: (next: RowPeriod) => void;
@@ -186,7 +191,7 @@ function ReportRow({
               ? [
                   { kind: 'link', label: 'View', href },
                   { kind: 'action', label: 'Share private link', onSelect: () => onShare(target) },
-                  ...(report.exportable
+                  ...(report.exportable && canExport
                     ? (
                         [
                           ['Download for Excel', 'xlsx'],

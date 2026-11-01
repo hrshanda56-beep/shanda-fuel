@@ -56,6 +56,8 @@ export function approvalLabel(status: OperationsApprovalStatus): string {
 export type TodayOperations = {
   station: { name: string };
   currentBusinessDate: string;
+  /** The day the shifts below belong to; older than today when a day was never closed. */
+  selectedBusinessDay?: { date: string } | null;
   status: { close: OperationsCloseStatus; approval: OperationsApprovalStatus };
   shifts: ReadonlyArray<{ id: string; state: string }>;
 };

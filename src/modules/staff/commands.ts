@@ -12,7 +12,7 @@ import { createResendEmailSender, type EmailSender } from '../../platform/email'
 import { createLogger } from '../../platform/logging';
 import { appendSecurityEvent } from '../audit/contracts';
 import { authorize } from '../../platform/security/permissions';
-import { assertStepUp } from '../../platform/security';
+import { assertStepUp, ROLE_CODES, type RoleCode } from '../../platform/security';
 import { requireAuthenticatedActor } from '../identity';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
 import {
@@ -51,7 +51,7 @@ const createSchema = z.object({
   invitedEmail: z.string().trim().email().max(320).optional(),
   staffNumber: z.string().trim().max(32).optional(),
   deliveryMethod: z.enum(['EMAIL', 'MANUAL']).default('EMAIL'),
-  assignedRole: z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']),
+  assignedRole: z.enum(ROLE_CODES),
   scopeType: z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']),
   legalEntityId: z.string().uuid().optional(),
   stationIds: z.array(z.string().uuid()).max(100).default([]),
@@ -79,7 +79,7 @@ const updateAssignmentSchema = z.object({
   commandType: z.literal('UpdateStaffAssignment'),
   tenantId: z.string().uuid(),
   membershipId: z.string().uuid(),
-  assignedRole: z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']),
+  assignedRole: z.enum(ROLE_CODES),
   scopeType: z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']),
   legalEntityId: z.string().uuid().optional(),
   stationIds: z.array(z.string().uuid()).max(100).default([]),
@@ -125,7 +125,7 @@ function hasTenantRole(authority: TenantExecutionContext, role: 'OWNER' | 'ADMIN
 
 function authorizeInvitation(
   authority: TenantExecutionContext,
-  role: 'OWNER' | 'ADMINISTRATOR' | 'FINANCE' | 'SUPERVISOR' | 'ATTENDANT',
+  role: RoleCode,
   scope: StaffInvitationScope,
 ) {
   const tenantScope = { tenantId: authority.membership.tenantId, scopeType: 'TENANT' as const };

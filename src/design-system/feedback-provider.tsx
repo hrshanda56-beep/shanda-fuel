@@ -92,7 +92,12 @@ function isTrackedRequest(input: RequestInfo | URL, init?: RequestInit): boolean
     const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw, window.location.href);
     // Clerk's session polling is background noise, not something the person asked for.
-    if (url.origin !== window.location.origin || url.pathname.startsWith('/api/clerk'))
+    // Next's own development tooling (error overlay lookups) is not a save either.
+    if (
+      url.origin !== window.location.origin ||
+      url.pathname.startsWith('/api/clerk') ||
+      url.pathname.startsWith('/__nextjs')
+    )
       return false;
     return !isPrefetch(input, init);
   } catch {

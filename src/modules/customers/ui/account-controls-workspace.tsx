@@ -22,6 +22,7 @@ import {
 import { formatTileMoney } from '@/modules/reporting/format';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { CustomerAccount, CustomerSummary, CustomerTransaction } from './types';
+import { InfoTip } from '@/design-system/info-tip';
 
 export type AccountControlsStation = {
   id: string;
@@ -135,14 +136,64 @@ export function AccountControlsWorkspace({
   const [limits, setLimits] = useState<Record<string, string>>({});
 
   return (
-    <div className="content-grid wide-workspace customer-workspace">
-      <Card className="panel content-span" aria-label="Credit limits">
+    <div className="content-grid wide-workspace customer-workspace account-controls-grid">
+      <Card className="panel stack" aria-label="Details of each transaction">
+        <div className="section-heading">
+          <h2>Details of each transaction</h2>
+          <InfoTip>
+            For a customer account: the vehicle, driver, voucher or slip number and who approved it.
+          </InfoTip>
+        </div>
+        {creditCustomers.length === 0 ? (
+          <EmptyState
+            layout="block"
+            icon="users"
+            title="Nothing to show yet"
+            message="Pick a customer here once credit customers exist."
+          />
+        ) : (
+          <>
+            <Field id="controls-customer" label="Customer">
+              <Select
+                id="controls-customer"
+                value={selectedId}
+                onChange={(event) => setSelectedId(event.target.value)}
+                options={creditCustomers.map((customer) => ({
+                  value: customer.customerId,
+                  label: `${customer.displayName} (${customer.accountReference})`,
+                }))}
+              />
+            </Field>
+            {selectedId ? (
+              <CustomerEntries
+                key={`${selectedId}-${version}`}
+                tenantId={tenantId}
+                customer={creditCustomers.find((item) => item.customerId === selectedId)!}
+                currentStationId={currentStationId}
+                stations={stations}
+                approvers={approvers}
+                approverName={approverName}
+                canRecordDetails={canRecordDetails}
+                onSaved={(text) => {
+                  setMessage(text);
+                  setVersion((value) => value + 1);
+                }}
+              />
+            ) : null}
+          </>
+        )}
+      </Card>
+
+      <Card className="panel" aria-label="Credit limits">
         <div className="section-heading">
           <h2>Credit limits</h2>
-          <p className="field-hint">
+          <InfoTip>
             The most each credit customer may owe at one time. A change needs an approver and a
             reason, and is kept on record.
-          </p>
+            {!canOverrideLimit && creditCustomers.length > 0
+              ? ' Changing a credit limit needs permission from management.'
+              : ''}
+          </InfoTip>
         </div>
         {message ? (
           <p className="field-hint" role="status">
@@ -211,56 +262,6 @@ export function AccountControlsWorkspace({
               })}
             </ul>
           </div>
-        )}
-        {!canOverrideLimit && creditCustomers.length > 0 ? (
-          <p className="field-hint">Changing a credit limit needs permission from management.</p>
-        ) : null}
-      </Card>
-
-      <Card className="panel content-span stack" aria-label="Details of each transaction">
-        <div className="section-heading">
-          <h2>Details of each transaction</h2>
-          <p className="field-hint">
-            For a customer account: the vehicle, driver, voucher or slip number and who approved it.
-          </p>
-        </div>
-        {creditCustomers.length === 0 ? (
-          <EmptyState
-            layout="block"
-            icon="users"
-            title="Nothing to show yet"
-            message="Pick a customer here once credit customers exist."
-          />
-        ) : (
-          <>
-            <Field id="controls-customer" label="Customer">
-              <Select
-                id="controls-customer"
-                value={selectedId}
-                onChange={(event) => setSelectedId(event.target.value)}
-                options={creditCustomers.map((customer) => ({
-                  value: customer.customerId,
-                  label: `${customer.displayName} (${customer.accountReference})`,
-                }))}
-              />
-            </Field>
-            {selectedId ? (
-              <CustomerEntries
-                key={`${selectedId}-${version}`}
-                tenantId={tenantId}
-                customer={creditCustomers.find((item) => item.customerId === selectedId)!}
-                currentStationId={currentStationId}
-                stations={stations}
-                approvers={approvers}
-                approverName={approverName}
-                canRecordDetails={canRecordDetails}
-                onSaved={(text) => {
-                  setMessage(text);
-                  setVersion((value) => value + 1);
-                }}
-              />
-            ) : null}
-          </>
         )}
       </Card>
 
@@ -731,9 +732,9 @@ function DetailsDialog({
           {saver.error ? (
             <ErrorState title="This could not be saved" message={saver.error} />
           ) : null}
-          <p className="field-hint">
+          <InfoTip>
             Details cannot be changed once saved, so check them before you press Save.
-          </p>
+          </InfoTip>
           <Field id="details-station" label="Which station was it at?" required>
             <Select
               id="details-station"

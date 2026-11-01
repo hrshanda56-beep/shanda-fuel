@@ -60,6 +60,7 @@ export function TankDetailPage({ search, tankId }: { search: PageSearch; tankId:
               `/inventory/valuation/streams/${result.tankId}/${result.data.tank.productId}`,
             )}
             initialData={result.data}
+            initialTab={typeof search.tab === 'string' ? search.tab : undefined}
           />
         );
       }}

@@ -190,6 +190,7 @@ export function filterAuthorizedContextRows(
         id: row.legal_entity_id,
         name: row.legal_entity_name,
         stations: [],
+        ...(legalContextSelectable ? {} : { stationsOnly: true as const }),
       };
       legalEntities.set(row.legal_entity_id, legalEntity);
       (organisation.legalEntities as ContextLegalEntity[]).push(legalEntity);

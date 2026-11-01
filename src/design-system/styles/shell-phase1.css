@@ -769,8 +769,9 @@
     padding-inline: var(--space-3);
   }
 
+  /* Rectangular with rounded corners, the same radius as a button. */
   .shell-sidebar .nav-row {
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-md);
   }
 
   /* Keep the current route on the canonical neutral selected surface. */

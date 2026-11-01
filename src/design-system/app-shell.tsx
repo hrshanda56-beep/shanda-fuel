@@ -44,6 +44,7 @@ import {
   setSidebarCollapsed,
   subscribeShellPreferences,
 } from './shell-preferences';
+import { rememberShell } from './shell-memory';
 import { ThemeControl } from './theme-control';
 import { applyThemePreference, readStoredThemePreference } from './theme';
 
@@ -130,8 +131,20 @@ function pageTitleForRoute(
   const current = sections
     .flatMap((section) => section.items)
     .find((item) => isNavigationItemActive(item, pathname));
-  if (!current) return undefined;
+  if (!current) return titleFromPath(pathname);
   return current.key === 'today' ? 'Dashboard' : current.label;
+}
+
+/** A page outside the person's own menu still gets a heading, from the last readable URL part. */
+function titleFromPath(pathname: string | null): string | undefined {
+  const part = (pathname ?? '')
+    .split('?')[0]!
+    .split('/')
+    .filter((segment) => segment && !/^[0-9a-f-]{8,}$/i.test(segment))
+    .pop();
+  if (!part) return undefined;
+  const words = decodeURIComponent(part).replace(/[-_]+/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : undefined;
 }
 
 type ClosedGroupState = {
@@ -246,6 +259,11 @@ export function AppShell({
     window.addEventListener('scroll', sync, { passive: true });
     return () => window.removeEventListener('scroll', sync);
   }, []);
+
+  // The loading screen draws this same shell while the next page loads.
+  useEffect(() => {
+    rememberShell({ navigationProjection, navigationContext, role, userName, authProvider });
+  }, [navigationProjection, navigationContext, role, userName, authProvider]);
 
   useEffect(() => {
     // AppShell can survive a soft route transition while the document head
@@ -1033,8 +1051,13 @@ function AccountMenu({
           tabIndex={-1}
         >
           <div className="account-menu-identity">
-            <strong>{displayName ?? 'Account preferences'}</strong>
-            {displayRole ? <span>{displayRole}</span> : null}
+            <span className="shell-avatar account-menu-avatar" aria-hidden="true">
+              {displayName ? initials(displayName) : <Icon name="users" />}
+            </span>
+            <span className="account-menu-identity-text">
+              <strong>{displayName ?? 'Your account'}</strong>
+              {displayRole ? <span>{displayRole}</span> : null}
+            </span>
           </div>
           <div role="group" aria-label="Theme" className="account-menu-theme">
             <span className="account-menu-label">Theme</span>

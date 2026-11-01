@@ -18,6 +18,7 @@ import {
   classifyStepUpFailure,
   stepUpFailureMessage,
 } from './staff-step-up-diagnostics';
+import { InfoTip } from '@/design-system/info-tip';
 
 type StaffOverview = NonNullable<SettingsView['staff']>;
 type Role = Exclude<RoleCode, 'OWNER'> | 'OWNER';
@@ -34,10 +35,13 @@ const ROLE_LABELS: Record<Role, string> = {
   FINANCE: 'Finance',
   SUPERVISOR: 'Supervisor',
   ATTENDANT: 'Attendant',
+  AUDITOR: 'Auditor (read only)',
+  AREA_MANAGER: 'Area manager',
+  CASH_COLLECTOR: 'Cash collector',
 };
 
 function defaultScope(role: Role) {
-  return role === 'OWNER' || role === 'ADMINISTRATOR'
+  return role === 'OWNER' || role === 'ADMINISTRATOR' || role === 'AUDITOR'
     ? 'TENANT'
     : role === 'FINANCE'
       ? 'LEGAL_ENTITY'
@@ -780,9 +784,6 @@ export function StaffPanel({
                 onClick={() => setSelectedId(row.id)}
               >
                 <div className={styles.staffName}>
-                  <span className={styles.staffAvatar} aria-hidden="true">
-                    {initials(row.name)}
-                  </span>
                   <div>
                     <button
                       type="button"
@@ -1105,10 +1106,10 @@ export function StaffPanel({
       >
         {deactivationTarget ? (
           <>
-            <p className="semantic-note">
+            <InfoTip>
               {deactivationTarget.name} will lose workplace access immediately. This action cannot
               be undone from this screen.
-            </p>
+            </InfoTip>
             {deactivationOutcome ? (
               <p
                 className={`state ${deactivationOutcome.kind === 'success' ? 'state-success' : 'state-error'}`}

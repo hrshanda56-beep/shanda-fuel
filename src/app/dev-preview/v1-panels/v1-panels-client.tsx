@@ -2,19 +2,21 @@
 
 import { PageContainer } from '@/design-system/layout';
 import { AuditPanel } from '../../../modules/audit/ui/audit-panel';
-import { CashHandoverPanel } from '../../../modules/cash/ui/cash-handover-panel';
+import { CashHandoverSheet } from '../../../modules/cash/ui/cash-handover-panel';
 import { DocumentAttachments } from '../../../modules/documents/ui/document-attachments';
 import { AlertSettingsPanel } from '../../../modules/setup/ui/alert-settings-panel';
 
 const tenantId = 'e2e90000-0000-4000-8000-000000000001';
 const stationId = 'e2e90000-0000-4000-8000-000000000021';
 
-export function V1PanelsPreviewClient() {
+export function V1PanelsPreviewClient({ handoverOpen = true }: { handoverOpen?: boolean }) {
   return (
     <main>
       <PageContainer width="wide">
         <h1>New screens</h1>
-        <CashHandoverPanel
+        <CashHandoverSheet
+          open={handoverOpen}
+          onClose={() => undefined}
           context={{ organisationId: tenantId, stationId, allStations: false }}
           currentMembershipId="me"
           canSubmit

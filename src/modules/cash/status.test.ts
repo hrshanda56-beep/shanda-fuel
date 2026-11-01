@@ -90,7 +90,11 @@ describe('cash status names', () => {
     ).toBe('Fully banked');
     expect(
       bankingStatusForDeposit({ state: 'CONFIRMED', amount: '10', confirmedAmount: '9.5' }),
-    ).toBe('Partly banked');
+    ).toBe('Banked with difference');
+    // B5: more than was deposited is also a difference, never plain "banked".
+    expect(
+      bankingStatusForDeposit({ state: 'CONFIRMED', amount: '10', confirmedAmount: '10.5' }),
+    ).toBe('Banked with difference');
     expect(
       bankingStatusForDeposit({ state: 'REJECTED', amount: '10', confirmedAmount: null }),
     ).toBe('Rejected by the bank');
