@@ -9,6 +9,7 @@ import { getDatabase } from '../db';
 import { AppError } from '../errors';
 import { readClerkStepUpAssertion } from './clerk-step-up';
 import { clerkCredentialName } from './credential-name';
+import { isLocalDevBypassEnabled, readDevBypassCookie } from './dev-bypass';
 import { memoizeRequestRead } from '../security/request-read-scope';
 
 export type AuthProviderName = 'CLERK';
@@ -44,7 +45,47 @@ export type ClerkSessionRevocationResult = {
 const CLERK_STEP_UP_MAX_AGE_MINUTES = 10;
 const identityRead = Symbol('clerk-internal-identity');
 
+/**
+ * Local-only (see dev-bypass.ts): act as an already-provisioned identity chosen
+ * at /dev-login. The identity is still resolved through the same reviewed
+ * database function, so an unknown id is rejected exactly like a Clerk one.
+ */
+async function resolveDevBypassSession(request: Request): Promise<ProviderSession | null> {
+  const devUserId = readDevBypassCookie(request.headers.get('cookie'));
+  if (!devUserId) return null;
+  const rows = await getDatabase().execute<{ internal_user_id: string }>(
+    sql`select internal_user_id from app.resolve_auth_identity('CLERK', ${devUserId})`,
+  );
+  const internalUserId = rows[0]?.internal_user_id;
+  if (!internalUserId) return null;
+  const now = Date.now();
+  const expiresAt = new Date(now + 10 * 60_000);
+  // Same as the Clerk path: a passed identity check (set by /api/auth/step-up) is what lets
+  // privileged saves through, so the dev session picks it up from the same cookie.
+  const assertion = readClerkStepUpAssertion(request);
+  const providerSessionId = `dev-bypass-${devUserId}`;
+  const assertionMatches =
+    assertion?.providerSessionId === providerSessionId &&
+    assertion.internalUserId === internalUserId;
+  return {
+    provider: 'CLERK',
+    providerUserId: devUserId,
+    internalUserId,
+    providerSessionId,
+    expiresAt,
+    strongAuthenticatedAt: new Date(now),
+    strongAuthenticationExpiresAt: expiresAt,
+    strongAuthenticationVerified: true,
+    strongAuthenticationMethod: 'clerk-reverification',
+    stepUpLevel: 1,
+    stepUpExpiresAt: expiresAt,
+    stepUpTenantId: assertionMatches ? assertion?.tenantId : undefined,
+    stepUpAction: assertionMatches ? assertion?.action : undefined,
+  };
+}
+
 export async function resolveClerkSession(request: Request): Promise<ProviderSession | null> {
+  if (isLocalDevBypassEnabled()) return resolveDevBypassSession(request);
   const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
   markReadTiming('identity.clerk.headers.ready');
   if (!auth.isAuthenticated || !auth.userId || !auth.sessionId) return null;
@@ -147,6 +188,7 @@ export function hasRecentClerkReverification(
   request: Request,
   level: 'strict' | 'strict_mfa',
 ): boolean {
+  if (isLocalDevBypassEnabled()) return true; // local dev sign-in only (dev-bypass.ts)
   const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
   return auth.isAuthenticated && auth.has({ reverification: level });
 }
@@ -161,6 +203,7 @@ export function hasRecentClerkSignIn(
   level: 'strict' | 'strict_mfa',
   withinMinutes: number,
 ): boolean {
+  if (isLocalDevBypassEnabled()) return true; // local dev sign-in only (dev-bypass.ts)
   const auth = getClerkAuth(request as unknown as Parameters<typeof getClerkAuth>[0]);
   if (!auth.isAuthenticated) return false;
   const ages = auth.factorVerificationAge;
@@ -171,6 +214,7 @@ export function hasRecentClerkSignIn(
 }
 
 export async function clerkUserHasMfa(providerUserId: string): Promise<boolean> {
+  if (isLocalDevBypassEnabled()) return false; // local dev sign-in only: Clerk is not reachable
   const client = await clerkClient();
   const user = await client.users.getUser(providerUserId);
   return (

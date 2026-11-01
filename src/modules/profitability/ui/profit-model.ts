@@ -1,7 +1,11 @@
 import { exact, ratioPercentage, subtractExact, sumExact } from '../../reporting/domain';
 import { formatTileMoney } from '../../reporting/format';
 import type { ManagementReport } from '../../reporting/contracts';
-import { approvedFuelBenefit } from '../../reporting/statements';
+import {
+  approvedFuelBenefit,
+  recognizedOperatingExpenseTotal,
+  recognizedOperatingExpenses,
+} from '../../reporting/statements';
 import { operatingProfit } from '../../reporting/operating-profit';
 
 /**
@@ -110,8 +114,12 @@ export function buildProfitView(report: ManagementReport): ProfitView {
     state === 'ready' && sales !== null && fuelCost !== null
       ? subtractExact(sales, fuelCost)
       : null;
-  const expenses = report.expenses.total;
-  const profit = operatingProfit(grossProfit, expenses, approvedFuelBenefit(report));
+  const expenses = recognizedOperatingExpenses(report);
+  const profit = operatingProfit(
+    grossProfit,
+    recognizedOperatingExpenseTotal(report),
+    approvedFuelBenefit(report),
+  );
   const litres = sumExact(revenueSales.map((sale) => sale.quantityLitres));
 
   const headline =
@@ -154,7 +162,9 @@ export function buildProfitView(report: ManagementReport): ProfitView {
       const costKnown = cost.length > 0 && unvalued === 0 && cost.length === rev.length;
       const stationCost = costKnown ? sumExact(cost.map((c) => c.restatedCogs)) : null;
       const stationExpenses = sumExact(
-        (expensesByStation.get(stationId) ?? []).map((row) => row.amount),
+        (expensesByStation.get(stationId) ?? [])
+          .filter((row) => row.classification !== 'DIRECT_INVENTORY_COST')
+          .map((row) => row.amount),
       );
       const gross =
         stationSales !== null && stationCost !== null

@@ -66,6 +66,27 @@ export function calculateDeliveryShortageExcess(
   return actual.subtract(note).toString();
 }
 
+/** Before/after delivery dips must bracket the delivery they describe. */
+export function validateDeliveryDipWindow(
+  deliveredAt: string,
+  beforeMeasuredAt?: string,
+  afterMeasuredAt?: string,
+): void {
+  const delivered = new Date(deliveredAt).getTime();
+  if (beforeMeasuredAt && new Date(beforeMeasuredAt).getTime() > delivered) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'The before-delivery dip must be at or before delivery time.',
+    );
+  }
+  if (afterMeasuredAt && new Date(afterMeasuredAt).getTime() < delivered) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'The after-delivery dip must be at or after delivery time.',
+    );
+  }
+}
+
 export function validateDeliveryAllocations(
   actualQuantityLitres: string,
   allocations: readonly string[],
@@ -121,6 +142,48 @@ export function deriveExpectedTankStock(
     }
   }
   return expected.toString();
+}
+
+export type TimedStockMovement = StockMovement & Readonly<{ effectiveAt: Date }>;
+
+/**
+ * Replays the tank's movements in time order with the new one merged in and refuses it if stock
+ * would drop below zero, or (for stock coming in) rise above the tank's capacity, at that point
+ * or any later one. The running total alone is not enough: a delivery dated too late, or an issue
+ * dated before a delivery, leaves a correct total but an impossible history that blocks every
+ * later entry. Points before the new movement are not judged, so older data cannot freeze a tank.
+ */
+export function assertMovementFitsTank(
+  existing: readonly TimedStockMovement[],
+  added: TimedStockMovement,
+  capacityLitres: string,
+): void {
+  const addedQuantity = litres(validateMovementQuantity(added.movementType, added.quantityLitres));
+  const capacity = litres(capacityLitres);
+  let running: ExactDecimal = litres('0');
+  const later: ExactDecimal[] = [];
+  for (const movement of existing) {
+    const quantity = litres(
+      validateMovementQuantity(movement.movementType, movement.quantityLitres),
+    );
+    if (movement.effectiveAt <= added.effectiveAt) running = running.add(quantity);
+    else later.push(quantity);
+  }
+  for (const quantity of [addedQuantity, ...later]) {
+    running = running.add(quantity);
+    if (running.value.isNegative()) {
+      throw new AppError(
+        'INVARIANT_VIOLATION',
+        'That would create negative stock: the tank would hold less than zero litres at the date and time entered. Check the litres and the date and time.',
+      );
+    }
+    if (addedQuantity.value.gt(0) && running.value.gt(capacity.value)) {
+      throw new AppError(
+        'INVARIANT_VIOLATION',
+        `That would put more fuel in the tank than it can hold (${capacity.toString()} L). Check the litres and the date and time.`,
+      );
+    }
+  }
 }
 
 export function calculateTankStockVariance(physicalLitres: string, expectedLitres: string): string {

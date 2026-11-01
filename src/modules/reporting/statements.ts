@@ -40,6 +40,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   OTHER: 'Other',
 };
 
+export const EXPENSE_BASIS_NOTE =
+  'Expenses are approved or recognized by expense date; pending and rejected expenses are excluded.';
+
 function categoryLabel(category: string): string {
   const known = CATEGORY_LABELS[category];
   if (known) return known;
@@ -62,11 +65,14 @@ function hasApprovedFuel(report: ManagementReport): boolean {
   return exact(approvedFuelBenefit(report)).value.gt(0);
 }
 
-function recognizedOperatingExpenses(report: ManagementReport): string {
-  return addExact(
-    addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
-    approvedFuelBenefit(report),
-  );
+/** Recognized operating and fixed expenses; direct inventory cost is already in cost of sales. */
+export function recognizedOperatingExpenseTotal(report: ManagementReport): string {
+  return addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal);
+}
+
+/** The expense basis used by profit statements, including the approved-fuel benefit cost. */
+export function recognizedOperatingExpenses(report: ManagementReport): string {
+  return addExact(recognizedOperatingExpenseTotal(report), approvedFuelBenefit(report));
 }
 
 /** Recorded expenses summed by category, largest first. */
@@ -89,11 +95,16 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
   const revenue = report.revenue.recognizedRevenue;
   const cogs = report.costing.restatedCogs;
   const gross = report.grossMargin;
-  const net = operatingProfit(gross, report.expenses.total, approvedFuelBenefit(report));
+  const net = operatingProfit(
+    gross,
+    recognizedOperatingExpenseTotal(report),
+    approvedFuelBenefit(report),
+  );
   const margin = gross === null ? null : ratioPercentage(gross, revenue);
   const notes = [
     'Revenue is recognised revenue and cost of sales is restated landed cost, both from approved records.',
     'Operating expenses and fixed costs are recognised separately. Depreciation, tax and financing costs are not included.',
+    EXPENSE_BASIS_NOTE,
   ];
   if (hasApprovedFuel(report)) {
     notes.push(
@@ -335,7 +346,9 @@ export function buildNetPosition(report: ManagementReport): Statement {
     customers.prepaidValueBalance !== null;
   const holds = customersKnown
     ? sumExact([
-        cash.collectedButNotBanked,
+        cash.atStation ?? cash.collectedButNotBanked,
+        cash.heldByManagement ?? '0',
+        cash.inTransit ?? '0',
         providers.unmatchedEvidenceAmount,
         customers.receivableBalance!,
       ])
@@ -348,7 +361,14 @@ export function buildNetPosition(report: ManagementReport): Statement {
       {
         heading: 'What the business holds or is owed',
         lines: [
-          { label: 'Cash collected, not yet banked', value: cash.collectedButNotBanked },
+          {
+            label: 'Cash collected, not yet banked',
+            value: sumExact([
+              cash.atStation ?? cash.collectedButNotBanked,
+              cash.heldByManagement ?? '0',
+              cash.inTransit ?? '0',
+            ]),
+          },
           {
             label: 'Card and mobile payments not yet received',
             value: providers.unmatchedEvidenceAmount,
@@ -428,17 +448,20 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
         }
       : {
           label: 'Cash banked',
-          value: cash.banked,
+          value: cash.custody?.banked ?? cash.banked,
           note:
             bank && bank.accountsTotal > 0
               ? `Type in the bank statement balance in Settings (${bank.accountsWithBalance} of ${bank.accountsTotal} accounts so far) to use it instead of recorded deposits.`
               : undefined,
         };
-  const atStation = cash.atStation ?? cash.collectedButNotBanked;
-  const heldByManagement = cash.heldByManagement ?? '0';
-  const inTransit = cash.inTransit ?? '0';
+  // Each collected amount is in exactly one of these places (B4), as at the end date.
+  const atStation = cash.custody?.atStation ?? cash.atStation ?? cash.collectedButNotBanked;
+  const withCollector = cash.custody?.withCollector ?? '0';
+  const heldByManagement = cash.custody?.heldByManagement ?? cash.heldByManagement ?? '0';
+  const inTransit = cash.custody?.awaitingBank ?? cash.inTransit ?? '0';
   const held: StatementLine[] = [
     { label: 'Cash at stations, not yet banked', value: atStation },
+    { label: 'Cash with a collector', value: withCollector },
     { label: 'Cash held by management', value: heldByManagement },
     { label: 'Cash deposited, awaiting confirmation', value: inTransit },
     bankLine,
@@ -452,7 +475,7 @@ export function buildFinancialPosition(report: ManagementReport): FinancialPosit
       value: extra?.stockValue ?? null,
       note:
         extra && extra.stockValue === null
-          ? `${extra.unvaluedStockStreams} tank(s) hold fuel with no cost yet.`
+          ? `${extra.unvaluedStockStreams} tank(s) hold fuel with no cost yet. Open Inventory to add the cost.`
           : extra
             ? undefined
             : 'Not available.',
@@ -542,8 +565,12 @@ export type QuickFigure = Readonly<{
 /** The handful of figures an owner looks at first, each linked to the report behind it. */
 export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
   const gross = report.grossMargin;
-  const totalExpenses = addExact(report.expenses.total, approvedFuelBenefit(report));
-  const net = operatingProfit(gross, report.expenses.total, approvedFuelBenefit(report));
+  const totalExpenses = recognizedOperatingExpenses(report);
+  const net = operatingProfit(
+    gross,
+    recognizedOperatingExpenseTotal(report),
+    approvedFuelBenefit(report),
+  );
   return [
     { id: 'sales', label: 'Total Sales', value: report.sales.salesValue, slug: 'sales' },
     { id: 'gross', label: 'Gross Profit', value: gross, slug: 'profit-loss' },
@@ -681,7 +708,7 @@ export function buildIncomeStatement(
     },
   ];
 
-  const notes: string[] = [];
+  const notes: string[] = [EXPENSE_BASIS_NOTE];
   if (current.costing.unvaluedSaleCount > 0) {
     notes.push(
       `${current.costing.unvaluedSaleCount} of ${current.costing.saleCount} sales have no cost yet, so gross profit and the result are not shown.`,

@@ -12,6 +12,17 @@ export function AccountSignOutItem(_props: { provider?: AccountAuthProvider }) {
   return (
     <SignOutItem
       run={async () => {
+        // Local dev sign-in keeps its own cookie, which Clerk knows nothing about. The route is
+        // a 404 anywhere that sign-in is off, so this falls through to the normal Clerk sign-out.
+        const dev = await fetch('/api/dev-login', {
+          method: 'POST',
+          body: new URLSearchParams({ user: '__signout' }),
+          redirect: 'manual',
+        }).catch(() => null);
+        if (dev && dev.status !== 404) {
+          window.location.assign('/dev-login');
+          return;
+        }
         // Go to the sign-in page as soon as the session ends, rather than via the home page.
         await signOut({ redirectUrl: '/login' });
         router.replace('/login');

@@ -11,6 +11,8 @@ const report = (over: Record<string, unknown> = {}) =>
     expenses: {
       operatingTotal: '10.0000',
       fixedCostTotal: '20.0000',
+      directInventoryCostTotal: '999.0000',
+      total: '1029.0000',
       rows: [
         { businessDate: '2026-10-01', classification: 'OPERATING', amount: '10.0000' },
         { businessDate: '2026-10-01', classification: 'FIXED_COST', amount: '20.0000' },
@@ -42,6 +44,22 @@ describe('buildFinanceTiles', () => {
     expect(byId(tiles, 'operatingProfit').value).toBe('65');
     expect(byId(tiles, 'stockValue').value).toBe('6.0000');
     expect(byId(tiles, 'expensesAwaitingApproval')).toMatchObject({ value: '7.0000', count: 3 });
+  });
+
+  it('marks every tile as a period total or an as-at position (B1)', () => {
+    const basis = Object.fromEntries(buildFinanceTiles(report()).map((t) => [t.id, t.basis]));
+    expect(basis).toEqual({
+      grossProfit: 'period',
+      operatingProfit: 'period',
+      cashBanked: 'period',
+      stockValue: 'as-at',
+      cashAtStations: 'as-at',
+      posAwaiting: 'as-at',
+      debtors: 'as-at',
+      creditors: 'as-at',
+      netPosition: 'as-at',
+      expensesAwaitingApproval: 'as-at',
+    });
   });
 
   it('shows the net position from the financial position, and says why when it is not known', () => {

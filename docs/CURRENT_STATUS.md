@@ -1,5 +1,19 @@
 # Shanda Fuel — Current Status
 
+## Hardening pass — 2026-10-29 (branch `fixtures`, from `main` 81168380, uncommitted)
+
+Code-verified audit of the existing features, with no new builds: see `docs/STATE_OF_PLAY.md` for
+the evidence table, candidate defects and the "not built, needs a decision" list. One defect fixed
+(a delivery's supplied landed cost must now match unit cost x litres received) plus new export and
+creditor tests, including a cross-tenant one. A second pass, on the owner's instruction to fix
+everything, added: cash receiver must differ from recorder; credit and prepaid limits count waiting
+sales; duplicate references return 409 instead of 500; report activity needs report permission;
+audit "before" values on reconciliation and cash steps; station-time-zone date on one dashboard
+figure; and migration 0089 (deposit slip trigger, append-only meter boundaries, shift identity
+guard), not applied to production. Production was not contacted; nothing was pushed, merged or
+deployed. End-to-end and accessibility suites were not run (no Clerk test keys here), and the
+phone-width browser check was not possible. Details and open owner decisions are in STATE_OF_PLAY.
+
 ## Audit round 3 hardening follow-up — 2026-10-27
 
 Branch `fix/audit-round-3-20261027` remains isolated from `main` and has not been merged, deployed,

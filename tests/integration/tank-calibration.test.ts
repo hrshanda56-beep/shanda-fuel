@@ -136,4 +136,69 @@ describe('tank calibration charts (PostgreSQL)', { timeout: 120_000 }, () => {
     );
     expect(rows[0]!.n).toBe(0);
   });
+
+  it('voids an unattached dip once, keeps the reason, and preserves tenant isolation', async () => {
+    const mine = await createQa1ScenarioContext(client, 'calib-void-mine');
+    const theirs = await createQa1ScenarioContext(client, 'calib-void-theirs');
+    const dip = await inventory(
+      mine,
+      {
+        commandType: 'RecordTankDip',
+        ...authority(mine),
+        tankId: mine.tankId,
+        measuredAt: '2026-09-26T07:00:00.000Z',
+        physicalLitres: '50.000',
+      },
+      'calib-void-dip',
+    );
+    expect(dip.response.status).toBe(200);
+    const voided = await inventory(
+      mine,
+      {
+        commandType: 'VoidTankDip',
+        ...authority(mine),
+        dipId: dip.body.dipId,
+        reason: 'Duplicate audit dip',
+      },
+      'calib-void-command',
+    );
+    expect(voided.response.status).toBe(200);
+    const rows = await client.unsafe<
+      { voided_at: Date | null; voided_by: string | null; void_reason: string | null }[]
+    >(
+      `select voided_at, voided_by, void_reason from app.tank_dips where tenant_id = '${mine.tenantId}' and id = '${dip.body.dipId}'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.voided_at).not.toBeNull();
+    expect(rows[0]?.voided_by).toBe(mine.actors.admin.membershipId);
+    expect(rows[0]?.void_reason).toBe('Duplicate audit dip');
+
+    const repeat = await inventory(
+      mine,
+      {
+        commandType: 'VoidTankDip',
+        ...authority(mine),
+        dipId: dip.body.dipId,
+        reason: 'Second void attempt',
+      },
+      'calib-void-repeat',
+    );
+    expect(repeat.response.status).toBe(409);
+
+    const crossTenant = await inventory(
+      theirs,
+      {
+        commandType: 'VoidTankDip',
+        ...authority(theirs),
+        dipId: dip.body.dipId,
+        reason: 'Cross tenant attempt',
+      },
+      'calib-void-cross-tenant',
+    );
+    expect([403, 404]).toContain(crossTenant.response.status);
+    const audit = await client.unsafe<{ count: string }[]>(
+      `select count(*)::text as count from platform.security_events where tenant_id = '${mine.tenantId}' and event_code = 'INVENTORY.TANK_DIP_VOIDED' and details->>'subjectId' = '${dip.body.dipId}'`,
+    );
+    expect(audit[0]?.count).toBe('1');
+  });
 });

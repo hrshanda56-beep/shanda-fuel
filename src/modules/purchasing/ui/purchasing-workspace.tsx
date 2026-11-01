@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import type { ContextResolution } from '@/modules/context';
-import { PageHeader } from '@/design-system/layout';
 import { AccessDeniedState, ContextRequiredState } from '@/design-system/primitives';
 import type { PurchasingCapabilities } from '../capabilities-types';
 import { ChecksPanel } from './checks-panel';
@@ -90,28 +89,29 @@ export function PurchasingWorkspace({
       : null;
 
   return (
-    <div className="content-grid wide-workspace">
-      <PageHeader
-        eyebrow="Purchasing"
-        title="Ordering fuel and checking supplier invoices"
-        headingLevel="h2"
-        titleId="purchasing-title"
-        description="Order fuel from your suppliers, see what has been delivered but not invoiced, and catch invoices that do not match."
-      />
-      <div className="list-filters content-span" role="group" aria-label="Purchasing sections">
-        {tabs.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            className="list-filter"
-            aria-pressed={tab === item.value}
-            onClick={() => choose(item.value)}
-          >
-            {item.label}
-          </button>
-        ))}
+    <div className="profit-workspace wide-workspace">
+      <div className="profit-top">
+        <div
+          className="profit-tabs purchasing-tabs"
+          role="tablist"
+          aria-label="Purchasing sections"
+        >
+          {tabs.map((item) => (
+            <button
+              key={item.value}
+              id={`purchasing-tab-${item.value}`}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.value}
+              aria-controls="purchasing-tabpanel"
+              onClick={() => choose(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="content-span">
+      <div id="purchasing-tabpanel" role="tabpanel" aria-labelledby={`purchasing-tab-${tab}`}>
         {tab === 'orders' ? (
           <OrdersPanel
             tenantId={tenantId}

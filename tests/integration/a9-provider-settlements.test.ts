@@ -602,6 +602,13 @@ describe('A9 provider settlement PostgreSQL persistence', () => {
 
     await expect(
       client.begin(async (transaction) => {
+        // As a request does: the allocation guard runs as its owner, so it sees only this tenant.
+        await transaction`
+          select set_config('app.tenant_id', ${ids.tenant}, true),
+                 set_config('app.actor_id', ${ids.actor}, true),
+                 set_config('app.membership_id', ${ids.membership}, true),
+                 set_config('app.station_id', ${ids.station}, true)
+        `;
         await transaction`
           insert into app.provider_settlement_allocations
             (id, tenant_id, station_id, settlement_id, reconciliation_payment_id,

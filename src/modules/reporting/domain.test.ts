@@ -2,13 +2,55 @@ import { describe, expect, it } from 'vitest';
 import {
   averageRealizedPrice,
   customerScopeAvailability,
+  deriveCashCustody,
   deriveCashPosition,
   formatLitres,
   formatMoney,
+  latestStationLocalDate,
   normalizeStationIds,
   sumObservedExact,
   sumExact,
 } from './domain';
+
+describe('deriveCashCustody (B4)', () => {
+  const split = {
+    atStation: '120.5000',
+    withCollector: '30.0000',
+    heldByManagement: '50.0000',
+    awaitingBank: '100.0000',
+    banked: '699.5000',
+    total: '1000.0000',
+  };
+
+  it('formats a split that adds up to everything collected', () => {
+    expect(deriveCashCustody(split)).toEqual({
+      atStation: '120.5000',
+      withCollector: '30.0000',
+      heldByManagement: '50.0000',
+      awaitingBank: '100.0000',
+      banked: '699.5000',
+      total: '1000.0000',
+    });
+  });
+
+  it('refuses a split where cash is missing or counted twice', () => {
+    expect(() => deriveCashCustody({ ...split, atStation: '125.5000' })).toThrow(/does not add up/);
+    expect(() => deriveCashCustody({ ...split, banked: '600.0000' })).toThrow(/does not add up/);
+  });
+
+  it('accepts nothing collected', () => {
+    expect(
+      deriveCashCustody({
+        atStation: '0',
+        withCollector: '0',
+        heldByManagement: '0',
+        awaitingBank: '0',
+        banked: '0',
+        total: '0',
+      }).total,
+    ).toBe('0.0000');
+  });
+});
 
 describe('management reporting exact arithmetic', () => {
   it('aggregates decimal strings without IEEE-754 drift', () => {
@@ -32,6 +74,18 @@ describe('management reporting exact arithmetic', () => {
     expect(sumObservedExact(['12.500', null])).toBeNull();
   });
 
+  it('does not wait for cash that was paid out of the till for expenses', () => {
+    expect(
+      deriveCashPosition({
+        evidence: '100.00',
+        paidExpenses: '30.00',
+        collected: '70.00',
+        banked: '0.00',
+        variance: '0.00',
+      }),
+    ).toMatchObject({ cashPaidExpenses: '30.0000', awaitingCollection: '0.0000' });
+  });
+
   it('keeps cash evidence, collection, and banking as separate facts', () => {
     expect(
       deriveCashPosition({
@@ -42,6 +96,7 @@ describe('management reporting exact arithmetic', () => {
       }),
     ).toEqual({
       cashEvidence: '100.0000',
+      cashPaidExpenses: '0.0000',
       collected: '80.0000',
       awaitingCollection: '20.0000',
       deposited: '50.0000',
@@ -107,5 +162,30 @@ describe('station scope normalisation', () => {
   it('treats no stations as every station', () => {
     expect(normalizeStationIds(undefined, undefined)).toEqual([]);
     expect(normalizeStationIds(undefined, [])).toEqual([]);
+  });
+});
+
+describe('latestStationLocalDate', () => {
+  const lateEveningUtc = new Date('2026-10-29T23:30:00Z');
+
+  it('uses the station local date, which can be ahead of UTC', () => {
+    expect(latestStationLocalDate(lateEveningUtc, ['Africa/Harare'])).toBe('2026-10-30');
+  });
+
+  it('uses the latest date when stations are in different time zones', () => {
+    expect(latestStationLocalDate(lateEveningUtc, ['America/New_York', 'Africa/Harare'])).toBe(
+      '2026-10-30',
+    );
+  });
+
+  it('can be behind UTC too', () => {
+    expect(latestStationLocalDate(new Date('2026-10-30T01:00:00Z'), ['America/Los_Angeles'])).toBe(
+      '2026-10-29',
+    );
+  });
+
+  it('skips unknown time zones and falls back to UTC when none are usable', () => {
+    expect(latestStationLocalDate(lateEveningUtc, ['Mars/Olympus'])).toBe('2026-10-29');
+    expect(latestStationLocalDate(lateEveningUtc, [])).toBe('2026-10-29');
   });
 });

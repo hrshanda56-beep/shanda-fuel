@@ -57,7 +57,7 @@ export const ORDER_FILTERS: ReadonlyArray<{ value: OrderFilter; label: string }>
 ];
 
 export function orderMatchesFilter(state: string, filter: OrderFilter): boolean {
-  if (filter === 'waiting') return state === 'DRAFT' || state === 'SUBMITTED';
+  if (filter === 'waiting') return state === 'SUBMITTED';
   if (filter === 'open') return state === 'APPROVED' || state === 'PARTIALLY_RECEIVED';
   if (filter === 'finished') {
     return state === 'RECEIVED' || state === 'CLOSED' || state === 'CANCELLED';
@@ -263,7 +263,13 @@ export function checkOrderLines(lines: readonly OrderLineInput[]): OrderLineChec
     if ((litres.split('.')[1]?.length ?? 0) > 3) {
       return { ok: false, message: `${label}Litres can have at most 3 decimal places.` };
     }
+    if (new Decimal(litres).gte('1000000000000')) {
+      return { ok: false, message: `${label}That is too many litres. Check the number.` };
+    }
     const price = line.price.trim().replace(/,/g, '');
+    if (price !== '' && EXACT_NUMBER.test(price) && new Decimal(price).gte('1000000000')) {
+      return { ok: false, message: `${label}That price per litre is too high. Check the number.` };
+    }
     if (price !== '' && !EXACT_NUMBER.test(price)) {
       return { ok: false, message: `${label}Enter the price per litre as a number, e.g. 1.45.` };
     }

@@ -3,7 +3,9 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { getAuditSigningKey } from '../../platform/config/env';
+import { AppError } from '../../platform/errors';
 import { withTenantTransaction } from '../../platform/db/transaction';
+import { isPermissionGranted } from '../../platform/security/permissions';
 import { appendSecurityEvent } from '../audit/contracts';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
 import {
@@ -84,6 +86,17 @@ export async function listRecentReportActivity(
     request,
     requestedTenantId: input.tenantId,
   });
+  // Only someone who may view reports at some scope sees report activity, even their own.
+  const mayViewReports = authority.authorization.roleAssignments.some((assignment) =>
+    isPermissionGranted({
+      actor: authority.authorization,
+      permissionCode: 'report.view',
+      requestedScope: assignment,
+    }),
+  );
+  if (!mayViewReports) {
+    throw new AppError('FORBIDDEN', 'You do not have access to report activity');
+  }
   const limit = Math.min(Math.max(input.limit ?? 6, 1), 20);
   const rows = await withTenantTransaction(authority.transaction, (transaction) =>
     transaction.execute<{

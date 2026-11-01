@@ -4,6 +4,7 @@ export type AppErrorCode =
   | 'FORBIDDEN'
   /** The person may do this but must confirm their identity first. Shown as a check, not a refusal. */
   | 'STEP_UP_REQUIRED'
+  | 'RECONCILIATION_ALREADY_EXISTS'
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'INVARIANT_VIOLATION'
@@ -16,6 +17,7 @@ const httpStatusByCode: Record<AppErrorCode, number> = {
   UNAUTHENTICATED: 401,
   FORBIDDEN: 403,
   STEP_UP_REQUIRED: 403,
+  RECONCILIATION_ALREADY_EXISTS: 409,
   NOT_FOUND: 404,
   CONFLICT: 409,
   INVARIANT_VIOLATION: 422,

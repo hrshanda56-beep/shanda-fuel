@@ -1,5 +1,6 @@
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 
+import { InfoTip } from './info-tip';
 import { Icon } from './icons';
 
 /**
@@ -85,8 +86,10 @@ export function Fieldset({
 }) {
   return (
     <fieldset className={`fieldset ${className}`.trim()}>
-      <legend>{legend}</legend>
-      {hint ? <p className="field-hint">{hint}</p> : null}
+      <legend>
+        {legend}
+        {hint ? <InfoTip text={hint} /> : null}
+      </legend>
       {children}
     </fieldset>
   );

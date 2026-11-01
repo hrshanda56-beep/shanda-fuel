@@ -1,5 +1,5 @@
 import type { ManagementReport } from './contracts';
-import { subtractExact, sumExact } from './domain';
+import { formatMoney, subtractExact, sumExact } from './domain';
 
 export type DashboardSnapshot = Readonly<{
   /** Litres sold per fuel, in the order the fuels first appear. */
@@ -19,16 +19,24 @@ export function buildDashboardSnapshot(report: ManagementReport): DashboardSnaps
   for (const row of report.sales.rows) {
     byProduct.set(row.productName, [...(byProduct.get(row.productName) ?? []), row.litres]);
   }
-  const measured = report.inventory.rows.filter((row) => row.varianceLitres !== null);
+  // Cash paid out of the till for expenses is never handed over, so it is not expected either.
+  const expectedCash = formatMoney(
+    subtractExact(report.cash.cashEvidence, report.cash.cashPaidExpenses ?? '0'),
+  );
+  // A tank is measured for the report's last day only when its latest dip was taken that day, the
+  // same test the shift report applies. A dip from weeks ago is not a measurement for today.
+  const measured = report.inventory.rows.filter(
+    (row) => row.varianceLitres !== null && row.lastDipDate === report.filters.toDate,
+  );
   return {
     litresByProduct: [...byProduct].map(([productName, litres]) => ({
       productName,
       litres: sumExact(litres),
     })),
     cash: {
-      expected: report.cash.cashEvidence,
+      expected: expectedCash,
       collected: report.cash.collected,
-      difference: subtractExact(report.cash.collected, report.cash.cashEvidence),
+      difference: subtractExact(report.cash.collected, expectedCash),
     },
     stockVariance: {
       litres: measured.length === 0 ? null : sumExact(measured.map((row) => row.varianceLitres!)),
@@ -36,28 +44,4 @@ export function buildDashboardSnapshot(report: ManagementReport): DashboardSnaps
       tanksTotal: report.inventory.rows.length,
     },
   };
-}
-
-/**
- * Station days that have activity but no approved report. The daily report returns a row for a
- * day that only has collections, deposits or deliveries; with no reconciliation behind it the
- * day's report has not been submitted and approved.
- */
-export function countDaysWithoutReport(
-  rows: readonly { reportDate: string; stationId: string; reconciliationIds?: readonly string[] }[],
-  expectedBusinessDays?: number,
-): number {
-  const approvedDays = new Set(
-    rows
-      .filter((row) => (row.reconciliationIds ?? []).length > 0)
-      .map((row) => `${row.stationId}|${row.reportDate}`),
-  ).size;
-  if (expectedBusinessDays !== undefined) {
-    return Math.max(0, expectedBusinessDays - approvedDays);
-  }
-  return new Set(
-    rows
-      .filter((row) => (row.reconciliationIds ?? []).length === 0)
-      .map((row) => `${row.stationId}|${row.reportDate}`),
-  ).size;
 }

@@ -4,6 +4,7 @@ import {
   confirmDeliveryFromRequest,
   correctDeliverySupplierFromRequest,
   createDeliveryFromRequest,
+  updateDeliveryFromRequest,
   createTankFromRequest,
   setTankVarianceLimitsFromRequest,
   deactivateTankFromRequest,
@@ -14,6 +15,7 @@ import {
   recordOpeningBalanceFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
+  voidTankDipFromRequest,
   setTankCalibrationFromRequest,
   requestInventoryCostRevaluationFromRequest,
 } from '../../../../modules/inventory';
@@ -26,8 +28,10 @@ const COMMANDS = [
   'DeactivateTank',
   'SetTankVarianceLimits',
   'RecordTankDip',
+  'VoidTankDip',
   'SetTankCalibration',
   'CreateDelivery',
+  'UpdateDelivery',
   'ConfirmDelivery',
   'CorrectDeliverySupplier',
   'PostInventoryAdjustment',
@@ -71,11 +75,17 @@ export const POST = withRequestObservability(
         case 'RecordTankDip':
           result = await recordTankDipFromRequest(request, body);
           break;
+        case 'VoidTankDip':
+          result = await voidTankDipFromRequest(request, body);
+          break;
         case 'SetTankCalibration':
           result = await setTankCalibrationFromRequest(request, body);
           break;
         case 'CreateDelivery':
           result = await createDeliveryFromRequest(request, body);
+          break;
+        case 'UpdateDelivery':
+          result = await updateDeliveryFromRequest(request, body);
           break;
         case 'ConfirmDelivery':
           result = await confirmDeliveryFromRequest(request, body);

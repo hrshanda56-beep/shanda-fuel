@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Button, ErrorState, Field, LoadingState, SuccessState } from '@/design-system/primitives';
 
 import { friendlySetupError } from '../guided-setup';
+import { InfoTip } from '@/design-system/info-tip';
 
 type Loaded = {
   settings: {
@@ -132,13 +133,13 @@ export function AlertSettingsPanel({
       <h3 id="alert-settings-title" className="sr-only">
         Reminders
       </h3>
-      <p className="pg-intro">
+      <InfoTip>
         Choose when the system should remind you. Reminders appear on the Finance page. They never
         stop anyone from working.
         {loaded.version === null
           ? ' You have not changed these yet, so the starting values apply.'
           : ''}
-      </p>
+      </InfoTip>
       {!loaded.canManage ? (
         <p className="field-hint">Only the owner or an administrator can change these.</p>
       ) : !stationId ? (

@@ -15,7 +15,8 @@ function report(approvedFuel: string | null): ManagementReport {
     expenses: {
       operatingTotal: '100.0000',
       fixedCostTotal: '50.0000',
-      total: '150.0000',
+      directInventoryCostTotal: '999.0000',
+      total: '1149.0000',
       rows: [],
     },
     sales: {

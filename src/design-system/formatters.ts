@@ -22,12 +22,32 @@ export function formatMoney(value: string, currency = 'USD'): string {
   );
 }
 
+/**
+ * A saved money value as it should appear in an input box: "450.0000" becomes "450.00". Only zeros
+ * past the cents are dropped, so the value is never changed and saving it again changes nothing.
+ */
+export function moneyInputValue(value: string): string {
+  const trimmed = value.trim();
+  if (!DECIMAL_PATTERN.test(trimmed)) return value;
+  const [whole = '', fraction = ''] = trimmed.split('.');
+  if (fraction.length <= 2) return trimmed;
+  const significant = fraction.replace(/0+$/, '');
+  if (significant.length > 2) return trimmed;
+  return `${whole}.${significant.padEnd(2, '0')}`;
+}
+
 /** Compact USD for dashboards, e.g. "$7,460" or "−$212.40". */
 export function formatUsd(value: string): string {
   const normalized = value.trim();
   if (!DECIMAL_PATTERN.test(normalized)) return '—';
-  const negative = normalized.startsWith('-');
-  return `${negative ? '−' : ''}$${formatDecimal(negative ? normalized.slice(1) : normalized)}`;
+  // A whole number stays compact ("$7,460"). Anything with decimals is rounded to cents, however
+  // many decimals it is stored with, and a result that rounds to zero carries no minus sign.
+  if (!normalized.includes('.')) {
+    const negative = normalized.startsWith('-');
+    return `${negative ? '−' : ''}$${formatDecimal(negative ? normalized.slice(1) : normalized)}`;
+  }
+  const cents = new Decimal(normalized).toDecimalPlaces(2);
+  return `${cents.isNegative() && !cents.isZero() ? '−' : ''}$${formatDecimal(cents.abs().toFixed(2))}`;
 }
 
 export function formatLitres(value: string): string {
@@ -96,6 +116,26 @@ export function formatTimeInTimeZone(
     return new Intl.DateTimeFormat(locale, {
       hour: '2-digit',
       minute: '2-digit',
+      timeZone,
+    }).format(date);
+  } catch {
+    return '—';
+  }
+}
+
+/** Format an instant with both date and time in the authoritative station timezone. */
+export function formatDateTimeInTimeZone(
+  value: DateInput,
+  timeZone: string | null | undefined,
+  locale = 'en-GB',
+): string {
+  const date = toDate(value);
+  if (!date || !timeZone?.trim()) return '—';
+
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
       timeZone,
     }).format(date);
   } catch {

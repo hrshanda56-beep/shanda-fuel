@@ -196,6 +196,7 @@ test.describe('My Shift capture', () => {
 
     await page.goto('/my-shift');
     await page.getByRole('button', { name: 'Record reading' }).click();
+    await page.getByRole('button', { name: 'The meter shows a different number' }).click();
     const input = page.getByRole('textbox', { name: /Opening reading/ });
     await expect(input).toBeFocused();
 
@@ -253,6 +254,7 @@ test.describe('My Shift capture', () => {
     );
     await page.goto('/my-shift');
     await page.getByRole('button', { name: 'Record reading' }).click();
+    await page.getByRole('button', { name: 'The meter shows a different number' }).click();
     await page.getByRole('textbox', { name: /Opening reading/ }).fill('1000');
     await page.getByRole('button', { name: 'Save opening reading' }).click();
     await expect(

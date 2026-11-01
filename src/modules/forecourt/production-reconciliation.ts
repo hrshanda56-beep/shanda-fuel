@@ -23,10 +23,12 @@ import {
 } from './application';
 import { databaseForecourtPorts, loadForecourtStation } from './persistence';
 import { resolveForecourtCommandContext } from './application';
-import { authorize } from '../../platform/security/permissions';
+import { authorize, isPermissionGranted } from '../../platform/security/permissions';
 import { deriveSegmentSaleAllocations } from './segment-sale-chronology';
 import { postCanonicalSaleRevenueInTransaction } from '../revenue';
 import { expectedClosingStock } from '../inventory/expected-closing-stock';
+import { postShiftExpensesInTransaction } from './shift-expense-posting';
+import { describeMissingDips, tanksMissingClosingDip } from './closing-shift-dips';
 
 const uuid = z.string().uuid();
 export const productionReconciliationPaymentMethods = [
@@ -56,6 +58,7 @@ type HeaderRow = {
   shift_id: string | null;
   business_date: string;
   supervisor_id: string | null;
+  approval_note: string | null;
   state: string;
   version: number | string;
 };
@@ -67,6 +70,17 @@ function requestHash(value: unknown): string {
 function hasPositiveLitres(value: string): boolean {
   const decimalValue = new ExactDecimal(value).value;
   return decimalValue.isPositive() && !decimalValue.isZero();
+}
+
+function metricSnapshot(metrics: Awaited<ReturnType<typeof loadMetrics>>): string {
+  return JSON.stringify({
+    sales: metrics.sales.toString(),
+    payments: metrics.payments.toString(),
+    cashVariance: metrics.cashVariance?.toString() ?? null,
+    stockVariance: Object.fromEntries(
+      Object.entries(metrics.stockVariance).sort(([left], [right]) => left.localeCompare(right)),
+    ),
+  });
 }
 
 async function serverNow(transaction: ForecourtTransaction): Promise<string> {
@@ -93,7 +107,7 @@ async function loadHeader(
 ): Promise<HeaderRow> {
   const rows = await transaction.execute<HeaderRow>(sql`
     select c.id, c.tenant_id, c.station_id, c.business_day_id, c.shift_id,
-           d.business_date, c.supervisor_id, c.state, c.version
+           d.business_date, c.supervisor_id, c.approval_note, c.state, c.version
     from app.reconciliations c
     join app.station_business_days d
       on d.tenant_id = c.tenant_id and d.station_id = c.station_id and d.id = c.business_day_id
@@ -192,31 +206,75 @@ export async function createProductionReconciliationFromRequest(request: Request
       if (['NOT_OPERATED', 'CANCELLED_BEFORE_START'].includes(shift.state)) {
         throw new AppError('CONFLICT', 'A non-operating shift cannot be reconciled');
       }
-      try {
-        await transaction.execute(sql`
+      const existing = await transaction.execute<{
+        id: string;
+        state: string;
+        version: number | string;
+      }>(sql`
+        select id, state, version
+        from app.reconciliations
+        where tenant_id = ${context.tenantId}
+          and station_id = ${context.stationId}
+          and shift_id = ${payload.shiftId}
+        for update
+      `);
+      if (existing[0]) {
+        throw new AppError(
+          'RECONCILIATION_ALREADY_EXISTS',
+          'A reconciliation already exists for this shift. Open the existing reconciliation instead.',
+          {
+            existingReconciliationId: existing[0].id,
+            existingState: existing[0].state,
+            existingVersion: Number(existing[0].version),
+          },
+        );
+      }
+      const created = await transaction.execute<{ id: string }>(sql`
           insert into app.reconciliations
             (id, tenant_id, station_id, business_day_id, shift_id, supervisor_id, created_by, state)
           values
             (${payload.reconciliationId}, ${context.tenantId}, ${context.stationId}, ${payload.businessDayId},
              ${payload.shiftId}, ${context.actor.membershipId}, ${context.actor.membershipId}, 'DRAFT')
+          on conflict (tenant_id, station_id, shift_id) do nothing
+          returning id
+      `);
+      if (!created[0]) {
+        const concurrent = await transaction.execute<{
+          id: string;
+          state: string;
+          version: number | string;
+        }>(sql`
+          select id, state, version
+          from app.reconciliations
+          where tenant_id = ${context.tenantId}
+            and station_id = ${context.stationId}
+            and shift_id = ${payload.shiftId}
+          for update
         `);
-        await transaction.execute(sql`
+        if (!concurrent[0]) {
+          throw new AppError(
+            'CONFLICT',
+            'The reconciliation could not be created; refresh and try again.',
+          );
+        }
+        throw new AppError(
+          'RECONCILIATION_ALREADY_EXISTS',
+          'A reconciliation already exists for this shift. Open the existing reconciliation instead.',
+          {
+            existingReconciliationId: concurrent[0].id,
+            existingState: concurrent[0].state,
+            existingVersion: Number(concurrent[0].version),
+          },
+        );
+      }
+      await transaction.execute(sql`
           insert into app.reconciliation_revisions
             (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales,
              variance, currency, variance_classification, source_segment_ids, source_shift_ids)
           values
             (${randomUUID()}, ${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, 1, 'READY',
              0, 0, 0, 'USD', 'INFORMATIONAL', '[]'::jsonb, ${JSON.stringify([payload.shiftId])}::jsonb)
-        `);
-      } catch (error) {
-        if (isUniqueViolation(error)) {
-          throw new AppError(
-            'CONFLICT',
-            'A reconciliation already exists for this station and shift',
-          );
-        }
-        throw error;
-      }
+      `);
       return {
         result: {
           reconciliationId: payload.reconciliationId,
@@ -251,20 +309,22 @@ export async function setReconciliationAttendantsFromRequest(request: Request, i
     'SetAttendants',
     'reconciliation_attendants',
     async (transaction, context) => {
-      for (const attendantId of payload.attendantIds) {
-        const eligible = await transaction.execute<{ id: string }>(sql`
-        select m.id
-        from app.memberships m
-        join app.membership_role_assignments a
-          on a.tenant_id = m.tenant_id and a.membership_id = m.id
-        where m.tenant_id = ${context.tenantId} and m.id = ${attendantId} and m.status = 'ACTIVE'
-          and a.scope_type = 'STATION' and a.station_id = ${context.stationId}
-          and a.role_code = 'ATTENDANT'
-          and (a.expires_at is null or a.expires_at > now())
-        limit 1
+      // A supervisor cannot read other people's membership rows, so the roster comes from the
+      // same definer function the Team step lists from.
+      const roster = await transaction.execute<{ id: string }>(sql`
+        select id from app.station_attendants(${context.tenantId}::uuid, ${context.stationId}::uuid, now())
       `);
-        if (!eligible[0])
-          throw new AppError('FORBIDDEN', 'An attendant is not assigned to this station');
+      // An attendant from another of the organisation's stations may cover a shift here.
+      const visitors = await transaction.execute<{ id: string }>(sql`
+        select id from app.other_station_attendants(${context.tenantId}::uuid, ${context.stationId}::uuid, now())
+      `);
+      const eligible = new Set([...roster, ...visitors].map((row) => row.id));
+      for (const attendantId of payload.attendantIds) {
+        if (!eligible.has(attendantId))
+          throw new AppError(
+            'FORBIDDEN',
+            'That person is not an active attendant in this organisation. Untick them, or ask a manager to set them up.',
+          );
       }
       await replaceRows(
         transaction,
@@ -293,7 +353,11 @@ const meterReading = z.object({
   closingReading: z.string(),
   sellingPriceId: uuid,
 });
-const meterPayload = basePayload.extend({ readings: z.array(meterReading).max(100) });
+const meterPayload = basePayload.extend({
+  readings: z.array(meterReading).max(100),
+  /** Required when an administrator changes an opening reading that was already recorded. */
+  openingCorrectionReason: z.string().trim().max(500).optional(),
+});
 export async function saveReconciliationMeterReadingsFromRequest(request: Request, input: unknown) {
   const payload = meterPayload.parse(input);
   return runEditableDetailCommand(
@@ -302,6 +366,48 @@ export async function saveReconciliationMeterReadingsFromRequest(request: Reques
     'SaveMeterReadings',
     'reconciliation_meter_readings',
     async (transaction, context) => {
+      // Opening readings are recorded once, when the shift opens. After that they are fixed:
+      // the figures screen can add closing readings but never change an opening one.
+      const recorded = await transaction.execute<{
+        nozzle_id: string;
+        opening_reading: string;
+      }>(sql`
+        select nozzle_id, opening_reading from app.reconciliation_meter_readings
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and reconciliation_id = ${payload.reconciliationId}
+      `);
+      const recordedOpening = new Map(recorded.map((row) => [row.nozzle_id, row.opening_reading]));
+      // Only an administrator may correct a recorded opening, and the change is written to the
+      // audit trail with who it was, what it was and why.
+      const mayCorrectOpening = isPermissionGranted({
+        actor: context.authority.authorization,
+        permissionCode: 'station.manage',
+        requestedScope: context.scope,
+      });
+      const openingCorrections: Array<{ nozzleId: string; from: string; to: string }> = [];
+      for (const reading of payload.readings) {
+        const fixed = recordedOpening.get(reading.nozzleId);
+        if (
+          fixed !== undefined &&
+          !new ExactDecimal(reading.openingReading).equals(new ExactDecimal(fixed))
+        ) {
+          if (!mayCorrectOpening)
+            throw new AppError(
+              'CONFLICT',
+              'The opening readings were recorded when the shift opened. Only an administrator can correct them. Reload the page to see them, or ask an administrator.',
+            );
+          openingCorrections.push({
+            nozzleId: reading.nozzleId,
+            from: fixed,
+            to: new ExactDecimal(reading.openingReading).toString(),
+          });
+        }
+      }
+      if (openingCorrections.length > 0 && (payload.openingCorrectionReason ?? '').length < 5)
+        throw new AppError(
+          'VALIDATION_FAILED',
+          'Say why the opening reading is being corrected (at least 5 characters). Nothing was changed.',
+        );
       await replaceRows(
         transaction,
         'reconciliation_meter_readings',
@@ -348,7 +454,12 @@ export async function saveReconciliationMeterReadingsFromRequest(request: Reques
           ${sold.toString()}, ${reading.sellingPriceId}, ${price[0].unit_price}, ${sales.toString()}, ${context.actor.membershipId})
       `);
       }
-      return { readingCount: payload.readings.length };
+      return {
+        readingCount: payload.readings.length,
+        ...(openingCorrections.length > 0
+          ? { openingCorrections, openingCorrectionReason: payload.openingCorrectionReason }
+          : {}),
+      };
     },
   );
 }
@@ -387,6 +498,7 @@ type AccountRow = {
   station_scope: string;
   allowed: boolean;
   balance: string;
+  pending: string;
 };
 
 /**
@@ -399,6 +511,7 @@ async function assertPaymentReferences(
   transaction: ForecourtTransaction,
   context: ForecourtCommandContext,
   payments: readonly PaymentInput[],
+  reconciliationId: string,
 ): Promise<void> {
   const totals = new Map<string, { method: 'CUSTOMER_CREDIT' | 'PREPAID'; amount: ExactDecimal }>();
   for (const item of payments) {
@@ -438,7 +551,22 @@ async function assertPaymentReferences(
           select sum(case when l.direction = 'INCREASE' then l.amount else -l.amount end)
           from app.customer_ledger_entries l
           where l.tenant_id = a.tenant_id and l.account_id = a.id
-        ), 0)::text as balance
+        ), 0)::text as balance,
+        -- Sales of this kind that sit in other reconciliations and are not in the ledger yet.
+        coalesce((
+          select sum(p.amount)
+          from app.reconciliation_payments p
+          join app.reconciliations r
+            on r.tenant_id = p.tenant_id and r.station_id = p.station_id and r.id = p.reconciliation_id
+          where p.tenant_id = a.tenant_id and p.customer_account_id = a.id
+            and p.method = ${method}
+            and r.id <> ${reconciliationId} and r.state <> 'REJECTED'
+            and not exists (
+              select 1 from app.customer_ledger_entries l
+              where l.tenant_id = p.tenant_id and l.source_type = 'A5_RECONCILIATION_CUSTOMER_FUEL'
+                and l.source_id = p.id
+            )
+        ), 0)::text as pending
       from app.customer_accounts a
       join app.customers c on c.tenant_id = a.tenant_id and c.id = a.customer_id
       where a.tenant_id = ${context.tenantId} and a.id = ${accountId}
@@ -465,7 +593,11 @@ async function assertPaymentReferences(
         `${account.display_name} is not allowed to buy on account at this station.`,
       );
     }
-    const balance = new ExactDecimal(account.balance);
+    const pending = new ExactDecimal(account.pending);
+    // Credit owed grows with waiting sales; prepaid money available shrinks with them.
+    const balance = new ExactDecimal(account.balance).add(
+      method === 'CUSTOMER_CREDIT' ? pending : new ExactDecimal('0').subtract(pending),
+    );
     if (method === 'CUSTOMER_CREDIT') {
       const limit = new ExactDecimal(account.credit_limit ?? '0');
       if (!limit.value.gt(0)) {
@@ -503,7 +635,12 @@ export async function saveReconciliationPaymentsFromRequest(request: Request, in
         if (money(item.amount).amount.value.isNegative())
           throw new AppError('VALIDATION_FAILED', 'Payment amounts cannot be negative');
       }
-      await assertPaymentReferences(transaction, context, payload.payments);
+      await assertPaymentReferences(
+        transaction,
+        context,
+        payload.payments,
+        payload.reconciliationId,
+      );
       await replaceRows(transaction, 'reconciliation_payments', payload.reconciliationId, context);
       for (const item of payload.payments) {
         const amount = money(item.amount).amount;
@@ -629,7 +766,7 @@ export async function linkReconciliationDipsFromRequest(request: Request, input:
         }>(sql`
         select d.tank_id, t.product_id, d.business_date
         from app.tank_dips d join app.tanks t on t.tenant_id=d.tenant_id and t.station_id=d.station_id and t.id=d.tank_id
-        where d.tenant_id=${context.tenantId} and d.station_id=${context.stationId} and d.id=${item.dipId}
+        where d.tenant_id=${context.tenantId} and d.station_id=${context.stationId} and d.id=${item.dipId} and d.voided_at is null
       `);
         const row = rows[0];
         if (
@@ -719,6 +856,11 @@ export async function saveReconciliationExplanationsFromRequest(request: Request
         values (${context.tenantId}, ${context.stationId}, ${payload.reconciliationId}, ${category}, ${explanation}, ${context.actor.membershipId})
       `);
       }
+      await transaction.execute(sql`
+        update app.reconciliations
+        set approval_note=null, updated_at=now()
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId}
+      `);
       return { explanationCount: Object.keys(payload.explanations).length };
     },
   );
@@ -803,12 +945,15 @@ async function loadMetrics(
     tank_id: string;
     product_id: string;
     physical: string;
+    yellow: string | null;
+    red: string | null;
     opening: string;
     deliveries: string;
     adjustments: string;
     sold: string;
   }>(sql`
     select r.tank_id, r.product_id, d.physical_litres as physical,
+      t.acceptable_variance_litres as yellow, t.variance_red_litres as red,
       coalesce((select sum(m.quantity_litres) from app.inventory_movements m
         where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id
           and m.business_date <= bd.business_date and m.movement_type = 'OPENING_BALANCE'), 0) as opening,
@@ -824,12 +969,14 @@ async function loadMetrics(
         where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.product_id=r.product_id
           and sale_bd.business_date <= bd.business_date), 0) as sold
     from app.reconciliation_dip_refs r
-    join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id
+    join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id and d.voided_at is null
+    join app.tanks t on t.tenant_id=r.tenant_id and t.station_id=r.station_id and t.id=r.tank_id
     join app.reconciliations rec on rec.tenant_id=r.tenant_id and rec.station_id=r.station_id and rec.id=r.reconciliation_id
     join app.station_business_days bd on bd.tenant_id=rec.tenant_id and bd.station_id=rec.station_id and bd.id=rec.business_day_id
     where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${reconciliationId}
   `);
   const stockVariance: Record<string, string> = {};
+  let redVariance = false;
   for (const row of stock) {
     const tankCount = await transaction.execute<{ count: number }>(sql`
       select count(*)::int as count from app.tanks where tenant_id=${context.tenantId} and station_id=${context.stationId} and product_id=${row.product_id} and status='ACTIVE'
@@ -845,15 +992,31 @@ async function loadMetrics(
       litresSold: row.sold,
       approvedAdjustmentsLitres: row.adjustments,
     });
-    stockVariance[row.tank_id] = new ExactDecimal(row.physical)
+    const variance = new ExactDecimal(row.physical)
       .subtract(new ExactDecimal(expected))
       .quantize({ name: 'Litres', precision: 18, scale: 3 })
       .toString();
+    stockVariance[row.tank_id] = variance;
+    const redLimit =
+      row.red ??
+      (row.yellow ? new ExactDecimal(row.yellow).multiply(new ExactDecimal('2')).toString() : null);
+    if (redLimit && new ExactDecimal(variance).value.abs().gt(new ExactDecimal(redLimit).value)) {
+      redVariance = true;
+    }
   }
   const salesVariance = payments
     .subtract(sales)
     .quantize({ name: 'Money', precision: 20, scale: 4 });
-  return { sales, payments, salesVariance, cash, cashExpenses, cashVariance, stockVariance };
+  return {
+    sales,
+    payments,
+    salesVariance,
+    cash,
+    cashExpenses,
+    cashVariance,
+    stockVariance,
+    redVariance,
+  };
 }
 
 async function requireExplanations(
@@ -861,19 +1024,22 @@ async function requireExplanations(
   context: ForecourtCommandContext,
   reconciliationId: string,
   metrics: Awaited<ReturnType<typeof loadMetrics>>,
+  options: { requireApproverNote?: boolean; approvalNote?: string } = {},
 ): Promise<void> {
   const required = new Set<string>();
   if (!metrics.salesVariance.value.isZero()) required.add('SALES');
   if (metrics.cashVariance && !metrics.cashVariance.value.isZero()) required.add('CASH');
   if (Object.values(metrics.stockVariance).some((value) => !new ExactDecimal(value).value.isZero()))
     required.add('STOCK');
-  if (required.size === 0) return;
+  if (required.size === 0 && !(metrics.redVariance && options.requireApproverNote)) return;
   const rows = await transaction.execute<{ category: string; explanation: string }>(sql`
     select category, explanation from app.reconciliation_variance_explanations
     where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${reconciliationId}
   `);
   const provided = new Set(rows.filter((row) => row.explanation.trim()).map((row) => row.category));
   const missing = [...required].filter((category) => !provided.has(category));
+  if (metrics.redVariance && options.requireApproverNote && !options.approvalNote?.trim())
+    missing.push('APPROVER_NOTE');
   if (missing.length)
     throw new AppError(
       'VALIDATION_FAILED',
@@ -882,6 +1048,9 @@ async function requireExplanations(
 }
 
 const workflowPayload = basePayload;
+const approvalPayload = workflowPayload.extend({
+  approvalNote: z.string().trim().min(1).max(2000).optional(),
+});
 export async function submitProductionReconciliationFromRequest(request: Request, input: unknown) {
   return transitionProductionReconciliation(
     request,
@@ -892,7 +1061,7 @@ export async function submitProductionReconciliationFromRequest(request: Request
 }
 
 export async function returnProductionReconciliationFromRequest(request: Request, input: unknown) {
-  const payload = basePayload.extend({ reason: z.string().trim().min(1) }).parse(input);
+  const payload = basePayload.extend({ reason: z.string().trim().min(5) }).parse(input);
   return transitionProductionReconciliation(
     request,
     payload,
@@ -903,7 +1072,7 @@ export async function returnProductionReconciliationFromRequest(request: Request
 }
 
 export async function approveProductionReconciliationFromRequest(request: Request, input: unknown) {
-  const payload = workflowPayload.parse(input);
+  const payload = approvalPayload.parse(input);
   const key = request.headers.get('idempotency-key')?.trim();
   if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
   const context = await contextFor(request, payload);
@@ -944,7 +1113,39 @@ export async function approveProductionReconciliationFromRequest(request: Reques
         );
       }
       const metrics = await loadMetrics(transaction, context, payload.reconciliationId);
-      await requireExplanations(transaction, context, payload.reconciliationId, metrics);
+      await requireExplanations(transaction, context, payload.reconciliationId, metrics, {
+        requireApproverNote: true,
+        approvalNote: payload.approvalNote,
+      });
+      const submittedSnapshot = await transaction.execute<{
+        expected_sales: string;
+        accounted_sales: string;
+        variance: string;
+        metric_snapshot: string | null;
+      }>(sql`
+        select expected_sales, accounted_sales, variance, metric_snapshot
+        from app.reconciliation_revisions
+        where tenant_id=${context.tenantId}
+          and station_id=${context.stationId}
+          and reconciliation_id=${payload.reconciliationId}
+          and state='PENDING_APPROVAL'
+        order by revision desc, id desc
+        limit 1
+      `);
+      const snapshot = submittedSnapshot[0];
+      if (
+        snapshot?.metric_snapshot !== null &&
+        snapshot?.metric_snapshot !== undefined &&
+        (!new ExactDecimal(snapshot.expected_sales).value.eq(metrics.sales.value) ||
+          !new ExactDecimal(snapshot.accounted_sales).value.eq(metrics.payments.value) ||
+          !new ExactDecimal(snapshot.variance).value.eq(metrics.salesVariance.value) ||
+          snapshot.metric_snapshot !== metricSnapshot(metrics))
+      ) {
+        throw new AppError(
+          'CONFLICT',
+          'This reconciliation changed after submission. Return it for correction and submit it again.',
+        );
+      }
       const bridgeTable = await transaction.execute<{ installed: boolean }>(sql`
         select to_regclass('app.reconciliation_meter_reading_segments') is not null as installed
       `);
@@ -1048,7 +1249,6 @@ export async function approveProductionReconciliationFromRequest(request: Reques
                 and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
             )
           order by m.segment_start_at, m.id
-          for update of m
         `);
         const allocations = deriveSegmentSaleAllocations(
           {
@@ -1092,7 +1292,6 @@ export async function approveProductionReconciliationFromRequest(request: Reques
                 and movement_type='SALE'
                 and source_type='METER_SEGMENT_SALE'
                 and source_id=${allocation.segmentId}
-              for update
             `);
             if (existingMovement.length > 0) {
               throw new AppError(
@@ -1261,7 +1460,10 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       }
       const now = await serverNow(transaction);
       const updated = await transaction.execute<{ version: number }>(sql`
-        update app.reconciliations set state='APPROVED', approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz, version=version+1, updated_at=${now}::timestamptz
+        update app.reconciliations
+        set state='APPROVED', approval_note=${payload.approvalNote ?? null},
+            approved_by=${context.actor.membershipId}, approved_at=${now}::timestamptz,
+            version=version+1, updated_at=${now}::timestamptz
         where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} and state='SUBMITTED'
         returning version
       `);
@@ -1279,6 +1481,10 @@ export async function approveProductionReconciliationFromRequest(request: Reques
       `);
       if (!approvedRevision[0])
         throw new AppError('CONFLICT', 'The reconciliation revision became stale');
+      await postShiftExpensesInTransaction(transaction, context, {
+        reconciliationId: payload.reconciliationId,
+        businessDate: header.business_date,
+      });
       return {
         result: {
           reconciliationId: payload.reconciliationId,
@@ -1286,6 +1492,7 @@ export async function approveProductionReconciliationFromRequest(request: Reques
           version: Number(updated[0].version),
           saleMovementIds,
         },
+        before: { state: 'PENDING_APPROVAL' },
         after: { state: 'APPROVED', saleMovementIds },
       };
     },
@@ -1335,6 +1542,13 @@ async function transitionProductionReconciliation(
             'Select at least one attendant before submitting this reconciliation.',
           );
         }
+        const unmeasured = await tanksMissingClosingDip(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          reconciliationId: payload.reconciliationId,
+        });
+        if (unmeasured.length > 0)
+          throw new AppError('VALIDATION_FAILED', describeMissingDips(unmeasured));
         await requireExplanations(transaction, context, payload.reconciliationId, metrics);
       } else if (header.state !== 'SUBMITTED') {
         throw new AppError('CONFLICT', 'Only a submitted reconciliation can be returned');
@@ -1342,7 +1556,7 @@ async function transitionProductionReconciliation(
       const now = await serverNow(transaction);
       const update =
         nextState === 'SUBMITTED'
-          ? sql`update app.reconciliations set state='SUBMITTED', submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, returned_by=null, returned_at=null, return_reason=null, version=version+1, updated_at=${now}::timestamptz where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} returning version`
+          ? sql`update app.reconciliations set state='SUBMITTED', approval_note=null, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, returned_by=null, returned_at=null, return_reason=null, version=version+1, updated_at=${now}::timestamptz where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} returning version`
           : sql`update app.reconciliations set state='RETURNED', returned_by=${context.actor.membershipId}, returned_at=${now}::timestamptz, return_reason=${reason}, version=version+1, updated_at=${now}::timestamptz where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.reconciliationId} and version=${payload.expectedVersion} returning version`;
       const updated = await transaction.execute<{ version: number }>(update);
       if (!updated[0]) throw new AppError('CONFLICT', 'The reconciliation state became stale');
@@ -1351,13 +1565,24 @@ async function transitionProductionReconciliation(
         await transaction.execute(sql`
           insert into app.reconciliation_revisions
             (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales,
-             accounted_sales, variance, currency, variance_classification, source_segment_ids,
+             accounted_sales, variance, currency, variance_classification, metric_snapshot, source_segment_ids,
              source_shift_ids)
           select ${revisionId}, tenant_id, station_id, reconciliation_id, coalesce(max(revision), 0) + 1,
                  'READY', ${metrics!.sales.toString()}, ${metrics!.payments.toString()},
                  ${metrics!.salesVariance.toString()}, 'USD',
                  ${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'},
-                 '[]'::jsonb, coalesce(
+             ${metricSnapshot(metrics!)}, coalesce(
+                   (
+                     select source_segment_ids
+                     from app.reconciliation_revisions latest
+                     where latest.tenant_id=${context.tenantId}
+                       and latest.station_id=${context.stationId}
+                       and latest.reconciliation_id=${payload.reconciliationId}
+                     order by latest.revision desc
+                     limit 1
+                   ),
+                   '[]'::jsonb
+                 ), coalesce(
                    (
                      select source_shift_ids
                      from app.reconciliation_revisions latest
@@ -1376,7 +1601,7 @@ async function transitionProductionReconciliation(
         `);
         await transaction.execute(sql`
           update app.reconciliation_revisions
-          set state='SUBMITTED', submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
+          set state='SUBMITTED', metric_snapshot=${metricSnapshot(metrics!)}, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
           where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${revisionId}
         `);
         await transaction.execute(sql`
@@ -1387,7 +1612,7 @@ async function transitionProductionReconciliation(
       } else {
         if (nextState === 'SUBMITTED') {
           await transaction.execute(sql`
-            update app.reconciliation_revisions set state='SUBMITTED', expected_sales=${metrics!.sales.toString()}, accounted_sales=${metrics!.payments.toString()}, variance=${metrics!.salesVariance.toString()}, variance_classification=${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'}, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
+            update app.reconciliation_revisions set state='SUBMITTED', metric_snapshot=${metricSnapshot(metrics!)}, expected_sales=${metrics!.sales.toString()}, accounted_sales=${metrics!.payments.toString()}, variance=${metrics!.salesVariance.toString()}, variance_classification=${metrics!.salesVariance.value.isZero() ? 'INFORMATIONAL' : 'REQUIRES_EXPLANATION'}, submitted_by=${context.actor.membershipId}, submitted_at=${now}::timestamptz, version=version+1
             where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${payload.reconciliationId} and state='READY'
           `);
           await transaction.execute(sql`
@@ -1407,6 +1632,7 @@ async function transitionProductionReconciliation(
           state: nextState,
           version: Number(updated[0].version),
         },
+        before: { state: header.state },
         after: { state: nextState, reason: reason ?? null },
       };
     },
@@ -1443,7 +1669,7 @@ export async function getProductionReconciliationFromRequest(
           sql`select r.delivery_id as "deliveryId", r.allocation_id as "allocationId", r.product_id as "productId", r.tank_id as "tankId", d.delivery_note_number as "deliveryNoteNumber", d.actual_quantity_litres as "actualQuantityLitres" from app.reconciliation_delivery_refs r join app.fuel_deliveries d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.delivery_id where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${input.reconciliationId} order by r.id`,
         ),
         transaction.execute<RecordData['dips'][number]>(
-          sql`select r.dip_id as "dipId", r.tank_id as "tankId", t.code as "tankCode", r.product_id as "productId", d.physical_litres as "physicalLitres", d.measured_at as "measuredAt" from app.reconciliation_dip_refs r join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id join app.tanks t on t.tenant_id=r.tenant_id and t.station_id=r.station_id and t.id=r.tank_id where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${input.reconciliationId} order by r.id`,
+          sql`select r.dip_id as "dipId", r.tank_id as "tankId", t.code as "tankCode", r.product_id as "productId", d.physical_litres as "physicalLitres", d.measured_at as "measuredAt" from app.reconciliation_dip_refs r join app.tank_dips d on d.tenant_id=r.tenant_id and d.station_id=r.station_id and d.id=r.dip_id and d.voided_at is null join app.tanks t on t.tenant_id=r.tenant_id and t.station_id=r.station_id and t.id=r.tank_id where r.tenant_id=${context.tenantId} and r.station_id=${context.stationId} and r.reconciliation_id=${input.reconciliationId} order by r.id`,
         ),
         transaction.execute<NonNullable<RecordData['cash']>>(
           sql`select counted_cash as "countedCash", expected_physical_cash as "expectedPhysicalCash", cash_paid_expenses as "cashPaidExpenses", net_expected_cash as "netExpectedCash", cash_variance as "cashVariance" from app.reconciliation_cash_declarations where tenant_id=${context.tenantId} and station_id=${context.stationId} and reconciliation_id=${input.reconciliationId}`,
@@ -1458,8 +1684,33 @@ export async function getProductionReconciliationFromRequest(
         t.acceptable_variance_litres::text as "toleranceLitres",
         t.variance_red_litres::text as "redLitres",
         exists (select 1 from app.tank_calibration_points c
-          where c.tenant_id = t.tenant_id and c.tank_id = t.id and c.measurement_unit = 'mm') as "hasMillimetreChart"
+          where c.tenant_id = t.tenant_id and c.tank_id = t.id and c.measurement_unit = 'mm') as "hasMillimetreChart",
+        -- What the books say is in the tank at the end of this day: opening stock, plus every
+        -- delivery, minus every litre sold, plus approved adjustments. Left empty when the tank has
+        -- no opening balance or shares its fuel with another tank, because then it cannot be told.
+        case
+          when exists (select 1 from app.inventory_movements m
+              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.tank_id=t.id
+                and m.movement_type = 'OPENING_BALANCE' and m.business_date <= bd.business_date)
+            and (select count(*) from app.tanks o
+              where o.tenant_id=t.tenant_id and o.station_id=t.station_id
+                and o.product_id=t.product_id and o.status='ACTIVE') = 1
+          then (
+            coalesce((select sum(m.quantity_litres) from app.inventory_movements m
+              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.tank_id=t.id
+                and m.business_date <= bd.business_date
+                and m.movement_type in ('OPENING_BALANCE', 'DELIVERY', 'TRANSFER_IN',
+                  'POSITIVE_ADJUSTMENT', 'NEGATIVE_ADJUSTMENT', 'TRANSFER_OUT')), 0)
+            - coalesce((select sum(m.litres_sold) from app.reconciliation_meter_readings m
+              join app.reconciliations rec2 on rec2.tenant_id=m.tenant_id and rec2.station_id=m.station_id and rec2.id=m.reconciliation_id
+              join app.station_business_days sale_bd on sale_bd.tenant_id=rec2.tenant_id and sale_bd.station_id=rec2.station_id and sale_bd.id=rec2.business_day_id
+              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.product_id=t.product_id
+                and sale_bd.business_date <= bd.business_date), 0)
+          )::numeric(18,3)::text
+        end as "expectedLitres"
       from app.tanks t join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
+      join app.reconciliations cur on cur.tenant_id=t.tenant_id and cur.station_id=t.station_id and cur.id=${input.reconciliationId}
+      join app.station_business_days bd on bd.tenant_id=cur.tenant_id and bd.station_id=cur.station_id and bd.id=cur.business_day_id
       where t.tenant_id=${context.tenantId} and t.station_id=${context.stationId} and t.status='ACTIVE'
       order by p.name, t.code
     `);
@@ -1481,6 +1732,25 @@ export async function getProductionReconciliationFromRequest(
         stationId: context.stationId,
         excludeMembershipId: context.actor.membershipId,
       }));
+    // Who submitted the day, so the person reviewing it can see. A person cannot read other
+    // people's membership rows, so the name comes from a narrow function that returns only a
+    // display name and the time for this one reconciliation.
+    const submittedBy = await transaction.execute<{
+      name: string | null;
+      submitted_at: Date | string | null;
+    }>(sql`
+      select name, submitted_at
+      from app.reconciliation_submitter(
+        ${context.tenantId}::uuid, ${context.stationId}::uuid, ${input.reconciliationId}::uuid)
+    `);
+    const submitterRow = submittedBy[0];
+    // Which review buttons this person may use, so a button is never shown that the server refuses.
+    const may = (permissionCode: 'reconciliation.approve' | 'reconciliation.return') =>
+      isPermissionGranted({
+        actor: context.authority.authorization,
+        permissionCode,
+        requestedScope: context.scope,
+      });
     // Who can be charged at this station, with what they may still spend, so a credit or prepaid
     // row can be entered by name and the person sees the room left before saving.
     const customerAccounts = await transaction.execute<RecordData['customerAccounts'][number]>(sql`
@@ -1503,10 +1773,42 @@ export async function getProductionReconciliationFromRequest(
             and s.station_id = ${context.stationId} and s.active))
       order by c.display_name, a.account_type
     `);
+    // Approval is not stopped for a missing fuel cost, but the approver is told, because profit
+    // for the day cannot be worked out until the cost is entered.
+    const unvaluedFuels = await transaction.execute<{ name: string }>(sql`
+      select distinct product.name
+      from app.reconciliation_meter_readings reading
+      join app.products product
+        on product.tenant_id = reading.tenant_id and product.id = reading.product_id
+      join app.inventory_cost_stream_state stream
+        on stream.tenant_id = reading.tenant_id and stream.station_id = reading.station_id
+       and stream.product_id = reading.product_id
+      where reading.tenant_id = ${context.tenantId}
+        and reading.station_id = ${context.stationId}
+        and reading.reconciliation_id = ${input.reconciliationId}
+        and stream.valuation_status <> 'VALUED' and stream.quantity_litres > 0
+      order by product.name
+    `);
     return {
       ...header,
       version: Number(header.version),
       approvalBlocked,
+      unvaluedFuels: unvaluedFuels.map((row) => row.name),
+      submitter: submitterRow?.name
+        ? {
+            name: submitterRow.name,
+            submittedAt: submitterRow.submitted_at
+              ? new Date(submitterRow.submitted_at).toISOString()
+              : null,
+          }
+        : null,
+      canApprove: may('reconciliation.approve'),
+      canReturn: may('reconciliation.return'),
+      canCorrectOpening: isPermissionGranted({
+        actor: context.authority.authorization,
+        permissionCode: 'station.manage',
+        requestedScope: context.scope,
+      }),
       customerAccounts,
       attendants,
       readings,
@@ -1517,6 +1819,7 @@ export async function getProductionReconciliationFromRequest(
       tanks,
       cash: cash[0] ?? null,
       explanations,
+      approvalNote: header.approval_note,
       totals: {
         expectedSales: metrics.sales.toString(),
         accountedSales: metrics.payments.toString(),
@@ -1524,6 +1827,7 @@ export async function getProductionReconciliationFromRequest(
         cashVariance: metrics.cashVariance?.toString() ?? null,
         stockVariance: metrics.stockVariance,
       },
+      requiresApproverNote: metrics.redVariance,
     };
   });
 }
@@ -1533,13 +1837,4 @@ async function withQueryTransaction<T>(
   work: (transaction: ForecourtTransaction) => Promise<T>,
 ): Promise<T> {
   return withTenantTransaction(context.authority.transaction, work);
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: string }).code === '23505'
-  );
 }

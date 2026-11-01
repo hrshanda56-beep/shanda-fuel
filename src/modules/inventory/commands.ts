@@ -14,13 +14,15 @@ import {
   tanks,
   tankDips,
 } from '../../platform/db/schema/a4';
+import { inventoryCostStreamState } from '../../platform/db/schema/a12';
 import { litresForReading, normaliseCalibrationChart } from './calibration';
-import { buildLandedCost } from './landed-cost';
+import { assertLandedCostPairMatchesLitres, buildLandedCost } from './landed-cost';
 import { assertWaterTestAllowsConfirmation } from '../deliveries/persistence';
 import {
   assertWithinTankCapacity,
   calculateDeliveryShortageExcess,
   requireAdjustmentReason,
+  validateDeliveryDipWindow,
   validateDeliveryAllocations,
 } from './domain';
 import {
@@ -88,6 +90,14 @@ const dipPayload = authorityPayload.extend({
   notes: z.string().trim().max(1000).nullish(),
 });
 
+const deliveryDipPayload = z.object({
+  measuredAt: instant,
+  physicalLitres: decimalText.nullish(),
+  rawMeasurement: decimalText.nullish(),
+  measurementUnit: z.enum(['mm', 'cm', 'inches']).nullish(),
+  notes: z.string().trim().max(1000).nullish(),
+});
+
 const calibrationPayload = authorityPayload.extend({
   tankId: uuid,
   measurementUnit: z.enum(['mm', 'cm', 'inches']),
@@ -129,6 +139,8 @@ const deliveryPayload = authorityPayload
     sealReference: z.string().trim().max(80).nullish(),
     preDeliveryDipId: uuid.nullish(),
     postDeliveryDipId: uuid.nullish(),
+    preDeliveryDip: deliveryDipPayload.nullish(),
+    postDeliveryDip: deliveryDipPayload.nullish(),
     unitLandedCost: z
       .string()
       .regex(/^\d+(?:\.\d{1,8})?$/)
@@ -146,7 +158,35 @@ const deliveryPayload = authorityPayload
     path: ['noPoNote'],
   });
 
+/**
+ * Correcting a delivery that is still a draft: the same details as recording one. Tank dips are
+ * not part of it (they were measured, not typed), and the fuel cannot change.
+ */
+const updateDeliveryPayload = authorityPayload
+  .extend({
+    deliveryId: uuid,
+    supplierId: uuid,
+    tankId: uuid,
+    deliveryNoteNumber: z.string().trim().min(1).max(80),
+    deliveredAt: instant,
+    noteQuantityLitres: decimalText,
+    actualQuantityLitres: decimalText,
+    transporter: z.string().trim().max(120).nullish(),
+    driver: z.string().trim().max(120).nullish(),
+    truckRegistration: z.string().trim().max(80).nullish(),
+    noPoReason: z.enum(NO_PO_REASONS).nullish(),
+    noPoNote: z.string().trim().max(300).nullish(),
+  })
+  .refine((value) => value.noPoReason !== 'OTHER' || !!value.noPoNote, {
+    message: 'Say in a few words why there is no purchase order',
+    path: ['noPoNote'],
+  });
+
 const confirmDeliveryPayload = authorityPayload.extend({ deliveryId: uuid });
+const voidTankDipPayload = authorityPayload.extend({
+  dipId: uuid,
+  reason: z.string().trim().min(5).max(500),
+});
 const correctDeliverySupplierPayload = authorityPayload.extend({
   deliveryId: uuid,
   supplierId: uuid,
@@ -269,6 +309,26 @@ async function insertTank(
     throw new AppError('VALIDATION_FAILED', 'Acceptable variance cannot be negative');
   }
   assertVarianceLimits(payload.acceptableVarianceLitres, payload.varianceRedLitres);
+  // Pumps are not linked to individual tanks, so the day's stock check cannot tell two tanks of one
+  // fuel apart and would refuse to close the day. Refuse the second tank up front instead.
+  const sameFuel = await transaction
+    .select({ code: tanks.code })
+    .from(tanks)
+    .where(
+      and(
+        eq(tanks.tenantId, context.tenantId),
+        eq(tanks.stationId, context.stationId),
+        eq(tanks.productId, payload.productId),
+        eq(tanks.status, 'ACTIVE'),
+      ),
+    )
+    .limit(1);
+  if (sameFuel[0]) {
+    throw new AppError(
+      'CONFLICT',
+      `This station already has an active tank for this fuel (${sameFuel[0].code}). Two tanks of the same fuel cannot be tracked yet. Ask the owner before adding another.`,
+    );
+  }
   const tankId = randomUUID();
   try {
     await transaction.insert(tanks).values({
@@ -339,6 +399,18 @@ export async function setTankVarianceLimitsFromRequest(request: Request, input: 
       actionCode: 'INVENTORY.TANK_VARIANCE_LIMITS_SET',
       subjectType: 'Tank',
       subjectId: payload.tankId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{
+          acceptable: string | null;
+          red: string | null;
+        }>(sql`
+          select acceptable_variance_litres::text as acceptable, variance_red_litres::text as red
+          from app.tanks where tenant_id = ${context.tenantId} and id = ${payload.tankId}
+        `);
+        return rows[0]
+          ? { acceptableVarianceLitres: rows[0].acceptable, varianceRedLitres: rows[0].red }
+          : undefined;
+      },
     },
     execute: async (transaction) => {
       const tank = await loadTankForUpdate(transaction, {
@@ -389,6 +461,13 @@ export async function deactivateTankFromRequest(request: Request, input: unknown
       actionCode: 'INVENTORY.TANK_STATUS_CHANGED',
       subjectType: 'Tank',
       subjectId: payload.tankId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ status: string }>(sql`
+          select status from app.tanks
+          where tenant_id = ${context.tenantId} and id = ${payload.tankId}
+        `);
+        return rows[0] ? { status: rows[0].status } : undefined;
+      },
     },
     execute: async (transaction) => {
       const tank = await loadTankForUpdate(transaction, {
@@ -458,7 +537,10 @@ async function dipLitres(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
   tankId: string,
-  payload: z.infer<typeof dipPayload>,
+  payload: Pick<
+    z.infer<typeof dipPayload>,
+    'rawMeasurement' | 'measurementUnit' | 'physicalLitres'
+  >,
 ): Promise<string> {
   if (payload.rawMeasurement && payload.measurementUnit) {
     const chart = await currentCalibration(transaction, context, tankId, payload.measurementUnit);
@@ -473,6 +555,43 @@ async function dipLitres(
     );
   }
   return litres(payload.physicalLitres).toString();
+}
+
+async function insertTankDipInTransaction(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  tankId: string,
+  payload: z.infer<typeof deliveryDipPayload>,
+): Promise<{ dipId: string; tankId: string; physicalLitres: string }> {
+  if ((payload.rawMeasurement === undefined) !== (payload.measurementUnit === undefined)) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Raw dip measurement and unit must be supplied together',
+    );
+  }
+  const tank = await loadTankForUpdate(transaction, {
+    tenantId: context.tenantId,
+    stationId: context.stationId,
+    tankId,
+  });
+  if (tank.status === 'RETIRED') throw new AppError('CONFLICT', 'Retired tanks cannot be dipped');
+  const physicalLitres = await dipLitres(transaction, context, tank.id, payload);
+  assertWithinTankCapacity(physicalLitres, tank.capacityLitres);
+  const dipId = randomUUID();
+  await transaction.insert(tankDips).values({
+    id: dipId,
+    tenantId: context.tenantId,
+    stationId: context.stationId,
+    tankId: tank.id,
+    measuredAt: new Date(payload.measuredAt),
+    businessDate: deriveBusinessDate(payload.measuredAt, context.stationTimezone),
+    physicalLitres,
+    rawMeasurement: payload.rawMeasurement ? litres(payload.rawMeasurement).toString() : null,
+    measurementUnit: payload.measurementUnit ?? null,
+    recordedBy: context.authority.membership.membershipId,
+    notes: payload.notes ?? null,
+  });
+  return { dipId, tankId: tank.id, physicalLitres };
 }
 
 export async function setTankCalibrationFromRequest(request: Request, input: unknown) {
@@ -543,30 +662,68 @@ export async function recordTankDipFromRequest(request: Request, input: unknown)
       subjectId: (result) => (result as { dipId: string }).dipId,
     },
     execute: async (transaction) => {
-      const tank = await loadTankForUpdate(transaction, {
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        tankId: payload.tankId,
-      });
-      if (tank.status === 'RETIRED')
-        throw new AppError('CONFLICT', 'Retired tanks cannot be dipped');
-      const physicalLitres = await dipLitres(transaction, context, tank.id, payload);
-      assertWithinTankCapacity(physicalLitres, tank.capacityLitres);
-      const dipId = randomUUID();
-      await transaction.insert(tankDips).values({
-        id: dipId,
-        tenantId: context.tenantId,
-        stationId: context.stationId,
-        tankId: tank.id,
-        measuredAt: new Date(payload.measuredAt),
-        businessDate: deriveBusinessDate(payload.measuredAt, context.stationTimezone),
-        physicalLitres,
-        rawMeasurement: payload.rawMeasurement ? litres(payload.rawMeasurement).toString() : null,
-        measurementUnit: payload.measurementUnit ?? null,
-        recordedBy: context.authority.membership.membershipId,
-        notes: payload.notes ?? null,
-      });
-      return { dipId, tankId: tank.id, physicalLitres };
+      return insertTankDipInTransaction(transaction, context, payload.tankId, payload);
+    },
+  });
+}
+
+export async function voidTankDipFromRequest(request: Request, input: unknown) {
+  const payload = voidTankDipPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'VoidTankDip',
+    permissionCode: 'inventory.dip.record',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.TANK_DIP_VOIDED',
+      subjectType: 'TankDip',
+      subjectId: payload.dipId,
+      reason: payload.reason,
+    },
+    execute: async (transaction) => {
+      const dips = await transaction.execute<{ id: string; voided_at: Date | string | null }>(sql`
+        select id, voided_at
+        from app.tank_dips
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.dipId}
+        for update
+      `);
+      const dip = dips[0];
+      if (!dip) throw new AppError('NOT_FOUND', 'That tank dip was not found');
+      if (dip.voided_at) throw new AppError('CONFLICT', 'That tank dip has already been voided');
+      const deliveryRefs = await transaction.execute<{ id: string }>(sql`
+        select id
+        from app.fuel_deliveries
+        where tenant_id=${context.tenantId} and station_id=${context.stationId}
+          and (pre_delivery_dip_id=${payload.dipId} or post_delivery_dip_id=${payload.dipId})
+        limit 1
+      `);
+      if (deliveryRefs[0]) {
+        throw new AppError(
+          'CONFLICT',
+          'This dip is attached to a delivery and cannot be voided. Correct the delivery instead.',
+        );
+      }
+      const reconciliationRefs = await transaction.execute<{ id: string }>(sql`
+        select id
+        from app.reconciliation_dip_refs
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and dip_id=${payload.dipId}
+        limit 1
+      `);
+      if (reconciliationRefs[0]) {
+        throw new AppError(
+          'CONFLICT',
+          'This dip is attached to a reconciliation and cannot be voided. Remove that link first.',
+        );
+      }
+      await transaction.execute(sql`
+        update app.tank_dips
+        set voided_at=now(), voided_by=${context.authority.membership.membershipId}, void_reason=${payload.reason}
+        where tenant_id=${context.tenantId} and station_id=${context.stationId} and id=${payload.dipId} and voided_at is null
+      `);
+      return { dipId: payload.dipId, voided: true };
     },
   });
 }
@@ -593,11 +750,88 @@ async function assertActiveSupplier(
   }
 }
 
+/**
+ * A dip attached to a delivery is evidence of what arrived, so it must be a real, current reading of
+ * the tank the fuel went into. A dip cannot be both typed in and picked from the existing ones.
+ */
+async function assertDeliveryDipEvidence(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  payload: z.infer<typeof deliveryPayload>,
+  allocations: readonly { tankId: string }[],
+): Promise<void> {
+  const slots = [
+    { label: 'before', inline: payload.preDeliveryDip, dipId: payload.preDeliveryDipId },
+    { label: 'after', inline: payload.postDeliveryDip, dipId: payload.postDeliveryDipId },
+  ];
+  for (const slot of slots) {
+    if (!slot.dipId) continue;
+    if (slot.inline) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `Choose an existing ${slot.label}-delivery dip or enter a new one, not both.`,
+      );
+    }
+    const rows = await transaction
+      .select({ tankId: tankDips.tankId, voidedAt: tankDips.voidedAt })
+      .from(tankDips)
+      .where(
+        and(
+          eq(tankDips.tenantId, context.tenantId),
+          eq(tankDips.stationId, context.stationId),
+          eq(tankDips.id, slot.dipId),
+        ),
+      )
+      .limit(1);
+    const dip = rows[0];
+    if (!dip) {
+      throw new AppError('NOT_FOUND', `The ${slot.label}-delivery dip could not be found.`);
+    }
+    if (dip.voidedAt) {
+      throw new AppError(
+        'CONFLICT',
+        `The ${slot.label}-delivery dip was cancelled. Pick a dip that is still valid.`,
+      );
+    }
+    if (!allocations.some((allocation) => allocation.tankId === dip.tankId)) {
+      throw new AppError(
+        'CONFLICT',
+        `The ${slot.label}-delivery dip is for a different tank than the one receiving this fuel.`,
+      );
+    }
+  }
+}
+
+async function insertDeliveryRow(
+  transaction: InventoryTransaction,
+  values: typeof fuelDeliveries.$inferInsert,
+): Promise<void> {
+  try {
+    await transaction.insert(fuelDeliveries).values(values);
+  } catch (error) {
+    const constraint =
+      (error as { constraint_name?: string })?.constraint_name ??
+      (error as { cause?: { constraint_name?: string } })?.cause?.constraint_name;
+    if (constraint === 'fuel_deliveries_station_note_uidx') {
+      throw new AppError(
+        'CONFLICT',
+        `A delivery with note number ${values.deliveryNoteNumber} is already recorded at this station. Check the note number, or open the existing delivery.`,
+      );
+    }
+    throw error;
+  }
+}
+
 async function insertDelivery(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
   payload: z.infer<typeof deliveryPayload>,
-): Promise<{ deliveryId: string; allocationIds: readonly string[] }> {
+): Promise<{
+  deliveryId: string;
+  allocationIds: readonly string[];
+  preDeliveryDipId: string | null;
+  postDeliveryDipId: string | null;
+}> {
   await assertProductBelongsToTenant(transaction, context.tenantId, payload.productId);
   await assertActiveSupplier(transaction, context.tenantId, payload.supplierId);
   validateDeliveryAllocations(
@@ -623,13 +857,40 @@ async function insertDelivery(
     if (tank.status === 'RETIRED')
       throw new AppError('CONFLICT', 'Retired tanks cannot receive deliveries');
   }
+  if ((payload.preDeliveryDip || payload.postDeliveryDip) && sortedAllocations.length !== 1) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Before and after dips can only be recorded when the delivery is allocated to one tank.',
+    );
+  }
+  validateDeliveryDipWindow(
+    payload.deliveredAt,
+    payload.preDeliveryDip?.measuredAt,
+    payload.postDeliveryDip?.measuredAt,
+  );
+  const dipTankId = sortedAllocations[0]?.tankId;
+  await assertDeliveryDipEvidence(transaction, context, payload, sortedAllocations);
+  const preDeliveryDip =
+    payload.preDeliveryDip && dipTankId
+      ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.preDeliveryDip)
+      : null;
+  const postDeliveryDip =
+    payload.postDeliveryDip && dipTankId
+      ? await insertTankDipInTransaction(transaction, context, dipTankId, payload.postDeliveryDip)
+      : null;
+  assertLandedCostPairMatchesLitres({
+    unitLandedCost: payload.unitLandedCost,
+    totalLandedCost: payload.totalLandedCost,
+    currency: payload.currency,
+    actualLitres: actual.toString(),
+  });
   const deliveryId = randomUUID();
   const noteQuantity = litres(payload.noteQuantityLitres);
   const shortageExcess = calculateDeliveryShortageExcess(
     noteQuantity.toString(),
     actual.toString(),
   );
-  await transaction.insert(fuelDeliveries).values({
+  await insertDeliveryRow(transaction, {
     id: deliveryId,
     tenantId: context.tenantId,
     stationId: context.stationId,
@@ -646,8 +907,8 @@ async function insertDelivery(
     driver: payload.driver ?? null,
     truckRegistration: payload.truckRegistration ?? null,
     sealReference: payload.sealReference ?? null,
-    preDeliveryDipId: payload.preDeliveryDipId ?? null,
-    postDeliveryDipId: payload.postDeliveryDipId ?? null,
+    preDeliveryDipId: preDeliveryDip?.dipId ?? payload.preDeliveryDipId ?? null,
+    postDeliveryDipId: postDeliveryDip?.dipId ?? payload.postDeliveryDipId ?? null,
     status: 'DRAFT',
     noPoReason: payload.noPoReason ?? null,
     noPoNote: payload.noPoReason ? payload.noPoNote || null : null,
@@ -669,7 +930,193 @@ async function insertDelivery(
       quantityLitres: litres(allocation.quantityLitres).toString(),
     });
   }
-  return { deliveryId, allocationIds };
+  return {
+    deliveryId,
+    allocationIds,
+    preDeliveryDipId: preDeliveryDip?.dipId ?? payload.preDeliveryDipId ?? null,
+    postDeliveryDipId: postDeliveryDip?.dipId ?? payload.postDeliveryDipId ?? null,
+  };
+}
+
+/**
+ * Changes the details of a delivery that has not been confirmed. Refused once it is confirmed or
+ * cancelled (the database refuses too), when it is split across tanks, or when the change would
+ * contradict something already recorded: a linked purchase order, a landed cost, or the dips of
+ * the current tank.
+ */
+export async function updateDeliveryFromRequest(request: Request, input: unknown) {
+  const payload = updateDeliveryPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'UpdateDelivery',
+    permissionCode: 'inventory.delivery.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.DELIVERY_UPDATED',
+      subjectType: 'FuelDelivery',
+      subjectId: payload.deliveryId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{
+          status: string;
+          supplier_id: string | null;
+          delivery_note_number: string;
+          note_quantity_litres: string;
+          actual_quantity_litres: string;
+        }>(sql`
+          select status, supplier_id, delivery_note_number,
+            note_quantity_litres::text as note_quantity_litres,
+            actual_quantity_litres::text as actual_quantity_litres
+          from app.fuel_deliveries
+          where tenant_id = ${context.tenantId} and id = ${payload.deliveryId}
+        `);
+        return rows[0]
+          ? {
+              status: rows[0].status,
+              supplierId: rows[0].supplier_id,
+              deliveryNoteNumber: rows[0].delivery_note_number,
+              noteQuantityLitres: rows[0].note_quantity_litres,
+              actualQuantityLitres: rows[0].actual_quantity_litres,
+            }
+          : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      const deliveries = await transaction
+        .select()
+        .from(fuelDeliveries)
+        .where(
+          and(
+            eq(fuelDeliveries.tenantId, context.tenantId),
+            eq(fuelDeliveries.stationId, context.stationId),
+            eq(fuelDeliveries.id, payload.deliveryId),
+          ),
+        )
+        .for('update');
+      const delivery = deliveries[0];
+      if (!delivery) throw new AppError('NOT_FOUND', 'The requested delivery was not found');
+      if (delivery.status !== 'DRAFT') {
+        throw new AppError(
+          'CONFLICT',
+          'This delivery is already confirmed or cancelled, so its details can no longer be changed.',
+        );
+      }
+      const allocations = await transaction
+        .select()
+        .from(fuelDeliveryAllocations)
+        .where(
+          and(
+            eq(fuelDeliveryAllocations.tenantId, context.tenantId),
+            eq(fuelDeliveryAllocations.stationId, context.stationId),
+            eq(fuelDeliveryAllocations.deliveryId, delivery.id),
+          ),
+        );
+      const allocation = allocations[0];
+      if (allocations.length !== 1 || !allocation) {
+        throw new AppError(
+          'CONFLICT',
+          'This delivery is split across several tanks, so it cannot be edited here.',
+        );
+      }
+      await assertActiveSupplier(transaction, context.tenantId, payload.supplierId);
+      if (payload.supplierId !== delivery.supplierId) {
+        const linked = await transaction.execute(sql`
+          select 1 from app.purchase_order_delivery_links
+          where tenant_id = ${context.tenantId} and delivery_id = ${delivery.id} and state = 'ACTIVE'
+        `);
+        if (linked.length > 0) {
+          throw new AppError(
+            'CONFLICT',
+            'This delivery is linked to a purchase order, so its supplier cannot be changed. Unlink the order in Purchasing first.',
+          );
+        }
+      }
+      const tank = await loadTankForUpdate(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: payload.tankId,
+      });
+      if (tank.productId !== delivery.productId) {
+        throw new AppError('CONFLICT', 'Choose a tank that holds the same fuel as this delivery.');
+      }
+      if (tank.status === 'RETIRED') {
+        throw new AppError('CONFLICT', 'Retired tanks cannot receive deliveries');
+      }
+      if (
+        payload.tankId !== allocation.tankId &&
+        (delivery.preDeliveryDipId !== null || delivery.postDeliveryDipId !== null)
+      ) {
+        throw new AppError(
+          'CONFLICT',
+          'Tank dips were recorded for the tank this delivery is going into, so the tank cannot be changed.',
+        );
+      }
+      const actual = litres(payload.actualQuantityLitres);
+      const note = litres(payload.noteQuantityLitres);
+      if (
+        delivery.totalLandedCost !== null &&
+        !litres(delivery.actualQuantityLitres).value.eq(actual.value)
+      ) {
+        throw new AppError(
+          'CONFLICT',
+          'A cost is already recorded for this delivery, so the litres received cannot be changed.',
+        );
+      }
+      validateDeliveryAllocations(payload.actualQuantityLitres, [payload.actualQuantityLitres]);
+      try {
+        await transaction
+          .update(fuelDeliveries)
+          .set({
+            supplierId: payload.supplierId,
+            deliveryNoteNumber: payload.deliveryNoteNumber,
+            deliveredAt: new Date(payload.deliveredAt),
+            businessDate: deriveBusinessDate(payload.deliveredAt, context.stationTimezone),
+            noteQuantityLitres: note.toString(),
+            actualQuantityLitres: actual.toString(),
+            shortageExcessLitres: calculateDeliveryShortageExcess(
+              note.toString(),
+              actual.toString(),
+            ),
+            transporter: payload.transporter || null,
+            driver: payload.driver || null,
+            truckRegistration: payload.truckRegistration || null,
+            noPoReason: payload.noPoReason ?? null,
+            noPoNote: payload.noPoReason ? payload.noPoNote || null : null,
+          })
+          .where(
+            and(
+              eq(fuelDeliveries.tenantId, context.tenantId),
+              eq(fuelDeliveries.stationId, context.stationId),
+              eq(fuelDeliveries.id, delivery.id),
+            ),
+          );
+      } catch (error) {
+        const constraint =
+          (error as { constraint_name?: string })?.constraint_name ??
+          (error as { cause?: { constraint_name?: string } })?.cause?.constraint_name;
+        if (constraint === 'fuel_deliveries_station_note_uidx') {
+          throw new AppError(
+            'CONFLICT',
+            `A delivery with note number ${payload.deliveryNoteNumber} is already recorded at this station. Check the note number, or open the existing delivery.`,
+          );
+        }
+        throw error;
+      }
+      await transaction
+        .update(fuelDeliveryAllocations)
+        .set({ tankId: payload.tankId, quantityLitres: actual.toString() })
+        .where(
+          and(
+            eq(fuelDeliveryAllocations.tenantId, context.tenantId),
+            eq(fuelDeliveryAllocations.stationId, context.stationId),
+            eq(fuelDeliveryAllocations.id, allocation.id),
+          ),
+        );
+      return { deliveryId: delivery.id };
+    },
+  });
 }
 
 export async function createDeliveryFromRequest(request: Request, input: unknown) {
@@ -705,6 +1152,13 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
       actionCode: 'INVENTORY.DELIVERY_CONFIRMED',
       subjectType: 'FuelDelivery',
       subjectId: payload.deliveryId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ status: string }>(sql`
+          select status from app.fuel_deliveries
+          where tenant_id = ${context.tenantId} and id = ${payload.deliveryId}
+        `);
+        return rows[0] ? { status: rows[0].status } : undefined;
+      },
     },
     execute: async (transaction) => {
       const deliveries = await transaction
@@ -954,29 +1408,61 @@ export async function postInventoryAdjustmentFromRequest(request: Request, input
       subjectId: (result) => (result as { movementId: string }).movementId,
       reason,
     },
-    execute: async (transaction) => ({
-      movementId: await postInventoryMovementInTransaction(transaction, {
+    execute: async (transaction) => {
+      const tank = await loadTankForUpdate(transaction, {
         tenantId: context.tenantId,
         stationId: context.stationId,
         tankId: payload.tankId,
-        productId: (
-          await loadTankForUpdate(transaction, {
-            tenantId: context.tenantId,
-            stationId: context.stationId,
-            tankId: payload.tankId,
-          })
-        ).productId,
-        movementType: payload.movementType,
-        quantityLitres: signedQuantity,
-        effectiveAt: new Date(payload.effectiveAt),
-        businessDate: deriveBusinessDate(payload.effectiveAt, context.stationTimezone),
-        sourceType: 'MANUAL_ADJUSTMENT',
-        sourceId: randomUUID(),
-        actorMembershipId: context.authority.membership.membershipId,
-        reason,
-      }),
-    }),
+      });
+      await assertNoCostRecordBlocksAdjustment(transaction, context, tank);
+      return {
+        movementId: await postInventoryMovementInTransaction(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          tankId: payload.tankId,
+          productId: tank.productId,
+          movementType: payload.movementType,
+          quantityLitres: signedQuantity,
+          effectiveAt: new Date(payload.effectiveAt),
+          businessDate: deriveBusinessDate(payload.effectiveAt, context.stationTimezone),
+          sourceType: 'MANUAL_ADJUSTMENT',
+          sourceId: randomUUID(),
+          actorMembershipId: context.authority.membership.membershipId,
+          reason,
+        }),
+      };
+    },
   });
+}
+
+/**
+ * The cost record has no rule yet for stock that leaves or appears outside a delivery or a sale.
+ * Posting one would make every later delivery, cost entry or sale on this tank fail, so it is
+ * refused up front with a message the manager can act on.
+ */
+async function assertNoCostRecordBlocksAdjustment(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  tank: { id: string; productId: string },
+): Promise<void> {
+  const costed = await transaction
+    .select({ tankId: inventoryCostStreamState.tankId })
+    .from(inventoryCostStreamState)
+    .where(
+      and(
+        eq(inventoryCostStreamState.tenantId, context.tenantId),
+        eq(inventoryCostStreamState.stationId, context.stationId),
+        eq(inventoryCostStreamState.tankId, tank.id),
+        eq(inventoryCostStreamState.productId, tank.productId),
+      ),
+    )
+    .limit(1);
+  if (costed.length > 0) {
+    throw new AppError(
+      'CONFLICT',
+      'This tank already has a cost record, so its stock cannot be adjusted here yet. Ask the owner to record the correction.',
+    );
+  }
 }
 
 export async function recordOpeningBalanceFromRequest(request: Request, input: unknown) {

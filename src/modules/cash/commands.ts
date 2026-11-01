@@ -10,6 +10,8 @@ import {
   cancelCashHandoverInTransaction,
   confirmBankDepositInTransaction,
   createBankDepositInTransaction,
+  readCollectionBeforeChange,
+  readDepositBeforeChange,
   receiveCashCollectionInTransaction,
   recordCashCollectionInTransaction,
   resolveCashHandoverInTransaction,
@@ -81,6 +83,13 @@ const confirmDepositSchema = commandContext.extend({
   expectedVersion: z.number().int().nonnegative(),
   confirmedAmount: decimalString,
   bankReference: z.string().trim().min(1).max(120),
+  /** The date the bank gives for the deposit. Not in the future. */
+  bankDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter the bank date as a calendar date.')
+    .optional(),
+  /** Required when the bank confirmed a different amount from the one deposited. */
+  differenceReason: z.string().trim().max(500).optional(),
 });
 
 const submitHandoverSchema = commandContext.extend({
@@ -170,8 +179,9 @@ export async function receiveCashCollectionFromRequest(request: Request, body: u
     subjectType: 'CashCollection',
     subjectId: input.collectionId,
     execute: async (transaction) => {
+      const before = await readCollectionBeforeChange(transaction, context, input.collectionId);
       const result = await receiveCashCollectionInTransaction(transaction, context, input);
-      return { result, after: result };
+      return { result, before, after: result };
     },
   });
 }
@@ -214,8 +224,9 @@ export async function confirmBankDepositFromRequest(request: Request, body: unkn
     subjectType: 'BankDeposit',
     subjectId: input.depositId,
     execute: async (transaction) => {
+      const before = await readDepositBeforeChange(transaction, context, input.depositId);
       const result = await confirmBankDepositInTransaction(transaction, context, input);
-      return { result, after: { ...result, bankReference: input.bankReference } };
+      return { result, before, after: { ...result, bankReference: input.bankReference } };
     },
   });
 }

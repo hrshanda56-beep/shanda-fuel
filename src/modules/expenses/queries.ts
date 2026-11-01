@@ -9,6 +9,8 @@ import type { AuthenticatedActorContext } from '../identity';
 import { resolveExpenseReadContext } from './read-context';
 import type { ExpenseCommandContext } from './application';
 import { EXPENSE_STATES, outstandingAmount, paymentStatus } from './domain';
+import { allocateFixedCosts } from '../reporting/fixed-cost-allocation';
+import { todayInBusinessTime } from './ui/expense-format';
 
 const uuid = z.string().uuid();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -219,6 +221,15 @@ export async function getExpenseSummaryFromRequest(
   const context = await readContext(request, input, actor);
   const stationFilter = (column: ReturnType<typeof sql.raw>) =>
     context.stationId ? sql`and ${column} = ${context.stationId}` : sql``;
+  const may = (permissionCode: Parameters<typeof isPermissionGranted>[0]['permissionCode']) =>
+    isPermissionGranted({
+      actor: context.authority.authorization,
+      permissionCode,
+      requestedScope: context.scope,
+    });
+  // Regular costs belong to whoever manages or counts them; a supervisor never sees them, so
+  // they are left out of every figure here, not only hidden on the screen.
+  const seesRecurring = may('expense.recurring.manage') || may('expense.recurring.recognize');
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const recognized = await transaction.execute<{
       classification: string;
@@ -234,9 +245,81 @@ export async function getExpenseSummaryFromRequest(
       where m.tenant_id = ${context.tenantId} and m.legal_entity_id = ${context.legalEntityId}
         ${stationFilter(sql.raw('m.station_id'))}
         and m.recognition_date >= ${input.from} and m.recognition_date <= ${input.to}
+        ${seesRecurring ? sql`` : sql`and m.source_type <> 'RECURRING_COST_RECOGNITION'`}
       group by m.classification, m.category_id, c.code, c.name
       order by m.classification, c.code
     `);
+    if (seesRecurring) {
+      // The same rule Profits and the reports use: every active regular cost carries its share
+      // of the month on each day it is active, up to today, unless that day has its own record.
+      const through = input.to < todayInBusinessTime() ? input.to : todayInBusinessTime();
+      if (input.from <= through) {
+        const templates = await transaction.execute<{
+          id: string;
+          station_id: string;
+          category_id: string;
+          category_code: string;
+          category_name: string;
+          amount: string;
+          start_date: string;
+          end_date: string | null;
+        }>(sql`
+          select t.id, t.station_id, t.category_id, c.code as category_code,
+            c.name as category_name, t.amount::text, t.start_date::text, t.end_date::text
+          from app.recurring_cost_templates t
+          join app.expense_categories c on c.tenant_id = t.tenant_id and c.id = t.category_id
+          where t.tenant_id = ${context.tenantId} and t.legal_entity_id = ${context.legalEntityId}
+            ${stationFilter(sql.raw('t.station_id'))}
+            and t.status = 'ACTIVE'
+            and t.start_date <= ${through}
+            and (t.end_date is null or t.end_date >= ${input.from})
+        `);
+        const recordedDays = await transaction.execute<{
+          station_id: string;
+          day: string;
+          template_id: string;
+        }>(sql`
+          select distinct m.station_id, m.recognition_date::text as day, p.template_id
+          from app.expense_recognition_movements m
+          join app.recurring_cost_recognitions r
+            on r.tenant_id = m.tenant_id and r.id = m.source_id
+          join app.recurring_cost_periods p on p.tenant_id = r.tenant_id and p.id = r.period_id
+          where m.tenant_id = ${context.tenantId} and m.legal_entity_id = ${context.legalEntityId}
+            and m.source_type = 'RECURRING_COST_RECOGNITION'
+            ${stationFilter(sql.raw('m.station_id'))}
+            and m.recognition_date >= ${input.from} and m.recognition_date <= ${through}
+        `);
+        const info = new Map(templates.map((row) => [row.id, row]));
+        const days = allocateFixedCosts(
+          templates.map((row) => ({
+            id: row.id,
+            stationId: row.station_id,
+            amount: row.amount,
+            startDate: row.start_date,
+            endDate: row.end_date,
+          })),
+          new Set(recordedDays.map((row) => `${row.station_id}:${row.day}:${row.template_id}`)),
+          input.from,
+          through,
+        );
+        for (const day of days) {
+          const template = info.get(day.templateId)!;
+          const existing = recognized.find(
+            (row) =>
+              row.classification === 'FIXED_COST' && row.category_id === template.category_id,
+          );
+          if (existing) existing.amount = sumDecimal([existing.amount, day.amount]);
+          else
+            recognized.push({
+              classification: 'FIXED_COST',
+              category_id: template.category_id,
+              category_code: template.category_code,
+              category_name: template.category_name,
+              amount: day.amount,
+            });
+        }
+      }
+    }
     const payables = await transaction.execute<{ expenses: string; recurring: string }>(sql`
       select
         coalesce((select sum(e.amount - coalesce(p.settled, 0))
@@ -278,7 +361,9 @@ export async function getExpenseSummaryFromRequest(
       })),
       payables: {
         postedExpensesOutstanding: payables[0]?.expenses ?? '0.0000',
-        recurringObligationsOutstanding: payables[0]?.recurring ?? '0.0000',
+        recurringObligationsOutstanding: seesRecurring
+          ? (payables[0]?.recurring ?? '0.0000')
+          : '0.0000',
       },
       awaitingPostingCount: Number(pending[0]?.count ?? 0),
     };

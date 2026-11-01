@@ -111,7 +111,7 @@ export async function getDailyReportFromRequest(
                  d.raw_measurement::text as "rawMeasurement", d.measurement_unit as "measurementUnit",
                  d.physical_litres::text as "physicalLitres"
           from app.reconciliation_dip_refs r
-          join app.tank_dips d on d.tenant_id = r.tenant_id and d.station_id = r.station_id and d.id = r.dip_id
+          join app.tank_dips d on d.tenant_id = r.tenant_id and d.station_id = r.station_id and d.id = r.dip_id and d.voided_at is null
           join app.tanks t on t.tenant_id = d.tenant_id and t.station_id = d.station_id and t.id = d.tank_id
           join app.products pr on pr.tenant_id = t.tenant_id and pr.id = t.product_id
           where r.tenant_id = ${tenantId} and r.station_id = ${stationId}
