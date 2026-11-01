@@ -15,8 +15,11 @@ import {
 } from '@/design-system/primitives';
 import { Icon } from '@/design-system/icons';
 import { Modal } from '@/design-system/modal';
+import { NotchedCard } from '@/design-system/notched-card';
+import { Pagination, pageOf, usePageState } from '@/design-system/pagination';
 import { Checkbox } from '@/design-system/forms';
 import { formatTileMoney } from '@/modules/reporting/format';
+import { CashDonut } from '@/modules/cash/ui/cash-visuals';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import {
   EXPENSE_PAYMENT_METHODS,
@@ -30,6 +33,7 @@ import {
   PERIODS,
   amountForInput,
   categoryCodeFromName,
+  categoryRingSlices,
   categoryShares,
   formatFriendlyDate,
   friendlyError,
@@ -41,9 +45,11 @@ import {
   monthTitle,
   parseAmount,
   periodRange,
+  regularCostSoFar,
   statusView,
   sumAmounts,
   todayInBusinessTime,
+  withinApprovalLimit,
   type ExpenseFilter,
   type ExpenseRow,
   type PeriodKey,
@@ -169,6 +175,11 @@ const SOURCE_WORDS: Record<string, string> = {
   REIMBURSEMENT: 'Paid back to staff',
 };
 
+/** True for an amount that is nothing, however many zeros the database wrote. */
+function isZeroMoney(value: string): boolean {
+  return /^-?0*\.?0*$/.test(value);
+}
+
 function newKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 }
@@ -211,6 +222,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [period, setPeriod] = useState<PeriodKey>('month');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const pageState = usePageState(`${filter}|${search}|${period}|${categoryFilter}`);
   const [draftPeriod, setDraftPeriod] = useState<PeriodKey>('month');
   const [draftCategory, setDraftCategory] = useState('');
   const filtersRef = useRef<HTMLDivElement>(null);
@@ -235,6 +247,8 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [detailError, setDetailError] = useState<string | null>(null);
 
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [choosing, setChoosing] = useState(false);
+  const [listTab, setListTab] = useState<'all' | 'regular'>('all');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -606,14 +620,20 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       const first = approvalLimit.trim() === '' ? null : parseAmount(approvalLimit);
       const second = secondLimit.trim() === '' ? null : parseAmount(secondLimit);
       if (approvalLimit.trim() !== '' && !first) {
-        return setFormError('Enter the first limit as an amount, or leave it empty for none.');
+        return setFormError(
+          'Under “Needs an extra identity check above”, enter an amount like 500, or leave it empty.',
+        );
       }
       if (secondLimit.trim() !== '' && !second) {
-        return setFormError('Enter the second limit as an amount, or leave it empty for none.');
+        return setFormError(
+          'Under “Needs a second person to approve above”, enter an amount like 1000, or leave it empty.',
+        );
       }
       const supervisor = supervisorLimit.trim() === '' ? null : parseAmount(supervisorLimit);
       if (supervisorLimit.trim() !== '' && !supervisor) {
-        return setFormError('Enter the supervisor limit as an amount, or leave it empty for none.');
+        return setFormError(
+          'Under “A supervisor can approve up to”, enter an amount like 100, or leave it empty.',
+        );
       }
       return send(
         {
@@ -698,6 +718,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   }
 
   function showFilter(next: ExpenseFilter) {
+    setListTab('all');
     setFilter(next);
     setPeriod('all');
     setSearch('');
@@ -724,10 +745,13 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       matchesSearch(row, search),
   );
   const visible = base.filter((row) => matchesFilter(row, filter));
+  const expensePage = pageOf(visible, pageState);
   const waiting = items.filter((row) => row.state === 'SUBMITTED');
   const ready = items.filter((row) => row.state === 'APPROVED');
   const { total: spent, shares } = categoryShares(summary.byCategory);
   const waitingTotal = sumAmounts(waiting.map((row) => row.amount));
+  const showRegularTab = Boolean(caps?.manageRecurring || (reference.templates ?? []).length > 0);
+  const canAddExpense = Boolean(caps?.submit || caps?.manageRecurring);
 
   return (
     <div className={styles.page}>
@@ -740,10 +764,11 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       ) : null}
 
       <div className={styles.overview}>
-        <Card as="section" className="panel" aria-labelledby="expense-spent-title">
-          <div className="panel-heading">
-            <h2 id="expense-spent-title">Spent in {monthTitle(month.from)}</h2>
-          </div>
+        <NotchedCard
+          title={`Spent in ${monthTitle(month.from)}`}
+          titleId="expense-spent-title"
+          className={styles.summaryCard}
+        >
           <p className={styles.heroAmount}>{formatTileMoney(spent)}</p>
           <div className={styles.stats}>
             <button
@@ -768,130 +793,58 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
               aria-label="Not paid yet. Show these expenses."
             >
               <span>Not paid yet</span>
-              <strong>{formatTileMoney(summary.payables.postedExpensesOutstanding)}</strong>
+              <strong>
+                {isZeroMoney(summary.payables.postedExpensesOutstanding)
+                  ? 'None'
+                  : formatTileMoney(summary.payables.postedExpensesOutstanding)}
+              </strong>
             </button>
           </div>
-          {caps?.submit ? (
-            <Button className={styles.primaryAction} onClick={() => openSheet({ kind: 'new' })}>
-              Enter an expense
-            </Button>
-          ) : null}
-        </Card>
+        </NotchedCard>
 
-        <Card as="section" className="panel" aria-labelledby="expense-categories-title">
-          <div className="panel-heading">
-            <h2 id="expense-categories-title">Where the money went</h2>
-            {caps?.manageCategories ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => openSheet({ kind: 'categories' })}
-              >
-                Manage categories
-              </Button>
-            ) : null}
-          </div>
+        <NotchedCard
+          title="Where the money went"
+          titleId="expense-categories-title"
+          notchWidth={20.5}
+          actions={
+            canAddExpense || caps?.manageCategories ? (
+              <>
+                {caps?.manageCategories ? (
+                  <Button variant="secondary" onClick={() => openSheet({ kind: 'categories' })}>
+                    Manage categories
+                  </Button>
+                ) : null}
+                {canAddExpense ? (
+                  <Button
+                    aria-haspopup="dialog"
+                    onClick={() =>
+                      caps?.submit && caps.manageRecurring
+                        ? setChoosing(true)
+                        : openSheet({ kind: caps?.submit ? 'new' : 'regular' })
+                    }
+                  >
+                    Add an expense
+                  </Button>
+                ) : null}
+              </>
+            ) : null
+          }
+        >
           {shares.length === 0 ? (
             <p className={styles.muted}>Nothing recorded this month yet.</p>
           ) : (
-            <ul className={styles.categories}>
-              {shares.map((row) => (
-                <li key={row.categoryId} className={styles.categoryRow}>
-                  <span className={styles.categoryName}>{row.name}</span>
-                  <span className={styles.bar} aria-hidden="true">
-                    <span style={{ width: `${row.percent}%` }} />
-                  </span>
-                  <span className={styles.amount}>{formatTileMoney(row.amount)}</span>
-                </li>
-              ))}
-            </ul>
+            <div className={`profit-split ${styles.ring}`}>
+              <CashDonut
+                slices={categoryRingSlices(shares, spent)}
+                currency="USD"
+                centreLabel="Spent"
+                centreValue={formatTileMoney(spent)}
+                selectOpensDialog={false}
+              />
+            </div>
           )}
-        </Card>
+        </NotchedCard>
       </div>
-
-      {caps?.manageRecurring || (reference.templates ?? []).length > 0 ? (
-        <Card as="section" className="panel" aria-labelledby="regular-costs-title">
-          <div className="panel-heading">
-            <h2 id="regular-costs-title">Regular costs</h2>
-            {caps?.manageRecurring ? (
-              <Button variant="secondary" size="sm" onClick={() => openSheet({ kind: 'regular' })}>
-                Add a regular cost
-              </Button>
-            ) : null}
-          </div>
-          {(reference.templates ?? []).length === 0 ? (
-            <p className={styles.muted}>
-              Costs that repeat each month, like rent, are listed here once added.
-            </p>
-          ) : (
-            <ul className={styles.categories} aria-label="Regular costs">
-              {(reference.templates ?? []).map((template) => {
-                const thisMonth = (reference.periods ?? []).find(
-                  (row) => row.templateId === template.templateId && row.periodStart === month.from,
-                );
-                const counted = thisMonth ? Number(thisMonth.recognizedAmount) > 0 : false;
-                return (
-                  <li key={template.templateId} className={styles.categoryRow}>
-                    <span className={styles.categoryName}>
-                      {template.name}
-                      <span className={styles.muted}> · {stationName(template.stationId)}</span>
-                    </span>
-                    <span className={styles.amount}>
-                      {formatTileMoney(template.amount)} a month
-                    </span>
-                    <span>
-                      {template.status !== 'ACTIVE' ? (
-                        <StatusBadge tone="neutral">Stopped</StatusBadge>
-                      ) : !thisMonth && caps?.manageRecurring ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={busy}
-                          onClick={() =>
-                            void send(
-                              {
-                                commandType: 'GenerateRecurringCostPeriod',
-                                ...scope(template.stationId),
-                                templateId: template.templateId,
-                                periodStart: month.from,
-                              },
-                              `${monthTitle(month.from)} added for ${template.name}.`,
-                            )
-                          }
-                        >
-                          Add {monthTitle(month.from)}
-                        </Button>
-                      ) : thisMonth && counted ? (
-                        <StatusBadge tone="positive">Counted this month</StatusBadge>
-                      ) : thisMonth && caps?.recogniseRecurring ? (
-                        <Button
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            void send(
-                              {
-                                commandType: 'RecognizeRecurringCost',
-                                ...scope(template.stationId),
-                                periodId: thisMonth.periodId,
-                                recognitionDate: today,
-                              },
-                              `${template.name} now counts in this month’s spending.`,
-                            )
-                          }
-                        >
-                          Count in spending
-                        </Button>
-                      ) : (
-                        <StatusBadge tone="pending">Waiting to be counted</StatusBadge>
-                      )}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Card>
-      ) : null}
 
       {caps?.managePolicy || reference.policy ? (
         <Card as="section" className="panel" aria-labelledby="expense-limits-title">
@@ -919,240 +872,347 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
 
       <Card as="section" className="panel" aria-labelledby="expense-list-title">
         <div className="panel-heading">
-          <h2 id="expense-list-title">All expenses</h2>
-          {items.length >= 200 ? (
+          <h2 id="expense-list-title">Money spent</h2>
+          {listTab === 'all' && items.length >= 200 ? (
             <span className={styles.muted}>Showing the latest 200 expenses.</span>
           ) : null}
-        </div>
-        <div className={styles.toolbar}>
-          {items.length > 0 ? (
-            <>
-              <label className="list-search">
-                <Icon name="search" />
-                <input
-                  type="search"
-                  aria-label="Search expenses"
-                  placeholder="Search expenses"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  autoComplete="off"
-                />
-              </label>
-              <div className={styles.filterMenu} ref={filtersRef}>
-                <Button
-                  variant="secondary"
-                  aria-expanded={filtersOpen}
-                  aria-controls="expense-filter-panel"
-                  onClick={toggleFilters}
+          {showRegularTab ? (
+            <div className={`profit-tabs`} role="tablist" aria-label="Expense views">
+              {(
+                [
+                  ['all', 'All Expenses'],
+                  ['regular', 'Regular Costs'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={listTab === value}
+                  onClick={() => setListTab(value)}
                 >
-                  Filters{activeFilters > 0 ? ` · ${activeFilters}` : ''}
-                </Button>
-                {filtersOpen ? (
-                  <div
-                    className={styles.filterPanel}
-                    id="expense-filter-panel"
-                    role="group"
-                    aria-label="Filter expenses"
-                  >
-                    <label>
-                      <span>Date</span>
-                      <select
-                        value={draftPeriod}
-                        onChange={(event) => setDraftPeriod(event.target.value as PeriodKey)}
-                      >
-                        {PERIODS.map((item) => (
-                          <option key={item.value} value={item.value}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>Kind</span>
-                      <select
-                        value={draftCategory}
-                        onChange={(event) => setDraftCategory(event.target.value)}
-                      >
-                        <option value="">All kinds</option>
-                        {(reference.categories ?? []).map((category) => (
-                          <option key={category.categoryId} value={category.categoryId}>
-                            {category.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className={styles.filterActions}>
-                      <Button
-                        variant="quiet"
-                        size="sm"
-                        onClick={() => {
-                          setDraftPeriod('month');
-                          setDraftCategory('');
-                        }}
-                      >
-                        Reset
-                      </Button>
-                      <Button variant="secondary" size="sm" onClick={() => setFiltersOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setPeriod(draftPeriod);
-                          setCategoryFilter(draftCategory);
-                          setFiltersOpen(false);
-                        }}
-                      >
-                        Apply
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </>
+                  {label}
+                </button>
+              ))}
+            </div>
           ) : null}
         </div>
-
-        {items.length > 0 ? (
-          <div className={`list-filters ${styles.chips}`} role="group" aria-label="Filter expenses">
-            {EXPENSE_FILTERS.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                className="list-filter"
-                aria-pressed={filter === item.value}
-                onClick={() => setFilter(item.value)}
-              >
-                {item.label}
-                <span>{base.filter((row) => matchesFilter(row, item.value)).length}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {refreshing && items.length === 0 ? <LoadingState label="Loading expenses" /> : null}
-        {items.length === 0 && !refreshing ? (
-          <EmptyState
-            layout="block"
-            icon="receipt"
-            title="No expenses yet"
-            action={
-              caps?.submit ? (
-                <Button variant="secondary" size="sm" onClick={() => openSheet({ kind: 'new' })}>
-                  Enter an expense
-                </Button>
-              ) : undefined
-            }
-            message={
-              caps?.submit
-                ? 'Enter the first one when money is spent.'
-                : 'Expenses entered by your team show here.'
-            }
-          />
-        ) : null}
-        {items.length > 0 && visible.length === 0 ? (
-          <EmptyState
-            layout="block"
-            icon="search"
-            title="No expenses match"
-            message="Try a different search or filter."
-            action={
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setFilter('all');
-                  setSearch('');
-                  setCategoryFilter('');
-                  setPeriod('all');
-                }}
-              >
-                Clear filters
-              </Button>
-            }
-          />
-        ) : null}
-
-        {visible.length > 0 ? (
+        {listTab === 'regular' && showRegularTab ? (
           <>
-            <div className={styles.head} aria-hidden="true">
-              <span>Date</span>
-              <span>What for</span>
-              <span className={styles.amount}>Amount</span>
-              <span>Status</span>
-              <span />
-            </div>
-            <ul className={styles.list} aria-label="Expenses">
-              {visible.map((row) => {
-                const status = statusView(row);
-                const open = openId === row.expenseId;
-                const rowCaps = capsForRow(row, caps, reference?.policy ?? null);
-                const quick = quickAction(row, rowCaps);
-                return (
-                  <li key={row.expenseId} className={styles.item}>
-                    <div className={styles.rowWrap}>
-                      <button
-                        type="button"
-                        className={styles.row}
-                        aria-expanded={open}
-                        aria-controls={`expense-${row.expenseId}`}
-                        onClick={() => setOpenId(open ? null : row.expenseId)}
+            {(reference.templates ?? []).length === 0 ? (
+              <p className={styles.muted}>
+                Costs that repeat each month, like rent, are listed here once added. They count
+                automatically from the day they start, a share each day, and are kept apart from
+                what was spent.
+              </p>
+            ) : (
+              <ul className={styles.categories} aria-label="Regular costs">
+                {(reference.templates ?? []).map((template) => {
+                  const soFar = regularCostSoFar(template, month, today);
+                  return (
+                    <li key={template.templateId} className={styles.categoryRow}>
+                      <span className={styles.categoryName}>
+                        {template.name}
+                        <span className={styles.muted}> · {stationName(template.stationId)}</span>
+                      </span>
+                      <span className={styles.amount}>
+                        {formatTileMoney(template.amount)} a month
+                      </span>
+                      <span>
+                        {template.status !== 'ACTIVE' ? (
+                          <StatusBadge tone="neutral">Stopped</StatusBadge>
+                        ) : soFar.days > 0 ? (
+                          <StatusBadge tone="positive">
+                            {formatTileMoney(soFar.amount)} so far this month
+                          </StatusBadge>
+                        ) : (
+                          <StatusBadge tone="pending">
+                            Starts {formatFriendlyDate(template.startDate)}
+                          </StatusBadge>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        ) : (
+          <>
+            <div className={styles.toolbar}>
+              {items.length > 0 ? (
+                <>
+                  <label className="list-search">
+                    <Icon name="search" />
+                    <input
+                      type="search"
+                      aria-label="Search expenses"
+                      placeholder="Search expenses"
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <div className={styles.filterMenu} ref={filtersRef}>
+                    <Button
+                      variant="secondary"
+                      aria-expanded={filtersOpen}
+                      aria-controls="expense-filter-panel"
+                      onClick={toggleFilters}
+                    >
+                      Filters{activeFilters > 0 ? ` · ${activeFilters}` : ''}
+                    </Button>
+                    {filtersOpen ? (
+                      <div
+                        className={styles.filterPanel}
+                        id="expense-filter-panel"
+                        role="group"
+                        aria-label="Filter expenses"
                       >
-                        <span className={styles.cell}>{formatFriendlyDate(row.expenseDate)}</span>
-                        <span className={`${styles.cell} ${styles.what}`}>
-                          <strong>{row.description}</strong>
-                          <small>
-                            {[
-                              row.category.name,
-                              row.payee,
-                              stations.length > 1 ? stationName(row.stationId) : '',
-                            ]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          </small>
-                        </span>
-                        <span className={`${styles.cell} ${styles.amount}`}>
-                          {formatTileMoney(row.amount)}
-                        </span>
-                        <span className={styles.cell}>
-                          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-                        </span>
-                        <span className={styles.chevron} aria-hidden="true">
-                          <Icon name="chevron-right" />
-                        </span>
-                      </button>
-                      {quick ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className={styles.quick}
-                          onClick={() => openSheet({ kind: quick.kind, expense: row })}
-                        >
-                          {quick.label}
-                        </Button>
-                      ) : null}
-                    </div>
-                    {open ? (
-                      <div id={`expense-${row.expenseId}`} className={styles.detail}>
-                        <ExpenseDetail
-                          row={row}
-                          caps={rowCaps}
-                          payments={details[row.expenseId]}
-                          error={detailError}
-                          stationLabel={stations.length > 1 ? stationName(row.stationId) : ''}
-                          onAction={(kind) => openSheet({ kind, expense: row })}
-                          onUndo={(payment) =>
-                            openSheet({ kind: 'undoPay', expense: row, payment })
-                          }
-                        />
+                        <label>
+                          <span>Date</span>
+                          <select
+                            value={draftPeriod}
+                            onChange={(event) => setDraftPeriod(event.target.value as PeriodKey)}
+                          >
+                            {PERIODS.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span>Kind</span>
+                          <select
+                            value={draftCategory}
+                            onChange={(event) => setDraftCategory(event.target.value)}
+                          >
+                            <option value="">All kinds</option>
+                            {(reference.categories ?? []).map((category) => (
+                              <option key={category.categoryId} value={category.categoryId}>
+                                {category.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className={styles.filterActions}>
+                          <Button
+                            variant="quiet"
+                            size="sm"
+                            onClick={() => {
+                              setDraftPeriod('month');
+                              setDraftCategory('');
+                            }}
+                          >
+                            Reset
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setFiltersOpen(false)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setPeriod(draftPeriod);
+                              setCategoryFilter(draftCategory);
+                              setFiltersOpen(false);
+                            }}
+                          >
+                            Apply
+                          </Button>
+                        </div>
                       </div>
                     ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {items.length > 0 ? (
+              <div
+                className={`list-filters ${styles.chips}`}
+                role="group"
+                aria-label="Filter expenses"
+              >
+                {EXPENSE_FILTERS.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className="list-filter"
+                    aria-pressed={filter === item.value}
+                    onClick={() => setFilter(item.value)}
+                  >
+                    {item.label}
+                    <span>{base.filter((row) => matchesFilter(row, item.value)).length}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {refreshing && items.length === 0 ? <LoadingState label="Loading expenses" /> : null}
+            {items.length === 0 && !refreshing ? (
+              <div className={styles.emptyList}>
+                <EmptyState
+                  layout="block"
+                  icon="receipt"
+                  title="No expenses yet"
+                  message={`${
+                    caps?.submit
+                      ? 'Enter the first one when money is spent.'
+                      : 'Expenses entered by your team show here.'
+                  }${
+                    isZeroMoney(spent) || !(caps?.manageRecurring || caps?.recogniseRecurring)
+                      ? ''
+                      : ' Regular costs are counted in the total above.'
+                  }`}
+                />
+              </div>
+            ) : null}
+            {items.length > 0 && visible.length === 0 ? (
+              <EmptyState
+                layout="block"
+                icon="search"
+                title="No expenses match"
+                message="Try a different search or filter."
+                action={
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setFilter('all');
+                      setSearch('');
+                      setCategoryFilter('');
+                      setPeriod('all');
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                }
+              />
+            ) : null}
+
+            {visible.length > 0 ? (
+              <>
+                <div className={styles.head} aria-hidden="true">
+                  <span>Date</span>
+                  <span>What for</span>
+                  <span className={styles.amount}>Amount</span>
+                  <span>Status</span>
+                  <span />
+                </div>
+                <ul className={styles.list} aria-label="Expenses">
+                  {expensePage.rows.map((row) => {
+                    const status = statusView(row);
+                    const open = openId === row.expenseId;
+                    const rowCaps = capsForRow(row, caps, reference?.policy ?? null);
+                    const quick = quickAction(row, rowCaps);
+                    return (
+                      <li key={row.expenseId} className={styles.item}>
+                        <div className={styles.rowWrap}>
+                          <button
+                            type="button"
+                            className={styles.row}
+                            aria-expanded={open}
+                            aria-controls={`expense-${row.expenseId}`}
+                            onClick={() => setOpenId(open ? null : row.expenseId)}
+                          >
+                            <span className={styles.cell}>
+                              {formatFriendlyDate(row.expenseDate)}
+                            </span>
+                            <span className={`${styles.cell} ${styles.what}`}>
+                              <strong>{row.description}</strong>
+                              <small>
+                                {[
+                                  row.category.name,
+                                  row.payee,
+                                  stations.length > 1 ? stationName(row.stationId) : '',
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </small>
+                            </span>
+                            <span className={`${styles.cell} ${styles.amount}`}>
+                              {formatTileMoney(row.amount)}
+                            </span>
+                            <span className={styles.cell}>
+                              <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                            </span>
+                            <span className={styles.chevron} aria-hidden="true">
+                              <Icon name="chevron-right" />
+                            </span>
+                          </button>
+                          {quick ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className={styles.quick}
+                              onClick={() => openSheet({ kind: quick.kind, expense: row })}
+                            >
+                              {quick.label}
+                            </Button>
+                          ) : null}
+                        </div>
+                        {open ? (
+                          <div id={`expense-${row.expenseId}`} className={styles.detail}>
+                            <ExpenseDetail
+                              row={row}
+                              caps={rowCaps}
+                              payments={details[row.expenseId]}
+                              error={detailError}
+                              stationLabel={stations.length > 1 ? stationName(row.stationId) : ''}
+                              onAction={(kind) => openSheet({ kind, expense: row })}
+                              onUndo={(payment) =>
+                                openSheet({ kind: 'undoPay', expense: row, payment })
+                              }
+                            />
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+                <Pagination slice={expensePage} label="Expenses pages" noun="expenses" />
+              </>
+            ) : null}
           </>
-        ) : null}
+        )}
       </Card>
+
+      <Modal
+        open={choosing}
+        onClose={() => setChoosing(false)}
+        title="Add an expense"
+        description="What would you like to add?"
+        size="sm"
+      >
+        <div className={styles.addChoices}>
+          <button
+            type="button"
+            className={styles.addChoice}
+            onClick={() => {
+              setChoosing(false);
+              openSheet({ kind: 'new' });
+            }}
+          >
+            <strong>Enter an expense</strong>
+            <span>Money that was spent once, such as a repair or a purchase.</span>
+          </button>
+          <button
+            type="button"
+            className={styles.addChoice}
+            onClick={() => {
+              setChoosing(false);
+              openSheet({ kind: 'regular' });
+            }}
+          >
+            <strong>Add a regular cost</strong>
+            <span>A cost that repeats every month, such as rent or salaries.</span>
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={sheet !== null && stepUpRetry === null}
@@ -1570,7 +1630,7 @@ function capsForRow(
 ): ExpenseCapabilities | undefined {
   if (!caps || !caps.approve || caps.approveAnyAmount) return caps;
   const limit = policy?.supervisorApprovalLimit;
-  const within = limit != null && Number(row.amount) <= Number(limit);
+  const within = limit != null && withinApprovalLimit(row.amount, limit);
   return within ? caps : { ...caps, approve: false };
 }
 

@@ -83,7 +83,8 @@
   position: relative;
 }
 
-.form :global(.field > label) {
+.form :global(.field > label),
+.form :global(.field-label-row > label) {
   position: absolute;
   top: 0;
   left: var(--space-3);

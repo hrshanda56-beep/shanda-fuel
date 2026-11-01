@@ -143,6 +143,17 @@ async function forecourtCommand(input: Record<string, unknown>, key: string) {
 
 describe('A10 management reporting PostgreSQL read model', () => {
   let client: Sql;
+  /** Runs one statement as a request does: the allocation guard runs as its owner, so it sees only the session's tenant. */
+  const asTenant = (statement: string) =>
+    client.begin(async (transaction) => {
+      await transaction`
+        select set_config('app.tenant_id', ${ids.tenant}, true),
+               set_config('app.actor_id', ${ids.actor}, true),
+               set_config('app.membership_id', ${ids.membership}, true),
+               set_config('app.station_id', ${ids.station}, true)
+      `;
+      await transaction.unsafe(statement);
+    });
 
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
@@ -417,7 +428,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const approvalBody = (await approval.json()) as Record<string, unknown>;
     expect(approval.status, JSON.stringify(approvalBody)).toBe(200);
 
-    await client.unsafe(`
+    await asTenant(`
       insert into app.provider_settlement_allocations
         (id, tenant_id, station_id, settlement_id, reconciliation_payment_id, amount, allocation_key, state, allocated_by)
       values ('${ids.factSettlementAllocation}', '${ids.tenant}', '${ids.station}', '${ids.factSettlement}', '${ids.factPosPayment}', 20.0000, 'A10-SETTLEMENT-ALLOCATION', 'POSTED', '${ids.membership}')
@@ -518,7 +529,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     ] as const;
 
     for (const revaluation of revaluations) {
-      await client.unsafe(`
+      await asTenant(`
         insert into app.inventory_cost_revaluations
           (id, tenant_id, station_id, tank_id, product_id, reason, status, source_type, source_id,
            amount, currency, effective_at, business_date, requested_by, requested_at)
@@ -861,7 +872,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(body.dateBasis.expenses).toBe('expense_recognition_movements.recognition_date');
     expect(body.dateBasis.bankedCash).toBe('A6 bank_deposits.deposited_at UTC calendar date');
 
-    await client.unsafe(`
+    await asTenant(`
       insert into app.provider_settlement_allocations
         (id, tenant_id, station_id, settlement_id, reconciliation_payment_id, amount, allocation_key, state, reversal_of_id, allocated_by)
       values ('${ids.factSettlementReversal}', '${ids.tenant}', '${ids.station}', '${ids.factSettlement}', '${ids.factPosPayment}', 20.0000, 'A10-SETTLEMENT-ALLOCATION-REVERSAL', 'REVERSED', '${ids.factSettlementAllocation}', '${ids.membership}')
@@ -904,6 +915,23 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(depositDateBody.cash.collected).toBe('0.0000');
     expect(depositDateBody.cash.banked).toBe('40.0000');
 
+    // B4: where the cash is as at the end date does not depend on the dates chosen. The 60
+    // collected on 20 Sep is 20 in the safe and 40 banked, even when only 22 Sep is viewed, and
+    // each amount is in exactly one place, so the places add up to everything collected.
+    const custody = depositDateBody.cash.custody as Record<string, string>;
+    expect(custody).toMatchObject({
+      atStation: '20.0000',
+      withCollector: '0.0000',
+      heldByManagement: '0.0000',
+      awaitingBank: '0.0000',
+      banked: '40.0000',
+      total: '60.0000',
+    });
+    const places = ['atStation', 'withCollector', 'heldByManagement', 'awaitingBank', 'banked'].map(
+      (key) => Number(custody[key]),
+    );
+    expect(places.reduce((sum, value) => sum + value, 0)).toBe(Number(custody.total));
+
     const dailyResponse = await dailyReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/daily?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
@@ -927,6 +955,26 @@ describe('A10 management reporting PostgreSQL read model', () => {
         ?.inventoryVariance,
     ).toBeNull();
     expect(dailyBody.rows.every((row: Record<string, any>) => !('businessDate' in row))).toBe(true);
+
+    // Narrowing to one station must still load (the expected-days query filters stations by id).
+    const stationDaily = await dailyReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/daily?tenantId=${ids.tenant}&stationIds=${ids.station}&fromDate=2026-09-20&toDate=2026-09-22`,
+        { headers: { ...clerkHeaders(await signedCookie()) } },
+      ),
+    );
+    expect(stationDaily.status).toBe(200);
+    const stationDailyBody = (await stationDaily.json()) as Record<string, any>;
+    expect(stationDailyBody.expectedBusinessDays).toBeGreaterThan(0);
+
+    // A2: gap days are found even outside the requested 20 to 22 Sep range. The only
+    // reconciliation is on 20 Sep, so 21 Sep onward is missing and 20 Sep is not.
+    const missing = (stationDailyBody.missingReportDays as Record<string, any>[])
+      .filter((day) => day.stationId === ids.station)
+      .map((day) => day.businessDate);
+    expect(missing).toContain('2026-09-23');
+    expect(missing).toContain('2026-09-21');
+    expect(missing).not.toContain('2026-09-20');
   });
 
   it('returns an explicit unavailable customer scope for a station-filtered report', async () => {

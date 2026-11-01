@@ -102,7 +102,7 @@ export function AlertEmailPanel({
       <div className="stack">
         <h3>For you</h3>
         {!loaded.enabled ? (
-          <p className="field-hint">
+          <p role="status">
             Email alerts are switched off for the organisation, so nothing is sent yet.
           </p>
         ) : null}

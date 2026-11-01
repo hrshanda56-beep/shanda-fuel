@@ -105,8 +105,25 @@ export type SalesBreakdownRow = Readonly<{
   reconciliationIds: readonly string[];
 }>;
 
+export type CashCustody = Readonly<{
+  /** In a station till or safe. */
+  atStation: ReportMoney;
+  /** Handed to a collector and on its way. */
+  withCollector: ReportMoney;
+  /** In a collector or management location, not yet taken to the bank. */
+  heldByManagement: ReportMoney;
+  /** Deposited at the bank and waiting for the bank to confirm. */
+  awaitingBank: ReportMoney;
+  /** Confirmed by the bank. */
+  banked: ReportMoney;
+  /** All cash collected up to the end date. */
+  total: ReportMoney;
+}>;
+
 export type CashPosition = Readonly<{
   cashEvidence: ReportMoney;
+  /** Cash paid out of the till for expenses, taken off what is expected to be handed over. */
+  cashPaidExpenses: ReportMoney;
   collected: ReportMoney;
   awaitingCollection: ReportMoney;
   /** Amount placed into a bank deposit, including deposits awaiting confirmation. */
@@ -119,6 +136,11 @@ export type CashPosition = Readonly<{
   heldByManagement?: ReportMoney;
   /** Deposited cash whose bank confirmation is still outstanding. */
   inTransit?: ReportMoney;
+  /**
+   * Where all the cash collected up to the end date is, as at that date and whatever start date
+   * was chosen. Each amount is in exactly one place, so the five places add up to `total`.
+   */
+  custody?: CashCustody;
   cashVariance: ReportMoney;
   collectionIds: readonly string[];
   depositIds: readonly string[];
@@ -212,6 +234,8 @@ export type InventoryPosition = Readonly<{
     expectedLitres: ReportLitres;
     physicalLitres: ReportLitres | null;
     varianceLitres: ReportLitres | null;
+    /** Business date of the latest dip behind `physicalLitres`; null when there is none. */
+    lastDipDate: string | null;
     deliveryLitres: ReportLitres;
     deliveryValue: ReportMoney;
     movementIds: readonly string[];
@@ -272,6 +296,8 @@ export type ManagementReport = Readonly<{
     approvedReconciliationCount: number;
     salesVariance: ReportMoney;
     payments: readonly SalesPaymentRow[];
+    /** Staff and management fuel at selling price, on the business day it was issued. */
+    staffFuelByDate: readonly Readonly<{ businessDate: string; amount: ReportMoney }>[];
     rows: readonly SalesBreakdownRow[];
     reconciliationIds: readonly string[];
   }>;

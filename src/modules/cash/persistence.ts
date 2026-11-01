@@ -16,6 +16,7 @@ import {
 } from './domain';
 import type { CashCommandContext } from './application';
 import { bankingStatusForDeposit, cashStatusLabelForCustody, depositProofFlags } from './status';
+import { businessToday, isValidDateOnly } from '../reporting/period';
 import type { ForecourtTransaction } from '../forecourt/application';
 
 type SourceRow = {
@@ -505,6 +506,8 @@ export async function confirmBankDepositInTransaction(
     expectedVersion: number;
     confirmedAmount: string;
     bankReference: string;
+    bankDate?: string;
+    differenceReason?: string;
   },
 ) {
   const rows = await transaction.execute<{
@@ -555,11 +558,29 @@ export async function confirmBankDepositInTransaction(
     );
   }
   const variance = confirmed.subtract(decimal(deposit.amount)).toString();
+  // A different amount needs a reason, so the difference is never silent (B5).
+  const reason = input.differenceReason?.trim() ?? '';
+  if (!decimal(variance).value.isZero() && reason.length < 5) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'The bank confirmed a different amount from the one deposited. Write why, in a few words, before confirming.',
+    );
+  }
+  if (input.bankDate !== undefined) {
+    if (!isValidDateOnly(input.bankDate)) {
+      throw new AppError('VALIDATION_FAILED', 'Enter the bank date as a real calendar date.');
+    }
+    if (input.bankDate > businessToday()) {
+      throw new AppError('VALIDATION_FAILED', 'The bank date cannot be in the future.');
+    }
+  }
   const updated = await transaction.execute<{ version: number | string }>(sql`
     update app.bank_deposits
     set state = 'CONFIRMED',
         confirmed_amount = ${confirmed.toString()},
         confirmation_variance = ${variance},
+        bank_date = ${input.bankDate ?? null},
+        confirmation_reason = ${decimal(variance).value.isZero() ? null : reason},
         bank_reference = ${input.bankReference},
         confirmed_by = ${context.actor.membershipId},
         confirmed_at = now(),

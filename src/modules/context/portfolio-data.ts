@@ -6,8 +6,10 @@ import { getCashStationSummaryFromRequest } from '@/modules/cash/queries';
 import { getSettlementOverviewFromRequest } from '@/modules/settlements/queries';
 import { loadActionCenterFacts } from '@/modules/approvals/action-center';
 import { buildActionCenter } from '@/modules/approvals';
+import { formatDecimal } from '@/design-system/formatters';
 import type { ContextSelection } from './contracts';
 import type { PortfolioArea } from './portfolio';
+import { cashFacts } from './portfolio-cash-facts';
 export type PortfolioFact = { label: string; value: string; href?: string };
 export async function loadPortfolioStation(
   request: Request,
@@ -45,16 +47,13 @@ export async function loadPortfolioStation(
     const data = await getInventoryValuationReadModel(request, input);
     return data.streams.map((row) => ({
       label: `${row.tank.code} · ${row.product.name}`,
-      value: `${row.quantityLitres} L · ${row.valuationStatus}`,
+      value: `${formatDecimal(row.quantityLitres, ' L')} · ${row.valuationStatus}`,
       href: `/inventory/valuation/streams/${encodeURIComponent(row.tank.id)}/${encodeURIComponent(row.product.id)}?${new URLSearchParams(input)}`,
     }));
   }
   if (area === 'cash') {
     const data = await getCashStationSummaryFromRequest(request, { selection });
-    return Object.entries(data.totals).map(([label, value]) => ({
-      label: label.replace(/([A-Z])/g, ' $1'),
-      value: `${data.currency} ${String(value)}`,
-    }));
+    return cashFacts(data.totals, data.currency);
   }
   if (area === 'settlements') {
     const data = await getSettlementOverviewFromRequest(request, input);

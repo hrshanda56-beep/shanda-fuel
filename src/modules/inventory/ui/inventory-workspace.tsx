@@ -13,6 +13,7 @@ import {
 } from '@/design-system/primitives';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { parseCalibrationText } from '../calibration';
+import { InfoTip } from '@/design-system/info-tip';
 
 export type InventoryContext = Readonly<{
   tenantId: string;
@@ -237,9 +238,7 @@ function TankDipForm({
 
   return (
     <form className="dialog-form" onSubmit={submit}>
-      <p className="muted-small">
-        A dip is a physical observation. It never silently adjusts book inventory.
-      </p>
+      <InfoTip>A dip is a physical observation. It never silently adjusts book inventory.</InfoTip>
       <div role="group" aria-label="How did you measure?" className="button-row">
         <Button
           type="button"
@@ -368,10 +367,10 @@ function TankCalibrationForm({
 
   return (
     <form className="dialog-form" onSubmit={submit}>
-      <p className="muted-small">
+      <InfoTip>
         The chart from the tank maker lists a dipstick reading and the litres it means. Saving a new
         chart replaces the old one for new dips; dips already recorded keep their litres.
-      </p>
+      </InfoTip>
       <Field id="chart-unit" label="Readings are in" required>
         <select
           id="chart-unit"
@@ -570,11 +569,11 @@ function OpeningInventoryForm({
 
   return (
     <form className="dialog-form" onSubmit={submit}>
-      <p className="muted-small">
+      <InfoTip>
         Enter what is in this tank when you go live, from the opening dip, and what each litre cost.
         Book stock, the average cost and the stock value all start from these two figures. Do not
         enter an unknown cost as zero.
-      </p>
+      </InfoTip>
       <Field id="opening-litres" label="Opening dip (litres)" required>
         <input
           id="opening-litres"
@@ -798,10 +797,10 @@ export function DeliveryForm({
 
   return (
     <div className="dialog-form">
-      <p className="muted-small">
+      <InfoTip>
         Accepted litres are allocated to the validated tank. Supplier note quantity remains a
         separate commercial comparison.
-      </p>
+      </InfoTip>
       <form onSubmit={create}>
         <Field
           id="delivery-supplier"
@@ -1103,10 +1102,10 @@ function ReceiptCostForm({
         </Field>
       ) : (
         <>
-          <p className="muted-small">
+          <InfoTip>
             Enter what the whole delivery cost. We divide the total by the litres that actually
             arrived, so a short delivery makes each litre cost more.
-          </p>
+          </InfoTip>
           <Field id="receipt-fuel-cost" label="Cost of the fuel" required>
             <input
               id="receipt-fuel-cost"

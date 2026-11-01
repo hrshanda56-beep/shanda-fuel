@@ -7,6 +7,7 @@ import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { CustomerAccount, CustomerSummary } from './types';
+import { InfoTip } from '@/design-system/info-tip';
 
 export type ActionStation = { id: string; name: string; code: string };
 export type ActionProduct = { id: string; code: string; name: string };
@@ -346,13 +347,13 @@ export function CustomerActions({
 
           {sheet === 'payment' && creditAccount ? (
             <>
-              <p className="field-hint">
+              <InfoTip>
                 {creditAccount.balance === null
                   ? `This lowers what ${customer.displayName} owes. The amount they owe is not recorded.`
                   : creditAccount.balance.trim().startsWith('-')
                     ? `${customer.displayName} has already paid ${formatTileMoney(creditAccount.balance.replace('-', ''), creditAccount.currency)} more than they owe. A new payment adds to that.`
                     : `This lowers what ${customer.displayName} owes. They currently owe ${formatTileMoney(creditAccount.balance, creditAccount.currency)}.`}
-              </p>
+              </InfoTip>
               <Field
                 id="action-amount"
                 label={`Amount received (${creditAccount.currency})`}
@@ -559,10 +560,10 @@ export function CustomerActions({
                   />
                 </Field>
               ) : null}
-              <p className="field-hint">
+              <InfoTip>
                 After opening it, choose which stations it can be used at under “Where this customer
                 can buy fuel”.
-              </p>
+              </InfoTip>
             </>
           ) : null}
 

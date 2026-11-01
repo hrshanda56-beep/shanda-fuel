@@ -7,7 +7,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
-import { isAuthorized } from '../../platform/security/permissions';
+import { isAuthorized, isPermissionGranted } from '../../platform/security/permissions';
 import {
   authorizeInventoryCommand,
   resolveInventoryCommandContext,
@@ -224,6 +224,8 @@ function capabilities(context: Awaited<ReturnType<typeof resolveInventoryCommand
     request: isAuthorized({ ...actorInput, permissionCode: 'inventory.adjustment.post' }),
     approve: isAuthorized({ ...actorInput, permissionCode: 'approval.act' }),
     post: isAuthorized({ ...actorInput, permissionCode: 'inventory.adjustment.post' }),
+    // Role only: the identity check for this permission is asked for when the person saves.
+    addTank: isPermissionGranted({ ...actorInput, permissionCode: 'inventory.tank.manage' }),
   };
 }
 

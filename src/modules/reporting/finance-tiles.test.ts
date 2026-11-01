@@ -46,6 +46,22 @@ describe('buildFinanceTiles', () => {
     expect(byId(tiles, 'expensesAwaitingApproval')).toMatchObject({ value: '7.0000', count: 3 });
   });
 
+  it('marks every tile as a period total or an as-at position (B1)', () => {
+    const basis = Object.fromEntries(buildFinanceTiles(report()).map((t) => [t.id, t.basis]));
+    expect(basis).toEqual({
+      grossProfit: 'period',
+      operatingProfit: 'period',
+      cashBanked: 'period',
+      stockValue: 'as-at',
+      cashAtStations: 'as-at',
+      posAwaiting: 'as-at',
+      debtors: 'as-at',
+      creditors: 'as-at',
+      netPosition: 'as-at',
+      expensesAwaitingApproval: 'as-at',
+    });
+  });
+
   it('shows the net position from the financial position, and says why when it is not known', () => {
     const known = buildFinancialPosition(report());
     expect(byId(buildFinanceTiles(report()), 'netPosition').value).toBe(known.net);

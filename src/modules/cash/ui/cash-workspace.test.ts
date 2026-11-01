@@ -105,26 +105,29 @@ function render(next: CashSummary) {
 }
 
 describe('Cash and banking, plain-language guidance', () => {
-  it('puts a waiting deposit first, and gives each row a way to open its details', () => {
+  it('offers a waiting deposit as a button, and gives each row a way to open its details', () => {
     const html = render(summary);
-    expect(html).toContain('1 bank deposit is waiting');
+    // The button is in Cash on hand; no second card repeats it.
+    expect(html).not.toContain('1 bank deposit is waiting');
     expect(html).toContain('Confirm deposits');
     // Two collections and one deposit, each expandable.
     expect(html.match(/class="row-action"/g)).toHaveLength(3);
-    expect(html.match(/aria-expanded="false"/g)).toHaveLength(3);
+    const tips = (html.match(/class="info-tip"/g) ?? []).length;
+    expect((html.match(/aria-expanded="false"/g) ?? []).length - tips).toBe(3);
     // The cash at the station and the deposit waiting on the bank each get their own action.
     expect(html).toContain('>Bank it<');
     expect(html).toContain('>Confirm<');
   });
 
-  it('tells the person to bank cash when nothing is waiting on the bank', () => {
+  it('offers Bank cash once, with no second card repeating it', () => {
     const html = render({
       ...summary,
       deposits: [],
       capabilities: { ...summary.capabilities, confirmDeposit: false },
     });
-    expect(html).toContain('USD 200.00 is at the station and not banked yet.');
-    expect(html).toContain('Bank cash');
+    expect(html).not.toContain('is at the station and not banked yet');
+    expect(html.match(/Bank cash/g)?.length ?? 0).toBeGreaterThan(0);
+    expect(html).not.toContain('cash-next');
   });
 
   it('shows three parts that never overlap, and names a collection that is not banked yet', () => {

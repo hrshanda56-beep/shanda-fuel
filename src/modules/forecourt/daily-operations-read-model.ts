@@ -2,6 +2,13 @@ export type RecordData = {
   state: string;
   version: number;
   approvalBlocked?: boolean;
+  /** Who submitted the day and when; null until it has been submitted, or when the name is not known. */
+  submitter?: { name: string; submittedAt: string | null } | null;
+  /** What this person may do on a submitted reconciliation; absent means not known. */
+  canApprove?: boolean;
+  canReturn?: boolean;
+  /** Whether this person is an administrator who may correct a recorded opening reading. */
+  canCorrectOpening?: boolean;
   requiresApproverNote?: boolean;
   approvalNote: string | null;
   business_date: string;
@@ -67,6 +74,8 @@ export type RecordData = {
     redLitres?: string | null;
     /** Dipstick readings in millimetres can be turned into litres. */
     hasMillimetreChart: boolean;
+    /** Litres the books say are in the tank at the end of the day; null when it cannot be told. */
+    expectedLitres?: string | null;
   }>;
   cash: {
     countedCash: string;

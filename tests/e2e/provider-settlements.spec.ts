@@ -204,6 +204,7 @@ test.describe('provider settlement workspace', () => {
     await expect(
       page.getByRole('list', { name: 'Provider payouts' }).getByText(settlementReference),
     ).toBeVisible();
+    await page.getByRole('tab', { name: 'Payments Waiting' }).click();
     await expect(page.getByText(paymentReference)).toBeVisible();
 
     await page.getByRole('button', { name: 'Match', exact: true }).click();
@@ -213,6 +214,7 @@ test.describe('provider settlement workspace', () => {
     await matchDialog.getByLabel('Customer payment').selectOption('payment-1');
     await matchDialog.getByLabel('Amount to match').fill('40.0000');
     await matchDialog.getByRole('button', { name: 'Match', exact: true }).click();
+    await page.getByRole('tab', { name: 'Provider Payouts' }).click();
     await expect(
       page.locator('p[role="status"]').filter({ hasText: 'Allocation saved' }),
     ).toBeVisible();

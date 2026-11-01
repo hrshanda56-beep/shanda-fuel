@@ -12,6 +12,7 @@ import type { IncomeRow, IncomeStatement, StatementUnit } from '../statements';
 import { formatStatementAmount } from './statement';
 import { ReportActionStatus } from './report-action-status';
 import { useReportActions } from './use-report-actions';
+import { InfoTip } from '@/design-system/info-tip';
 
 function amount(value: string | null, unit?: StatementUnit) {
   if (value !== null && exact(value).value.isZero()) return '–';
@@ -256,11 +257,11 @@ export function StatementWorkspace({
         </table>
       </div>
 
-      <p className="income-foot">
+      <InfoTip>
         {statement.notes.map((note) => `${note} `)}
         {!previous && !comparing ? 'The previous period could not be loaded. ' : ''}
         Unaudited management statement · USD
-      </p>
+      </InfoTip>
     </Card>
   );
 }

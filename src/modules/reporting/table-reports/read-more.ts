@@ -2,6 +2,7 @@ import 'server-only';
 
 import { sql, type SQL } from 'drizzle-orm';
 import { readCanonicalRevenue, readRestatedCogs } from '../../profitability/query';
+import { approvedReconciliations, readRecurringCostDays } from '../queries';
 import { TABLE_REPORT_ROW_LIMIT } from './definitions';
 import type { TableReportReader } from './read';
 import { equalsClause, reconciliationNarrowing } from './read-extra';
@@ -170,10 +171,11 @@ export const readStationDailyReport: TableReportReader = async (transaction, fil
     business_date: string;
     classification: DailyReportExpense['classification'];
     description: string | null;
+    template_id: string | null;
     amount: string;
   }>(sql`
     select m.station_id, s.name as station, m.recognition_date::text as business_date,
-      m.classification, coalesce(e.description, t.name) as description,
+      m.classification, coalesce(e.description, t.name) as description, t.id::text as template_id,
       coalesce(sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end), 0)::text as amount
     from app.expense_recognition_movements m
     join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
@@ -187,11 +189,27 @@ export const readStationDailyReport: TableReportReader = async (transaction, fil
       and m.recognition_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause('m', filters.stationIds)}
     group by m.station_id, s.name, m.recognition_date, m.classification, e.description, t.name,
-      m.source_type, m.source_id
+      t.id, m.source_type, m.source_id
     limit ${limit}
   `);
   const stationNames = new Map(expenseRows.map((row) => [row.station_id, row.station]));
-  const salesStationIds = [...new Set(revenue.sales.map((sale) => sale.stationId))];
+  // Recurring costs follow the same daily allocation as every other screen (B6), so a month nobody
+  // has "added" still counts, and a recorded month is not counted twice.
+  const recurring = await readRecurringCostDays(
+    transaction,
+    filters,
+    new Set(
+      expenseRows
+        .filter((row) => row.template_id)
+        .map((row) => `${row.station_id}:${row.business_date}:${row.template_id}`),
+    ),
+  );
+  const salesStationIds = [
+    ...new Set([
+      ...revenue.sales.map((sale) => sale.stationId),
+      ...recurring.map((day) => day.stationId),
+    ]),
+  ];
   const missing = salesStationIds.filter((id) => !stationNames.has(id));
   if (missing.length > 0) {
     const names = await transaction.execute<{ id: string; name: string }>(sql`
@@ -204,17 +222,47 @@ export const readStationDailyReport: TableReportReader = async (transaction, fil
     `);
     for (const row of names) stationNames.set(row.id, row.name);
   }
+  const fuelBenefitRows = await transaction.execute<{
+    station_id: string;
+    business_date: string;
+    amount: string;
+  }>(sql`
+    with approved as (${approvedReconciliations(filters)})
+    select a.station_id, a.business_date, coalesce(sum(p.amount), 0)::text as amount
+    from approved a
+    join app.reconciliation_payments p
+      on p.tenant_id = ${filters.tenantId}
+     and p.station_id = a.station_id
+     and p.reconciliation_id = a.reconciliation_id
+    where p.method = 'STAFF_OR_MANAGEMENT_FUEL'
+    group by a.station_id, a.business_date
+  `);
   return buildStationDailyRows({
     stationNames,
+    fuelBenefits: fuelBenefitRows.map((row) => ({
+      stationId: row.station_id,
+      businessDate: row.business_date,
+      amount: row.amount,
+    })),
     sales: revenue.sales,
     costs: cogs.sales,
-    expenses: expenseRows.map((row) => ({
-      stationId: row.station_id,
-      stationName: row.station,
-      businessDate: row.business_date,
-      classification: row.classification,
-      amount: row.amount,
-      description: row.description,
-    })),
+    expenses: [
+      ...expenseRows.map((row) => ({
+        stationId: row.station_id,
+        stationName: row.station,
+        businessDate: row.business_date,
+        classification: row.classification,
+        amount: row.amount,
+        description: row.description,
+      })),
+      ...recurring.map((day) => ({
+        stationId: day.stationId,
+        stationName: stationNames.get(day.stationId) ?? 'Unknown station',
+        businessDate: day.businessDate,
+        classification: 'FIXED_COST' as const,
+        amount: day.amount,
+        description: `${day.name} (daily allocation)`,
+      })),
+    ],
   });
 };

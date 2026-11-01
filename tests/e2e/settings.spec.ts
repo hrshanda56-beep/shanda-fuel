@@ -67,7 +67,7 @@ test.describe('Settings', () => {
       await client?.end();
     });
 
-    const sections = ['Organisation', 'Companies', 'Stations', 'Account'] as const;
+    const sections = ['Organisation', 'Stations', 'Account'] as const;
 
     test.beforeEach(async ({ context, page }) => {
       await authenticateClerk(context, ids.actor);
@@ -107,10 +107,9 @@ test.describe('Settings', () => {
     });
 
     test('each section shows its own details once opened', async ({ page }) => {
-      await sectionButton(page, 'Companies').click();
-      await expectOnlyPressed(page, 'Companies');
+      // Companies are listed on the Organisation section, under the organisation's own details.
       await expect(
-        content(page).getByRole('heading', { name: 'Companies', level: 2 }),
+        content(page).getByRole('heading', { name: 'Companies', level: 3 }),
       ).toBeVisible();
       await expect(
         content(page).getByText('Settings E2E Legal Entity', { exact: true }),
@@ -145,14 +144,12 @@ test.describe('Settings', () => {
       const url = page.url();
       await sectionButton(page, 'Organisation').focus();
       await page.keyboard.press('Tab');
-      await expect(sectionButton(page, 'Companies')).toBeFocused();
+      await expect(sectionButton(page, 'Stations')).toBeFocused();
       await page.keyboard.press('Enter');
-      await expectOnlyPressed(page, 'Companies');
-      await expect(
-        content(page).getByText('Settings E2E Legal Entity', { exact: true }),
-      ).toBeVisible();
+      await expectOnlyPressed(page, 'Stations');
+      await expect(content(page).getByText('Settings E2E Station', { exact: true })).toBeVisible();
 
-      // Which sections sit between Companies and Account depends on the person's access, so tab
+      // Which sections sit between Stations and Account depends on the person's access, so tab
       // forward through them in order until Account has focus.
       for (let step = 0; step < sections.length + 12; step += 1) {
         await page.keyboard.press('Tab');

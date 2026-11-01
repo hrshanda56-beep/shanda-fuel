@@ -6,6 +6,7 @@ import { AppShell } from '@/design-system/app-shell';
 import type { NavigationProjection } from '@/design-system/navigation';
 import { Card, StatusBadge } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
+import { InfoTip } from '@/design-system/info-tip';
 
 const DEMO_EMAIL = 'demo-owner@tei-oils.example.test';
 const SESSION_KEY = 'shanda-fuel-owner-demo-authenticated';
@@ -147,9 +148,7 @@ function OwnerDemoLogin() {
                 minLength={12}
                 autoComplete="current-password"
               />
-              <p className="field-hint">
-                Synthetic only; this value stays in this browser session.
-              </p>
+              <InfoTip>Synthetic only; this value stays in this browser session.</InfoTip>
             </div>
             {error ? (
               <p className="field-error" role="alert">

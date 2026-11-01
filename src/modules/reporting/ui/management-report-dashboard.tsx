@@ -228,7 +228,7 @@ export function ManagementReportDashboard({
               <MetricCard
                 label="Cash collected"
                 value={formatTileMoney(report.cash.collected)}
-                meta={`${formatTileMoney(report.cash.collectedButNotBanked)} at stations`}
+                meta={`${formatTileMoney(report.cash.custody?.atStation ?? report.cash.collectedButNotBanked)} at stations`}
                 href={detailHref('cash')}
               />
               <MetricCard

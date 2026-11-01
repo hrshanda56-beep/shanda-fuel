@@ -29,6 +29,8 @@ export const CASH_STATUS_LABELS = {
   HELD_BY_MANAGEMENT: 'Held by management',
   PARTLY_BANKED: 'Partly banked',
   FULLY_BANKED: 'Fully banked',
+  /** The bank confirmed a different amount from the one deposited. */
+  BANKED_WITH_DIFFERENCE: 'Banked with difference',
 } as const;
 export type CashStatus = keyof typeof CASH_STATUS_LABELS;
 
@@ -142,9 +144,9 @@ export function bankingStatusForDeposit(input: {
     case 'CONFIRMED': {
       if (input.confirmedAmount === null) return CASH_STATUS_LABELS.IN_TRANSIT;
       const confirmed = new ExactDecimal(input.confirmedAmount);
-      return confirmed.value.gte(new ExactDecimal(input.amount).value)
+      return confirmed.value.eq(new ExactDecimal(input.amount).value)
         ? CASH_STATUS_LABELS.FULLY_BANKED
-        : CASH_STATUS_LABELS.PARTLY_BANKED;
+        : CASH_STATUS_LABELS.BANKED_WITH_DIFFERENCE;
     }
     case 'REJECTED':
       return 'Rejected by the bank';
