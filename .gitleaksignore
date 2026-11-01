@@ -1,0 +1,2 @@
+# Fake key used by a unit test of the Clerk key check; not a real secret.
+5efaadb47dd861e233bc56365545c118340a4456:src/app/api/clerk/[[...path]]/route.test.ts:stripe-access-token:26
