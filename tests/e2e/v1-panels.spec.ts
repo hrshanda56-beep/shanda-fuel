@@ -138,7 +138,7 @@ test.describe('New v1 screens', () => {
     await expect(page.getByLabel('Why is it different?')).toBeVisible();
     await page.getByLabel('Why is it different?').fill('Till was short');
     await page.getByRole('button', { name: 'Hand over cash', exact: true }).click();
-    await expect(page.getByText(/now needs to accept it/)).toBeVisible();
+    await expect(page.getByText(/now needs to accept it/).first()).toBeVisible();
     expect(posted[0]).toMatchObject({
       commandType: 'SubmitCashHandover',
       expectedAmount: '100',
@@ -172,7 +172,8 @@ test.describe('New v1 screens', () => {
     const next = page.getByRole('button', { name: 'Next', exact: true });
     await next.click();
     await expect(log.getByText('Cash: accept cash handover')).toBeVisible();
-    await expect(next).toBeDisabled();
+    // Three entries fit on one page, so the pager goes away.
+    await expect(next).toHaveCount(0);
   });
 
   test('lists documents, uploads a file and opens one through a short-lived link', async ({
