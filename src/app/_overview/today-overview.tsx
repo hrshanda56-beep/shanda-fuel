@@ -497,9 +497,11 @@ export function TodayOverview({
                 ))}
                 {workMore > 0 ? (
                   <li className="today-note">
-                    {workMore === 1
-                      ? '1 more item is waiting.'
-                      : `${workMore} more items are waiting.`}
+                    <Link href="/finance">
+                      {workMore === 1
+                        ? '1 more item is waiting.'
+                        : `${workMore} more items are waiting.`}
+                    </Link>
                   </li>
                 ) : null}
               </ul>

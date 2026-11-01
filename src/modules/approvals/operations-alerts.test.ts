@@ -111,7 +111,7 @@ describe('buildOperationsAlerts', () => {
       'cash-short-2026-10-17',
       'cash-short-more',
     ]);
-    expect(items[0]!.title).toBe('Cash was $12.50 short on 2026-10-20');
+    expect(items[0]!.title).toBe('Cash was $12.50 short on 20 Oct 2026');
   });
 
   it('warns about stock outside tolerance with the right urgency and direction', () => {

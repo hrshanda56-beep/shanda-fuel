@@ -1,4 +1,4 @@
-import { formatLitres, formatUsd } from '../../design-system/formatters';
+import { formatBusinessDate, formatLitres, formatUsd } from '../../design-system/formatters';
 import { ExactDecimal } from '../../platform/domain/primitives';
 
 /**
@@ -162,7 +162,7 @@ export function buildOperationsAlerts(
       detail:
         late.length === 1
           ? 'The day has been worked but its reconciliation is still not in.'
-          : `The oldest is ${oldest}. Each worked day needs its reconciliation submitted.`,
+          : `The oldest is ${formatBusinessDate(oldest)}. Each worked day needs its reconciliation submitted.`,
       href: `${stationPath}/reconciliations`,
       tone: 'attention',
     });
@@ -190,7 +190,7 @@ export function buildOperationsAlerts(
   for (const row of shortages.slice(0, 3)) {
     out.push({
       id: `cash-short-${row.businessDate}`,
-      title: `Cash was ${formatUsd(row.amount)} short on ${row.businessDate}`,
+      title: `Cash was ${formatUsd(row.amount)} short on ${formatBusinessDate(row.businessDate)}`,
       detail: 'The cash counted was less than the cash expected from sales.',
       href: `${stationPath}/reconciliations`,
       tone: 'attention',

@@ -256,16 +256,19 @@ async function loadWorkItems(
                 title: target.name && !shared ? `${target.name}: ${item.title}` : item.title,
                 detail: item.detail,
                 href: item.href,
+                needsAction: item.tone === 'attention',
               };
             }),
         };
       }),
     );
+    // Each station's list is already most-urgent-first; merge them so one station's
+    // information-only items cannot push another station's approval out of view.
     const all = [
       ...new Map(results.flatMap((result) => result.items).map((item) => [item.id, item])).values(),
-    ];
+    ].sort((a, b) => Number(b.needsAction) - Number(a.needsAction));
     return {
-      items: all.slice(0, 6),
+      items: all.slice(0, 6).map(({ needsAction: _needsAction, ...row }) => row),
       more: Math.max(0, all.length - 6),
       unavailable: results.some((result) => result.unavailable),
     };

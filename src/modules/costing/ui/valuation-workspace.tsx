@@ -712,7 +712,7 @@ export function ValuationStreamDetail({
           </dl>
         </Card>
         <Card className="panel">
-          <h2>Workflow visibility</h2>
+          <h2>Cost changes</h2>
           {stream.activeRevaluation ? (
             <p>
               <Status status={stream.activeRevaluation.status} />{' '}
@@ -729,8 +729,8 @@ export function ValuationStreamDetail({
             <p>No cost change is in progress for this tank.</p>
           )}
           <InfoTip>
-            Approving a shift report can stay blocked while this tank has no cost. Resolve the
-            source cost, then retry the blocked operation.
+            A shift report that sells from this tank cannot be approved while the tank has no cost.
+            Record the cost, then approve the report again.
           </InfoTip>
         </Card>
       </div>
