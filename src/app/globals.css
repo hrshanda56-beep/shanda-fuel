@@ -8316,3 +8316,250 @@ h3,
   gap: var(--space-4) var(--space-6);
   align-items: start;
 }
+
+/* Station actions: a tidy list of tappable rows that open their form in place. */
+.inventory-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+.inventory-action-disclosure {
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 0.75rem);
+  background: var(--bg-surface);
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+.inventory-action-disclosure:hover {
+  border-color: var(--border-default);
+  background: var(--bg-subtle);
+}
+.inventory-action-disclosure[open] {
+  grid-column: 1 / -1;
+  background: var(--bg-surface);
+}
+.inventory-action-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 3.5rem;
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+  border-radius: inherit;
+}
+.inventory-action-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.inventory-action-disclosure > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.inventory-action-text {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+.inventory-action-text small {
+  color: var(--text-secondary);
+  font-size: var(--text-sm, 0.875rem);
+}
+.inventory-action-chevron {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid var(--text-secondary);
+  border-bottom: 2px solid var(--text-secondary);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.inventory-action-disclosure[open] > summary .inventory-action-chevron {
+  transform: rotate(45deg);
+}
+.inventory-action-content {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+.inventory-action-highlight {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-surface));
+}
+.inventory-action-highlight:hover {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-surface));
+}
+@media (max-width: 47.99rem) {
+  .inventory-action-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Stock cost page: each lower card keeps its own height, so opening an action never resizes
+   the Cost changes card beside it. */
+.content-grid.valuation-workspace {
+  align-items: start;
+}
+/* Beside the actions, the Cost changes card scrolls with them until it reaches the top, then
+   stays put while the actions card carries on. */
+@media (min-width: 48rem) {
+  .valuation-workspace > .table-card {
+    position: sticky;
+    top: var(--space-4);
+    max-height: calc(100vh - 2 * var(--space-4));
+    overflow-y: auto;
+  }
+}
+.inventory-action-highlight {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-subtle));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* The three figures and the warning share one row on tablet and desktop. */
+@media (min-width: 48rem) {
+  .valuation-summary.has-warning {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr);
+    align-items: stretch;
+  }
+}
+.valuation-summary > .callout {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin-bottom: 0;
+  border-radius: var(--radius-lg, 1rem);
+}
+
+/* Record a delivery: grouped, two-column form */
+.action-form {
+  display: grid;
+  gap: var(--space-4);
+}
+.action-form > .muted-small {
+  margin: 0;
+}
+.action-form-section {
+  display: grid;
+  gap: var(--space-3);
+}
+.action-form-section > h4,
+.action-form-heading h4 {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+.action-form-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.action-form-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+.action-form-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.action-form-wide {
+  grid-column: 1 / -1;
+}
+.action-form-more {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.action-form-more > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--space-4);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+.action-form-more > summary::-webkit-details-marker {
+  display: none;
+}
+.action-form-more > summary small {
+  flex: 1;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.action-form-more[open] > summary .inventory-action-chevron {
+  transform: rotate(45deg);
+}
+.action-form-more[open] > summary {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.action-form-more > .action-form-grid {
+  padding: var(--space-4);
+}
+.action-form-actions {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  justify-content: flex-end;
+}
+@media (max-width: 47.99rem) {
+  .action-form-grid,
+  .action-form-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .action-form-actions .button {
+    width: 100%;
+  }
+}
+.action-form .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.action-form-note {
+  margin: 0;
+  align-self: end;
+  padding-bottom: 0.5rem;
+}
+.action-form select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%236b7280' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 1.5 6 6l4.5-4.5'/%3E%3C/svg%3E");
+  background-position: calc(100% - 1rem) 50%;
+  background-size: 0.75rem 0.5rem;
+}
+.inventory-action-group-label {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+@media (max-width: 47.99rem) {
+  .action-form-note {
+    padding-bottom: 0;
+  }
+}
+
+/* The open action stands out from the collapsed ones. */
+.inventory-action-disclosure[open] {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-default));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 4px 14px -6px rgb(0 0 0 / 0.16);
+}
+.inventory-action-disclosure[open]:hover {
+  background: var(--bg-surface);
+}
+.inventory-action-disclosure[open] > summary {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface));
+  border-radius: calc(var(--radius-md, 0.75rem) - 1px) calc(var(--radius-md, 0.75rem) - 1px) 0 0;
+}
+.inventory-action-disclosure[open] > summary .inventory-action-chevron {
+  border-color: var(--accent);
+}

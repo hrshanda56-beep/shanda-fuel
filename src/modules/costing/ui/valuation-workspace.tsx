@@ -24,6 +24,7 @@ import {
 } from '@/modules/inventory/ui/inventory-workspace';
 import { InfoTip } from '@/design-system/info-tip';
 import { TabbedCard } from '@/design-system/tabbed-card';
+import { MetricCard, PageHeader } from '@/design-system/layout';
 
 type Capabilities = { request: boolean; approve: boolean; post: boolean; addTank?: boolean };
 type SourceMovement = MissingCostSource & { id: string };
@@ -630,110 +631,55 @@ export function ValuationStreamDetail({
         message="This tank may belong to another station, or it has no stock movements yet. Check the station selected at the top, then try again."
       />
     );
+  const unvalued = stream.valuationStatus === 'UNVALUED';
+  const source = stream.sourceMovementRequiringCost;
+  const money = (value: string | null, suffix = '') =>
+    value === null ? '—' : `${formatMoney(value, stream.currency ?? 'USD')}${suffix}`;
   return (
-    <div className="valuation-workspace">
-      <div className="page-heading">
-        <div>
-          <Link className="back-link" href={contextHref}>
-            ← Inventory valuation
-          </Link>
-          <span className="eyebrow">How this cost is worked out</span>
-          <h1>
-            {stream.tank.code} · {stream.product.name}
-          </h1>
-          <p>
-            {stream.product.code} · cost updated {stream.projectionVersion} times
-          </p>
-        </div>
-        <RequestRevaluationDialog
-          context={context}
-          stream={stream}
-          capability={data.capabilities.request}
-          onSuccess={load}
-        />
-      </div>
-      <Card
-        className={`panel valuation-status-card ${stream.valuationStatus === 'UNVALUED' ? 'valuation-status-card-critical' : ''}`}
+    <div className="content-grid valuation-workspace">
+      <PageHeader
+        eyebrow="Stock cost"
+        title={`${stream.tank.code} · ${stream.product.name}`}
+        headingLevel="h2"
+        titleId="valuation-stream-title"
+        description={`Last cost update ${date(stream.lastValuationOrCostEventAt)}`}
+        actions={
+          <>
+            <Link className="button button-quiet" href={contextHref}>
+              Back to stock value
+            </Link>
+            <RequestRevaluationDialog
+              context={context}
+              stream={stream}
+              capability={data.capabilities.request}
+              onSuccess={load}
+            />
+          </>
+        }
+      />
+      <section
+        className={`metric-grid content-span valuation-summary${unvalued ? ' has-warning' : ''}`}
+        aria-label="Stock and cost"
       >
-        <div>
-          <span className="eyebrow">Current valuation status</span>
-          <div className="status-line">
-            <Status status={stream.valuationStatus} />
-            {stream.valuationStatus === 'UNVALUED' ? (
-              <strong>Operator action required</strong>
-            ) : (
-              <strong>Cost projection is available</strong>
-            )}
-          </div>
-          <p>
-            {stream.blockingReason ?? 'This tank has a recorded cost, so its stock can be valued.'}
-          </p>
-        </div>
-        {stream.valuationStatus === 'UNVALUED' && stream.sourceMovementRequiringCost ? (
-          <div className="source-card">
-            <span className="eyebrow">Source requiring cost</span>
-            <strong>
-              {stream.sourceMovementRequiringCost.movementType} ·{' '}
-              {stream.sourceMovementRequiringCost.quantityLitres} L
-            </strong>
+        <MetricCard label="Fuel in tank" value={formatLitres(stream.quantityLitres)} />
+        <MetricCard label="Stock value" value={money(stream.inventoryValue)} />
+        <MetricCard
+          label="Average cost"
+          value={money(stream.weightedAverageCost, '/L')}
+          meta={<Status status={stream.valuationStatus} />}
+        />
+        {unvalued ? (
+          <div className="callout callout-warning" role="status">
+            <strong>This stock has no cost yet</strong>
             <p>
-              {date(stream.sourceMovementRequiringCost.effectiveAt)} ·{' '}
-              {stream.sourceMovementRequiringCost.businessDate}
+              {source
+                ? `Add the cost of the ${source.movementType.toLowerCase()} of ${formatLitres(source.quantityLitres)} on ${date(source.effectiveAt)}.`
+                : 'Add the missing cost so sale costs can be worked out.'}
             </p>
-            <code>
-              {stream.sourceMovementRequiringCost.sourceType} /{' '}
-              {stream.sourceMovementRequiringCost.sourceId}
-            </code>
           </div>
         ) : null}
-      </Card>
-      <div className="valuation-detail-grid">
-        <Card className="panel">
-          <h2>Projection</h2>
-          <dl className="detail-list">
-            <dt>Quantity</dt>
-            <dd>{stream.quantityLitres} L</dd>
-            <dt>Inventory value</dt>
-            <dd>
-              {stream.inventoryValue === null
-                ? 'Not available while UNVALUED'
-                : `${stream.currency} ${stream.inventoryValue}`}
-            </dd>
-            <dt>Average cost</dt>
-            <dd>
-              {stream.weightedAverageCost === null
-                ? 'Not available while UNVALUED'
-                : `${stream.currency} ${stream.weightedAverageCost}/L`}
-            </dd>
-            <dt>Last cost event</dt>
-            <dd>{date(stream.lastValuationOrCostEventAt)}</dd>
-            <dt>Currency</dt>
-            <dd>{stream.currency ?? 'Not available while UNVALUED'}</dd>
-          </dl>
-        </Card>
-        <Card className="panel">
-          <h2>Cost changes</h2>
-          {stream.activeRevaluation ? (
-            <p>
-              <Status status={stream.activeRevaluation.status} />{' '}
-              <Link
-                href={hrefWithContext(
-                  `/inventory/valuation/revaluations/${stream.activeRevaluation.id}`,
-                  contextHref,
-                )}
-              >
-                Open active revaluation
-              </Link>
-            </p>
-          ) : (
-            <p>No cost change is in progress for this tank.</p>
-          )}
-          <InfoTip>
-            A shift report that sells from this tank cannot be approved while the tank has no cost.
-            Record the cost, then approve the report again.
-          </InfoTip>
-        </Card>
-      </div>
+      </section>
+
       <InventoryOperationalActions
         context={context}
         tankId={stream.tank.id}
@@ -742,22 +688,30 @@ export function ValuationStreamDetail({
         canRecordReceiptCost={data.capabilities.request}
         onRefresh={load}
       />
-      <Card className="panel table-card">
-        <h2>Cost changes for this tank</h2>
+      <Card as="section" className="panel table-card" aria-labelledby="valuation-changes-title">
+        <div className="panel-heading">
+          <h3 id="valuation-changes-title">Cost changes</h3>
+          <InfoTip>
+            A shift report that sells from this tank cannot be approved while the tank has no cost.
+            Record the cost, then approve the report again.
+          </InfoTip>
+        </div>
         {data.revaluations.length === 0 ? (
           <EmptyState
-            title="No revaluation history"
-            message="No cost change has been requested, approved or posted for this tank."
+            layout="block"
+            title="No cost changes"
+            message="None requested for this tank."
           />
         ) : (
           <TableScrollRegion label="Cost changes for this tank">
             <table className="data-table">
+              <caption className="visually-hidden">Cost changes for this tank</caption>
               <thead>
                 <tr>
                   <th scope="col">Status</th>
                   <th scope="col">Source</th>
                   <th scope="col">Amount</th>
-                  <th scope="col">Affected sales</th>
+                  <th scope="col">Sales affected</th>
                   <th scope="col">Action</th>
                 </tr>
               </thead>
@@ -769,9 +723,11 @@ export function ValuationStreamDetail({
                     </td>
                     <td data-label="Source">{item.source?.type ?? '—'}</td>
                     <td data-label="Amount">
-                      {item.amount === null ? '—' : `${item.currency} ${item.amount}`}
+                      {item.amount === null
+                        ? '—'
+                        : formatMoney(item.amount, item.currency ?? 'USD')}
                     </td>
-                    <td data-label="Affected sales">{item.affectedSales}</td>
+                    <td data-label="Sales affected">{item.affectedSales}</td>
                     <td className="cell-action">
                       <Link
                         className="button button-secondary button-small row-link"
@@ -780,7 +736,7 @@ export function ValuationStreamDetail({
                           contextHref,
                         )}
                       >
-                        Open detail
+                        Open
                       </Link>
                     </td>
                   </tr>

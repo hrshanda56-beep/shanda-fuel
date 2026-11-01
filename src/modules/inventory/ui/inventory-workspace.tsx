@@ -13,6 +13,7 @@ import {
 } from '@/design-system/primitives';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { parseCalibrationText } from '../calibration';
+import { formatLitres } from '@/design-system/formatters';
 import { InfoTip } from '@/design-system/info-tip';
 
 export type InventoryContext = Readonly<{
@@ -107,10 +108,24 @@ function CommandFeedback({
   );
 }
 
-function ActionDisclosure({ title, children }: Readonly<{ title: string; children: ReactNode }>) {
+function ActionDisclosure({
+  title,
+  hint,
+  highlight = false,
+  children,
+}: Readonly<{ title: string; hint: string; highlight?: boolean; children: ReactNode }>) {
   return (
-    <details className="panel inventory-action-disclosure">
-      <summary>{title}</summary>
+    <details
+      name="inventory-action"
+      className={`inventory-action-disclosure${highlight ? ' inventory-action-highlight' : ''}`}
+    >
+      <summary>
+        <span className="inventory-action-text">
+          <strong>{title}</strong>
+          <small>{hint}</small>
+        </span>
+        <span className="inventory-action-chevron" aria-hidden="true" />
+      </summary>
       <div className="inventory-action-content">{children}</div>
     </details>
   );
@@ -125,31 +140,32 @@ export function InventoryOperationalActions({
   onRefresh,
 }: InventoryOperationalActionsProps) {
   return (
-    <section aria-labelledby="inventory-actions-heading">
-      <div className="section-heading">
-        <div>
-          <span className="eyebrow">Authorised station actions</span>
-          <h2 id="inventory-actions-heading">Record an Inventory observation or movement</h2>
-          <p>
-            These actions apply to {context.stationName} only. Figures are checked again when you
-            save.
-          </p>
-        </div>
+    <Card as="section" className="panel" aria-labelledby="inventory-actions-heading">
+      <div className="panel-heading">
+        <h3 id="inventory-actions-heading">Actions</h3>
+        <InfoTip>
+          These apply to {context.stationName} only. Figures are checked again when you save.
+        </InfoTip>
       </div>
       <div className="inventory-action-grid">
-        <ActionDisclosure title="Record tank dip">
+        {sourceMovementRequiringCost?.sourceType === 'FUEL_DELIVERY_ALLOCATION' ? (
+          <ActionDisclosure
+            title="Add the delivery cost"
+            hint="Stock needs a cost before approval."
+            highlight
+          >
+            <ReceiptCostForm
+              context={context}
+              source={sourceMovementRequiringCost}
+              enabled={canRecordReceiptCost}
+              onRefresh={onRefresh}
+            />
+          </ActionDisclosure>
+        ) : null}
+        <ActionDisclosure title="Record a dip reading" hint="What the tank actually holds.">
           <TankDipForm context={context} tankId={tankId} onRefresh={onRefresh} />
         </ActionDisclosure>
-        <ActionDisclosure title="Tank chart (dipstick to litres)">
-          <TankCalibrationForm context={context} tankId={tankId} onRefresh={onRefresh} />
-        </ActionDisclosure>
-        <ActionDisclosure title="Post stock adjustment">
-          <AdjustmentForm context={context} tankId={tankId} onRefresh={onRefresh} />
-        </ActionDisclosure>
-        <ActionDisclosure title="Record opening stock">
-          <OpeningInventoryForm context={context} tankId={tankId} onRefresh={onRefresh} />
-        </ActionDisclosure>
-        <ActionDisclosure title="Record delivery receipt">
+        <ActionDisclosure title="Record a delivery" hint="Fuel received into this tank.">
           <p className="muted-small">
             After the delivery is recorded, add its truck compartments, seals, water test and driver
             confirmation on the{' '}
@@ -171,18 +187,20 @@ export function InventoryOperationalActions({
             onRefresh={onRefresh}
           />
         </ActionDisclosure>
-        {sourceMovementRequiringCost?.sourceType === 'FUEL_DELIVERY_ALLOCATION' ? (
-          <ActionDisclosure title="Record receipt cost">
-            <ReceiptCostForm
-              context={context}
-              source={sourceMovementRequiringCost}
-              enabled={canRecordReceiptCost}
-              onRefresh={onRefresh}
-            />
-          </ActionDisclosure>
-        ) : null}
+        <ActionDisclosure title="Correct stock" hint="Fix a difference in the book figure.">
+          <AdjustmentForm context={context} tankId={tankId} onRefresh={onRefresh} />
+        </ActionDisclosure>
       </div>
-    </section>
+      <h4 className="inventory-action-group-label">Setup</h4>
+      <div className="inventory-action-grid">
+        <ActionDisclosure title="Set starting stock" hint="The first quantity for this tank.">
+          <OpeningInventoryForm context={context} tankId={tankId} onRefresh={onRefresh} />
+        </ActionDisclosure>
+        <ActionDisclosure title="Dipstick chart" hint="Turns dipstick readings into litres.">
+          <TankCalibrationForm context={context} tankId={tankId} onRefresh={onRefresh} />
+        </ActionDisclosure>
+      </div>
+    </Card>
   );
 }
 
@@ -237,8 +255,13 @@ function TankDipForm({
   }
 
   return (
-    <form className="dialog-form" onSubmit={submit}>
-      <InfoTip>A dip is a physical observation. It never silently adjusts book inventory.</InfoTip>
+    <form className="action-form" onSubmit={submit}>
+      <div className="action-form-heading">
+        <h4>How did you measure?</h4>
+        <InfoTip>
+          A dip is a physical observation. It never silently adjusts book inventory.
+        </InfoTip>
+      </div>
       <div role="group" aria-label="How did you measure?" className="button-row">
         <Button
           type="button"
@@ -257,75 +280,81 @@ function TankDipForm({
           I read a dipstick
         </Button>
       </div>
-      {mode === 'litres' ? (
-        <Field id="dip-litres" label="Physical litres" required>
-          <input
-            id="dip-litres"
-            value={physicalLitres}
-            onChange={(event) => setPhysicalLitres(event.target.value)}
-            inputMode="decimal"
-            pattern="-?[0-9]*[.]?[0-9]*"
-            title="Enter a number, for example 1250.5"
-            required
-            placeholder="0.000"
-          />
-        </Field>
-      ) : (
-        <>
-          <Field
-            id="dip-reading"
-            label="Dipstick reading"
-            hint="The tank’s chart turns this into litres. Add the chart first under “Tank chart”."
-            required
-          >
+      <div className="action-form-grid">
+        {mode === 'litres' ? (
+          <Field id="dip-litres" label="Physical litres" required>
             <input
-              id="dip-reading"
-              value={reading}
-              onChange={(event) => setReading(event.target.value)}
+              id="dip-litres"
+              value={physicalLitres}
+              onChange={(event) => setPhysicalLitres(event.target.value)}
               inputMode="decimal"
               pattern="-?[0-9]*[.]?[0-9]*"
               title="Enter a number, for example 1250.5"
               required
-              placeholder="112.5"
+              placeholder="0.000"
             />
           </Field>
-          <Field id="dip-unit" label="Measured in" required>
-            <select
-              id="dip-unit"
-              value={unit}
-              onChange={(event) => setUnit(event.target.value)}
+        ) : (
+          <>
+            <Field
+              id="dip-reading"
+              label="Dipstick reading"
+              hint="The tank’s chart turns this into litres. Add the chart first under “Tank chart”."
               required
             >
-              <option value="mm">mm</option>
-              <option value="cm">cm</option>
-              <option value="inches">inches</option>
-            </select>
+              <input
+                id="dip-reading"
+                value={reading}
+                onChange={(event) => setReading(event.target.value)}
+                inputMode="decimal"
+                pattern="-?[0-9]*[.]?[0-9]*"
+                title="Enter a number, for example 1250.5"
+                required
+                placeholder="112.5"
+              />
+            </Field>
+            <Field id="dip-unit" label="Measured in" required>
+              <select
+                id="dip-unit"
+                value={unit}
+                onChange={(event) => setUnit(event.target.value)}
+                required
+              >
+                <option value="mm">mm</option>
+                <option value="cm">cm</option>
+                <option value="inches">inches</option>
+              </select>
+            </Field>
+          </>
+        )}
+        <Field id="dip-measured-at" label="Measured at" required>
+          <input
+            id="dip-measured-at"
+            type="datetime-local"
+            min="2000-01-01T00:00"
+            max="2100-12-31T23:59"
+            value={measuredAt}
+            onChange={(event) => setMeasuredAt(event.target.value)}
+            required
+          />
+        </Field>
+        <div className="action-form-wide">
+          <Field id="dip-notes" label="Notes" optional>
+            <textarea
+              id="dip-notes"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows={3}
+            />
           </Field>
-        </>
-      )}
-      <Field id="dip-measured-at" label="Measured at" required>
-        <input
-          id="dip-measured-at"
-          type="datetime-local"
-          min="2000-01-01T00:00"
-          max="2100-12-31T23:59"
-          value={measuredAt}
-          onChange={(event) => setMeasuredAt(event.target.value)}
-          required
-        />
-      </Field>
-      <Field id="dip-notes" label="Notes">
-        <textarea
-          id="dip-notes"
-          value={notes}
-          onChange={(event) => setNotes(event.target.value)}
-          rows={3}
-        />
-      </Field>
+        </div>
+      </div>
       <CommandFeedback error={error} success={success} />
-      <Button type="submit" loading={saving}>
-        Record dip
-      </Button>
+      <div className="form-actions action-form-actions">
+        <Button type="submit" loading={saving}>
+          Record dip
+        </Button>
+      </div>
     </form>
   );
 }
@@ -372,42 +401,47 @@ function TankCalibrationForm({
   }
 
   return (
-    <form className="dialog-form" onSubmit={submit}>
-      <InfoTip>
-        The chart from the tank maker lists a dipstick reading and the litres it means. Saving a new
-        chart replaces the old one for new dips; dips already recorded keep their litres.
-      </InfoTip>
-      <Field id="chart-unit" label="Readings are in" required>
-        <select
-          id="chart-unit"
-          value={unit}
-          onChange={(event) => setUnit(event.target.value)}
-          required
-        >
-          <option value="mm">mm</option>
-          <option value="cm">cm</option>
-          <option value="inches">inches</option>
-        </select>
-      </Field>
-      <Field
-        id="chart-rows"
-        label="Chart rows"
-        hint="One row per line: the reading, then the litres. For example 112.5, 18400. You can paste rows from a spreadsheet."
-        required
-      >
-        <textarea
-          id="chart-rows"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          rows={8}
-          required
-          placeholder={'0, 0\n50, 9200\n100, 18400'}
-        />
-      </Field>
+    <form className="action-form" onSubmit={submit}>
+      <div className="action-form-grid">
+        <Field id="chart-unit" label="Readings are in" required>
+          <select
+            id="chart-unit"
+            value={unit}
+            onChange={(event) => setUnit(event.target.value)}
+            required
+          >
+            <option value="mm">mm</option>
+            <option value="cm">cm</option>
+            <option value="inches">inches</option>
+          </select>
+        </Field>
+        <p className="muted-small action-form-note">
+          Reading, then litres. You can paste from a spreadsheet.
+        </p>
+        <div className="action-form-wide">
+          <Field
+            id="chart-rows"
+            label="Chart rows"
+            hint="A new chart replaces the old one for new dips. Dips already recorded keep their litres."
+            required
+          >
+            <textarea
+              id="chart-rows"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              rows={6}
+              required
+              placeholder={'0, 0\n50, 9200\n100, 18400'}
+            />
+          </Field>
+        </div>
+      </div>
       <CommandFeedback error={error} success={success} />
-      <Button type="submit" loading={saving}>
-        Save chart
-      </Button>
+      <div className="form-actions action-form-actions">
+        <Button type="submit" loading={saving}>
+          Save chart
+        </Button>
+      </div>
     </form>
   );
 }
@@ -461,55 +495,61 @@ function AdjustmentForm({
   }
 
   return (
-    <form className="dialog-form" onSubmit={submit}>
-      <Field id="adjustment-direction" label="Direction" required>
-        <select
-          id="adjustment-direction"
-          value={movementType}
-          onChange={(event) =>
-            setMovementType(event.target.value as 'POSITIVE_ADJUSTMENT' | 'NEGATIVE_ADJUSTMENT')
-          }
-        >
-          <option value="POSITIVE_ADJUSTMENT">Increase book stock</option>
-          <option value="NEGATIVE_ADJUSTMENT">Decrease book stock</option>
-        </select>
-      </Field>
-      <Field id="adjustment-litres" label="Quantity litres" required>
-        <input
-          id="adjustment-litres"
-          value={quantityLitres}
-          onChange={(event) => setQuantityLitres(event.target.value)}
-          inputMode="decimal"
-          pattern="-?[0-9]*[.]?[0-9]*"
-          title="Enter a number, for example 1250.5"
-          required
-          placeholder="0.000"
-        />
-      </Field>
-      <Field id="adjustment-effective-at" label="Effective at" required>
-        <input
-          id="adjustment-effective-at"
-          type="datetime-local"
-          min="2000-01-01T00:00"
-          max="2100-12-31T23:59"
-          value={effectiveAt}
-          onChange={(event) => setEffectiveAt(event.target.value)}
-          required
-        />
-      </Field>
-      <Field id="adjustment-reason" label="Reason" required>
-        <textarea
-          id="adjustment-reason"
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          rows={3}
-          required
-        />
-      </Field>
+    <form className="action-form" onSubmit={submit}>
+      <div className="action-form-grid">
+        <Field id="adjustment-direction" label="Direction" required>
+          <select
+            id="adjustment-direction"
+            value={movementType}
+            onChange={(event) =>
+              setMovementType(event.target.value as 'POSITIVE_ADJUSTMENT' | 'NEGATIVE_ADJUSTMENT')
+            }
+          >
+            <option value="POSITIVE_ADJUSTMENT">Increase book stock</option>
+            <option value="NEGATIVE_ADJUSTMENT">Decrease book stock</option>
+          </select>
+        </Field>
+        <Field id="adjustment-litres" label="Quantity litres" required>
+          <input
+            id="adjustment-litres"
+            value={quantityLitres}
+            onChange={(event) => setQuantityLitres(event.target.value)}
+            inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
+            required
+            placeholder="0.000"
+          />
+        </Field>
+        <Field id="adjustment-effective-at" label="Effective at" required>
+          <input
+            id="adjustment-effective-at"
+            type="datetime-local"
+            min="2000-01-01T00:00"
+            max="2100-12-31T23:59"
+            value={effectiveAt}
+            onChange={(event) => setEffectiveAt(event.target.value)}
+            required
+          />
+        </Field>
+        <div className="action-form-wide">
+          <Field id="adjustment-reason" label="Reason" required>
+            <textarea
+              id="adjustment-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              rows={3}
+              required
+            />
+          </Field>
+        </div>
+      </div>
       <CommandFeedback error={error} success={success} />
-      <Button type="submit" loading={saving} disabled={!reason.trim()}>
-        Post adjustment
-      </Button>
+      <div className="form-actions action-form-actions">
+        <Button type="submit" loading={saving} disabled={!reason.trim()}>
+          Post adjustment
+        </Button>
+      </div>
     </form>
   );
 }
@@ -578,51 +618,60 @@ function OpeningInventoryForm({
   }
 
   return (
-    <form className="dialog-form" onSubmit={submit}>
-      <InfoTip>
-        Enter what is in this tank when you go live, from the opening dip, and what each litre cost.
-        Book stock, the average cost and the stock value all start from these two figures. Do not
-        enter an unknown cost as zero.
-      </InfoTip>
-      <Field id="opening-litres" label="Opening dip (litres)" required>
-        <input
-          id="opening-litres"
-          value={quantityLitres}
-          onChange={(event) => setQuantityLitres(event.target.value)}
-          inputMode="decimal"
-          pattern="-?[0-9]*[.]?[0-9]*"
-          title="Enter a number, for example 1250.5"
-          required
-          placeholder="0.000"
-        />
-      </Field>
-      <Field id="opening-unit-cost" label="Opening cost per litre (USD)" required>
-        <input
-          id="opening-unit-cost"
-          value={unitCost}
-          onChange={(event) => setUnitCost(event.target.value)}
-          inputMode="decimal"
-          pattern="-?[0-9]*[.]?[0-9]*"
-          title="Enter a number, for example 1250.5"
-          required
-          placeholder="1.760"
-        />
-      </Field>
-      <Field id="opening-effective-at" label="As at" required>
-        <input
-          id="opening-effective-at"
-          type="datetime-local"
-          min="2000-01-01T00:00"
-          max="2100-12-31T23:59"
-          value={effectiveAt}
-          onChange={(event) => setEffectiveAt(event.target.value)}
-          required
-        />
-      </Field>
+    <form className="action-form" onSubmit={submit}>
+      <div className="action-form-heading">
+        <h4>When you go live</h4>
+        <InfoTip>
+          Enter what is in this tank when you go live, from the opening dip, and what each litre
+          cost. Book stock, the average cost and the stock value all start from these two figures.
+          Do not enter an unknown cost as zero.
+        </InfoTip>
+      </div>
+      <div className="action-form-grid">
+        <Field id="opening-litres" label="Opening dip (litres)" required>
+          <input
+            id="opening-litres"
+            value={quantityLitres}
+            onChange={(event) => setQuantityLitres(event.target.value)}
+            inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
+            required
+            placeholder="0.000"
+          />
+        </Field>
+        <Field id="opening-unit-cost" label="Opening cost per litre (USD)" required>
+          <input
+            id="opening-unit-cost"
+            value={unitCost}
+            onChange={(event) => setUnitCost(event.target.value)}
+            inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
+            required
+            placeholder="1.760"
+          />
+        </Field>
+        <div className="action-form-wide">
+          <Field id="opening-effective-at" label="As at" required>
+            <input
+              id="opening-effective-at"
+              type="datetime-local"
+              min="2000-01-01T00:00"
+              max="2100-12-31T23:59"
+              value={effectiveAt}
+              onChange={(event) => setEffectiveAt(event.target.value)}
+              required
+            />
+          </Field>
+        </div>
+      </div>
       <CommandFeedback error={error} success={success} />
-      <Button type="submit" loading={saving}>
-        Record opening stock
-      </Button>
+      <div className="form-actions action-form-actions">
+        <Button type="submit" loading={saving}>
+          Record opening stock
+        </Button>
+      </div>
     </form>
   );
 }
@@ -813,188 +862,210 @@ export function DeliveryForm({
 
   return (
     <div className="dialog-form">
-      <InfoTip>
-        Accepted litres are allocated to the validated tank. Supplier note quantity remains a
-        separate commercial comparison.
-      </InfoTip>
-      <form onSubmit={create}>
-        <Field
-          id="delivery-supplier"
-          label="Supplier"
-          hint={
-            suppliers && suppliers.length === 0
-              ? 'There are no suppliers to choose from yet. Add the supplier on the Suppliers page first, then come back.'
-              : 'Every delivery must say who supplied it.'
-          }
-          required
-        >
-          <select
-            id="delivery-supplier"
-            value={supplierId}
-            onChange={(event) => setSupplierId(event.target.value)}
-            required
-            disabled={suppliers === null}
-          >
-            <option value="">
-              {suppliers === null ? 'Loading suppliers…' : 'Choose a supplier'}
-            </option>
-            {(suppliers ?? []).map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
-                {supplier.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field id="delivery-note-number" label="Delivery note number" required>
-          <input
-            id="delivery-note-number"
-            value={deliveryNoteNumber}
-            onChange={(event) => setDeliveryNoteNumber(event.target.value)}
-            required
-          />
-        </Field>
-        <Field
-          id="delivery-supplier-reference"
-          label="Supplier reference"
-          hint="Optional supplier or purchase reference already recorded for this delivery."
-          optional
-        >
-          <input
-            id="delivery-supplier-reference"
-            value={supplierReference}
-            onChange={(event) => setSupplierReference(event.target.value)}
-          />
-        </Field>
-        <Field
-          id="delivery-no-po-reason"
-          label="Purchase order"
-          hint="Link this delivery to its purchase order on the Purchasing page, or say why there is none. One of the two is needed before the delivery can be confirmed."
-        >
-          <select
-            id="delivery-no-po-reason"
-            value={noPoReason}
-            onChange={(event) => setNoPoReason(event.target.value)}
-          >
-            <option value="">I will link a purchase order</option>
-            {NO_PO_REASON_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                No purchase order: {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {noPoReason === 'OTHER' ? (
-          <Field id="delivery-no-po-note" label="Why is there no purchase order?" required>
-            <input
-              id="delivery-no-po-note"
-              value={noPoNote}
-              onChange={(event) => setNoPoNote(event.target.value)}
-              maxLength={300}
+      <form className="action-form" onSubmit={create}>
+        <section className="action-form-section" aria-labelledby="action-form-details">
+          <h4 id="action-form-details">Delivery</h4>
+          <div className="action-form-grid">
+            <Field
+              id="delivery-supplier"
+              label="Supplier"
+              hint={
+                suppliers && suppliers.length === 0
+                  ? 'There are no suppliers to choose from yet. Add the supplier on the Suppliers page first, then come back.'
+                  : 'Every delivery must say who supplied it.'
+              }
               required
-            />
-          </Field>
-        ) : null}
-        <Field id="delivery-transporter" label="Transporter" optional>
-          <input
-            id="delivery-transporter"
-            value={transporter}
-            onChange={(event) => setTransporter(event.target.value)}
-          />
-        </Field>
-        <Field id="delivery-driver" label="Driver" optional>
-          <input
-            id="delivery-driver"
-            value={driver}
-            onChange={(event) => setDriver(event.target.value)}
-          />
-        </Field>
-        <Field id="delivery-truck-registration" label="Truck registration" optional>
-          <input
-            id="delivery-truck-registration"
-            value={truckRegistration}
-            onChange={(event) => setTruckRegistration(event.target.value)}
-          />
-        </Field>
-        <Field id="delivery-seal-reference" label="Seal reference" optional>
-          <input
-            id="delivery-seal-reference"
-            value={sealReference}
-            onChange={(event) => setSealReference(event.target.value)}
-          />
-        </Field>
-        <Field
-          id="delivery-pre-dip-reference"
-          label="Pre-delivery dip reference"
-          hint="Optional existing tank-dip ID. This form does not create or alter the dip."
-          optional
-        >
-          <input
-            id="delivery-pre-dip-reference"
-            value={preDeliveryDipId}
-            onChange={(event) => setPreDeliveryDipId(event.target.value)}
-            inputMode="text"
-          />
-        </Field>
-        <Field
-          id="delivery-post-dip-reference"
-          label="Post-delivery dip reference"
-          hint="Optional existing tank-dip ID. This form does not create or alter the dip."
-          optional
-        >
-          <input
-            id="delivery-post-dip-reference"
-            value={postDeliveryDipId}
-            onChange={(event) => setPostDeliveryDipId(event.target.value)}
-            inputMode="text"
-          />
-        </Field>
-        <Field id="delivery-delivered-at" label="Delivered at" required>
-          <input
-            id="delivery-delivered-at"
-            type="datetime-local"
-            min="2000-01-01T00:00"
-            max="2100-12-31T23:59"
-            value={deliveredAt}
-            onChange={(event) => setDeliveredAt(event.target.value)}
-            required
-          />
-        </Field>
-        <Field id="delivery-note-litres" label="Note quantity litres" required>
-          <input
-            id="delivery-note-litres"
-            value={noteQuantityLitres}
-            onChange={(event) => setNoteQuantityLitres(event.target.value)}
-            inputMode="decimal"
-            pattern="-?[0-9]*[.]?[0-9]*"
-            title="Enter a number, for example 1250.5"
-            required
-          />
-        </Field>
-        <Field id="delivery-actual-litres" label="Actual received litres" required>
-          <input
-            id="delivery-actual-litres"
-            value={actualQuantityLitres}
-            onChange={(event) => setActualQuantityLitres(event.target.value)}
-            inputMode="decimal"
-            pattern="-?[0-9]*[.]?[0-9]*"
-            title="Enter a number, for example 1250.5"
-            required
-          />
-        </Field>
-        <Field id="delivery-allocation-litres" label="Accepted allocation to this tank" required>
-          <input
-            id="delivery-allocation-litres"
-            value={allocationQuantityLitres}
-            onChange={(event) => setAllocationQuantityLitres(event.target.value)}
-            inputMode="decimal"
-            pattern="-?[0-9]*[.]?[0-9]*"
-            title="Enter a number, for example 1250.5"
-            required
-          />
-        </Field>
-        <Button type="submit" loading={saving === 'create'}>
-          Create delivery draft
-        </Button>
+            >
+              <select
+                id="delivery-supplier"
+                value={supplierId}
+                onChange={(event) => setSupplierId(event.target.value)}
+                required
+                disabled={suppliers === null}
+              >
+                <option value="">
+                  {suppliers === null ? 'Loading suppliers…' : 'Choose a supplier'}
+                </option>
+                {(suppliers ?? []).map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field id="delivery-note-number" label="Delivery note number" required>
+              <input
+                id="delivery-note-number"
+                value={deliveryNoteNumber}
+                onChange={(event) => setDeliveryNoteNumber(event.target.value)}
+                required
+              />
+            </Field>
+            <Field id="delivery-delivered-at" label="Delivered at" required>
+              <input
+                id="delivery-delivered-at"
+                type="datetime-local"
+                min="2000-01-01T00:00"
+                max="2100-12-31T23:59"
+                value={deliveredAt}
+                onChange={(event) => setDeliveredAt(event.target.value)}
+                required
+              />
+            </Field>
+            <Field
+              id="delivery-no-po-reason"
+              label="Purchase order"
+              hint="Link this delivery to its purchase order on the Purchasing page, or say why there is none. One of the two is needed before the delivery can be confirmed."
+            >
+              <select
+                id="delivery-no-po-reason"
+                value={noPoReason}
+                onChange={(event) => setNoPoReason(event.target.value)}
+              >
+                <option value="">I will link a purchase order</option>
+                {NO_PO_REASON_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    No purchase order: {option.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {noPoReason === 'OTHER' ? (
+              <div className="action-form-wide">
+                <Field id="delivery-no-po-note" label="Why is there no purchase order?" required>
+                  <input
+                    id="delivery-no-po-note"
+                    value={noPoNote}
+                    onChange={(event) => setNoPoNote(event.target.value)}
+                    maxLength={300}
+                    required
+                  />
+                </Field>
+              </div>
+            ) : null}
+          </div>
+        </section>
+        <section className="action-form-section" aria-labelledby="action-form-litres">
+          <div className="action-form-heading">
+            <h4 id="action-form-litres">Litres</h4>
+            <InfoTip>
+              Accepted litres are allocated to the validated tank. Supplier note quantity remains a
+              separate commercial comparison.
+            </InfoTip>
+          </div>
+          <div className="action-form-grid action-form-grid-3">
+            <Field id="delivery-note-litres" label="On the delivery note" required>
+              <input
+                id="delivery-note-litres"
+                value={noteQuantityLitres}
+                onChange={(event) => setNoteQuantityLitres(event.target.value)}
+                inputMode="decimal"
+                pattern="-?[0-9]*[.]?[0-9]*"
+                title="Enter a number, for example 1250.5"
+                required
+              />
+            </Field>
+            <Field id="delivery-actual-litres" label="Actually received" required>
+              <input
+                id="delivery-actual-litres"
+                value={actualQuantityLitres}
+                onChange={(event) => setActualQuantityLitres(event.target.value)}
+                inputMode="decimal"
+                pattern="-?[0-9]*[.]?[0-9]*"
+                title="Enter a number, for example 1250.5"
+                required
+              />
+            </Field>
+            <Field id="delivery-allocation-litres" label="Accepted into this tank" required>
+              <input
+                id="delivery-allocation-litres"
+                value={allocationQuantityLitres}
+                onChange={(event) => setAllocationQuantityLitres(event.target.value)}
+                inputMode="decimal"
+                pattern="-?[0-9]*[.]?[0-9]*"
+                title="Enter a number, for example 1250.5"
+                required
+              />
+            </Field>
+          </div>
+        </section>
+        <details className="action-form-more">
+          <summary>
+            <span>More details</span>
+            <small>Optional</small>
+            <span className="inventory-action-chevron" aria-hidden="true" />
+          </summary>
+          <div className="action-form-grid">
+            <Field
+              id="delivery-supplier-reference"
+              label="Supplier reference"
+              hint="Optional supplier or purchase reference already recorded for this delivery."
+            >
+              <input
+                id="delivery-supplier-reference"
+                value={supplierReference}
+                onChange={(event) => setSupplierReference(event.target.value)}
+              />
+            </Field>
+            <Field id="delivery-transporter" label="Transporter">
+              <input
+                id="delivery-transporter"
+                value={transporter}
+                onChange={(event) => setTransporter(event.target.value)}
+              />
+            </Field>
+            <Field id="delivery-driver" label="Driver">
+              <input
+                id="delivery-driver"
+                value={driver}
+                onChange={(event) => setDriver(event.target.value)}
+              />
+            </Field>
+            <Field id="delivery-truck-registration" label="Truck registration">
+              <input
+                id="delivery-truck-registration"
+                value={truckRegistration}
+                onChange={(event) => setTruckRegistration(event.target.value)}
+              />
+            </Field>
+            <Field id="delivery-seal-reference" label="Seal reference">
+              <input
+                id="delivery-seal-reference"
+                value={sealReference}
+                onChange={(event) => setSealReference(event.target.value)}
+              />
+            </Field>
+            <Field
+              id="delivery-pre-dip-reference"
+              label="Pre-delivery dip reference"
+              hint="Optional existing tank-dip ID. This form does not create or alter the dip."
+            >
+              <input
+                id="delivery-pre-dip-reference"
+                value={preDeliveryDipId}
+                onChange={(event) => setPreDeliveryDipId(event.target.value)}
+                inputMode="text"
+              />
+            </Field>
+            <Field
+              id="delivery-post-dip-reference"
+              label="Post-delivery dip reference"
+              hint="Optional existing tank-dip ID. This form does not create or alter the dip."
+            >
+              <input
+                id="delivery-post-dip-reference"
+                value={postDeliveryDipId}
+                onChange={(event) => setPostDeliveryDipId(event.target.value)}
+                inputMode="text"
+              />
+            </Field>
+          </div>
+        </details>
+        <div className="form-actions action-form-actions">
+          <Button type="submit" loading={saving === 'create'}>
+            Create delivery draft
+          </Button>
+        </div>
       </form>
       {deliveryId ? (
         <div className="callout callout-warning">
@@ -1084,10 +1155,10 @@ function ReceiptCostForm({
   }
 
   return (
-    <form className="dialog-form" onSubmit={submit}>
+    <form className="action-form" onSubmit={submit}>
       <p className="muted-small">
-        Source allocation: <code>{source.sourceId}</code> · {source.quantityLitres} L. Missing cost
-        must never be entered as zero.
+        Cost of the {formatLitres(source.quantityLitres)} delivered. Never enter zero for a missing
+        cost.
       </p>
       {!enabled ? (
         <p className="context-required">
@@ -1112,93 +1183,98 @@ function ReceiptCostForm({
           Add up the costs
         </Button>
       </div>
-      {mode === 'total' ? (
-        <Field id="receipt-cost-amount" label="Authoritative receipt cost" required>
-          <input
-            id="receipt-cost-amount"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            inputMode="decimal"
-            pattern="-?[0-9]*[.]?[0-9]*"
-            title="Enter a number, for example 1250.5"
-            required
-            disabled={!enabled}
-            placeholder="0.0000"
-          />
-        </Field>
-      ) : (
-        <>
-          <InfoTip>
-            Enter what the whole delivery cost. We divide the total by the litres that actually
-            arrived, so a short delivery makes each litre cost more.
-          </InfoTip>
-          <Field id="receipt-fuel-cost" label="Cost of the fuel" required>
+      <div className="action-form-grid">
+        {mode === 'total' ? (
+          <Field id="receipt-cost-amount" label="Total cost of the delivery" required>
             <input
-              id="receipt-fuel-cost"
-              value={fuelCost}
-              onChange={(event) => setFuelCost(event.target.value)}
+              id="receipt-cost-amount"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
               inputMode="decimal"
               pattern="-?[0-9]*[.]?[0-9]*"
               title="Enter a number, for example 1250.5"
               required
               disabled={!enabled}
-              placeholder="0.00"
+              placeholder="0.0000"
             />
           </Field>
-          <Field id="receipt-freight" label="Transport (freight)" optional>
-            <input
-              id="receipt-freight"
-              value={freight}
-              onChange={(event) => setFreight(event.target.value)}
-              inputMode="decimal"
-              pattern="-?[0-9]*[.]?[0-9]*"
-              title="Enter a number, for example 1250.5"
-              disabled={!enabled}
-              placeholder="0.00"
-            />
-          </Field>
-          <Field id="receipt-other-label" label="Another cost, if any" optional>
-            <input
-              id="receipt-other-label"
-              value={otherLabel}
-              onChange={(event) => setOtherLabel(event.target.value)}
-              maxLength={80}
-              disabled={!enabled}
-              placeholder="For example offloading"
-            />
-          </Field>
-          <Field id="receipt-other-amount" label="Amount of that cost" optional>
-            <input
-              id="receipt-other-amount"
-              value={otherAmount}
-              onChange={(event) => setOtherAmount(event.target.value)}
-              inputMode="decimal"
-              pattern="-?[0-9]*[.]?[0-9]*"
-              title="Enter a number, for example 1250.5"
-              disabled={!enabled}
-              placeholder="0.00"
-            />
-          </Field>
-        </>
-      )}
-      <Field id="receipt-cost-currency" label="Currency" required>
-        <input
-          id="receipt-cost-currency"
-          value={currency}
-          onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-          maxLength={3}
-          required
-          disabled={!enabled}
-        />
-      </Field>
+        ) : (
+          <>
+            <Field
+              id="receipt-fuel-cost"
+              hint="Enter what the whole delivery cost. We divide the total by the litres that actually arrived, so a short delivery makes each litre cost more."
+              label="Cost of the fuel"
+              required
+            >
+              <input
+                id="receipt-fuel-cost"
+                value={fuelCost}
+                onChange={(event) => setFuelCost(event.target.value)}
+                inputMode="decimal"
+                pattern="-?[0-9]*[.]?[0-9]*"
+                title="Enter a number, for example 1250.5"
+                required
+                disabled={!enabled}
+                placeholder="0.00"
+              />
+            </Field>
+            <Field id="receipt-freight" label="Transport (freight)" optional>
+              <input
+                id="receipt-freight"
+                value={freight}
+                onChange={(event) => setFreight(event.target.value)}
+                inputMode="decimal"
+                pattern="-?[0-9]*[.]?[0-9]*"
+                title="Enter a number, for example 1250.5"
+                disabled={!enabled}
+                placeholder="0.00"
+              />
+            </Field>
+            <Field id="receipt-other-label" label="Another cost, if any" optional>
+              <input
+                id="receipt-other-label"
+                value={otherLabel}
+                onChange={(event) => setOtherLabel(event.target.value)}
+                maxLength={80}
+                disabled={!enabled}
+                placeholder="For example offloading"
+              />
+            </Field>
+            <Field id="receipt-other-amount" label="Amount of that cost" optional>
+              <input
+                id="receipt-other-amount"
+                value={otherAmount}
+                onChange={(event) => setOtherAmount(event.target.value)}
+                inputMode="decimal"
+                pattern="-?[0-9]*[.]?[0-9]*"
+                title="Enter a number, for example 1250.5"
+                disabled={!enabled}
+                placeholder="0.00"
+              />
+            </Field>
+          </>
+        )}
+        <Field id="receipt-cost-currency" label="Currency" required>
+          <input
+            id="receipt-cost-currency"
+            value={currency}
+            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+            maxLength={3}
+            required
+            disabled={!enabled}
+          />
+        </Field>
+      </div>
       <CommandFeedback error={error} success={success} />
-      <Button
-        type="submit"
-        loading={saving}
-        disabled={!enabled || (mode === 'total' ? !amount : !fuelCost)}
-      >
-        Record receipt cost
-      </Button>
+      <div className="form-actions action-form-actions">
+        <Button
+          type="submit"
+          loading={saving}
+          disabled={!enabled || (mode === 'total' ? !amount : !fuelCost)}
+        >
+          Record receipt cost
+        </Button>
+      </div>
     </form>
   );
 }
