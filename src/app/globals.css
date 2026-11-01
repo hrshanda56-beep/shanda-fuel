@@ -7243,7 +7243,7 @@ h3,
 }
 
 .today-figures .today-figure-value {
-  font-size: clamp(1.125rem, 15cqi, 2.25rem);
+  font-size: clamp(0.875rem, 15cqi, 2.25rem);
 }
 
 /* Shorter key figure cards: with no caption line they need less height. */

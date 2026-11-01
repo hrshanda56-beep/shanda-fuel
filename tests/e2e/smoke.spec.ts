@@ -21,7 +21,7 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await page.goto('/foundation');
 
   // Phones get a bottom bar; the grouped navigation opens from More.
-  await expect(page.getByRole('button', { name: 'More' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'More', exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeHidden();
   const mobileContext = page.getByRole('group', { name: 'Work context' });
   await expect(mobileContext).toContainText('Demo organisation');
@@ -30,7 +30,7 @@ test('foundation exposes mobile navigation and labelled controls', async ({ page
   await expect(mobileContext).toContainText('Morning shift');
   await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeAttached();
 
-  await page.getByRole('button', { name: 'More' }).click();
+  await page.getByRole('button', { name: 'More', exact: true }).click();
   const menu = page.getByRole('dialog', { name: 'More' });
   await expect(menu.getByRole('button', { name: /Demo station/ })).toBeVisible();
   await expect(menu.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();

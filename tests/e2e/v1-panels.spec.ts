@@ -137,7 +137,7 @@ test.describe('New v1 screens', () => {
     await page.getByLabel('Amount you actually counted').fill('90');
     await expect(page.getByLabel('Why is it different?')).toBeVisible();
     await page.getByLabel('Why is it different?').fill('Till was short');
-    await page.getByRole('button', { name: 'Hand over cash' }).click();
+    await page.getByRole('button', { name: 'Hand over cash', exact: true }).click();
     await expect(page.getByText(/now needs to accept it/)).toBeVisible();
     expect(posted[0]).toMatchObject({
       commandType: 'SubmitCashHandover',
@@ -161,6 +161,7 @@ test.describe('New v1 screens', () => {
   test('shows the activity log with what changed, and loads older entries', async ({ page }) => {
     await mockApi(page);
     await page.goto('/dev-preview/v1-panels');
+    await page.getByRole('button', { name: 'Close Hand over cash' }).click();
     const log = page.getByRole('list', { name: 'Recent changes' });
     await expect(log.getByText('Supplier: credit limit set')).toBeVisible();
     await log.getByRole('button', { name: 'What changed' }).click();
@@ -179,6 +180,7 @@ test.describe('New v1 screens', () => {
   }) => {
     const { uploads } = await mockApi(page);
     await page.goto('/dev-preview/v1-panels');
+    await page.getByRole('button', { name: 'Close Hand over cash' }).click();
     const docs = page.getByRole('region', { name: 'Delivery note and photos' });
     await expect(docs.getByText('Delivery note: note.pdf')).toBeVisible();
     await expect(docs.getByText(/312 KB · added by Tendai Moyo/)).toBeVisible();
@@ -208,6 +210,7 @@ test.describe('New v1 screens', () => {
   test('explains the reminder settings, checks the numbers, and saves them', async ({ page }) => {
     const { posted } = await mockApi(page);
     await page.goto('/dev-preview/v1-panels');
+    await page.getByRole('button', { name: 'Close Hand over cash' }).click();
     await expect(page.getByText(/starting values apply/)).toBeVisible();
     await page.getByLabel(/Warn about supplier invoices due within/).fill('0');
     await page.getByRole('button', { name: 'Save reminders' }).click();

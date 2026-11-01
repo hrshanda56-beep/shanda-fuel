@@ -234,7 +234,10 @@ test('the sales chart is also available as a keyboard-operable table', async ({ 
     ],
   });
   await page.goto(TODAY);
-  await page.getByRole('group', { name: 'Period' }).getByRole('button', { name: '7D' }).click();
+  await page
+    .getByRole('group', { name: 'Chart range' })
+    .getByRole('button', { name: '7D' })
+    .click();
 
   const summary = page.locator('.today-chart-table > summary');
   await summary.focus();
@@ -308,7 +311,7 @@ test('rows without an approved reconciliation are not shown as zero sales', asyn
 test('sales trend offers business-day ranges and no hourly view', async ({ page }) => {
   await mockToday(page);
   await page.goto(TODAY);
-  const periods = page.getByRole('group', { name: 'Period' });
+  const periods = page.getByRole('group', { name: 'Chart range' });
   for (const option of ['7D', '30D', '90D', '12M']) {
     await expect(periods.getByRole('button', { name: option })).toBeVisible();
   }
@@ -493,7 +496,7 @@ test.describe('today hardening', () => {
     await mockToday(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(TODAY);
-    const more = page.getByRole('button', { name: 'More' });
+    const more = page.getByRole('button', { name: 'More', exact: true });
     await more.click();
     const drawer = page.getByRole('dialog', { name: 'More' });
     await expect(drawer).toBeVisible();
@@ -564,7 +567,7 @@ test.describe('today hardening', () => {
       await expect(page.getByRole('link', { name: /Bindura/ }).first()).toBeVisible();
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     }
-    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('button', { name: 'More', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'More' })).toBeVisible();
     await animationsSettled(page);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

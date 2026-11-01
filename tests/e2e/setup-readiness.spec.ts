@@ -237,7 +237,9 @@ test.describe('Setup readiness and payment setup', () => {
     const bankForm = page.getByRole('form', { name: 'Add bank account' });
     await expect(bankForm).toBeVisible();
     await expect(bankForm.getByLabel('Masked account reference')).toBeVisible();
-    await expect(bankForm.getByText('Do not enter the full bank account number.')).toBeVisible();
+    await expect(
+      bankForm.getByText('Do not enter the full bank account number.').first(),
+    ).toBeVisible();
     await expect(bankForm.getByRole('button', { name: 'Add bank account' })).toBeVisible();
   });
 

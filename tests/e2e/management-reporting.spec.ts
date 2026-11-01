@@ -113,9 +113,8 @@ test.describe('management reporting surface', () => {
       await page.getByLabel('Period', { exact: true }).first().click();
       await page.getByRole('option', { name: 'Last month' }).click();
       await expect(page.getByLabel('Period', { exact: true }).first()).toHaveText('Last month');
-      await page.getByRole('link', { name: 'Cash Evidence to Bank' }).click();
-      await expect(page).toHaveURL(/\/reports\/cash\?.*period=3m/);
-      await expect(page.getByRole('region', { name: 'Cash Evidence to Bank' })).toBeVisible();
+      await page.getByRole('link', { name: 'Cash Movement' }).click();
+      await expect(page).toHaveURL(/\/reports\/cash-movement\?.*period=3m/);
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });

@@ -112,7 +112,7 @@ test.describe('shared shell consistency', () => {
     await expect(page.locator('.shell-header kbd:visible')).toHaveCount(0);
     await expect(page.locator('.shell-account-trigger:visible')).toHaveCount(1);
 
-    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('button', { name: 'More', exact: true }).click();
     const drawer = page.getByRole('dialog', { name: 'More' });
     await expect(drawer).toBeVisible();
     await expect(drawer.getByRole('link', { name: 'Settings' })).toHaveAttribute(
@@ -129,7 +129,7 @@ test.describe('shared shell consistency', () => {
       '/customers',
     );
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: 'More' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'More', exact: true })).toBeFocused();
   });
 
   test('mobile exposes authorized bottom navigation and keeps More in the drawer', async ({
@@ -144,7 +144,7 @@ test.describe('shared shell consistency', () => {
       '/operations/daily',
     );
     await expect(bottomNav.getByRole('link', { name: 'Reports' })).toHaveCount(0);
-    await bottomNav.getByRole('button', { name: 'More' }).click();
+    await bottomNav.getByRole('button', { name: 'More', exact: true }).click();
     const menu = page.getByRole('dialog', { name: 'More' });
     await expect(menu.getByRole('link', { name: 'Reports' })).toBeVisible();
     await expect(menu).toBeVisible();

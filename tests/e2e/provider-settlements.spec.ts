@@ -204,6 +204,7 @@ test.describe('provider settlement workspace', () => {
     await expect(
       page.getByRole('list', { name: 'Provider payouts' }).getByText(settlementReference),
     ).toBeVisible();
+    await page.getByRole('tab', { name: 'Payments Waiting' }).click();
     await expect(page.getByText(paymentReference)).toBeVisible();
 
     await page.getByRole('button', { name: 'Match', exact: true }).click();
@@ -217,6 +218,7 @@ test.describe('provider settlement workspace', () => {
       page.locator('p[role="status"]').filter({ hasText: 'Allocation saved' }),
     ).toBeVisible();
 
+    await page.getByRole('tab', { name: 'Provider Payouts' }).click();
     await page.getByRole('button', { name: 'Confirm', exact: true }).click();
     // Plain words: a reconciled payout reads "Settled" and its action cell reads "Done".
     await expect(page.getByText('Done', { exact: true })).toBeVisible();

@@ -321,7 +321,7 @@ test.describe('desktop sidebar', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: 'Switch station' })).toBeHidden();
     // It is also reachable from More.
-    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('button', { name: 'More', exact: true }).click();
     await page
       .getByRole('dialog', { name: 'More' })
       .getByRole('button', { name: /Switch/ })
@@ -382,7 +382,7 @@ test.describe('phone navigation', () => {
   test('opens the grouped menu from the keyboard and returns focus', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
-    const menuButton = page.getByRole('button', { name: 'More' });
+    const menuButton = page.getByRole('button', { name: 'More', exact: true });
 
     await menuButton.focus();
     await page.keyboard.press('Enter');
@@ -406,7 +406,7 @@ test.describe('phone navigation', () => {
   test('navigating from the menu closes it and lands on the destination', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('button', { name: 'More', exact: true }).click();
     await page
       .getByRole('dialog', { name: 'More' })
       .getByRole('link', { name: 'Suppliers' })
@@ -419,7 +419,7 @@ test.describe('phone navigation', () => {
   test('Settings links to the real route from the menu', async ({ page }) => {
     await page.goto('/reports');
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('button', { name: 'More', exact: true }).click();
     await expect(
       page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Settings' }),
     ).toHaveAttribute('href', '/settings');

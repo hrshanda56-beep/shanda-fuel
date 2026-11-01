@@ -27,7 +27,7 @@
     "src/app/financial-position/loading.tsx": "76105b91f9dbc2ecde0df07233a7b5adb5eccd6570e9986b052cd16c7ee4add9",
     "src/app/financial-position/page.tsx": "0f348614986e4c724591a5188806c0c6741dc163adb5be53c94617fc37bc2fc6",
     "src/app/foundation/page.tsx": "fa811d3738a38c40d20f6c5b0b5d07ce56f8baa2ae11bb9b3bfd0ce88669d9c6",
-    "src/app/globals.css": "0ffad77b2f4867169459c453b7e3c17fc54e302f0be7baa3f46bebeb29a89db5",
+    "src/app/globals.css": "f361968646d7fbec810ea7bc65e890424c17a386e427226ba9e16b8a20ce16eb",
     "src/app/go-live/opening-balances/page.tsx": "31bdc8145c8a9cca71ec444d5a6e75356792cc1b15258974b734643d49a102c8",
     "src/app/inventory/deliveries/[id]/loading.tsx": "76105b91f9dbc2ecde0df07233a7b5adb5eccd6570e9986b052cd16c7ee4add9",
     "src/app/inventory/deliveries/[id]/page.tsx": "01331542b25c0275df9b91e78facf9bc5aa179354a2865ca065c794df30473f9",
