@@ -8563,3 +8563,15 @@ h3,
 .inventory-action-disclosure[open] > summary .inventory-action-chevron {
   border-color: var(--accent);
 }
+
+@media (min-width: 48rem) {
+  .valuation-overview .data-table thead th:nth-child(2),
+  .valuation-overview .data-table tbody td:nth-child(2),
+  .valuation-overview .data-table thead th:nth-child(4),
+  .valuation-overview .data-table tbody td:nth-child(4),
+  .valuation-overview .data-table thead th:nth-child(5),
+  .valuation-overview .data-table tbody td:nth-child(5) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+}

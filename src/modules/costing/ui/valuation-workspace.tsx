@@ -953,7 +953,12 @@ export function RevaluationDetail({
               )}
             </dd>
             <dt>Quantity</dt>
-            <dd>{data.revaluation.currentStreamProjection.quantityLitres ?? 'Not available'} L</dd>
+            <dd>
+              {data.revaluation.currentStreamProjection.quantityLitres === null ||
+              data.revaluation.currentStreamProjection.quantityLitres === undefined
+                ? 'Not available'
+                : formatLitres(data.revaluation.currentStreamProjection.quantityLitres)}
+            </dd>
             <dt>Inventory value</dt>
             <dd>
               {data.revaluation.currentStreamProjection.inventoryValue === null
@@ -1040,7 +1045,8 @@ export function RevaluationDetail({
                     <th scope="row">
                       {date(line.saleEffectiveAt)}
                       <span className="table-secondary">
-                        {line.saleQuantityLitres} L · meter {line.meterSegmentId.slice(0, 8)}…
+                        {formatLitres(line.saleQuantityLitres)} · meter{' '}
+                        {line.meterSegmentId.slice(0, 8)}…
                       </span>
                     </th>
                     <td data-label="Original COGS">

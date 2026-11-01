@@ -1,7 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 
 import {
   Button,
@@ -45,6 +52,19 @@ type InventoryOperationalActionsProps = Readonly<{
   canRecordReceiptCost: boolean;
   onRefresh: () => void;
 }>;
+
+/** The browser's current time as a datetime-local value, so forms cannot take a future time. Empty until the page loads. */
+function useNowLocal(): string | undefined {
+  return useSyncExternalStore(subscribeNever, nowLocal, nowUnknown);
+}
+
+const subscribeNever = () => () => {};
+const nowUnknown = () => undefined;
+function nowLocal(): string {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
 
 function isoFromLocal(value: string): string {
   return new Date(value).toISOString();
@@ -209,6 +229,7 @@ function TankDipForm({
   tankId,
   onRefresh,
 }: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
+  const maxNow = useNowLocal();
   const key = useRef<string | null>(null);
   const [mode, setMode] = useState<'litres' | 'dipstick'>('litres');
   const [physicalLitres, setPhysicalLitres] = useState('');
@@ -332,7 +353,7 @@ function TankDipForm({
             id="dip-measured-at"
             type="datetime-local"
             min="2000-01-01T00:00"
-            max="2100-12-31T23:59"
+            max={maxNow}
             value={measuredAt}
             onChange={(event) => setMeasuredAt(event.target.value)}
             required
@@ -451,6 +472,7 @@ function AdjustmentForm({
   tankId,
   onRefresh,
 }: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
+  const maxNow = useNowLocal();
   const key = useRef<string | null>(null);
   const [movementType, setMovementType] = useState<'POSITIVE_ADJUSTMENT' | 'NEGATIVE_ADJUSTMENT'>(
     'POSITIVE_ADJUSTMENT',
@@ -464,6 +486,10 @@ function AdjustmentForm({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!reason.trim()) {
+      setError({ code: 'VALIDATION_FAILED', message: 'Say why the stock is being corrected.' });
+      return;
+    }
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -526,7 +552,7 @@ function AdjustmentForm({
             id="adjustment-effective-at"
             type="datetime-local"
             min="2000-01-01T00:00"
-            max="2100-12-31T23:59"
+            max={maxNow}
             value={effectiveAt}
             onChange={(event) => setEffectiveAt(event.target.value)}
             required
@@ -546,7 +572,7 @@ function AdjustmentForm({
       </div>
       <CommandFeedback error={error} success={success} />
       <div className="form-actions action-form-actions">
-        <Button type="submit" loading={saving} disabled={!reason.trim()}>
+        <Button type="submit" loading={saving}>
           Post adjustment
         </Button>
       </div>
@@ -559,6 +585,7 @@ function OpeningInventoryForm({
   tankId,
   onRefresh,
 }: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
+  const maxNow = useNowLocal();
   const quantityKey = useRef<string | null>(null);
   const costKey = useRef<string | null>(null);
   const quantityDone = useRef(false);
@@ -658,7 +685,7 @@ function OpeningInventoryForm({
               id="opening-effective-at"
               type="datetime-local"
               min="2000-01-01T00:00"
-              max="2100-12-31T23:59"
+              max={maxNow}
               value={effectiveAt}
               onChange={(event) => setEffectiveAt(event.target.value)}
               required
@@ -749,6 +776,7 @@ export function DeliveryForm({
   productId: string;
   onRefresh: () => void;
 }>) {
+  const maxNow = useNowLocal();
   const createKey = useRef<string | null>(null);
   const confirmKey = useRef<string | null>(null);
   const [deliveryId, setDeliveryId] = useState<string | null>(null);
@@ -906,7 +934,7 @@ export function DeliveryForm({
                 id="delivery-delivered-at"
                 type="datetime-local"
                 min="2000-01-01T00:00"
-                max="2100-12-31T23:59"
+                max={maxNow}
                 value={deliveredAt}
                 onChange={(event) => setDeliveredAt(event.target.value)}
                 required
