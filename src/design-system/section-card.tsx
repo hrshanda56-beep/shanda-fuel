@@ -66,7 +66,7 @@ export function CardRow({
     <li className="sc-row">
       <div className="sc-row-main">
         <span className="sc-row-title">
-          {title}
+          <span>{title}</span>
           {badge}
         </span>
         {detail ? <span className="sc-row-detail">{detail}</span> : null}
