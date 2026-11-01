@@ -384,6 +384,7 @@ export function CustomerWorkspace({
             }
             canAdd={capabilities?.manageCustomer ?? false}
             canOpenAccount={capabilities?.openAccount ?? false}
+            existingNames={customers.map((customer) => customer.displayName)}
           />
           <Link
             className="button button-secondary"
