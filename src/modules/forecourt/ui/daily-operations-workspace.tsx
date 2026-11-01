@@ -1329,9 +1329,19 @@ export function DailyOperationsWorkspace({
                   data-strong
                   data-tone={isZero(record.totals.salesVariance) ? undefined : 'warning'}
                 >
-                  <dt>Difference</dt>
+                  <dt>Sales difference</dt>
                   <dd>{formatMoney(record.totals.salesVariance)}</dd>
                 </div>
+                {record.totals.cashVariance !== null ? (
+                  <div
+                    className="profit-row"
+                    data-strong
+                    data-tone={isZero(record.totals.cashVariance) ? undefined : 'warning'}
+                  >
+                    <dt>Cash difference</dt>
+                    <dd>{formatMoney(record.totals.cashVariance)}</dd>
+                  </div>
+                ) : null}
               </dl>
             </aside>
           </div>

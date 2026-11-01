@@ -175,6 +175,27 @@ export function buildProfitAndLoss(report: ManagementReport): Statement {
   };
 }
 
+/**
+ * Cash collected and not yet confirmed by the bank, as at the end date: at the stations, with a
+ * collector, held by management and deposited but awaiting confirmation. Every screen uses this
+ * one figure for "not yet banked".
+ */
+export function unbankedCash(cash: ManagementReport['cash']): string {
+  if (cash.custody) {
+    return sumExact([
+      cash.custody.atStation,
+      cash.custody.withCollector,
+      cash.custody.heldByManagement,
+      cash.custody.awaitingBank,
+    ]);
+  }
+  return sumExact([
+    cash.atStation ?? cash.collectedButNotBanked,
+    cash.heldByManagement ?? '0',
+    cash.inTransit ?? '0',
+  ]);
+}
+
 export function buildCashMovement(report: ManagementReport): Statement {
   const { cash, providers, suppliers } = report;
   return {
@@ -191,7 +212,10 @@ export function buildCashMovement(report: ManagementReport): Statement {
         heading: 'Banking',
         lines: [
           { label: 'Banked and confirmed', value: cash.banked },
-          { label: 'Collected, not yet banked', value: cash.collectedButNotBanked, kind: 'total' },
+          ...(cash.custody
+            ? [{ label: 'Deposited, awaiting bank confirmation', value: cash.custody.awaitingBank }]
+            : []),
+          { label: 'Cash not yet banked', value: unbankedCash(cash), kind: 'total' as const },
         ],
       },
       {
@@ -210,6 +234,7 @@ export function buildCashMovement(report: ManagementReport): Statement {
       },
     ],
     notes: [
+      'Cash not yet banked is the balance at the end of the period. It includes cash collected before the period and deposits still waiting for bank confirmation.',
       'This shows where cash and electronic receipts stand. It is not an operating, investing and financing cash flow statement.',
       'Bank account balances are not held in this system, so no opening or closing cash is shown.',
     ],
@@ -346,9 +371,7 @@ export function buildNetPosition(report: ManagementReport): Statement {
     customers.prepaidValueBalance !== null;
   const holds = customersKnown
     ? sumExact([
-        cash.atStation ?? cash.collectedButNotBanked,
-        cash.heldByManagement ?? '0',
-        cash.inTransit ?? '0',
+        unbankedCash(cash),
         providers.unmatchedEvidenceAmount,
         customers.receivableBalance!,
       ])
@@ -362,12 +385,8 @@ export function buildNetPosition(report: ManagementReport): Statement {
         heading: 'What the business holds or is owed',
         lines: [
           {
-            label: 'Cash collected, not yet banked',
-            value: sumExact([
-              cash.atStation ?? cash.collectedButNotBanked,
-              cash.heldByManagement ?? '0',
-              cash.inTransit ?? '0',
-            ]),
+            label: 'Cash not yet banked',
+            value: unbankedCash(cash),
           },
           {
             label: 'Card and mobile payments not yet received',
@@ -579,8 +598,8 @@ export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
     { id: 'banked', label: 'Banked Cash', value: report.cash.banked, slug: 'cash-movement' },
     {
       id: 'unbanked',
-      label: 'Cash',
-      value: report.cash.collectedButNotBanked,
+      label: 'Cash not yet banked',
+      value: unbankedCash(report.cash),
       slug: 'cash-movement',
     },
     {

@@ -376,7 +376,7 @@ export function TankDetailView({
         <div className="tank-hero-main">
           <p className="tank-hero-figure">
             <strong>{formatLitres(tank.bookLitres)}</strong>
-            <span> of {formatLitres(tank.capacityLitres)}</span>
+            <span> of {formatLitres(tank.capacityLitres)} on the books</span>
           </p>
           <div className="tank-hero-verdict">
             {lastSignal ? (

@@ -185,6 +185,7 @@ async function DashboardContent({
     <TodayOverview
       key={`${scope.tenantId}|${scope.stationId ?? ''}|${period.period}|${period.fromDate}|${period.toDate}`}
       workItems={work.items}
+      workMore={work.more}
       workUnavailable={work.unavailable}
       tenantId={scope.tenantId}
       legalEntityId={scope.legalEntityId}
@@ -208,7 +209,7 @@ async function loadWorkItems(
   request: Request,
   scope: { tenantId: string; legalEntityId?: string; stationId?: string },
   available?: AvailableContext,
-): Promise<{ items: AttentionRow[]; unavailable: boolean }> {
+): Promise<{ items: AttentionRow[]; more: number; unavailable: boolean }> {
   const entities =
     available?.organisations
       .find((organisation) => organisation.id === scope.tenantId)
@@ -226,7 +227,7 @@ async function loadWorkItems(
             name: station.name as string | null,
           })),
       );
-  if (targets.length === 0) return { items: [], unavailable: false };
+  if (targets.length === 0) return { items: [], more: 0, unavailable: false };
   try {
     const actor = await requireAuthenticatedActor(request);
     const results = await Promise.all(
@@ -255,20 +256,23 @@ async function loadWorkItems(
                 title: target.name && !shared ? `${target.name}: ${item.title}` : item.title,
                 detail: item.detail,
                 href: item.href,
+                needsAction: item.tone === 'attention',
               };
             }),
         };
       }),
     );
+    // Each station's list is already most-urgent-first; merge them so one station's
+    // information-only items cannot push another station's approval out of view.
+    const all = [
+      ...new Map(results.flatMap((result) => result.items).map((item) => [item.id, item])).values(),
+    ].sort((a, b) => Number(b.needsAction) - Number(a.needsAction));
     return {
-      items: [
-        ...new Map(
-          results.flatMap((result) => result.items).map((item) => [item.id, item]),
-        ).values(),
-      ].slice(0, 6),
+      items: all.slice(0, 6).map(({ needsAction: _needsAction, ...row }) => row),
+      more: Math.max(0, all.length - 6),
       unavailable: results.some((result) => result.unavailable),
     };
   } catch {
-    return { items: [], unavailable: true };
+    return { items: [], more: 0, unavailable: true };
   }
 }
