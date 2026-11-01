@@ -22,6 +22,8 @@ type RecordData = {
   /** The signed-in person submitted this day and someone else can approve it. */
   approvalBlocked?: boolean;
   requiresApproverNote?: boolean;
+  /** Fuels sold in this report whose stock has no known cost, so profit for the day is incomplete. */
+  unvaluedFuels?: string[];
   business_date: string;
   attendants: Array<{ attendantId: string }>;
   readings: Array<{
@@ -570,6 +572,13 @@ export function ProductionReconciliationWorkflow({
         {missingEvidence.length > 0 && (editable || record.state === 'SUBMITTED') ? (
           <p className="state" role="status">
             Before this workflow step can continue, add: {missingEvidence.join(', ')}.
+          </p>
+        ) : null}
+        {role === 'MANAGEMENT' && record.state === 'SUBMITTED' && record.unvaluedFuels?.length ? (
+          <p className="state state-warning" role="status">
+            <strong>Fuel cost missing:</strong> We do not know what the{' '}
+            {record.unvaluedFuels.join(' and ')} cost. You can still approve, but profit for this
+            day will be incomplete until the cost is entered.
           </p>
         ) : null}
         {role === 'MANAGEMENT' && record.state === 'SUBMITTED' && record.approvalBlocked ? (

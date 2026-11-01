@@ -1944,6 +1944,13 @@ export function DailyOperationsWorkspace({
                 <strong>Returned:</strong> Fix the figures and save before you submit again.
               </p>
             ) : null}
+            {role === 'MANAGEMENT' && state === 'SUBMITTED' && record?.unvaluedFuels?.length ? (
+              <p className="state state-warning" role="status">
+                <strong>Fuel cost missing:</strong> We do not know what the{' '}
+                {record.unvaluedFuels.join(' and ')} cost. You can still approve, but profit for
+                this day will be incomplete until the cost is entered.
+              </p>
+            ) : null}
             {role === 'MANAGEMENT' && state === 'SUBMITTED' ? (
               requiresApproverNote ? (
                 <Field

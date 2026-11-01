@@ -3,6 +3,8 @@ export type RecordData = {
   version: number;
   approvalBlocked?: boolean;
   requiresApproverNote?: boolean;
+  /** Fuels sold in this report whose stock has no known cost, so profit for the day is incomplete. */
+  unvaluedFuels?: string[];
   approvalNote: string | null;
   business_date: string;
   /** Customer accounts that may be charged at this station, with what they may still spend. */

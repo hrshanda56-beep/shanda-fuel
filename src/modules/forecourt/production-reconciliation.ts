@@ -1670,10 +1670,27 @@ export async function getProductionReconciliationFromRequest(
             and s.station_id = ${context.stationId} and s.active))
       order by c.display_name, a.account_type
     `);
+    // Approval is not stopped for a missing fuel cost, but the approver is told, because profit
+    // for the day cannot be worked out until the cost is entered.
+    const unvaluedFuels = await transaction.execute<{ name: string }>(sql`
+      select distinct product.name
+      from app.reconciliation_meter_readings reading
+      join app.products product
+        on product.tenant_id = reading.tenant_id and product.id = reading.product_id
+      join app.inventory_cost_stream_state stream
+        on stream.tenant_id = reading.tenant_id and stream.station_id = reading.station_id
+       and stream.product_id = reading.product_id
+      where reading.tenant_id = ${context.tenantId}
+        and reading.station_id = ${context.stationId}
+        and reading.reconciliation_id = ${input.reconciliationId}
+        and stream.valuation_status <> 'VALUED' and stream.quantity_litres > 0
+      order by product.name
+    `);
     return {
       ...header,
       version: Number(header.version),
       approvalBlocked,
+      unvaluedFuels: unvaluedFuels.map((row) => row.name),
       customerAccounts,
       attendants,
       readings,
