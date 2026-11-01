@@ -1154,17 +1154,21 @@ function ReceiptCostForm({
     }
   }
 
+  if (!enabled) {
+    return (
+      <p className="context-required">
+        Your role cannot add costs. Ask the station manager or owner to add the cost of the{' '}
+        {formatLitres(source.quantityLitres)} delivered.
+      </p>
+    );
+  }
+
   return (
     <form className="action-form" onSubmit={submit}>
       <p className="muted-small">
         Cost of the {formatLitres(source.quantityLitres)} delivered. Never enter zero for a missing
         cost.
       </p>
-      {!enabled ? (
-        <p className="context-required">
-          Receipt-cost posting is unavailable for this permission scope.
-        </p>
-      ) : null}
       <div role="group" aria-label="How do you want to enter the cost?" className="button-row">
         <Button
           type="button"
@@ -1195,7 +1199,7 @@ function ReceiptCostForm({
               title="Enter a number, for example 1250.5"
               required
               disabled={!enabled}
-              placeholder="0.0000"
+              placeholder="For example 1250.00"
             />
           </Field>
         ) : (
@@ -1215,7 +1219,7 @@ function ReceiptCostForm({
                 title="Enter a number, for example 1250.5"
                 required
                 disabled={!enabled}
-                placeholder="0.00"
+                placeholder="For example 1250.00"
               />
             </Field>
             <Field id="receipt-freight" label="Transport (freight)" optional>

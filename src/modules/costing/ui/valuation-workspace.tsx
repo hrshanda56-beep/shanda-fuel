@@ -26,7 +26,13 @@ import { InfoTip } from '@/design-system/info-tip';
 import { TabbedCard } from '@/design-system/tabbed-card';
 import { MetricCard, PageHeader } from '@/design-system/layout';
 
-type Capabilities = { request: boolean; approve: boolean; post: boolean; addTank?: boolean };
+type Capabilities = {
+  request: boolean;
+  recordReceiptCost?: boolean;
+  approve: boolean;
+  post: boolean;
+  addTank?: boolean;
+};
 type SourceMovement = MissingCostSource & { id: string };
 type Stream = {
   station: { id: string; code: string; name: string };
@@ -368,7 +374,7 @@ export function ValuationOverview({
                   <EmptyState
                     layout="block"
                     title="No revaluations"
-                    message="A request appears here when a movement needs a late cost."
+                    message="Nothing has been requested yet. Stock with no cost is fixed from its own page."
                   />
                 ) : (
                   <TableScrollRegion label="Revaluation workflow history">
@@ -458,11 +464,11 @@ function RequestRevaluationDialog({
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [openSuccess, setOpenSuccess] = useState(false);
-  if (!source) return null;
+  if (!source || !capability) return null;
   const mapped = error ? knownError(error.code, error.message) : null;
   return (
     <DialogFrame
-      trigger={<Button disabled={!capability}>Request revaluation</Button>}
+      trigger={<Button>Request revaluation</Button>}
       title="Request late-cost revaluation"
       description="This creates a REQUESTED workflow. It does not post cost or change the projection until approved and posted."
     >
@@ -508,9 +514,8 @@ function RequestRevaluationDialog({
         <div className="callout callout-warning">
           <strong>Source requiring cost</strong>
           <p>
-            {source.movementType} · {source.quantityLitres} L · {date(source.effectiveAt)}
-            <br />
-            Source ID <code>{source.sourceId}</code>
+            {source.movementType === 'OPENING_BALANCE' ? 'Opening stock' : 'Delivery'} ·{' '}
+            {formatLitres(source.quantityLitres)} · {date(source.effectiveAt)}
           </p>
         </div>
         <InfoTip>
@@ -528,7 +533,7 @@ function RequestRevaluationDialog({
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             inputMode="decimal"
-            placeholder="0.00"
+            placeholder="For example 1250.00"
           />
         </Field>
         <Field id="revaluation-currency" label="Currency" required>
@@ -685,7 +690,7 @@ export function ValuationStreamDetail({
         tankId={stream.tank.id}
         productId={stream.product.id}
         sourceMovementRequiringCost={stream.sourceMovementRequiringCost}
-        canRecordReceiptCost={data.capabilities.request}
+        canRecordReceiptCost={data.capabilities.recordReceiptCost === true}
         onRefresh={load}
       />
       <Card as="section" className="panel table-card" aria-labelledby="valuation-changes-title">

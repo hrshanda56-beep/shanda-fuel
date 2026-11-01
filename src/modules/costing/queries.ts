@@ -222,6 +222,8 @@ function capabilities(context: Awaited<ReturnType<typeof resolveInventoryCommand
   const actorInput = { actor: context.authority.authorization, requestedScope: context.scope };
   return {
     request: isAuthorized({ ...actorInput, permissionCode: 'inventory.adjustment.post' }),
+    // Saving a delivery's cost is checked against delivery management, not adjustments.
+    recordReceiptCost: isAuthorized({ ...actorInput, permissionCode: 'inventory.delivery.manage' }),
     approve: isAuthorized({ ...actorInput, permissionCode: 'approval.act' }),
     post: isAuthorized({ ...actorInput, permissionCode: 'inventory.adjustment.post' }),
     // Role only: the identity check for this permission is asked for when the person saves.
