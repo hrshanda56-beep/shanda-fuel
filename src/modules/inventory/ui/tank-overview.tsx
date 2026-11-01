@@ -214,7 +214,18 @@ export function TankOverview({
                         >
                           Estimated
                         </span>
-                      ) : null}
+                      ) : (
+                        <span
+                          className="tank-card-note"
+                          title="The drawing shows the last dip reading; book stock is worked out from deliveries and sales"
+                        >
+                          {tank.physicalDate
+                            ? `Dip ${formatBusinessDate(tank.physicalDate)}`
+                            : 'Last dip'}
+                          {' · Books '}
+                          {compact(tank.expectedLitres)}
+                        </span>
+                      )}
                     </span>
                   </Link>
                 </li>

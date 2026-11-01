@@ -212,7 +212,10 @@ export function buildCashMovement(report: ManagementReport): Statement {
         heading: 'Banking',
         lines: [
           { label: 'Banked and confirmed', value: cash.banked },
-          { label: 'Cash not yet banked', value: unbankedCash(cash), kind: 'total' },
+          ...(cash.custody
+            ? [{ label: 'Deposited, awaiting bank confirmation', value: cash.custody.awaitingBank }]
+            : []),
+          { label: 'Cash not yet banked', value: unbankedCash(cash), kind: 'total' as const },
         ],
       },
       {
@@ -231,6 +234,7 @@ export function buildCashMovement(report: ManagementReport): Statement {
       },
     ],
     notes: [
+      'Cash not yet banked is the balance at the end of the period. It includes cash collected before the period and deposits still waiting for bank confirmation.',
       'This shows where cash and electronic receipts stand. It is not an operating, investing and financing cash flow statement.',
       'Bank account balances are not held in this system, so no opening or closing cash is shown.',
     ],

@@ -96,6 +96,7 @@ export type ExtraAlertFacts = Readonly<{
     | readonly {
         shiftId: string;
         kind: 'OPENING' | 'CLOSING';
+        businessDate: string;
         tankCodes: readonly string[];
       }[]
     | null;
@@ -148,8 +149,8 @@ export function buildExtraAlerts(
     const oldest = [...old].map((row) => row.businessDate).sort()[0]!;
     out.push({
       id: 'cash-unbanked-old',
-      title: `${formatUsd(total.toString())} has been unbanked for ${settings.unbankedCashDays} days or more`,
-      detail: `The oldest cash is from ${oldest}. Bank it and record the deposit.`,
+      title: `${formatUsd(total.toString())} of cash collected ${settings.unbankedCashDays} or more days ago is not yet confirmed by the bank`,
+      detail: `The oldest cash is from ${oldest}. This includes deposits still waiting for bank confirmation. Bank any cash not yet deposited and confirm the rest.`,
       href: `${stationPath}/cash`,
       tone: 'attention',
     });
@@ -251,8 +252,8 @@ export function buildExtraAlerts(
       id: `dip-reminder-${reminder.kind.toLowerCase()}-${reminder.shiftId}`,
       title:
         reminder.kind === 'OPENING'
-          ? `Take the opening dip reading on ${tanks}`
-          : `Take the closing dip reading on ${tanks} before the shift ends`,
+          ? `Take the opening dip reading on ${tanks} for ${reminder.businessDate}`
+          : `Take the closing dip reading on ${tanks} before the ${reminder.businessDate} shift ends`,
       detail:
         reminder.kind === 'OPENING'
           ? `The shift has started and ${many ? 'these tanks have' : 'this tank has'} no dip reading yet.`

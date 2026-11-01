@@ -222,10 +222,11 @@ export async function loadExtraAlertFacts(
     ? await (async () => {
         const rows = await transaction.execute<{
           shift_id: string;
+          business_date: string;
           kind: 'OPENING' | 'CLOSING';
           tank_code: string;
         }>(sql`
-      select s.id as shift_id, k.kind, t.code as tank_code
+      select s.id as shift_id, s.business_date, k.kind, t.code as tank_code
       from app.shifts s
       join app.tanks t on t.tenant_id = s.tenant_id and t.station_id = s.station_id
         and t.status = 'ACTIVE'
@@ -245,12 +246,18 @@ export async function loadExtraAlertFacts(
       order by s.planned_end_at, s.id, k.kind, t.code`);
         const grouped = new Map<
           string,
-          { shiftId: string; kind: 'OPENING' | 'CLOSING'; tankCodes: string[] }
+          {
+            shiftId: string;
+            businessDate: string;
+            kind: 'OPENING' | 'CLOSING';
+            tankCodes: string[];
+          }
         >();
         for (const row of rows) {
           const key = `${row.shift_id}:${row.kind}`;
           const entry = grouped.get(key) ?? {
             shiftId: row.shift_id,
+            businessDate: row.business_date,
             kind: row.kind,
             tankCodes: [],
           };
