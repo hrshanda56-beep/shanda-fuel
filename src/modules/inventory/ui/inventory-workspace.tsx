@@ -13,6 +13,7 @@ import {
 } from '@/design-system/primitives';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { parseCalibrationText } from '../calibration';
+import { InfoTip } from '@/design-system/info-tip';
 
 export type InventoryContext = Readonly<{
   tenantId: string;
@@ -130,8 +131,8 @@ export function InventoryOperationalActions({
           <span className="eyebrow">Authorised station actions</span>
           <h2 id="inventory-actions-heading">Record an Inventory observation or movement</h2>
           <p>
-            These actions are sent to the named server command and remain scoped to{' '}
-            {context.stationName}. Server validation remains authoritative.
+            These actions apply to {context.stationName} only. Figures are checked again when you
+            save.
           </p>
         </div>
       </div>
@@ -237,9 +238,7 @@ function TankDipForm({
 
   return (
     <form className="dialog-form" onSubmit={submit}>
-      <p className="muted-small">
-        A dip is a physical observation. It never silently adjusts book inventory.
-      </p>
+      <InfoTip>A dip is a physical observation. It never silently adjusts book inventory.</InfoTip>
       <div role="group" aria-label="How did you measure?" className="button-row">
         <Button
           type="button"
@@ -265,6 +264,8 @@ function TankDipForm({
             value={physicalLitres}
             onChange={(event) => setPhysicalLitres(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
             placeholder="0.000"
           />
@@ -282,6 +283,8 @@ function TankDipForm({
               value={reading}
               onChange={(event) => setReading(event.target.value)}
               inputMode="decimal"
+              pattern="-?[0-9]*[.]?[0-9]*"
+              title="Enter a number, for example 1250.5"
               required
               placeholder="112.5"
             />
@@ -304,6 +307,8 @@ function TankDipForm({
         <input
           id="dip-measured-at"
           type="datetime-local"
+          min="2000-01-01T00:00"
+          max="2100-12-31T23:59"
           value={measuredAt}
           onChange={(event) => setMeasuredAt(event.target.value)}
           required
@@ -368,10 +373,10 @@ function TankCalibrationForm({
 
   return (
     <form className="dialog-form" onSubmit={submit}>
-      <p className="muted-small">
+      <InfoTip>
         The chart from the tank maker lists a dipstick reading and the litres it means. Saving a new
         chart replaces the old one for new dips; dips already recorded keep their litres.
-      </p>
+      </InfoTip>
       <Field id="chart-unit" label="Readings are in" required>
         <select
           id="chart-unit"
@@ -475,6 +480,8 @@ function AdjustmentForm({
           value={quantityLitres}
           onChange={(event) => setQuantityLitres(event.target.value)}
           inputMode="decimal"
+          pattern="-?[0-9]*[.]?[0-9]*"
+          title="Enter a number, for example 1250.5"
           required
           placeholder="0.000"
         />
@@ -483,6 +490,8 @@ function AdjustmentForm({
         <input
           id="adjustment-effective-at"
           type="datetime-local"
+          min="2000-01-01T00:00"
+          max="2100-12-31T23:59"
           value={effectiveAt}
           onChange={(event) => setEffectiveAt(event.target.value)}
           required
@@ -570,17 +579,19 @@ function OpeningInventoryForm({
 
   return (
     <form className="dialog-form" onSubmit={submit}>
-      <p className="muted-small">
+      <InfoTip>
         Enter what is in this tank when you go live, from the opening dip, and what each litre cost.
         Book stock, the average cost and the stock value all start from these two figures. Do not
         enter an unknown cost as zero.
-      </p>
+      </InfoTip>
       <Field id="opening-litres" label="Opening dip (litres)" required>
         <input
           id="opening-litres"
           value={quantityLitres}
           onChange={(event) => setQuantityLitres(event.target.value)}
           inputMode="decimal"
+          pattern="-?[0-9]*[.]?[0-9]*"
+          title="Enter a number, for example 1250.5"
           required
           placeholder="0.000"
         />
@@ -591,6 +602,8 @@ function OpeningInventoryForm({
           value={unitCost}
           onChange={(event) => setUnitCost(event.target.value)}
           inputMode="decimal"
+          pattern="-?[0-9]*[.]?[0-9]*"
+          title="Enter a number, for example 1250.5"
           required
           placeholder="1.760"
         />
@@ -599,6 +612,8 @@ function OpeningInventoryForm({
         <input
           id="opening-effective-at"
           type="datetime-local"
+          min="2000-01-01T00:00"
+          max="2100-12-31T23:59"
           value={effectiveAt}
           onChange={(event) => setEffectiveAt(event.target.value)}
           required
@@ -798,10 +813,10 @@ export function DeliveryForm({
 
   return (
     <div className="dialog-form">
-      <p className="muted-small">
+      <InfoTip>
         Accepted litres are allocated to the validated tank. Supplier note quantity remains a
         separate commercial comparison.
-      </p>
+      </InfoTip>
       <form onSubmit={create}>
         <Field
           id="delivery-supplier"
@@ -937,6 +952,8 @@ export function DeliveryForm({
           <input
             id="delivery-delivered-at"
             type="datetime-local"
+            min="2000-01-01T00:00"
+            max="2100-12-31T23:59"
             value={deliveredAt}
             onChange={(event) => setDeliveredAt(event.target.value)}
             required
@@ -948,6 +965,8 @@ export function DeliveryForm({
             value={noteQuantityLitres}
             onChange={(event) => setNoteQuantityLitres(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
           />
         </Field>
@@ -957,6 +976,8 @@ export function DeliveryForm({
             value={actualQuantityLitres}
             onChange={(event) => setActualQuantityLitres(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
           />
         </Field>
@@ -966,6 +987,8 @@ export function DeliveryForm({
             value={allocationQuantityLitres}
             onChange={(event) => setAllocationQuantityLitres(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
           />
         </Field>
@@ -1096,6 +1119,8 @@ function ReceiptCostForm({
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
             disabled={!enabled}
             placeholder="0.0000"
@@ -1103,16 +1128,18 @@ function ReceiptCostForm({
         </Field>
       ) : (
         <>
-          <p className="muted-small">
+          <InfoTip>
             Enter what the whole delivery cost. We divide the total by the litres that actually
             arrived, so a short delivery makes each litre cost more.
-          </p>
+          </InfoTip>
           <Field id="receipt-fuel-cost" label="Cost of the fuel" required>
             <input
               id="receipt-fuel-cost"
               value={fuelCost}
               onChange={(event) => setFuelCost(event.target.value)}
               inputMode="decimal"
+              pattern="-?[0-9]*[.]?[0-9]*"
+              title="Enter a number, for example 1250.5"
               required
               disabled={!enabled}
               placeholder="0.00"
@@ -1124,6 +1151,8 @@ function ReceiptCostForm({
               value={freight}
               onChange={(event) => setFreight(event.target.value)}
               inputMode="decimal"
+              pattern="-?[0-9]*[.]?[0-9]*"
+              title="Enter a number, for example 1250.5"
               disabled={!enabled}
               placeholder="0.00"
             />
@@ -1144,6 +1173,8 @@ function ReceiptCostForm({
               value={otherAmount}
               onChange={(event) => setOtherAmount(event.target.value)}
               inputMode="decimal"
+              pattern="-?[0-9]*[.]?[0-9]*"
+              title="Enter a number, for example 1250.5"
               disabled={!enabled}
               placeholder="0.00"
             />

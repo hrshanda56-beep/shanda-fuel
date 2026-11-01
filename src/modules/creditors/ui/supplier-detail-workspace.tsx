@@ -4,7 +4,7 @@ import { useContextFetch } from '@/modules/context/client-context';
 import Decimal from 'decimal.js';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   buildContextHref,
   contextRoutePolicy,
@@ -24,6 +24,8 @@ import {
 } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
 import { Icon } from '@/design-system/icons';
+import { InfoTip } from '@/design-system/info-tip';
+import { formatBusinessDate } from '@/design-system/formatters';
 import { formatTileMoney } from '@/modules/reporting/format';
 import {
   EXPENSE_PAYMENT_METHODS,
@@ -289,6 +291,8 @@ export function SupplierDetailWorkspace({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [openForm, setOpenForm] = useState<'document' | 'document-file' | 'payment' | null>(null);
+  // Payments Due links here with #record-payment, so the payment form is already open.
+  const openedFromLink = useRef(false);
   const [limitText, setLimitText] = useState('');
   const choices: InvoiceChoices = initial?.choices ?? {
     products: [],
@@ -707,6 +711,14 @@ export function SupplierDetailWorkspace({
     }));
   }
 
+  useEffect(() => {
+    if (openedFromLink.current || !supplier) return;
+    openedFromLink.current = true;
+    if (window.location.hash === '#record-payment') {
+      void Promise.resolve().then(() => setOpenForm('payment'));
+    }
+  }, [supplier]);
+
   function openSubmitForm(form: 'document' | 'payment') {
     setActionError(null);
     setActionSuccess(null);
@@ -834,152 +846,154 @@ export function SupplierDetailWorkspace({
             </dl>
           </Card>
 
-          <Card
-            as="section"
-            className="panel content-span"
-            aria-labelledby="supplier-contact-title"
-          >
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Who to call and when you pay</p>
-                <h2 id="supplier-contact-title">Contact and credit period</h2>
-              </div>
-            </div>
-            {contactForm ? (
-              <form onSubmit={saveContact} className="stack">
-                <Field id="supplier-edit-name" label="Contact person" optional>
-                  <input
-                    id="supplier-edit-name"
-                    value={contactForm.name}
-                    maxLength={200}
-                    onChange={(event) =>
-                      setContactForm({ ...contactForm, name: event.target.value })
-                    }
-                  />
-                </Field>
-                <Field id="supplier-edit-phone" label="Phone number" optional>
-                  <input
-                    id="supplier-edit-phone"
-                    type="tel"
-                    value={contactForm.phone}
-                    maxLength={60}
-                    onChange={(event) =>
-                      setContactForm({ ...contactForm, phone: event.target.value })
-                    }
-                  />
-                </Field>
-                <Field id="supplier-edit-email" label="Email" optional>
-                  <input
-                    id="supplier-edit-email"
-                    type="email"
-                    value={contactForm.email}
-                    maxLength={200}
-                    onChange={(event) =>
-                      setContactForm({ ...contactForm, email: event.target.value })
-                    }
-                  />
-                </Field>
-                <Field id="supplier-edit-days" label="Usual credit period (days)" optional>
-                  <input
-                    id="supplier-edit-days"
-                    inputMode="numeric"
-                    maxLength={3}
-                    value={contactForm.days}
-                    onChange={(event) =>
-                      setContactForm({ ...contactForm, days: event.target.value })
-                    }
-                  />
-                </Field>
-                <div className="form-actions">
+          <div className="supplier-pair content-span">
+            <Card
+              as="section"
+              className="panel profit-panel"
+              aria-labelledby="supplier-contact-title"
+            >
+              <span className="heading-with-tip">
+                <h2 id="supplier-contact-title" className="profit-title">
+                  Contact And Credit Period
+                </h2>
+                <InfoTip text="Who to call, and when you usually pay this supplier." />
+              </span>
+              {contactForm ? (
+                <form onSubmit={saveContact} className="stack">
+                  <Field id="supplier-edit-name" label="Contact person" optional>
+                    <input
+                      id="supplier-edit-name"
+                      value={contactForm.name}
+                      maxLength={200}
+                      onChange={(event) =>
+                        setContactForm({ ...contactForm, name: event.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field id="supplier-edit-phone" label="Phone number" optional>
+                    <input
+                      id="supplier-edit-phone"
+                      type="tel"
+                      value={contactForm.phone}
+                      maxLength={60}
+                      onChange={(event) =>
+                        setContactForm({ ...contactForm, phone: event.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field id="supplier-edit-email" label="Email" optional>
+                    <input
+                      id="supplier-edit-email"
+                      type="email"
+                      value={contactForm.email}
+                      maxLength={200}
+                      onChange={(event) =>
+                        setContactForm({ ...contactForm, email: event.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field id="supplier-edit-days" label="Usual credit period (days)" optional>
+                    <input
+                      id="supplier-edit-days"
+                      inputMode="numeric"
+                      maxLength={3}
+                      value={contactForm.days}
+                      onChange={(event) =>
+                        setContactForm({ ...contactForm, days: event.target.value })
+                      }
+                    />
+                  </Field>
+                  <div className="form-actions">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setContactForm(null)}
+                      disabled={action !== null}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={action !== null}>
+                      Save details
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <p>
+                    {supplier.contactName || supplier.contactPhone || supplier.contactEmail
+                      ? [supplier.contactName, supplier.contactPhone, supplier.contactEmail]
+                          .filter(Boolean)
+                          .join(' · ')
+                      : 'No contact details recorded yet.'}
+                  </p>
+                  <p>
+                    {supplier.defaultCreditDays === null || supplier.defaultCreditDays === undefined
+                      ? 'Usual credit period not recorded.'
+                      : `Usual credit period: ${supplier.defaultCreditDays} days.`}
+                  </p>
                   <Button
-                    type="button"
                     variant="secondary"
-                    onClick={() => setContactForm(null)}
-                    disabled={action !== null}
+                    onClick={() =>
+                      setContactForm({
+                        name: supplier.contactName ?? '',
+                        phone: supplier.contactPhone ?? '',
+                        email: supplier.contactEmail ?? '',
+                        days: supplier.defaultCreditDays?.toString() ?? '',
+                      })
+                    }
                   >
-                    Cancel
+                    Edit details
                   </Button>
-                  <Button type="submit" disabled={action !== null}>
-                    Save details
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <>
-                <p>
-                  {supplier.contactName || supplier.contactPhone || supplier.contactEmail
-                    ? [supplier.contactName, supplier.contactPhone, supplier.contactEmail]
-                        .filter(Boolean)
-                        .join(' · ')
-                    : 'No contact details recorded yet.'}
-                </p>
-                <p>
-                  {supplier.defaultCreditDays === null || supplier.defaultCreditDays === undefined
-                    ? 'Usual credit period not recorded.'
-                    : `Usual credit period: ${supplier.defaultCreditDays} days.`}
-                </p>
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    setContactForm({
-                      name: supplier.contactName ?? '',
-                      phone: supplier.contactPhone ?? '',
-                      email: supplier.contactEmail ?? '',
-                      days: supplier.defaultCreditDays?.toString() ?? '',
-                    })
-                  }
-                >
-                  Edit details
-                </Button>
-              </>
-            )}
-          </Card>
+                </>
+              )}
+            </Card>
 
-          <Card as="section" className="panel content-span" aria-labelledby="supplier-limit-title">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Agreed with the supplier</p>
-                <h2 id="supplier-limit-title">Credit limit</h2>
-              </div>
-            </div>
-            <p>{creditLimitSentence(supplier.creditLimit)}</p>
-            <form onSubmit={saveCreditLimit} className="stack">
-              <Field
-                id="supplier-credit-limit"
-                label="New credit limit"
-                hint="The most you are willing to owe this supplier. Leave empty to remove the limit. It warns you; it never stops a purchase."
-              >
-                <input
-                  id="supplier-credit-limit"
-                  value={limitText}
-                  onChange={(event) => setLimitText(event.target.value)}
-                  inputMode="decimal"
-                  // Never a made-up figure: the limit in force, or a plain "no limit".
-                  placeholder={
-                    supplier.creditLimit?.limit == null
-                      ? 'No limit set'
-                      : `Currently ${supplier.creditLimit.limit}`
-                  }
-                />
-              </Field>
-              <Button type="submit" variant="secondary" disabled={action !== null}>
-                Save credit limit
-              </Button>
-            </form>
-          </Card>
+            <Card
+              as="section"
+              className="panel profit-panel"
+              aria-labelledby="supplier-limit-title"
+            >
+              <span className="heading-with-tip">
+                <h2 id="supplier-limit-title" className="profit-title">
+                  Credit Limit
+                </h2>
+                <InfoTip text="Agreed with the supplier: the most you are willing to owe them. It warns you; it never stops a purchase. Leave the box empty to remove the limit." />
+              </span>
+              <p>{creditLimitSentence(supplier.creditLimit)}</p>
+              <form onSubmit={saveCreditLimit} className="supplier-limit-form">
+                <Field id="supplier-credit-limit" label="New credit limit">
+                  <input
+                    id="supplier-credit-limit"
+                    value={limitText}
+                    onChange={(event) => setLimitText(event.target.value)}
+                    inputMode="decimal"
+                    // Never a made-up figure: the limit in force, or a plain "no limit".
+                    placeholder={
+                      supplier.creditLimit?.limit == null
+                        ? 'No limit set'
+                        : `Currently ${supplier.creditLimit.limit}`
+                    }
+                  />
+                </Field>
+                <Button type="submit" variant="secondary" disabled={action !== null}>
+                  Save credit limit
+                </Button>
+              </form>
+            </Card>
+          </div>
 
           {pending.length > 0 ? (
             <Card
               as="section"
-              className="panel content-span"
+              className="panel profit-panel content-span"
               aria-labelledby="supplier-pending-title"
             >
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Entered, not counted yet</p>
-                  <h2 id="supplier-pending-title">Waiting to be posted</h2>
-                </div>
-              </div>
+              <span className="heading-with-tip">
+                <h2 id="supplier-pending-title" className="profit-title">
+                  Waiting To Be Posted
+                </h2>
+                <InfoTip text="Entered, but not counted in the amount owed yet." />
+              </span>
               <p>
                 These are not in the amount owed until they are posted. Check each one against the
                 supplier&apos;s paper invoice, then post it.
@@ -993,7 +1007,7 @@ export function SupplierDetailWorkspace({
                           Payment {item.referenceNumber}
                         </span>
                         <span className="list-cell" data-label="Dated">
-                          {item.paymentDate}
+                          {formatBusinessDate(item.paymentDate)}
                         </span>
                         <span className="list-cell list-amount" data-label="Amount">
                           {formatTileMoney(item.amount, item.currency)}
@@ -1022,8 +1036,8 @@ export function SupplierDetailWorkspace({
                           {item.referenceNumber}
                         </span>
                         <span className="list-cell" data-label="Dated">
-                          {item.documentDate}
-                          {item.dueDate ? `, due ${item.dueDate}` : ''}
+                          {formatBusinessDate(item.documentDate)}
+                          {item.dueDate ? `, due ${formatBusinessDate(item.dueDate)}` : ''}
                         </span>
                         <span className="list-cell list-amount" data-label="Amount">
                           {formatTileMoney(item.amount, item.currency)}
@@ -1122,14 +1136,16 @@ export function SupplierDetailWorkspace({
 
           <Card
             as="section"
-            className="panel content-span"
+            className="panel profit-panel content-span"
             aria-labelledby="supplier-statement-title"
           >
             <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Posted movements</p>
-                <h2 id="supplier-statement-title">Statement</h2>
-              </div>
+              <span className="heading-with-tip">
+                <h2 id="supplier-statement-title" className="profit-title">
+                  Statement
+                </h2>
+                <InfoTip text="Every posted movement on this supplier's account, with the running balance." />
+              </span>
               <Button variant="secondary" onClick={() => void loadDetails(current)}>
                 Refresh
               </Button>
@@ -1154,7 +1170,7 @@ export function SupplierDetailWorkspace({
                   {statement.map((line) => (
                     <li key={`${line.sourceId}-${line.postedAt}`} className="list-row ledger-row">
                       <span className="list-cell" data-label="Effective date">
-                        {line.effectiveDate}
+                        {formatBusinessDate(line.effectiveDate)}
                       </span>
                       <span className="list-cell ledger-movement" data-label="Movement">
                         {movementLabel(line.movementType)}

@@ -143,6 +143,17 @@ async function forecourtCommand(input: Record<string, unknown>, key: string) {
 
 describe('A10 management reporting PostgreSQL read model', () => {
   let client: Sql;
+  /** Runs one statement as a request does: the allocation guard runs as its owner, so it sees only the session's tenant. */
+  const asTenant = (statement: string) =>
+    client.begin(async (transaction) => {
+      await transaction`
+        select set_config('app.tenant_id', ${ids.tenant}, true),
+               set_config('app.actor_id', ${ids.actor}, true),
+               set_config('app.membership_id', ${ids.membership}, true),
+               set_config('app.station_id', ${ids.station}, true)
+      `;
+      await transaction.unsafe(statement);
+    });
 
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
@@ -255,6 +266,8 @@ describe('A10 management reporting PostgreSQL read model', () => {
           ('${ids.factCreditPayment}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'CUSTOMER_CREDIT', 10.0000, 'A10-CREDIT', '${ids.membership}'),
           ('${ids.factPrepaidPayment}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'PREPAID', 5.0000, 'A10-PREPAID', '${ids.membership}')
         on conflict (id) do nothing;
+      -- The reference marks this expense as the one already posted from the report line below, so
+      -- approving the reconciliation does not post it a second time.
       insert into app.reconciliation_expenses
         (id, tenant_id, station_id, reconciliation_id, category, description, amount, payment_method, entered_by)
         values ('${ids.factExpense}', '${ids.tenant}', '${ids.station}', '${ids.factRecon}', 'A10_TEST', 'A10 test expense', 2.0000, 'CASH', '${ids.membership}')
@@ -264,9 +277,9 @@ describe('A10 management reporting PostgreSQL read model', () => {
         values ('${ids.factExpenseCategory}', '${ids.tenant}', 'A10_TEST', 'A10 test expense', 'OPERATING', 'ACTIVE', '${ids.membership}')
         on conflict (id) do nothing;
       insert into app.expenses
-        (id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description, amount, submitted_by)
+        (id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description, amount, submitted_by, reference)
         values ('${ids.factExpense}', '${ids.tenant}', '${ids.legal}', '${ids.station}', '${ids.factExpenseCategory}',
-         '2026-09-20', 'A10 test expense', 2.0000, '${ids.membership}')
+         '2026-09-20', 'A10 test expense', 2.0000, '${ids.membership}', 'SHIFTREPORT-2026-09-20-a10b0000')
         on conflict (id) do nothing;
       insert into app.expense_recognition_movements
         (id, tenant_id, legal_entity_id, station_id, category_id, classification, movement_type,
@@ -417,7 +430,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     const approvalBody = (await approval.json()) as Record<string, unknown>;
     expect(approval.status, JSON.stringify(approvalBody)).toBe(200);
 
-    await client.unsafe(`
+    await asTenant(`
       insert into app.provider_settlement_allocations
         (id, tenant_id, station_id, settlement_id, reconciliation_payment_id, amount, allocation_key, state, allocated_by)
       values ('${ids.factSettlementAllocation}', '${ids.tenant}', '${ids.station}', '${ids.factSettlement}', '${ids.factPosPayment}', 20.0000, 'A10-SETTLEMENT-ALLOCATION', 'POSTED', '${ids.membership}')
@@ -518,7 +531,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     ] as const;
 
     for (const revaluation of revaluations) {
-      await client.unsafe(`
+      await asTenant(`
         insert into app.inventory_cost_revaluations
           (id, tenant_id, station_id, tank_id, product_id, reason, status, source_type, source_id,
            amount, currency, effective_at, business_date, requested_by, requested_at)
@@ -775,6 +788,24 @@ describe('A10 management reporting PostgreSQL read model', () => {
     });
     expect(priorBusinessDateBody.grossMargin).toBeNull();
 
+    // Cash at the station is a balance: it does not depend on which days the report covers.
+    // 60.00 was collected on 20 Sep and 40.00 was deposited on 22 Sep, so 20.00 is still there
+    // for a window that starts after the collection, and the whole 60.00 for one that ends before
+    // the deposit.
+    for (const [fromDate, toDate, atStation, inTransit] of [
+      ['2026-09-21', '2026-09-30', '20.0000', '0.0000'],
+      ['2026-09-19', '2026-09-21', '60.0000', '0.0000'],
+    ] as const) {
+      const windowResponse = await managementReportGet(
+        new Request(
+          `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=${fromDate}&toDate=${toDate}`,
+          { headers: { ...clerkHeaders(await signedCookie()) } },
+        ),
+      );
+      const windowBody = (await windowResponse.json()) as Record<string, any>;
+      expect(windowBody.cash, `${fromDate}..${toDate}`).toMatchObject({ atStation, inTransit });
+    }
+
     expect(body.costing).toMatchObject({
       currency: 'USD',
       costingStatus: 'COMPLETE',
@@ -861,7 +892,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(body.dateBasis.expenses).toBe('expense_recognition_movements.recognition_date');
     expect(body.dateBasis.bankedCash).toBe('A6 bank_deposits.deposited_at UTC calendar date');
 
-    await client.unsafe(`
+    await asTenant(`
       insert into app.provider_settlement_allocations
         (id, tenant_id, station_id, settlement_id, reconciliation_payment_id, amount, allocation_key, state, reversal_of_id, allocated_by)
       values ('${ids.factSettlementReversal}', '${ids.tenant}', '${ids.station}', '${ids.factSettlement}', '${ids.factPosPayment}', 20.0000, 'A10-SETTLEMENT-ALLOCATION-REVERSAL', 'REVERSED', '${ids.factSettlementAllocation}', '${ids.membership}')
@@ -904,6 +935,23 @@ describe('A10 management reporting PostgreSQL read model', () => {
     expect(depositDateBody.cash.collected).toBe('0.0000');
     expect(depositDateBody.cash.banked).toBe('40.0000');
 
+    // B4: where the cash is as at the end date does not depend on the dates chosen. The 60
+    // collected on 20 Sep is 20 in the safe and 40 banked, even when only 22 Sep is viewed, and
+    // each amount is in exactly one place, so the places add up to everything collected.
+    const custody = depositDateBody.cash.custody as Record<string, string>;
+    expect(custody).toMatchObject({
+      atStation: '20.0000',
+      withCollector: '0.0000',
+      heldByManagement: '0.0000',
+      awaitingBank: '0.0000',
+      banked: '40.0000',
+      total: '60.0000',
+    });
+    const places = ['atStation', 'withCollector', 'heldByManagement', 'awaitingBank', 'banked'].map(
+      (key) => Number(custody[key]),
+    );
+    expect(places.reduce((sum, value) => sum + value, 0)).toBe(Number(custody.total));
+
     const dailyResponse = await dailyReportGet(
       new Request(
         `http://127.0.0.1:3000/api/reports/daily?tenantId=${ids.tenant}&fromDate=2026-09-20&toDate=2026-09-22`,
@@ -927,6 +975,26 @@ describe('A10 management reporting PostgreSQL read model', () => {
         ?.inventoryVariance,
     ).toBeNull();
     expect(dailyBody.rows.every((row: Record<string, any>) => !('businessDate' in row))).toBe(true);
+
+    // Narrowing to one station must still load (the expected-days query filters stations by id).
+    const stationDaily = await dailyReportGet(
+      new Request(
+        `http://127.0.0.1:3000/api/reports/daily?tenantId=${ids.tenant}&stationIds=${ids.station}&fromDate=2026-09-20&toDate=2026-09-22`,
+        { headers: { ...clerkHeaders(await signedCookie()) } },
+      ),
+    );
+    expect(stationDaily.status).toBe(200);
+    const stationDailyBody = (await stationDaily.json()) as Record<string, any>;
+    expect(stationDailyBody.expectedBusinessDays).toBeGreaterThan(0);
+
+    // A2: gap days are found even outside the requested 20 to 22 Sep range. The only
+    // reconciliation is on 20 Sep, so 21 Sep onward is missing and 20 Sep is not.
+    const missing = (stationDailyBody.missingReportDays as Record<string, any>[])
+      .filter((day) => day.stationId === ids.station)
+      .map((day) => day.businessDate);
+    expect(missing).toContain('2026-09-23');
+    expect(missing).toContain('2026-09-21');
+    expect(missing).not.toContain('2026-09-20');
   });
 
   it('returns an explicit unavailable customer scope for a station-filtered report', async () => {
@@ -1339,6 +1407,30 @@ describe('A10 management reporting PostgreSQL read model', () => {
       const scopedItems = ((await scoped.json()) as { data: Record<string, string>[] }).data;
       expect(scopedItems).toHaveLength(1);
       expect(scopedItems[0]?.detail).toContain('A10 Scoped Station');
+    });
+
+    it('refuses report activity to someone who cannot view reports', async () => {
+      const actorId = 'a10b0000-0000-4000-8000-0000000000a1';
+      const membershipId = 'a10b0000-0000-4000-8000-0000000000a2';
+      const sessionId = 'a10b0000-0000-4000-8000-0000000000a3';
+      const token = 'a10-attendant-only-session-token';
+      await client.unsafe(`
+        insert into app.users (id, name, email) values
+          ('${actorId}', 'A10 Attendant', 'a10-attendant@example.test') on conflict (id) do nothing;
+        insert into app.memberships (id, tenant_id, identity_id, status)
+          values ('${membershipId}', '${ids.tenant}', '${actorId}', 'ACTIVE') on conflict (id) do nothing;
+        insert into app.membership_role_assignments
+          (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+        values ('${ids.tenant}', '${membershipId}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}')
+        on conflict do nothing;
+      `);
+      await seedClerkSession(client, sessionId, token, actorId, true);
+      const response = await reportActivityGet(
+        new Request(`http://127.0.0.1:3000/api/reports/activity?tenantId=${ids.tenant}`, {
+          headers: { ...clerkHeaders(await signedCookie(token)) },
+        }),
+      );
+      expect(response.status).toBe(403);
     });
 
     it('stops honouring a copied link once the permission is revoked', async () => {

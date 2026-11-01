@@ -19,12 +19,14 @@ import {
   ErrorState,
   Field,
   LoadingState,
+  StatusBadge,
   SuccessState,
 } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
+import { NotchedCard } from '@/design-system/notched-card';
 import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
-import { initials, isOverdue, overduePercent } from './supplier-format';
+import { creditLimitCells, isOverdue, overduePercent } from './supplier-format';
 
 type SupplierSummary = {
   supplierId: string;
@@ -34,6 +36,7 @@ type SupplierSummary = {
   overdue: string;
   total: string;
   asOf?: string;
+  creditLimit?: { status: string; limit: string | null; available: string | null };
 };
 
 type CreateSupplierForm = {
@@ -400,15 +403,22 @@ export function SupplierWorkspace({
       {createSuccess ? <SuccessState title="Supplier created" message={createSuccess} /> : null}
 
       {hasRequiredContext && supplierSelection ? (
-        <Card
-          as="section"
-          className="panel content-span"
-          aria-labelledby="supplier-creditors-title"
+        <NotchedCard
+          title="Supplier balances"
+          titleId="supplier-creditors-title"
+          wrapperClassName="content-span"
+          notchWidth={9}
+          actions={
+            <Button
+              onClick={() => {
+                resetCreateForm();
+                setCreateOpen(true);
+              }}
+            >
+              Add supplier
+            </Button>
+          }
         >
-          <h2 id="supplier-creditors-title" className="visually-hidden">
-            Supplier balances
-          </h2>
-
           <div className="list-toolbar">
             {rows.length > 0 ? (
               <>
@@ -440,15 +450,6 @@ export function SupplierWorkspace({
                 </div>
               </>
             ) : null}
-            <Button
-              className="list-toolbar-action"
-              onClick={() => {
-                resetCreateForm();
-                setCreateOpen(true);
-              }}
-            >
-              Add supplier
-            </Button>
           </div>
 
           {loading ? <LoadingState label="Loading supplier balances" /> : null}
@@ -482,6 +483,7 @@ export function SupplierWorkspace({
                 <span>Not Yet Due</span>
                 <span>Overdue</span>
                 <span>Total</span>
+                <span>Credit</span>
                 <span />
               </div>
               <ul className="list-rows" aria-label="Supplier balances">
@@ -492,13 +494,11 @@ export function SupplierWorkspace({
                     supplierSelection,
                   );
                   const late = isOverdue(row);
+                  const credit = creditLimitCells(row.creditLimit);
                   return (
                     <li key={row.supplierId} className="list-item">
                       <Link className="list-row" href={href}>
                         <span className="list-name">
-                          <span className="list-avatar" aria-hidden="true">
-                            {initials(row.legalName)}
-                          </span>
                           <span>
                             <strong>{row.legalName}</strong>
                             <small>{row.code}</small>
@@ -525,6 +525,19 @@ export function SupplierWorkspace({
                         <span className="list-cell list-amount" data-label="Total">
                           {formatTileMoney(row.total)}
                         </span>
+                        <span
+                          className="list-cell list-amount list-stack"
+                          data-label="Credit"
+                          data-tone={credit.over ? 'warning' : undefined}
+                        >
+                          {credit.over ? (
+                            <StatusBadge tone="critical">Over limit</StatusBadge>
+                          ) : null}
+                          <span>{credit.limit}</span>
+                          {credit.available !== '—' ? (
+                            <small>{credit.available} available</small>
+                          ) : null}
+                        </span>
                       </Link>
                       <SupplierRowMenu row={row} href={href} />
                     </li>
@@ -533,7 +546,7 @@ export function SupplierWorkspace({
               </ul>
             </div>
           ) : null}
-        </Card>
+        </NotchedCard>
       ) : null}
 
       <Modal

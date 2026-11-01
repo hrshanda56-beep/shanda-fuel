@@ -312,8 +312,12 @@ function ContextForm({
   const inCurrentOrganisation = organisation.id === current.organisationId;
   // With the legal entity optional, one "all stations" row covers the organisation;
   // when it is required, "all stations" belongs to each legal entity.
+  // People who only hold station-level access have nothing to see across all stations.
   const allPerEntity = policy.allStationsAllowed && policy.legalEntity === 'required';
-  const allForOrganisation = policy.allStationsAllowed && policy.legalEntity === 'optional';
+  const allForOrganisation =
+    policy.allStationsAllowed &&
+    policy.legalEntity === 'optional' &&
+    !legalEntities.every((entity) => entity.stationsOnly);
 
   return (
     <div className="context-selector-form" ref={formRef} tabIndex={-1}>
@@ -353,7 +357,7 @@ function ContextForm({
           <section key={entity.id} className="context-selector-group">
             {showEntityHeadings ? <h3>{entity.name}</h3> : null}
             <ul className="context-selector-list">
-              {allPerEntity ? (
+              {allPerEntity && !entity.stationsOnly ? (
                 <ContextOption
                   title="All stations"
                   detail={showEntityHeadings ? undefined : entity.name}

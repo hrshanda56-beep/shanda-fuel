@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon } from '@/design-system/icons';
+import { InfoTip } from '@/design-system/info-tip';
 import { Checkbox } from '@/design-system/forms';
 import {
   Button,
@@ -80,14 +81,14 @@ export function ChecksPanel({
     return showAll ? all : all.filter((row) => row.exceeded);
   }, [data, showAll]);
   const problemCount = (data?.deliveries ?? []).filter((row) => row.exceeded).length;
+  const unlinkedCount = (data?.deliveries ?? []).filter((row) => !row.purchaseOrderNumber).length;
+  const unlinkedNote =
+    unlinkedCount > 0
+      ? ` ${unlinkedCount} ${unlinkedCount === 1 ? 'delivery is' : 'deliveries are'} not linked to an order, so ${unlinkedCount === 1 ? 'it' : 'they'} could not be checked.`
+      : '';
 
   return (
     <div className={styles.stack}>
-      <p className={styles.intro}>
-        When the supplier sends an invoice, we compare it with what was ordered and what actually
-        arrived. Anything that is more than your settings allow shows here, so you can query it
-        before you pay.
-      </p>
       {loading ? <LoadingState label="Loading" /> : null}
       {error ? (
         <ErrorState
@@ -96,15 +97,18 @@ export function ChecksPanel({
         />
       ) : null}
       {data && !loading && !error ? (
-        <Card as="section" className="panel" aria-labelledby="po-checks-title">
+        <Card as="section" className="panel profit-panel" aria-labelledby="po-checks-title">
           <div className={styles.toolbar}>
             <div className={styles.headline}>
-              <h3 id="po-checks-title" className={styles.sectionTitle}>
-                Deliveries and invoices
-              </h3>
+              <span className="heading-with-tip">
+                <h2 id="po-checks-title" className="profit-title">
+                  Deliveries And Invoices
+                </h2>
+                <InfoTip text="When the supplier sends an invoice, we compare it with what was ordered and what actually arrived. Anything more than your settings allow shows here, so you can query it before you pay." />
+              </span>
               <p className={styles.muted}>
                 {problemCount === 0
-                  ? 'Nothing needs a look right now.'
+                  ? `Nothing needs a look right now.${unlinkedNote}`
                   : `${problemCount} ${problemCount === 1 ? 'delivery needs' : 'deliveries need'} a look.`}
               </p>
             </div>
@@ -124,7 +128,7 @@ export function ChecksPanel({
               message={
                 showAll
                   ? 'Once fuel is delivered, it will show here with its invoice.'
-                  : 'Every invoice matches what was ordered and delivered, within your allowed differences.'
+                  : `Every checked invoice matches what was ordered and delivered, within your allowed differences.${unlinkedNote}`
               }
             />
           ) : (

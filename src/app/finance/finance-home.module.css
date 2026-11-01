@@ -1,0 +1,141 @@
+/* The two charts sit side by side when the page is wide enough, then the list takes the full width. */
+.page {
+  container-type: inline-size;
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.split {
+  display: grid;
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+@container (min-width: 64rem) {
+  .split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Both cards end together, however tall the page makes them. */
+  .split > * {
+    min-height: 26rem;
+  }
+}
+
+/* The chart takes whatever height its card has. */
+.chartCard {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* The ring and its legend sit in the middle of the card, whatever its height. */
+.donutBody {
+  display: grid;
+  align-content: center;
+}
+
+/* A card whose figures could not be read says so, in the same space the chart would fill. */
+.unavailable {
+  display: grid;
+  align-content: center;
+  min-height: 12rem;
+}
+
+/* Task, area, priority. The whole row is the link. */
+.table :global(.list-head),
+.table :global(.list-row) {
+  grid-template-columns: minmax(12rem, 3fr) minmax(6.5rem, 1fr) minmax(8.5rem, 1fr);
+}
+
+.table :global(.list-row)::after {
+  right: var(--space-2);
+}
+
+.table :global(.list-row) {
+  padding-block: var(--space-4);
+  padding-right: var(--space-6);
+}
+
+.table :global(.list-head) {
+  padding-right: var(--space-6);
+}
+
+.task {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.task strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.task small {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* "4 times": the same reminder repeated, shown once. */
+.times {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.area {
+  color: var(--text-secondary);
+}
+
+/* A half-width window is still wide enough for the columns; only a phone stacks them. */
+@media (min-width: 40.01rem) {
+  @container record-list (max-width: 48rem) {
+    .table :global(.list-head) {
+      display: grid;
+    }
+
+    .table :global(.list-head),
+    .table :global(.list-row) {
+      grid-template-columns: minmax(12rem, 3fr) minmax(6.5rem, 1fr) minmax(8.5rem, 1fr);
+      gap: var(--space-3);
+    }
+
+    .table :global(.list-cell)::before {
+      content: none;
+    }
+  }
+}
+
+/* On a phone the task takes the full width, with its area and priority side by side beneath it. */
+@media (max-width: 48rem) {
+  .table :global(.list-row) {
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    padding-right: var(--space-4);
+  }
+
+  .table .task {
+    grid-column: 1 / -1;
+  }
+
+  .table .task strong {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .table :global(.list-cell)::before {
+    content: none;
+  }
+}

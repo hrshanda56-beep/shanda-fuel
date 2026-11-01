@@ -17,6 +17,7 @@ export type ErrorClassification =
   | 'validation'
   | 'unauthenticated'
   | 'forbidden'
+  | 'reconciliation_already_exists'
   | 'not_found'
   | 'conflict'
   | 'invariant'
@@ -124,6 +125,7 @@ export function classifyError(error: unknown): ErrorClassification {
       UNAUTHENTICATED: 'unauthenticated',
       FORBIDDEN: 'forbidden',
       STEP_UP_REQUIRED: 'forbidden',
+      RECONCILIATION_ALREADY_EXISTS: 'reconciliation_already_exists',
       NOT_FOUND: 'not_found',
       CONFLICT: 'conflict',
       INVARIANT_VIOLATION: 'invariant',
@@ -243,6 +245,18 @@ export function apiErrorResponse(
         ...(options.includeDetails ? { details: error.details } : {}),
       },
       error.httpStatus,
+      options.headers,
+    );
+  }
+
+  // A reference, number or code that is already taken is the person's to change, not a server fault.
+  if (sqlState(error) === '23505') {
+    return responseWithHeaders(
+      {
+        error: 'CONFLICT',
+        message: 'That reference, number or code is already in use. Check it and try again.',
+      },
+      409,
       options.headers,
     );
   }

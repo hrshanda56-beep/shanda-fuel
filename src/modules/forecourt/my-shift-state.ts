@@ -228,6 +228,11 @@ export function deriveMyShiftView(data: MyShiftData): MyShiftView {
         nozzleId: closing.meter.nozzleId,
         label: `Record the closing reading for ${closing.label}`,
       };
+    } else if (meters.length > 0 && meters.every((view) => view.closing.state === 'done')) {
+      next = {
+        kind: 'none',
+        message: 'All your readings are recorded. Your supervisor still needs to close this shift.',
+      };
     } else if (meters.every((view) => view.opening.state === 'done')) {
       next = {
         kind: 'none',
@@ -239,7 +244,9 @@ export function deriveMyShiftView(data: MyShiftData): MyShiftView {
   const headline = finished
     ? 'This shift is finished.'
     : running
-      ? 'Your shift is running.'
+      ? closingDue
+        ? 'Your shift is past its planned end and is still open.'
+        : 'Your shift is running.'
       : 'Your shift has not started yet.';
 
   return { phase, headline, meters, next };

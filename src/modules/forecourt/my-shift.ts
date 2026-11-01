@@ -95,9 +95,14 @@ async function loadMyShift(
       on t.tenant_id = s.tenant_id and t.station_id = s.station_id and t.id = s.shift_template_id
     where s.tenant_id = ${context.tenantId}
       and s.station_id = ${input.stationId}
-      and s.planned_end_at > now() - interval '14 hours'
-      and s.planned_start_at < now() + interval '14 hours'
-    order by s.planned_start_at, s.id
+      and (
+        s.state = 'OPEN'
+        or (
+          s.planned_end_at > now() - interval '14 hours'
+          and s.planned_start_at < now() + interval '14 hours'
+        )
+      )
+    order by s.planned_start_at desc, s.id
     limit 12
   `);
 

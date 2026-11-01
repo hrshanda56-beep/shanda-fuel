@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { Button, NumericInput, StatusBadge, type StatusTone } from '@/design-system/primitives';
-import { TableScrollRegion } from '@/design-system/table';
-import { formatLitres } from '@/design-system/formatters';
+import { formatLitres, formatTimeInTimeZone } from '@/design-system/formatters';
 import { classifyStockVariance } from '../../approvals/operations-alerts';
 import type { RecordData } from '../daily-operations-read-model';
 import { dipInstantForSheet } from '../dip-time';
+import { PumpReadout } from './pump-readout';
 
 type Tank = RecordData['tanks'][number];
 
@@ -16,6 +16,12 @@ const SIGNAL: Record<ReturnType<typeof classifyStockVariance>, [StatusTone, stri
   alert: ['critical', 'Needs urgent attention'],
   unjudged: ['neutral', 'Not checked yet'],
 };
+
+/** Tanks measured in litres start at what the books expect, so a dip that matches is one tap. */
+function prefill(tank: Tank, dip: unknown) {
+  if (dip || tank.hasMillimetreChart || !tank.expectedLitres) return '';
+  return String(Number(tank.expectedLitres));
+}
 
 function newKey(tankId: string) {
   return `ui-tank-dip-${tankId}-${crypto.randomUUID()}`;
@@ -65,7 +71,13 @@ export function DailyTankDips({
   }
 
   async function save(tank: Tank) {
-    const reading = (entries[tank.tankId] ?? '').trim();
+    const reading = (
+      entries[tank.tankId] ??
+      prefill(
+        tank,
+        record.dips.find((entry) => entry.tankId === tank.tankId),
+      )
+    ).trim();
     if (!/^\d+(\.\d+)?$/.test(reading)) {
       setError(
         `Enter the ${tank.hasMillimetreChart ? 'dipstick reading' : 'litres'} for tank ${tank.code} as a number.`,
@@ -101,7 +113,10 @@ export function DailyTankDips({
         expectedVersion: record.version,
         dips: [...kept, { dipId: dip.dipId, tankId: tank.tankId, productId: tank.productId }],
       });
-      setEntries((current) => ({ ...current, [tank.tankId]: '' }));
+      setEntries((current) => {
+        const { [tank.tankId]: _saved, ...rest } = current;
+        return rest;
+      });
       setMessage(`Tank ${tank.code} dip saved.`);
       await onChanged();
     } catch (cause) {
@@ -116,83 +131,91 @@ export function DailyTankDips({
   }
 
   return (
-    <div>
-      <TableScrollRegion label="Tank dips for this day">
-        <table className="responsive-table">
-          <caption className="visually-hidden">Tank dips for this day</caption>
-          <thead>
-            <tr>
-              <th scope="col">Tank</th>
-              <th scope="col">Fuel</th>
-              <th scope="col">Dip on this sheet</th>
-              <th scope="col">Compared with the books</th>
-              {editable ? <th scope="col">New dip</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {record.tanks.map((tank) => {
-              const dip = record.dips.find((entry) => entry.tankId === tank.tankId);
-              const variance = record.totals.stockVariance[tank.tankId] ?? null;
-              const [tone, label] =
-                SIGNAL[
-                  classifyStockVariance(
-                    dip ? variance : null,
-                    tank.toleranceLitres,
-                    tank.redLitres ?? null,
-                  )
-                ];
-              return (
-                <tr key={tank.tankId}>
-                  <th scope="row" data-label="Tank">
-                    {tank.code}
-                  </th>
-                  <td data-label="Fuel">{tank.productName}</td>
-                  <td data-label="Dip on this sheet" className="numeric">
-                    {dip ? formatLitres(dip.physicalLitres) : 'No dip yet'}
-                  </td>
-                  <td data-label="Compared with the books">
-                    {dip && variance !== null ? (
-                      <>
-                        <span className="numeric">
-                          {Number(variance) > 0 ? '+' : ''}
-                          {formatLitres(variance)}
-                        </span>{' '}
-                      </>
-                    ) : null}
-                    <StatusBadge tone={tone}>
-                      {tank.toleranceLitres === null && dip ? 'No allowed difference set' : label}
-                    </StatusBadge>
-                  </td>
-                  {editable ? (
-                    <td data-label="New dip">
-                      <NumericInput
-                        id={`dip-${tank.tankId}`}
-                        label={tank.hasMillimetreChart ? 'Dipstick (mm)' : 'Litres in tank'}
-                        inputMode="decimal"
-                        value={entries[tank.tankId] ?? ''}
-                        onChange={(event) =>
-                          setEntries((current) => ({
-                            ...current,
-                            [tank.tankId]: event.target.value,
-                          }))
-                        }
-                      />
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => void save(tank)}
-                        disabled={busyTank !== null}
-                      >
-                        {busyTank === tank.tankId ? 'Saving…' : 'Save dip'}
-                      </Button>
-                    </td>
-                  ) : null}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </TableScrollRegion>
+    <div className="tank-list">
+      {record.tanks.map((tank) => {
+        const dip = record.dips.find((entry) => entry.tankId === tank.tankId);
+        const variance = record.totals.stockVariance[tank.tankId] ?? null;
+        const [tone, label] =
+          SIGNAL[
+            classifyStockVariance(
+              dip ? variance : null,
+              tank.toleranceLitres,
+              tank.redLitres ?? null,
+            )
+          ];
+        return (
+          <article key={tank.tankId} className="tank-row">
+            <header className="pump-row-head">
+              <h3>{tank.productName}</h3>
+              <p className="pump-row-meta">
+                Tank {tank.code}
+                {dip?.measuredAt
+                  ? ` · dipped ${formatTimeInTimeZone(dip.measuredAt, timezone)}`
+                  : ''}
+              </p>
+            </header>
+            <div className="tank-row-readings">
+              <PumpReadout
+                label="Dip on this sheet"
+                value={dip ? formatLitres(dip.physicalLitres) : 'No dip yet'}
+              />
+              <PumpReadout
+                label="Books expect"
+                value={tank.expectedLitres ? formatLitres(tank.expectedLitres) : '—'}
+              />
+              <PumpReadout
+                label="Difference"
+                value={
+                  dip && variance !== null
+                    ? `${Number(variance) > 0 ? '+' : ''}${formatLitres(variance)}`
+                    : '—'
+                }
+                result
+              />
+              <PumpReadout
+                label="Result"
+                value={
+                  <StatusBadge tone={tone}>
+                    {tank.toleranceLitres === null && dip ? 'No allowed difference set' : label}
+                  </StatusBadge>
+                }
+                result
+              />
+            </div>
+            {editable ? (
+              <div className="tank-row-entry">
+                <NumericInput
+                  id={`dip-${tank.tankId}`}
+                  label={
+                    tank.hasMillimetreChart ? 'New dip (dipstick, mm)' : 'New dip (litres in tank)'
+                  }
+                  inputMode="decimal"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && busyTank === null) void save(tank);
+                  }}
+                  action={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void save(tank)}
+                      disabled={busyTank !== null}
+                    >
+                      {busyTank === tank.tankId ? 'Saving…' : 'Save dip'}
+                    </Button>
+                  }
+                  value={entries[tank.tankId] ?? prefill(tank, dip)}
+                  onChange={(event) =>
+                    setEntries((current) => ({
+                      ...current,
+                      [tank.tankId]: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
       {message ? <p role="status">{message}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
     </div>

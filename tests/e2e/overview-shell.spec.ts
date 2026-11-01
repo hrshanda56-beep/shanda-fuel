@@ -140,8 +140,6 @@ test('key figures say when no approved report exists yet', async ({ page }) => {
       'No approved report yet',
     );
   }
-  const note = page.locator('.today-figures-note');
-  await expect(note).toContainText('Approved figures for 08 Oct 2026');
   await expect(page.getByRole('heading', { name: 'Sales performance Litres' })).toBeVisible();
   await expect(page.getByText('No approved sales in this period yet.')).toBeVisible();
   await expect(page.locator('.card')).toHaveCount(0);
@@ -159,7 +157,7 @@ test('key figures show approved totals with signed variances', async ({ page }) 
   );
   const cash = figures.locator('.today-figure', { hasText: 'Cash variance' });
   await expect(cash).toContainText('−USD 30.85');
-  await expect(cash).toContainText('Cash short');
+  await expect(cash).not.toContainText('Cash short');
   await expect(figures.locator('.today-figure', { hasText: 'Account sales' })).toContainText(
     'USD 100.00',
   );
@@ -190,7 +188,7 @@ test('an approved zero is shown as zero, unlike a day with no approved report', 
   await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
     'USD 0.00',
   );
-  await expect(figures.locator('.today-figure', { hasText: 'Cash variance' })).toContainText(
+  await expect(figures.locator('.today-figure', { hasText: 'Cash variance' })).not.toContainText(
     'No cash variance',
   );
   await expect(figures).not.toContainText('No approved report yet');
@@ -236,7 +234,10 @@ test('the sales chart is also available as a keyboard-operable table', async ({ 
     ],
   });
   await page.goto(TODAY);
-  await page.getByRole('group', { name: 'Period' }).getByRole('button', { name: '7D' }).click();
+  await page
+    .getByRole('group', { name: 'Chart range' })
+    .getByRole('button', { name: '7D' })
+    .click();
 
   const summary = page.locator('.today-chart-table > summary');
   await summary.focus();
@@ -310,7 +311,7 @@ test('rows without an approved reconciliation are not shown as zero sales', asyn
 test('sales trend offers business-day ranges and no hourly view', async ({ page }) => {
   await mockToday(page);
   await page.goto(TODAY);
-  const periods = page.getByRole('group', { name: 'Period' });
+  const periods = page.getByRole('group', { name: 'Chart range' });
   for (const option of ['7D', '30D', '90D', '12M']) {
     await expect(periods.getByRole('button', { name: option })).toBeVisible();
   }
@@ -495,7 +496,7 @@ test.describe('today hardening', () => {
     await mockToday(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(TODAY);
-    const more = page.getByRole('button', { name: 'More' });
+    const more = page.getByRole('button', { name: /^More(?! information)/ });
     await more.click();
     const drawer = page.getByRole('dialog', { name: 'More' });
     await expect(drawer).toBeVisible();
@@ -566,7 +567,7 @@ test.describe('today hardening', () => {
       await expect(page.getByRole('link', { name: /Bindura/ }).first()).toBeVisible();
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     }
-    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('button', { name: /^More(?! information)/ }).click();
     await expect(page.getByRole('dialog', { name: 'More' })).toBeVisible();
     await animationsSettled(page);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

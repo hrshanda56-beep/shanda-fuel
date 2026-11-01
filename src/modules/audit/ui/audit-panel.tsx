@@ -4,11 +4,17 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { Select } from '@/design-system/forms';
 import { Icon } from '@/design-system/icons';
+import { Pagination, pageOf, usePageState, type PageSlice } from '@/design-system/pagination';
 import { Button, EmptyState, ErrorState, Field, LoadingState } from '@/design-system/primitives';
 
 import type { AuditItem } from '../audit-view';
+import { InfoTip } from '@/design-system/info-tip';
 
 type Page = { items: AuditItem[]; next: string | null };
+
+/** Changes shown on one page of the log. The server is asked for two pages at a time. */
+const AUDIT_PAGE_SIZE = 20;
+const BATCH_SIZE = AUDIT_PAGE_SIZE * 2;
 
 const AREAS = [
   { value: '', label: 'Everything' },
@@ -62,7 +68,7 @@ export function AuditPanel({
       setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({ tenantId, limit: '25' });
+        const params = new URLSearchParams({ tenantId, limit: String(BATCH_SIZE) });
         if (stationId) params.set('stationId', stationId);
         if (area) params.set('area', area);
         if (after) params.set('after', after);
@@ -96,15 +102,32 @@ export function AuditPanel({
     void Promise.resolve().then(() => load());
   }, [load]);
 
+  // Pages are cut from what is loaded; asking for the page after the last one loaded fetches the
+  // next batch first, so "Next" works for as long as the log has older changes.
+  const pageState = usePageState(area);
+  const loaded = pageOf(page?.items ?? [], pageState, AUDIT_PAGE_SIZE);
+  const pager: PageSlice<AuditItem> = {
+    ...loaded,
+    more: Boolean(page?.next),
+    setPage: (next) => {
+      if (next > loaded.pages && page?.next) {
+        if (loading) return;
+        void load(page.next).then(() => pageState.setRequested(next));
+        return;
+      }
+      pageState.setRequested(next);
+    },
+  };
+
   return (
     <section aria-labelledby="audit-title" className="pg">
       <h3 id="audit-title" className="sr-only">
         Activity log
       </h3>
-      <p className="pg-intro">
+      <InfoTip>
         Every change people make is recorded here, with who made it and when. This list can only be
         read, never changed.
-      </p>
+      </InfoTip>
       <div className="pg-filter">
         <Field id="audit-area" label="Show">
           <Select
@@ -136,7 +159,7 @@ export function AuditPanel({
 
       {page && page.items.length > 0 ? (
         <ol className="pg-timeline" aria-label="Recent changes">
-          {page.items.map((item) => {
+          {loaded.rows.map((item) => {
             const expanded = open === item.id;
             const { label, detail } = splitAction(item.action);
             return (
@@ -212,11 +235,7 @@ export function AuditPanel({
         </ol>
       ) : null}
 
-      {page?.next ? (
-        <Button variant="secondary" disabled={loading} onClick={() => void load(page.next!)}>
-          Show older changes
-        </Button>
-      ) : null}
+      <Pagination slice={pager} label="Activity log pages" noun="changes" />
     </section>
   );
 }

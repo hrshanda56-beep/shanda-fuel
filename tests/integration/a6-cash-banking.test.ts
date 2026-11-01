@@ -288,6 +288,36 @@ describe('A6 cash collection and banking persistence', () => {
         'slip.pdf', 'application/pdf', 1000, '${'a'.repeat(64)}', '${ids.managerMembership}')
     `);
 
+    // B5: a different amount needs a reason, and the bank date cannot be in the future.
+    const differentNoReason = await postCashCommand(
+      {
+        commandType: 'ConfirmBankDeposit',
+        context: stationContext,
+        depositId: depositBody.depositId,
+        expectedVersion: 0,
+        confirmedAmount: '690.00',
+        bankReference: 'BANK-A6-001',
+      },
+      'a6-confirm-different-no-reason',
+      'a6-manager-session-token',
+    );
+    expect(differentNoReason.status).toBe(400);
+    expect(JSON.stringify(await differentNoReason.json())).toContain('Write why');
+    const futureDate = await postCashCommand(
+      {
+        commandType: 'ConfirmBankDeposit',
+        context: stationContext,
+        depositId: depositBody.depositId,
+        expectedVersion: 0,
+        confirmedAmount: '700.00',
+        bankReference: 'BANK-A6-001',
+        bankDate: '2099-01-01',
+      },
+      'a6-confirm-future-date',
+      'a6-manager-session-token',
+    );
+    expect(futureDate.status).toBe(400);
+
     const confirmed = await postCashCommand(
       {
         commandType: 'ConfirmBankDeposit',
@@ -296,6 +326,7 @@ describe('A6 cash collection and banking persistence', () => {
         expectedVersion: 0,
         confirmedAmount: '700.00',
         bankReference: 'BANK-A6-001',
+        bankDate: '2026-10-28',
       },
       'a6-confirm-1',
       'a6-manager-session-token',
@@ -310,6 +341,7 @@ describe('A6 cash collection and banking persistence', () => {
         expectedVersion: 0,
         confirmedAmount: '700.00',
         bankReference: 'BANK-A6-001',
+        bankDate: '2026-10-28',
       },
       'a6-confirm-1',
       'a6-manager-session-token',
@@ -417,5 +449,149 @@ describe('A6 cash collection and banking persistence', () => {
       'a6-all-stations',
     );
     expect(allStations.status).toBe(403);
+  });
+
+  it('does not let the person who recorded cash also receive it', async () => {
+    const recorded = await postCashCommand(
+      {
+        commandType: 'RecordCashCollection',
+        context: stationContext,
+        collectionReference: 'A6-COL-SELF',
+        sourceLocationId: ids.till,
+        sources: [{ reconciliationId: ids.reconciliation, amount: '1.00' }],
+      },
+      'a6-collection-self',
+    );
+    expect(recorded.status).toBe(201);
+    const { collectionId } = await body(recorded);
+    const receive = (key: string, token: string) =>
+      postCashCommand(
+        {
+          commandType: 'ReceiveCashCollection',
+          context: stationContext,
+          collectionId,
+          targetLocationId: ids.safe,
+          expectedVersion: 0,
+        },
+        key,
+        token,
+      );
+    const own = await receive('a6-receive-self', 'a6-supervisor-session-token');
+    expect(own.status).toBe(403);
+    const [stillRecorded] = await client`
+      select state from app.cash_collections where id = ${collectionId}
+    `;
+    expect(stillRecorded?.state).toBe('RECORDED');
+    expect((await receive('a6-receive-other', 'a6-manager-session-token')).status).toBe(200);
+    // The signed audit record says what the cash looked like before it was received.
+    const audited = await client`
+      select details->'before'->>'state' as before_state, details->'after'->>'state' as after_state
+      from platform.security_events
+      where tenant_id = ${ids.tenant} and details->>'subjectId' = ${collectionId}
+        and details->'before' is not null
+    `;
+    expect(audited).toEqual([{ before_state: 'RECORDED', after_state: 'RECEIVED' }]);
+  });
+
+  it('refuses a repeated collection or deposit reference without a server error', async () => {
+    const repeatedCollection = await postCashCommand(
+      {
+        commandType: 'RecordCashCollection',
+        context: stationContext,
+        collectionReference: 'A6-COL-001',
+        sourceLocationId: ids.till,
+        sources: [{ reconciliationId: ids.reconciliation, amount: '1.00' }],
+      },
+      'a6-collection-repeat-reference',
+    );
+    expect(repeatedCollection.status).toBeGreaterThanOrEqual(400);
+    expect(repeatedCollection.status).toBeLessThan(500);
+    const fresh = await postCashCommand(
+      {
+        commandType: 'RecordCashCollection',
+        context: stationContext,
+        collectionReference: 'A6-COL-REPEAT-DEP',
+        sourceLocationId: ids.till,
+        sources: [{ reconciliationId: ids.reconciliation, amount: '1.00' }],
+      },
+      'a6-collection-repeat-dep',
+    );
+    expect(fresh.status).toBe(201);
+    const freshId = (await body(fresh)).collectionId;
+    await postCashCommand(
+      {
+        commandType: 'ReceiveCashCollection',
+        context: stationContext,
+        collectionId: freshId,
+        targetLocationId: ids.safe,
+        expectedVersion: 0,
+      },
+      'a6-receive-repeat-dep',
+      'a6-manager-session-token',
+    );
+    const repeatedDeposit = await postCashCommand(
+      {
+        commandType: 'CreateBankDeposit',
+        context: stationContext,
+        bankAccountId: ids.bankAccount,
+        sourceLocationId: ids.safe,
+        depositReference: 'A6-DEP-001',
+        allocations: [{ collectionId: freshId, amount: '1.00' }],
+      },
+      'a6-deposit-repeat-reference',
+      'a6-manager-session-token',
+    );
+    expect(repeatedDeposit.status).toBeGreaterThanOrEqual(400);
+    expect(repeatedDeposit.status).toBeLessThan(500);
+  });
+
+  it('refuses at the database to confirm a deposit that has no slip', async () => {
+    const recorded = await postCashCommand(
+      {
+        commandType: 'RecordCashCollection',
+        context: stationContext,
+        collectionReference: 'A6-COL-NOSLIP',
+        sourceLocationId: ids.till,
+        sources: [{ reconciliationId: ids.reconciliation, amount: '1.00' }],
+      },
+      'a6-collection-noslip',
+    );
+    expect(recorded.status).toBe(201);
+    const { collectionId } = await body(recorded);
+    expect(
+      (
+        await postCashCommand(
+          {
+            commandType: 'ReceiveCashCollection',
+            context: stationContext,
+            collectionId,
+            targetLocationId: ids.safe,
+            expectedVersion: 0,
+          },
+          'a6-receive-noslip',
+          'a6-manager-session-token',
+        )
+      ).status,
+    ).toBe(200);
+    const deposit = await postCashCommand(
+      {
+        commandType: 'CreateBankDeposit',
+        context: stationContext,
+        bankAccountId: ids.bankAccount,
+        sourceLocationId: ids.safe,
+        depositReference: 'A6-DEP-NOSLIP',
+        allocations: [{ collectionId, amount: '1.00' }],
+      },
+      'a6-deposit-noslip',
+      'a6-manager-session-token',
+    );
+    expect(deposit.status).toBe(201);
+    const { depositId } = await body(deposit);
+    await expect(
+      client.unsafe(
+        `update app.bank_deposits set state = 'CONFIRMED', confirmed_amount = 1, confirmed_at = now(),
+           confirmed_by = '${ids.managerMembership}', bank_reference = 'X' where id = '${depositId}'`,
+      ),
+    ).rejects.toThrow(/deposit slip/);
   });
 });

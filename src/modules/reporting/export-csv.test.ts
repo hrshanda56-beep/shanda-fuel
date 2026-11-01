@@ -211,6 +211,9 @@ describe('buildReportCsv', () => {
           revenueStatus: 'POSTED',
           sales: [{ revenueMovementId: 'rev-1' }],
         },
+        sales: {
+          payments: [{ method: 'STAFF_OR_MANAGEMENT_FUEL', amount: '0.5000' }],
+        },
         costing: {
           restatedCogs: '6.0000',
           costingStatus: 'COMPLETE',
@@ -256,6 +259,10 @@ describe('buildReportCsv', () => {
       }),
     );
     expect(csv).toContain('SUMMARY,Gross profit');
+    expect(csv).toContain('SUMMARY,Staff and management fuel');
+    expect(
+      csv.split('\r\n').find((line) => line.startsWith('SUMMARY,Net operating result')),
+    ).toContain(',2.5,COMPLETE,');
     expect(csv).toContain('SUMMARY,Net operating result');
     expect(csv).toContain('FUEL,Fuel profit');
     expect(csv).toContain('EXPENSE,Recognized expense,2026-10-01,BIN,RENT');

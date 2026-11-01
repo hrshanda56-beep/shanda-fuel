@@ -120,14 +120,40 @@ describe('server navigation projection', () => {
     );
   });
 
+  it('hides organisation-wide pages from a station-scoped supervisor', () => {
+    const stationSupervisor: AuthorizationActor = {
+      ...actor('SUPERVISOR'),
+      roleAssignments: [
+        {
+          tenantId: 'tenant-a',
+          roleCode: 'SUPERVISOR',
+          scopeType: 'STATION',
+          legalEntityId: 'entity-a',
+          stationId: 'station-a',
+        },
+      ],
+    };
+    const visible = buildNavigationProjection({
+      actor: stationSupervisor,
+      scope: {
+        tenantId: 'tenant-a',
+        scopeType: 'STATION',
+        legalEntityId: 'entity-a',
+        stationId: 'station-a',
+      },
+    })
+      .filter((entry) => entry.visible)
+      .map((entry) => entry.key);
+    expect(visible).toContain('today');
+    expect(visible).not.toContain('purchasing');
+  });
+
   it('keeps profit and finance reports away from a supervisor', () => {
     const visible = buildNavigationProjection({ actor: actor('SUPERVISOR'), scope })
       .filter((entry) => entry.visible)
       .map((entry) => entry.key);
     for (const hidden of [
       'profitability',
-      'daily-profit',
-      'financial-position',
       'finance-home',
       'suppliers',
       'payments-due',
@@ -148,14 +174,7 @@ describe('server navigation projection', () => {
       const visible = buildNavigationProjection({ actor: actor(role), scope })
         .filter((entry) => entry.visible)
         .map((entry) => entry.key);
-      expect(visible).toEqual(
-        expect.arrayContaining([
-          'profitability',
-          'daily-profit',
-          'financial-position',
-          'customers',
-        ]),
-      );
+      expect(visible).toEqual(expect.arrayContaining(['profitability', 'customers']));
     }
   });
 
@@ -214,8 +233,6 @@ describe('server navigation projection', () => {
       'purchasing',
       'expenses',
       'profitability',
-      'daily-profit',
-      'financial-position',
       'fuel-deliveries',
       'staff-benefit',
       'payments-due',
@@ -230,6 +247,17 @@ describe('server navigation projection', () => {
     expect(entry('finance-home')).toMatchObject({ visible: true, home: true });
     expect(entry('today')?.visible).toBe(false);
     expect(entry('cash')?.visible).toBe(true);
+  });
+
+  it('does not offer Daily operations to finance, but keeps it for people who run the day', () => {
+    const visibleFor = (role: 'FINANCE' | 'OWNER' | 'SUPERVISOR') =>
+      buildNavigationProjection({ actor: actor(role), scope })
+        .filter((item) => item.visible)
+        .map((item) => item.key);
+    expect(visibleFor('FINANCE')).not.toContain('daily-operations');
+    expect(visibleFor('FINANCE')).toContain('reconciliations');
+    expect(visibleFor('OWNER')).toContain('daily-operations');
+    expect(visibleFor('SUPERVISOR')).toContain('daily-operations');
   });
 
   it('keeps Today as the home for people who run the day, even with sign-off permissions', () => {

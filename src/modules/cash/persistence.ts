@@ -16,6 +16,7 @@ import {
 } from './domain';
 import type { CashCommandContext } from './application';
 import { bankingStatusForDeposit, cashStatusLabelForCustody, depositProofFlags } from './status';
+import { businessToday, isValidDateOnly } from '../reporting/period';
 import type { ForecourtTransaction } from '../forecourt/application';
 
 type SourceRow = {
@@ -24,6 +25,12 @@ type SourceRow = {
   counted_cash: string;
   allocated_cash: string;
 };
+
+function isUniqueViolation(error: unknown): boolean {
+  const code = (error as { code?: string })?.code;
+  const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
+  return code === '23505' || causeCode === '23505';
+}
 
 type CollectionRow = {
   id: string;
@@ -35,6 +42,7 @@ type CollectionRow = {
   business_date: string;
   state: string;
   version: number | string;
+  recorded_by: string;
 };
 
 function decimal(value: string): ExactDecimal {
@@ -65,7 +73,7 @@ async function loadCollection(
 ): Promise<CollectionRow> {
   const rows = await transaction.execute<CollectionRow>(sql`
     select id, station_id, collection_reference, source_location_id, current_location_id,
-           amount, business_date, state, version
+           amount, business_date, state, version, recorded_by
     from app.cash_collections
     where tenant_id = ${context.tenantId}
       and station_id = ${context.stationId}
@@ -75,6 +83,34 @@ async function loadCollection(
   const collection = rows[0];
   if (!collection) throw new AppError('NOT_FOUND', 'The cash collection was not found');
   return collection;
+}
+
+/** What a collection looked like just before a command changes it, for the audit record. */
+export async function readCollectionBeforeChange(
+  transaction: ForecourtTransaction,
+  context: CashCommandContext,
+  collectionId: string,
+) {
+  const rows = await transaction.execute<{ state: string; current_location_id: string }>(sql`
+    select state, current_location_id from app.cash_collections
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${collectionId}
+  `);
+  return rows[0]
+    ? { state: rows[0].state, currentLocationId: rows[0].current_location_id }
+    : undefined;
+}
+
+/** What a bank deposit looked like just before a command changes it, for the audit record. */
+export async function readDepositBeforeChange(
+  transaction: ForecourtTransaction,
+  context: CashCommandContext,
+  depositId: string,
+) {
+  const rows = await transaction.execute<{ state: string; amount: string }>(sql`
+    select state, amount::text as amount from app.bank_deposits
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${depositId}
+  `);
+  return rows[0] ? { state: rows[0].state, amount: rows[0].amount } : undefined;
 }
 
 async function collectionAllocationTotals(
@@ -124,6 +160,8 @@ function stationCashPositionQuery(context: CashCommandContext) {
         select sum(e.amount) from app.expenses e
         where e.tenant_id = ${context.tenantId} and e.station_id = ${context.stationId}
           and e.payment_method = 'STATION_CASH' and e.shift_id is null
+          -- Already inside the approved shift report's cash count.
+          and (e.reference is null or e.reference not like 'SHIFTREPORT-%')
           and e.state in ('SUBMITTED', 'APPROVED', 'POSTED')
           and e.created_at > coalesce((
             select max(c.recorded_at) from app.cash_collections c
@@ -243,16 +281,24 @@ export async function recordCashCollectionInTransaction(
   }
   const collectionId = randomUUID();
 
-  await transaction.execute(sql`
-    insert into app.cash_collections (
-      id, tenant_id, station_id, collection_reference, source_location_id,
-      current_location_id, amount, currency, business_date, state, recorded_by
-    ) values (
-      ${collectionId}, ${context.tenantId}, ${context.stationId}, ${input.collectionReference},
-      ${input.sourceLocationId}, ${input.sourceLocationId}, ${amount}, 'USD', ${businessDate},
-      'RECORDED', ${context.actor.membershipId}
-    )
-  `);
+  try {
+    await transaction.execute(sql`
+      insert into app.cash_collections (
+        id, tenant_id, station_id, collection_reference, source_location_id,
+        current_location_id, amount, currency, business_date, state, recorded_by
+      ) values (
+        ${collectionId}, ${context.tenantId}, ${context.stationId}, ${input.collectionReference},
+        ${input.sourceLocationId}, ${input.sourceLocationId}, ${amount}, 'USD', ${businessDate},
+        'RECORDED', ${context.actor.membershipId}
+      )
+    `);
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    throw new AppError(
+      'CONFLICT',
+      `A cash collection with the reference ${input.collectionReference} already exists. Use a different reference.`,
+    );
+  }
 
   for (const source of input.sources) {
     await transaction.execute(sql`
@@ -295,6 +341,12 @@ export async function receiveCashCollectionInTransaction(
         expectedVersion: input.expectedVersion,
         actualVersion: Number(collection.version),
       },
+    );
+  }
+  if (collection.recorded_by === context.actor.membershipId) {
+    throw new AppError(
+      'FORBIDDEN',
+      'The person who recorded this cash cannot also receive it. Ask someone else to receive it.',
     );
   }
   if (collection.current_location_id === input.targetLocationId) {
@@ -391,16 +443,24 @@ export async function createBankDepositInTransaction(
   const amount = calculateBankDepositAmount(allocationValues);
   const depositId = randomUUID();
 
-  await transaction.execute(sql`
-    insert into app.bank_deposits (
-      id, tenant_id, station_id, source_location_id, bank_account_id, amount,
-      currency, deposit_reference, state, deposited_at, recorded_by
-    ) values (
-      ${depositId}, ${context.tenantId}, ${context.stationId}, ${input.sourceLocationId},
-      ${input.bankAccountId}, ${amount}, 'USD', ${input.depositReference}, 'RECORDED',
-      now(), ${context.actor.membershipId}
-    )
-  `);
+  try {
+    await transaction.execute(sql`
+      insert into app.bank_deposits (
+        id, tenant_id, station_id, source_location_id, bank_account_id, amount,
+        currency, deposit_reference, state, deposited_at, recorded_by
+      ) values (
+        ${depositId}, ${context.tenantId}, ${context.stationId}, ${input.sourceLocationId},
+        ${input.bankAccountId}, ${amount}, 'USD', ${input.depositReference}, 'RECORDED',
+        now(), ${context.actor.membershipId}
+      )
+    `);
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    throw new AppError(
+      'CONFLICT',
+      `A bank deposit with the reference ${input.depositReference} already exists. Use a different reference.`,
+    );
+  }
 
   for (const allocation of input.allocations) {
     await transaction.execute(sql`
@@ -448,6 +508,8 @@ export async function confirmBankDepositInTransaction(
     expectedVersion: number;
     confirmedAmount: string;
     bankReference: string;
+    bankDate?: string;
+    differenceReason?: string;
   },
 ) {
   const rows = await transaction.execute<{
@@ -498,11 +560,29 @@ export async function confirmBankDepositInTransaction(
     );
   }
   const variance = confirmed.subtract(decimal(deposit.amount)).toString();
+  // A different amount needs a reason, so the difference is never silent (B5).
+  const reason = input.differenceReason?.trim() ?? '';
+  if (!decimal(variance).value.isZero() && reason.length < 5) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'The bank confirmed a different amount from the one deposited. Write why, in a few words, before confirming.',
+    );
+  }
+  if (input.bankDate !== undefined) {
+    if (!isValidDateOnly(input.bankDate)) {
+      throw new AppError('VALIDATION_FAILED', 'Enter the bank date as a real calendar date.');
+    }
+    if (input.bankDate > businessToday()) {
+      throw new AppError('VALIDATION_FAILED', 'The bank date cannot be in the future.');
+    }
+  }
   const updated = await transaction.execute<{ version: number | string }>(sql`
     update app.bank_deposits
     set state = 'CONFIRMED',
         confirmed_amount = ${confirmed.toString()},
         confirmation_variance = ${variance},
+        bank_date = ${input.bankDate ?? null},
+        confirmation_reason = ${decimal(variance).value.isZero() ? null : reason},
         bank_reference = ${input.bankReference},
         confirmed_by = ${context.actor.membershipId},
         confirmed_at = now(),

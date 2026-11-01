@@ -1,5 +1,8 @@
+import { inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
+  buildPdfFromCsv,
+  buildXlsxFromCsv,
   buildReportPdf,
   buildReportXlsx,
   parseReportExportFormat,
@@ -23,6 +26,76 @@ const report = {
     cashVariance: '-0.0001',
   },
 } as unknown as ManagementReport;
+
+/** Reads every entry of a ZIP from its central directory, the way a spreadsheet app would. */
+function readZip(buffer: Buffer): Map<string, string> {
+  const endAt = buffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  const count = buffer.readUInt16LE(endAt + 10);
+  let cursor = buffer.readUInt32LE(endAt + 16);
+  const files = new Map<string, string>();
+  for (let index = 0; index < count; index += 1) {
+    expect(buffer.readUInt32LE(cursor)).toBe(0x02014b50);
+    const compressedSize = buffer.readUInt32LE(cursor + 20);
+    const size = buffer.readUInt32LE(cursor + 24);
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    const localOffset = buffer.readUInt32LE(cursor + 42);
+    const name = buffer.subarray(cursor + 46, cursor + 46 + nameLength).toString('utf8');
+    const dataStart =
+      localOffset +
+      30 +
+      buffer.readUInt16LE(localOffset + 26) +
+      buffer.readUInt16LE(localOffset + 28);
+    const data = inflateRawSync(buffer.subarray(dataStart, dataStart + compressedSize));
+    expect(data.length).toBe(size);
+    files.set(name, data.toString('utf8'));
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return files;
+}
+
+describe('report document contents match the CSV they come from', () => {
+  const csv = ['Station,Litres,Note', 'Main,"1,200.500",ok', 'Depot,0.0001,=1+1'].join('\n');
+
+  it('writes every CSV cell into the XLSX worksheet, numbers as numbers', () => {
+    const files = readZip(buildXlsxFromCsv(csv));
+    expect([...files.keys()]).toContain('xl/worksheets/sheet1.xml');
+    const sheet = files.get('xl/worksheets/sheet1.xml')!;
+    expect(sheet).toContain('Station');
+    expect(sheet).toContain('Main');
+    expect(sheet).toContain('0.0001');
+    expect((sheet.match(/<row /g) ?? []).length).toBe(3);
+  });
+
+  it('shows money and litres at two decimals and prices at three, keeping exact values (B9)', () => {
+    const files = readZip(
+      buildXlsxFromCsv('Item,Money,Litres,Price,Count\nA,450.0000,1200.500,1.455000,12'),
+    );
+    const sheet = files.get('xl/worksheets/sheet1.xml')!;
+    const styles = files.get('xl/styles.xml')!;
+    // Stored values are untouched; only the display format differs.
+    expect(sheet).toContain('<c r="B2" s="1" t="n"><v>450.0000</v></c>');
+    expect(sheet).toContain('<c r="C2" s="1" t="n"><v>1200.500</v></c>');
+    expect(sheet).toContain('<c r="D2" s="2" t="n"><v>1.455000</v></c>');
+    expect(sheet).toContain('<c r="E2" t="n"><v>12</v></c>');
+    expect(styles).toContain('numFmtId="4"');
+    expect(styles).toContain('formatCode="#,##0.000"');
+  });
+
+  it('neutralises spreadsheet formulas in the XLSX and keeps the text', () => {
+    const sheet = readZip(buildXlsxFromCsv(csv)).get('xl/worksheets/sheet1.xml')!;
+    expect(sheet).not.toMatch(/<t[^>]*>=1\+1</);
+    expect(sheet).toContain('&apos;=1+1');
+  });
+
+  it('puts every CSV cell into the PDF text', () => {
+    const text = buildPdfFromCsv(csv).toString('latin1');
+    expect(text).toContain('Station');
+    expect(text).toContain('Main');
+    expect(text).toContain('0.0001');
+  });
+});
 
 describe('report document exports', () => {
   it('defaults unknown formats to CSV and names browser downloads', () => {

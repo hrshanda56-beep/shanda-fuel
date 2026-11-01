@@ -5,12 +5,14 @@ export {
   calculateTankStockVariance,
   deriveExpectedTankStock,
   requireAdjustmentReason,
+  validateDeliveryDipWindow,
   validateDeliveryAllocations,
   validateMovementQuantity,
 } from './domain';
 export type { InventoryMovementType, StockMovement } from './domain';
 export {
   createDeliveryFromRequest,
+  updateDeliveryFromRequest,
   createTankFromRequest,
   setTankVarianceLimitsFromRequest,
   confirmDeliveryFromRequest,
@@ -23,6 +25,7 @@ export {
   recordOpeningBalanceFromRequest,
   recordReceiptCostFromRequest,
   recordTankDipFromRequest,
+  voidTankDipFromRequest,
   setTankCalibrationFromRequest,
   requestInventoryCostRevaluationFromRequest,
 } from './commands';

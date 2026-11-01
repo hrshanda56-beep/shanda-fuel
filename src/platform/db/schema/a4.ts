@@ -154,6 +154,9 @@ export const tankDips = appSchema.table(
     measurementUnit: text('measurement_unit'),
     recordedBy: uuid('recorded_by').notNull(),
     notes: text('notes'),
+    voidedAt: utcTimestamp('voided_at'),
+    voidedBy: uuid('voided_by'),
+    voidReason: text('void_reason'),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
@@ -185,6 +188,15 @@ export const tankDips = appSchema.table(
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'tank_dips_recorded_by_fk',
     }),
+    foreignKey({
+      columns: [table.tenantId, table.voidedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'tank_dips_voided_by_fk',
+    }),
+    check(
+      'tank_dips_void_fields_ck',
+      sql`(${table.voidedAt} is null and ${table.voidedBy} is null and ${table.voidReason} is null) or (${table.voidedAt} is not null and ${table.voidedBy} is not null and ${table.voidReason} is not null and length(trim(${table.voidReason})) >= 5)`,
+    ),
   ],
 );
 

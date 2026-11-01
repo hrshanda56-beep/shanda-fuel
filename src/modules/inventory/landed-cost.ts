@@ -37,6 +37,40 @@ function amount(value: string | undefined, label: string): ExactDecimal {
   return parsed;
 }
 
+/**
+ * A cost supplied when a delivery is created must be complete (unit cost, total and currency
+ * together) and its total must equal unit cost times the litres that actually arrived, so a
+ * typed-in figure can never contradict the litres on record.
+ */
+export function assertLandedCostPairMatchesLitres(input: {
+  unitLandedCost: string | null | undefined;
+  totalLandedCost: string | null | undefined;
+  currency: string | null | undefined;
+  actualLitres: string;
+}): void {
+  const present = [input.unitLandedCost, input.totalLandedCost, input.currency].filter(
+    (value) => value !== null && value !== undefined && value !== '',
+  );
+  if (present.length === 0) return;
+  if (present.length !== 3) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Give the unit cost, the total cost and the currency together, or none of them',
+    );
+  }
+  const unit = amount(input.unitLandedCost!, 'Unit cost');
+  const total = amount(input.totalLandedCost!, 'Total cost');
+  const litres = amount(input.actualLitres, 'Litres received');
+  // The unit cost is stored to eight decimals and the total to four, so allow for that rounding.
+  const tolerance = litres.value.mul('0.000000005').add('0.00005');
+  if (unit.value.mul(litres.value).sub(total.value).abs().gt(tolerance)) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'The total cost does not match the unit cost and the litres received',
+    );
+  }
+}
+
 export function buildLandedCost(input: LandedCostInput): LandedCost {
   const fuel = amount(input.fuelCost, 'Fuel cost');
   if (fuel.value.lte(0)) {

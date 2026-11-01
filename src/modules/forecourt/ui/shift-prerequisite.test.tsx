@@ -7,9 +7,10 @@ const html = (props: Parameters<typeof ShiftPrerequisite>[0]) =>
   renderToStaticMarkup(<ShiftPrerequisite {...props} />);
 
 describe('opening a shift: why it is not possible yet', () => {
-  it('tells a manager to open the business day first and links to readiness', () => {
+  it('tells a manager the first shift opens the day, and links to readiness (C3)', () => {
     const out = html({ dayOpen: false, canOpenDay: true, canStartShift: true });
-    expect(out).toContain('Open the business day');
+    expect(out).toContain('Opening it also opens the business day');
+    expect(out).not.toContain('Open the business day first');
     expect(out).toContain('/settings?tab=readiness');
   });
 

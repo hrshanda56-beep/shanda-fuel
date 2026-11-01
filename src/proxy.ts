@@ -1,5 +1,7 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
+
+import { isLocalDevBypassEnabled } from '@/platform/auth/dev-bypass';
 import type { NextFetchEvent, NextRequest } from 'next/server';
 
 // Clerk's Frontend API is accessed directly by the browser in development.
@@ -22,6 +24,9 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   ) {
     return NextResponse.next();
   }
+  // Local development only: guarded by isLocalDevBypassEnabled (never on a
+  // deployed build or a non-local database); Clerk is not contacted at all.
+  if (isLocalDevBypassEnabled()) return NextResponse.next();
   const response = await clerkProxy(request, event);
   if (!response) return NextResponse.next();
 

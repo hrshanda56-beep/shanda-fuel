@@ -705,6 +705,7 @@ describe('QA1 cross-module golden financial scenarios', () => {
           expectedVersion: 0,
         },
         'g4-receive',
+        'finance',
       ),
       200,
     );

@@ -1,5 +1,70 @@
 import { describe, expect, it } from 'vitest';
-import { buildLandedCost } from './landed-cost';
+import { assertLandedCostPairMatchesLitres, buildLandedCost } from './landed-cost';
+
+describe('assertLandedCostPairMatchesLitres', () => {
+  it('accepts a total that equals unit cost times the litres received', () => {
+    expect(() =>
+      assertLandedCostPairMatchesLitres({
+        unitLandedCost: '1.20000000',
+        totalLandedCost: '1200.0000',
+        currency: 'USD',
+        actualLitres: '1000.000',
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts a unit cost that was rounded to eight decimals', () => {
+    expect(() =>
+      assertLandedCostPairMatchesLitres({
+        unitLandedCost: '1.02040816',
+        totalLandedCost: '1000.0000',
+        currency: 'USD',
+        actualLitres: '980.000',
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects a total that does not match the litres received', () => {
+    expect(() =>
+      assertLandedCostPairMatchesLitres({
+        unitLandedCost: '1.20000000',
+        totalLandedCost: '900.0000',
+        currency: 'USD',
+        actualLitres: '1000.000',
+      }),
+    ).toThrow(/does not match/);
+  });
+
+  it('rejects a cost that is only half supplied', () => {
+    expect(() =>
+      assertLandedCostPairMatchesLitres({
+        unitLandedCost: '1.20000000',
+        totalLandedCost: null,
+        currency: 'USD',
+        actualLitres: '1000.000',
+      }),
+    ).toThrow(/together/);
+    expect(() =>
+      assertLandedCostPairMatchesLitres({
+        unitLandedCost: '1.2',
+        totalLandedCost: '1200',
+        currency: null,
+        actualLitres: '1000.000',
+      }),
+    ).toThrow(/together/);
+  });
+
+  it('accepts a delivery with no cost yet', () => {
+    expect(() =>
+      assertLandedCostPairMatchesLitres({
+        unitLandedCost: null,
+        totalLandedCost: null,
+        currency: null,
+        actualLitres: '1000.000',
+      }),
+    ).not.toThrow();
+  });
+});
 
 describe('buildLandedCost', () => {
   it('adds freight and other costs, then divides by the litres that actually arrived', () => {

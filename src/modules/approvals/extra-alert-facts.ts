@@ -236,11 +236,11 @@ export async function loadExtraAlertFacts(
             and now() >= s.opened_at + interval '30 minutes'
             and not exists (select 1 from app.tank_dips d
               where d.tenant_id = t.tenant_id and d.station_id = t.station_id
-                and d.tank_id = t.id and d.measured_at >= s.opened_at - interval '60 minutes'))
+                and d.tank_id = t.id and d.voided_at is null and d.measured_at >= s.opened_at - interval '60 minutes'))
           or (k.kind = 'CLOSING' and now() >= s.planned_end_at - interval '30 minutes'
             and not exists (select 1 from app.tank_dips d
               where d.tenant_id = t.tenant_id and d.station_id = t.station_id
-                and d.tank_id = t.id and d.measured_at >= s.planned_end_at - interval '30 minutes'))
+                and d.tank_id = t.id and d.voided_at is null and d.measured_at >= s.planned_end_at - interval '30 minutes'))
         )
       order by s.planned_end_at, s.id, k.kind, t.code`);
         const grouped = new Map<

@@ -2,13 +2,13 @@ import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { z } from 'zod';
 
 import { AppError } from '../../platform/errors';
-import type { RoleCode, ScopeType } from '../authorization';
+import { ROLE_CODES, type RoleCode, type ScopeType } from '../authorization';
 import type { StaffInvitationScope } from './contracts';
 
 export const STAFF_INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
 
 const emailSchema = z.string().trim().email().max(320);
-const roleSchema = z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']);
+const roleSchema = z.enum(ROLE_CODES);
 const scopeSchema = z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']);
 const staffNumberSchema = z.string().regex(/^[A-Z0-9][A-Z0-9_-]{3,31}$/);
 

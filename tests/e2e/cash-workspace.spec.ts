@@ -139,12 +139,12 @@ test.describe('Cash workspace', () => {
     await mockCash(page);
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
 
-    await expect(page.getByRole('heading', { name: 'Collections', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Collections', exact: true })).toBeVisible();
     await expect(page.getByRole('table', { name: 'Station cash collections' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Bank deposits' })).toBeVisible();
     const collection = page.getByRole('row', { name: /COL-001/ });
     await expect(collection.locator('[data-label="Amount"]')).toHaveText('USD 800.00');
     await expect(collection.locator('[data-label="Still to bank"]')).toHaveText('USD 800.00');
+    await page.getByRole('tab', { name: 'Bank Deposits' }).click();
     const deposit = page.getByRole('row', { name: /DEP-001/ });
     await expect(deposit).toContainText('USD 100.00');
     await expect(deposit).toContainText('On its way to the bank');
@@ -325,7 +325,7 @@ test.describe('Cash workspace', () => {
       capabilities: { ...summary.capabilities, confirmDeposit: false },
     });
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-    await expect(page.getByRole('status')).toContainText('USD 700.00 is at the station');
+    await expect(page.getByRole('row', { name: /COL-001/ })).toBeVisible();
 
     // The row's own button opens the sheet with the cash and its full amount already filled in.
     await page
@@ -340,7 +340,7 @@ test.describe('Cash workspace', () => {
   test('opens a single deposit to confirm from its row', async ({ page }) => {
     await mockCash(page);
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
-    await expect(page.getByRole('status')).toContainText('1 bank deposit is waiting');
+    await page.getByRole('tab', { name: 'Bank Deposits' }).click();
     await page
       .getByRole('row', { name: /DEP-001/ })
       .getByRole('button', { name: 'Confirm' })

@@ -1,6 +1,10 @@
 import type { ManagementReport } from './contracts';
-import { addExact, exact } from './domain';
-import { approvedFuelBenefit, buildFinancialPosition } from './statements';
+import { exact } from './domain';
+import {
+  approvedFuelBenefit,
+  buildFinancialPosition,
+  recognizedOperatingExpenseTotal,
+} from './statements';
 import { operatingProfit } from './operating-profit';
 
 export type FinanceTile = Readonly<{
@@ -24,6 +28,11 @@ export type FinanceTile = Readonly<{
   count?: number;
   /** The page that explains the figure. */
   href: string;
+  /**
+   * `period`: a total over the period chosen on the dashboard. `as-at`: a position right now
+   * (stock, cash held, what is owed), which does not change with the period.
+   */
+  basis: 'period' | 'as-at';
 }>;
 
 /** The finance tiles for the dashboard, each from a figure the report already carries. */
@@ -34,8 +43,7 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
   // Same arithmetic as the profit statement's "Net operating result", so the tile ties to it.
   const operating = operatingProfit(
     report.grossMargin,
-    report.expenses.total ??
-      addExact(report.expenses.operatingTotal, report.expenses.fixedCostTotal),
+    recognizedOperatingExpenseTotal(report),
     approvedFuelBenefit(report),
   );
   const costMissing = report.grossMargin === null;
@@ -50,64 +58,77 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
   return [
     {
       id: 'grossProfit',
+      basis: 'period',
       label: 'Gross profit',
       value: report.grossMargin,
       unavailableReason: profitReason,
-      href: '/daily-profit',
+      href: '/profitability?view=daily',
     },
     {
       id: 'operatingProfit',
+      basis: 'period',
       label: 'Operating profit',
       value: operating,
       unavailableReason: profitReason,
-      href: '/daily-profit',
+      href: '/profitability?view=daily',
     },
     {
       id: 'stockValue',
+      basis: 'as-at',
       label: 'Fuel stock value',
       value: own?.stockValue ?? null,
       unavailableReason: own
         ? own.stockValue === null
-          ? 'Some stock has no cost yet.'
+          ? 'Some stock has no cost yet. Open Inventory to add it.'
           : undefined
         : 'Not available.',
-      href: '/financial-position',
+      href:
+        own && own.stockValue === null ? '/inventory/valuation' : '/profitability?view=position',
     },
     {
       id: 'cashAtStations',
+      basis: 'as-at',
       label: 'Cash at stations',
-      value: report.cash.atStation ?? report.cash.collectedButNotBanked,
-      href: '/financial-position',
+      value:
+        report.cash.custody?.atStation ??
+        report.cash.atStation ??
+        report.cash.collectedButNotBanked,
+      href: '/profitability?view=position',
     },
     {
       id: 'cashBanked',
+      basis: 'period',
       label: 'Cash banked',
       value: report.cash.banked,
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'posAwaiting',
+      basis: 'as-at',
       label: 'Card and mobile payments awaiting settlement',
       value: report.providers.unmatchedEvidenceAmount,
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'debtors',
+      basis: 'as-at',
       label: 'Owed by customers',
       value: report.customers.receivableBalance,
       unavailableReason: customersKnown
         ? undefined
         : 'Choose all stations to see customer balances.',
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'creditors',
+      basis: 'as-at',
       label: 'Owed to suppliers',
       value: report.suppliers.outstandingBalance,
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'netPosition',
+      basis: 'as-at',
       label: 'Net position',
       value: position.net,
       unavailableReason:
@@ -116,10 +137,11 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
             ? 'Not every figure is known yet.'
             : 'Choose all stations to see the net position.'
           : undefined,
-      href: '/financial-position',
+      href: '/profitability?view=position',
     },
     {
       id: 'expensesAwaitingApproval',
+      basis: 'as-at',
       label: 'Expenses awaiting approval',
       value: own?.expensesAwaitingApproval.amount ?? null,
       count: own?.expensesAwaitingApproval.count,

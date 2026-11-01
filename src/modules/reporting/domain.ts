@@ -1,5 +1,22 @@
 import { DECIMAL_POLICIES, ExactDecimal } from '../../platform/domain/primitives';
 
+/**
+ * The calendar date "today" is for a company that runs stations in these time zones: the latest
+ * local date among them, so nothing delivered locally today is left out. A time zone that is not
+ * recognised is ignored; with none left the date is the server's UTC date.
+ */
+export function latestStationLocalDate(now: Date, timeZones: readonly string[]): string {
+  const dates: string[] = [];
+  for (const timeZone of timeZones) {
+    try {
+      dates.push(new Intl.DateTimeFormat('en-CA', { timeZone }).format(now));
+    } catch {
+      // Not a real time zone name; skip it.
+    }
+  }
+  return dates.length > 0 ? dates.sort().at(-1)! : now.toISOString().slice(0, 10);
+}
+
 export function exact(value: string | null | undefined): ExactDecimal {
   return new ExactDecimal(value ?? '0');
 }
@@ -84,6 +101,8 @@ export function customerScopeAvailability(
 
 export function deriveCashPosition(input: {
   evidence: string;
+  /** Cash paid out of the till for expenses; it never reaches the people collecting. */
+  paidExpenses?: string;
   collected: string;
   deposited?: string;
   banked: string;
@@ -95,8 +114,11 @@ export function deriveCashPosition(input: {
   const deposited = input.deposited ?? input.banked;
   return {
     cashEvidence: formatMoney(input.evidence),
+    cashPaidExpenses: formatMoney(input.paidExpenses ?? '0'),
     collected: formatMoney(input.collected),
-    awaitingCollection: formatMoney(subtractExact(input.evidence, input.collected)),
+    awaitingCollection: formatMoney(
+      subtractExact(subtractExact(input.evidence, input.paidExpenses ?? '0'), input.collected),
+    ),
     deposited: formatMoney(deposited),
     banked: formatMoney(input.banked),
     // This is deliberately based on deposits, not confirmations: cash in an
@@ -108,6 +130,41 @@ export function deriveCashPosition(input: {
       : {}),
     ...(input.inTransit !== undefined ? { inTransit: formatMoney(input.inTransit) } : {}),
     cashVariance: formatMoney(input.variance),
+  };
+}
+
+/**
+ * Where all collected cash is, in exactly one of five places (B4). The caller supplies the amounts
+ * per place and the total collected; this formats them and refuses to return a split that does not
+ * add up, so no screen can show custody figures that disagree with what was received.
+ */
+export function deriveCashCustody(input: {
+  atStation: string;
+  withCollector: string;
+  heldByManagement: string;
+  awaitingBank: string;
+  banked: string;
+  total: string;
+}) {
+  const places = sumExact([
+    input.atStation,
+    input.withCollector,
+    input.heldByManagement,
+    input.awaitingBank,
+    input.banked,
+  ]);
+  if (!exact(places).value.eq(exact(input.total).value)) {
+    throw new Error(
+      `Cash custody does not add up: the five places total ${places} but ${input.total} was collected`,
+    );
+  }
+  return {
+    atStation: formatMoney(input.atStation),
+    withCollector: formatMoney(input.withCollector),
+    heldByManagement: formatMoney(input.heldByManagement),
+    awaitingBank: formatMoney(input.awaitingBank),
+    banked: formatMoney(input.banked),
+    total: formatMoney(input.total),
   };
 }
 

@@ -3654,4 +3654,30 @@ describe('A3 PostgreSQL forecourt isolation and resource constraints', () => {
       select count(*)::int as count from app.station_business_days where id = ${lockDayTarget}
     `).resolves.toEqual([{ count: 0 }]);
   });
+
+  it('keeps shifts in place and meter boundaries as append-only history', async () => {
+    await expect(
+      client.unsafe(
+        `update app.shifts set business_date = '2026-01-01' where id = '${ids.closureShift}'`,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      client.unsafe(
+        `update app.shifts set station_id = '${ids.stationB}' where id = '${ids.closureShift}'`,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      client.unsafe(
+        `update app.meter_boundaries set reading_value = 1.000 where id = '${ids.closureBoundary}'`,
+      ),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      client.unsafe(
+        `update app.meter_boundaries set price_change_id = null where id = '${ids.closureBoundary}'`,
+      ),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      client.unsafe(`delete from app.meter_boundaries where id = '${ids.closureBoundary}'`),
+    ).rejects.toThrow(/append-only/);
+  });
 });
