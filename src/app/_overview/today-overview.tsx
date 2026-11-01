@@ -126,12 +126,15 @@ export function TodayOverview({
   initialContext,
   initialData,
   workItems = [],
+  workMore = 0,
   workUnavailable = false,
 }: Scope & {
   initialContext?: Scope;
   initialData?: DashboardInitialData;
   /** Approvals and payables waiting for a person, loaded with the page. */
   workItems?: readonly AttentionRow[];
+  /** How many more waiting items there are than the list shows. */
+  workMore?: number;
   workUnavailable?: boolean;
 }) {
   const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
@@ -492,6 +495,13 @@ export function TodayOverview({
                     </Link>
                   </li>
                 ))}
+                {workMore > 0 ? (
+                  <li className="today-note">
+                    {workMore === 1
+                      ? '1 more item is waiting.'
+                      : `${workMore} more items are waiting.`}
+                  </li>
+                ) : null}
               </ul>
             ) : (
               <p className="today-note">Nothing needs attention.</p>

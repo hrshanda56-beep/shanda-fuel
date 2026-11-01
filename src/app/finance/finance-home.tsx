@@ -56,7 +56,7 @@ function cashSlices(cash: CashFacts): DonutSlice[] {
   return [
     {
       key: 'unbanked',
-      label: 'Not yet banked',
+      label: 'Collected, not yet deposited',
       total: cash.collectedButUnbanked,
       count: 0,
       detail: `${share(cash.collectedButUnbanked)}% of cash to bank`,

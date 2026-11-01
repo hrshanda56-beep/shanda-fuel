@@ -548,8 +548,11 @@ async function readProviders(
         ${stationClause('s', filters.stationIds)}
       order by s.settlement_date, pp.name, s.settlement_reference
     `),
+    // A balance as at the period end, like the cash figures: card and mobile payments from
+    // earlier days that are still unmatched count too, so the figure does not drop to zero
+    // when the chosen dates hold no approved day.
     transaction.execute<AggregateRow>(sql`
-      with approved as (${base}), allocations as (
+      with approved as (${approvedReconciliations({ ...filters, fromDate: '0001-01-01' })}), allocations as (
         select reconciliation_payment_id, coalesce(sum(a.amount) filter (where a.state = 'POSTED' and not exists (
           select 1 from app.provider_settlement_allocations reversal
           where reversal.tenant_id = a.tenant_id and reversal.reversal_of_id = a.id and reversal.state = 'REVERSED'

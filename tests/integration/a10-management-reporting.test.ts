@@ -1064,6 +1064,25 @@ describe('A10 management reporting PostgreSQL read model', () => {
     });
   });
 
+  it('shows card and mobile payments awaiting settlement as a balance as at the end date', async () => {
+    const awaiting = async (fromDate: string, toDate: string) => {
+      const response = await managementReportGet(
+        new Request(
+          `http://127.0.0.1:3000/api/reports/management?tenantId=${ids.tenant}&fromDate=${fromDate}&toDate=${toDate}`,
+          { headers: { ...clerkHeaders(await signedCookie()) } },
+        ),
+      );
+      expect(response.status).toBe(200);
+      return ((await response.json()) as Record<string, any>).providers.unmatchedEvidenceAmount;
+    };
+    // The approved day is 2026-09-20. Chosen dates after it still carry its unmatched payments.
+    const onTheDay = await awaiting('2026-09-20', '2026-09-22');
+    expect(Number(onTheDay)).toBeGreaterThan(0);
+    expect(await awaiting('2026-09-25', '2026-09-30')).toBe(onTheDay);
+    // An end date before the day cannot include money from a later day.
+    expect(await awaiting('2026-09-01', '2026-09-19')).toBe('0.0000');
+  });
+
   it('rejects the whole request when any selected station is not permitted', async () => {
     const scopedActorHeaders = clerkHeaders(scopedSessionToken);
     const mixed = await managementReportGet(

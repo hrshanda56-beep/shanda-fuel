@@ -1329,7 +1329,7 @@ export function DailyOperationsWorkspace({
                   data-strong
                   data-tone={isZero(record.totals.salesVariance) ? undefined : 'warning'}
                 >
-                  <dt>Difference</dt>
+                  <dt>Sales difference</dt>
                   <dd>{formatMoney(record.totals.salesVariance)}</dd>
                 </div>
               </dl>
