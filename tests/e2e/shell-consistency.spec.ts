@@ -95,7 +95,7 @@ test.describe('shared shell consistency', () => {
     await expect(sidebar.getByRole('button', { name: 'Expand menu' })).toBeVisible();
 
     const account = page.locator('.shell-account-trigger:visible');
-    await expect(account).toHaveAttribute('aria-label', 'Account');
+    await expect(account).toHaveAccessibleName('Account');
     await expect(account).toHaveCSS('width', '44px');
     await expect(account.locator('.shell-account-trigger-text')).toBeHidden();
     await expect(account.locator('.shell-account-chevron')).toBeHidden();
