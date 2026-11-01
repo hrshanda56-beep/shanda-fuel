@@ -531,7 +531,7 @@ function CaptureForm({
 
   useEffect(() => {
     document.getElementById(`${id}-reading`)?.focus();
-  }, [id]);
+  }, [id, different]);
 
   async function handle(event: React.FormEvent) {
     event.preventDefault();

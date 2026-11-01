@@ -160,8 +160,7 @@ test.describe('New v1 screens', () => {
 
   test('shows the activity log with what changed, and loads older entries', async ({ page }) => {
     await mockApi(page);
-    await page.goto('/dev-preview/v1-panels');
-    await page.getByRole('button', { name: 'Close Hand over cash' }).click();
+    await page.goto('/dev-preview/v1-panels?sheet=closed');
     const log = page.getByRole('list', { name: 'Recent changes' });
     await expect(log.getByText('Supplier: credit limit set')).toBeVisible();
     await log.getByRole('button', { name: 'What changed' }).click();
@@ -170,17 +169,17 @@ test.describe('New v1 screens', () => {
     await expect(log.getByText('2000')).toBeVisible();
     await log.getByRole('button', { name: 'What was recorded' }).click();
     await expect(log.getByText('50', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Show older changes' }).click();
+    const next = page.getByRole('button', { name: 'Next', exact: true });
+    await next.click();
     await expect(log.getByText('Cash: accept cash handover')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Show older changes' })).toHaveCount(0);
+    await expect(next).toBeDisabled();
   });
 
   test('lists documents, uploads a file and opens one through a short-lived link', async ({
     page,
   }) => {
     const { uploads } = await mockApi(page);
-    await page.goto('/dev-preview/v1-panels');
-    await page.getByRole('button', { name: 'Close Hand over cash' }).click();
+    await page.goto('/dev-preview/v1-panels?sheet=closed');
     const docs = page.getByRole('region', { name: 'Delivery note and photos' });
     await expect(docs.getByText('Delivery note: note.pdf')).toBeVisible();
     await expect(docs.getByText(/312 KB · added by Tendai Moyo/)).toBeVisible();
@@ -209,8 +208,7 @@ test.describe('New v1 screens', () => {
 
   test('explains the reminder settings, checks the numbers, and saves them', async ({ page }) => {
     const { posted } = await mockApi(page);
-    await page.goto('/dev-preview/v1-panels');
-    await page.getByRole('button', { name: 'Close Hand over cash' }).click();
+    await page.goto('/dev-preview/v1-panels?sheet=closed');
     await expect(page.getByText(/starting values apply/)).toBeVisible();
     await page.getByLabel(/Warn about supplier invoices due within/).fill('0');
     await page.getByRole('button', { name: 'Save reminders' }).click();

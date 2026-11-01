@@ -126,7 +126,7 @@ test.describe('management reporting surface', () => {
       await signIn(context);
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await gotoAndWaitForHydration(page, `/reports?tenantId=${ids.tenant}&period=last-month`);
-      const menuButton = page.getByRole('button', { name: 'More actions for Sales & Payments' });
+      const menuButton = page.getByRole('button', { name: 'More actions for Income Statement' });
 
       // Keyboard: opens with ArrowDown, items move with arrows, Escape returns focus.
       await menuButton.focus();
@@ -149,12 +149,12 @@ test.describe('management reporting surface', () => {
       await page.getByRole('menuitem', { name: 'Share private link' }).click();
       await expect(page.getByText(/Private link copied/)).toBeVisible();
       const link = await page.evaluate(() => navigator.clipboard.readText());
-      expect(link).toContain(`/reports/sales?tenantId=${ids.tenant}&period=last-month`);
+      expect(link).toContain(`/reports/profit-loss?tenantId=${ids.tenant}&period=last-month`);
       expect(link).not.toMatch(/token|secret|session|signature/i);
 
       // Recent activity lists the share.
       const rail = page.getByRole('complementary', { name: 'Browse reports' });
-      await expect(rail.getByText('Sales & Payments link shared')).toBeVisible();
+      await expect(rail.getByText('Income Statement link shared')).toBeVisible();
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });

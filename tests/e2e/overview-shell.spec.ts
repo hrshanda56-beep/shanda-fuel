@@ -496,7 +496,7 @@ test.describe('today hardening', () => {
     await mockToday(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(TODAY);
-    const more = page.getByRole('button', { name: 'More', exact: true });
+    const more = page.getByRole('button', { name: /^More(?! information)/ });
     await more.click();
     const drawer = page.getByRole('dialog', { name: 'More' });
     await expect(drawer).toBeVisible();
@@ -567,7 +567,7 @@ test.describe('today hardening', () => {
       await expect(page.getByRole('link', { name: /Bindura/ }).first()).toBeVisible();
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     }
-    await page.getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('button', { name: /^More(?! information)/ }).click();
     await expect(page.getByRole('dialog', { name: 'More' })).toBeVisible();
     await animationsSettled(page);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
