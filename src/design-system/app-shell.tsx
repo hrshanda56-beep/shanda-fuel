@@ -1026,7 +1026,6 @@ function AccountMenu({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        aria-label={label}
         title={label}
         onClick={() => setOpen((current) => !current)}
       >
@@ -1138,7 +1137,7 @@ export function GlobalSearchButton({ compact = false }: { compact?: boolean }) {
     <button
       type="button"
       className={`global-search ${compact ? 'global-search-compact' : ''}`.trim()}
-      aria-label={compact ? `Search pages ${shortcut}` : undefined}
+      title={compact ? 'Search pages' : undefined}
       aria-haspopup="dialog"
       aria-keyshortcuts="Meta+K Control+K"
       onClick={() => shell?.openSearch()}
