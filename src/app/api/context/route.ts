@@ -11,6 +11,7 @@ import { resolveCurrentContext, validateRequestedContext } from '@/modules/conte
 import type { ContextSelection } from '@/modules/context';
 import { readContextRoute } from '@/modules/context';
 import { apiErrorResponse, withRequestObservability } from '@/platform/observability';
+import { crossSiteRefusal, isCrossSiteWrite } from '@/platform/security';
 
 export const runtime = 'nodejs';
 
@@ -85,6 +86,7 @@ export const GET = withRequestObservability(async (request: Request): Promise<Re
 });
 
 export const POST = withRequestObservability(async (request: Request): Promise<Response> => {
+  if (isCrossSiteWrite(request)) return crossSiteRefusal();
   try {
     const input = postSchema.parse(await request.json());
     const selection = await validateRequestedContext(request, input.selection as ContextSelection, {

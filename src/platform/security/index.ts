@@ -40,3 +40,4 @@ export {
   withPersistentRateLimit,
 } from './rate-limit';
 export type { RateLimitDecision, RateLimitPolicy } from './rate-limit';
+export { crossSiteRefusal, isCrossSiteWrite } from './same-origin';

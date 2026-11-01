@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { getDatabase } from '../db';
 import { createLogger } from '../logging';
+import { crossSiteRefusal, isCrossSiteWrite } from './same-origin';
 
 const logger = createLogger({ component: 'rate-limit' });
 
@@ -119,6 +120,7 @@ export function withPersistentRateLimit(
   policy: RateLimitPolicy,
 ): (request: Request) => Promise<Response> {
   return async (request) => {
+    if (isCrossSiteWrite(request)) return crossSiteRefusal();
     // Local and unit-test paths have no deployed provider edge or durable
     // database. Staging and production fail closed at the database boundary.
     if (!isDeployedEnvironment()) return handler(request);

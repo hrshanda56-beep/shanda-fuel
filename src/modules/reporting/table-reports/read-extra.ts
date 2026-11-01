@@ -7,8 +7,26 @@ import { TABLE_REPORT_ROW_LIMIT } from './definitions';
 import type { TableReportReader } from './read';
 import { PAYMENT_METHOD_OPTIONS } from './narrowing';
 
+/** The only columns a report may narrow on. The column name is spliced into the SQL text, so it must never come from a request. */
+export const NARROWING_COLUMNS = [
+  'sh.shift_template_id',
+  'p.method',
+  'l.customer_id',
+  't.product_id',
+  'm.product_id',
+  'f.product_id',
+  'f.supplier_id',
+  'm.supplier_id',
+  'mr.product_id::text',
+  'sh.shift_template_id::text',
+  't.product_id::text',
+] as const;
+
+export type NarrowingColumn = (typeof NARROWING_COLUMNS)[number];
+
 /** `and <column> = <value>` when the person chose a value, otherwise nothing. */
-export function equalsClause(column: string, value: string | undefined): SQL {
+export function equalsClause(column: NarrowingColumn, value: string | undefined): SQL {
+  if (!NARROWING_COLUMNS.includes(column)) throw new Error('Unsupported report column');
   return value ? sql`and ${sql.raw(column)} = ${value}` : sql``;
 }
 
