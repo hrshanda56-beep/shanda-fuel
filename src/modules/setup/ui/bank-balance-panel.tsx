@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
-import { Button, EmptyState, ErrorState, Field, LoadingState } from '@/design-system/primitives';
+import { useToast } from '@/design-system/feedback-provider';
+import { Modal } from '@/design-system/modal';
+import { Button, ErrorState, Field, LoadingState } from '@/design-system/primitives';
 import { Select } from '@/design-system/forms';
 import { formatUsd } from '@/design-system/formatters';
+import { CardEmpty, CardRow, CardRows, SectionCard } from '@/design-system/section-card';
 
 import { friendlySetupError } from '../guided-setup';
-import styles from './setup.module.css';
 
 type Account = {
   id: string;
@@ -34,11 +36,13 @@ export function BankBalancePanel({
   /** Changes whenever the bank accounts change, so the list below is read again. */
   refreshKey?: string;
 }>) {
+  const toast = useToast();
   const [stationId, setStationId] = useState<string | undefined>(stations[0]?.id);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Account | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -61,19 +65,17 @@ export function BankBalancePanel({
 
   async function save(event: FormEvent<HTMLFormElement>, account: Account) {
     event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
+    const data = new FormData(event.currentTarget);
     const balance = String(data.get('balance') ?? '')
       .trim()
       .replace(/,/g, '');
     const asOfDate = String(data.get('asOfDate') ?? '');
     if (!/^-?\d+(?:\.\d{1,4})?$/.test(balance))
-      return setError('Enter the balance as a number, such as 1250.50.');
-    if (!asOfDate) return setError('Choose the date on the bank statement.');
-    if (!stationId) return setError('Choose a station first.');
-    setBusy(account.id);
-    setError(null);
-    setSaved(null);
+      return setFormError('Enter the balance as a number, such as 1250.50.');
+    if (!asOfDate) return setFormError('Choose the date on the bank statement.');
+    if (!stationId) return setFormError('Choose a station first.');
+    setBusy(true);
+    setFormError(null);
     try {
       const response = await fetch('/api/setup/commands', {
         method: 'POST',
@@ -92,14 +94,14 @@ export function BankBalancePanel({
         }),
       });
       const result = (await response.json().catch(() => ({}))) as { message?: string };
-      if (!response.ok) return setError(friendlySetupError(response.status, result.message));
-      form.reset();
-      setSaved(`${account.name}: balance saved.`);
+      if (!response.ok) return setFormError(friendlySetupError(response.status, result.message));
+      setEditing(null);
+      toast.success(`${account.name}: balance saved.`);
       await load();
     } catch {
-      setError('We could not reach the server. Nothing was saved.');
+      setFormError('We could not reach the server. Nothing was saved.');
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
@@ -114,76 +116,104 @@ export function BankBalancePanel({
   }
 
   return (
-    <section className={styles.card} aria-labelledby="payments-bank-balances">
-      <h3 id="payments-bank-balances" className={styles.cardTitle}>
-        Bank balances
-      </h3>
-      <p className={styles.rowDetail}>
-        Type in the balance from the bank statement. The financial position uses it for the money in
-        the bank once every account has one; until then it uses the deposits recorded in the app.
-      </p>
-      {loaded.canRecord && stations.length > 1 ? (
-        <Field id="balance-station" label="Entering as station">
-          <Select
-            id="balance-station"
-            value={stationId ?? ''}
-            onChange={(event) => setStationId(event.target.value)}
-            options={stations.map((station) => ({
-              value: station.id,
-              label: `${station.name} (${station.code})`,
-            }))}
-          />
-        </Field>
-      ) : null}
+    <SectionCard
+      id="payments-bank-balances"
+      title="Bank balances"
+      note="Type in the balance from the bank statement. The financial position uses it for the money in the bank once every account has one; until then it uses the deposits recorded in the app."
+    >
       {loaded.accounts.length === 0 ? (
-        <EmptyState
-          title="No bank accounts entered"
-          message="Enter a bank account above, then type in its balance here."
-        />
+        <CardEmpty>
+          No bank accounts yet. Enter a bank account above, then type in its balance here.
+        </CardEmpty>
       ) : (
-        <ul className={styles.list}>
+        <CardRows label="Bank balances">
           {loaded.accounts.map((account) => (
-            <li key={account.id} className={styles.row}>
-              <div className={styles.rowMain}>
-                <span className={styles.rowTitle}>{account.name}</span>
-                <span className={styles.rowDetail}>
+            <CardRow
+              key={account.id}
+              title={account.name}
+              detail={
+                <>
                   {account.bankName} · {account.accountReference}
-                </span>
-                <span className={styles.rowDetail}>
+                  <br />
                   {account.balance !== null && account.asOfDate
                     ? `${formatUsd(account.balance)} as at ${account.asOfDate}`
                     : 'No balance typed in yet'}
-                </span>
-              </div>
-              {loaded.canRecord ? (
-                <form
-                  className={styles.form}
-                  onSubmit={(event) => void save(event, account)}
-                  noValidate
-                  aria-label={`Type in the balance for ${account.name}`}
-                >
-                  <Field id={`balance-${account.id}`} label="Balance on the statement (USD)">
-                    <input id={`balance-${account.id}`} name="balance" inputMode="decimal" />
-                  </Field>
-                  <Field id={`balance-date-${account.id}`} label="Date on the statement">
-                    <input id={`balance-date-${account.id}`} name="asOfDate" type="date" />
-                  </Field>
-                  <Button type="submit" loading={busy === account.id} disabled={busy !== null}>
-                    Save balance
+                </>
+              }
+              aside={
+                loaded.canRecord ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    aria-haspopup="dialog"
+                    aria-label={`${account.balance !== null ? 'Update balance' : 'Add balance'} for ${account.name}`}
+                    onClick={() => {
+                      setFormError(null);
+                      setEditing(account);
+                    }}
+                  >
+                    {account.balance !== null ? 'Update balance' : 'Add balance'}
                   </Button>
-                </form>
-              ) : null}
-            </li>
+                ) : null
+              }
+            />
           ))}
-        </ul>
+        </CardRows>
       )}
       {!loaded.canRecord ? (
-        <p className={styles.rowDetail}>
-          Only finance, an administrator or the owner can type these in.
-        </p>
+        <p className="sc-message">Only finance, an administrator or the owner can type these in.</p>
       ) : null}
-      {error ? <ErrorState message={error} /> : null}
-      {saved ? <p role="status">{saved}</p> : null}
-    </section>
+      <Modal
+        open={editing !== null}
+        onClose={() => !busy && setEditing(null)}
+        title={editing ? `Balance for ${editing.name}` : 'Bank balance'}
+        presentation="side"
+        size="sm"
+        dismissible={!busy}
+      >
+        {editing ? (
+          <form
+            className="form-stack"
+            onSubmit={(event) => void save(event, editing)}
+            noValidate
+            aria-label={`Type in the balance for ${editing.name}`}
+          >
+            {formError ? <ErrorState title="This could not be saved" message={formError} /> : null}
+            {stations.length > 1 ? (
+              <Field id="balance-station" label="Entering as station">
+                <Select
+                  id="balance-station"
+                  value={stationId ?? ''}
+                  onChange={(event) => setStationId(event.target.value)}
+                  options={stations.map((station) => ({
+                    value: station.id,
+                    label: `${station.name} (${station.code})`,
+                  }))}
+                />
+              </Field>
+            ) : null}
+            <Field id={`balance-${editing.id}`} label="Balance on the statement (USD)" required>
+              <input id={`balance-${editing.id}`} name="balance" inputMode="decimal" />
+            </Field>
+            <Field id={`balance-date-${editing.id}`} label="Date on the statement" required>
+              <input id={`balance-date-${editing.id}`} name="asOfDate" type="date" />
+            </Field>
+            <div className="form-actions">
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => setEditing(null)}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" loading={busy}>
+                Save balance
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+    </SectionCard>
   );
 }

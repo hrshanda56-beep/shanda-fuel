@@ -238,13 +238,14 @@ export function EditCompany({
         variant="secondary"
         size="sm"
         aria-haspopup="dialog"
+        aria-label={`Edit ${company.name}`}
         onClick={() => {
           setName(company.name);
           setError(null);
           setOpen(true);
         }}
       >
-        Edit {company.name}
+        Edit
       </Button>
       <Modal
         open={open && !waiting}
@@ -339,7 +340,6 @@ export function AddStation({
       >
         Add station
       </Button>
-      {companies.length === 0 ? <p className="field-hint">Add a company first.</p> : null}
       <Modal
         open={open && !waiting}
         onClose={() => !busy && setOpen(false)}
@@ -386,8 +386,8 @@ export function AddStation({
           </Field>
           <ZoneField id="station-zone" value={zone} onChange={setZone} />
           <InfoTip>
-            The station starts in setup. Add its fuels, tanks and pumps under Station setup, then
-            switch it on.
+            The station starts in setup. Press Station setup next to it to add its fuels, tanks and
+            pumps, then switch it on.
           </InfoTip>
           {fieldError ? (
             <p className="field-error" role="alert">
@@ -442,6 +442,7 @@ export function EditStation({ tenantId, station }: { tenantId: string; station: 
         variant="secondary"
         size="sm"
         aria-haspopup="dialog"
+        aria-label={`Edit ${station.name}`}
         onClick={() => {
           setName(station.name);
           setZone(station.timezone);
@@ -449,7 +450,7 @@ export function EditStation({ tenantId, station }: { tenantId: string; station: 
           setOpen(true);
         }}
       >
-        Edit {station.name}
+        Edit
       </Button>
       <Modal
         open={open && !waiting}

@@ -511,33 +511,45 @@ function TankStep({ ctx }: { ctx: FormContext }) {
           <Field id="tank-capacity" label="Litres the tank holds" error={errors.capacity} required>
             <input id="tank-capacity" name="capacity" inputMode="decimal" autoComplete="off" />
           </Field>
-          <Field
-            id="tank-difference"
-            label="Yellow: explain above (litres)"
-            hint="How far the dip reading may be from the book stock before the difference must be explained."
-            error={errors.difference}
-            optional
+          <details
+            className={styles.more}
+            // Opened by a mistake in one of its fields, so the message is never hidden.
+            open={Boolean(errors.difference || errors.red || errors.reorder) || undefined}
           >
-            <input id="tank-difference" name="difference" inputMode="decimal" autoComplete="off" />
-          </Field>
-          <Field
-            id="tank-red"
-            label="Red: urgent above (litres)"
-            hint="A difference above this is urgent. Leave it empty to use twice the yellow limit."
-            error={errors.red}
-            optional
-          >
-            <input id="tank-red" name="red" inputMode="decimal" autoComplete="off" />
-          </Field>
-          <Field
-            id="tank-reorder"
-            label="Warn me when stock falls to (litres)"
-            hint="Used for low-stock reminders."
-            error={errors.reorder}
-            optional
-          >
-            <input id="tank-reorder" name="reorder" inputMode="decimal" autoComplete="off" />
-          </Field>
+            <summary>Stock warnings (optional)</summary>
+            <Field
+              id="tank-difference"
+              label="Yellow: explain above (litres)"
+              hint="How far the dip reading may be from the book stock before the difference must be explained."
+              error={errors.difference}
+              optional
+            >
+              <input
+                id="tank-difference"
+                name="difference"
+                inputMode="decimal"
+                autoComplete="off"
+              />
+            </Field>
+            <Field
+              id="tank-red"
+              label="Red: urgent above (litres)"
+              hint="A difference above this is urgent. Leave it empty to use twice the yellow limit."
+              error={errors.red}
+              optional
+            >
+              <input id="tank-red" name="red" inputMode="decimal" autoComplete="off" />
+            </Field>
+            <Field
+              id="tank-reorder"
+              label="Warn me when stock falls to (litres)"
+              hint="Used for low-stock reminders."
+              error={errors.reorder}
+              optional
+            >
+              <input id="tank-reorder" name="reorder" inputMode="decimal" autoComplete="off" />
+            </Field>
+          </details>
           <div className={styles.formActions}>
             <Button type="submit" loading={busy}>
               Add tank
@@ -872,7 +884,8 @@ function StepBody({ step, ctx }: { step: GuidedStep; ctx: FormContext }): ReactN
 const TONE = { done: 'positive', todo: 'warning', blocked: 'neutral' } as const;
 const LABEL = { done: 'Done', todo: 'To do', blocked: 'Not yet' } as const;
 
-function StationGuide({
+/** One station's setup steps, from fuel types to the person in charge. */
+export function StationSetupGuide({
   tenantId,
   stationId,
   stationName,
@@ -966,6 +979,7 @@ function GuideSteps({
               <button
                 type="button"
                 className={styles.stepHeader}
+                data-status={step.status}
                 aria-expanded={expanded}
                 aria-controls={bodyId}
                 disabled={step.status === 'blocked'}
@@ -1047,7 +1061,7 @@ function Guide({ overview }: { overview: Ready }) {
           </Field>
         </div>
       ) : null}
-      <StationGuide
+      <StationSetupGuide
         key={station.id}
         tenantId={overview.tenantId}
         stationId={station.id}

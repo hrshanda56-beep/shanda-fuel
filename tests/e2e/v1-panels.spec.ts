@@ -162,7 +162,7 @@ test.describe('New v1 screens', () => {
     await mockApi(page);
     await page.goto('/dev-preview/v1-panels?sheet=closed');
     const log = page.getByRole('list', { name: 'Recent changes' });
-    await expect(log.getByText('Supplier: credit limit set')).toBeVisible();
+    await expect(log.getByText('Credit limit set')).toBeVisible();
     await log.getByRole('button', { name: 'What changed' }).click();
     await expect(log.getByText('Credit limit', { exact: true })).toBeVisible();
     await expect(log.getByText('1000')).toBeVisible();
@@ -171,7 +171,7 @@ test.describe('New v1 screens', () => {
     await expect(log.getByText('50', { exact: true })).toBeVisible();
     const next = page.getByRole('button', { name: 'Next', exact: true });
     await next.click();
-    await expect(log.getByText('Cash: accept cash handover')).toBeVisible();
+    await expect(log.getByText('Accept cash handover')).toBeVisible();
     // Three entries fit on one page, so the pager goes away.
     await expect(next).toHaveCount(0);
   });
@@ -238,7 +238,7 @@ test.describe('New v1 screens', () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/dev-preview/v1-panels');
       await expect(page.getByText('Delivery note: note.pdf')).toBeVisible();
-      await expect(page.getByText('Supplier: credit limit set')).toBeVisible();
+      await expect(page.getByText('Credit limit set')).toBeVisible();
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );

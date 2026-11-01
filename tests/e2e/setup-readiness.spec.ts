@@ -183,18 +183,19 @@ test.describe('Setup readiness and payment setup', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"active"}' }),
     );
     await tab(page, 'Payments').click();
-    await expect(page.getByText('No payment providers entered')).toBeVisible();
-    await expect(page.getByText('No provider accounts entered')).toBeVisible();
+    await expect(page.getByText('No payment providers yet.')).toBeVisible();
+    await expect(page.getByText(/No provider accounts yet\./)).toBeVisible();
 
-    // Validation first: nothing is sent.
+    // Validation first: nothing is sent. The form opens in a side panel.
     await page.getByRole('button', { name: 'Add provider', exact: true }).click();
+    const providerForm = page.getByRole('form', { name: 'Add payment provider' });
+    await providerForm.getByRole('button', { name: 'Save provider' }).click();
     await expect(page.getByText('Enter the provider name.')).toBeVisible();
 
-    const providerForm = page.getByRole('form', { name: 'Add payment provider' });
     await providerForm.getByLabel('Provider name').fill('Setup E2E POS');
     await providerForm.getByLabel('Provider code').fill('SETUP-E2E-POS');
     await providerForm.getByLabel('Provider type').selectOption('POS');
-    await providerForm.getByRole('button', { name: 'Add provider' }).click();
+    await providerForm.getByRole('button', { name: 'Save provider' }).click();
 
     const dialog = page.getByRole('dialog', { name: 'Confirm it is you' });
     await expect(dialog).toBeVisible();
@@ -204,6 +205,7 @@ test.describe('Setup readiness and payment setup', () => {
     await expect(page.getByText('Setup E2E POS was added.')).toBeVisible();
     await expect(page.getByRole('list').getByText('Setup E2E POS').first()).toBeVisible();
 
+    await page.getByRole('button', { name: 'Add provider account', exact: true }).click();
     const accountForm = page.getByRole('form', { name: 'Add provider account' });
     await accountForm
       .getByLabel('Station')
@@ -212,7 +214,7 @@ test.describe('Setup readiness and payment setup', () => {
     await accountForm.getByLabel('Account name').fill('Ready station terminal');
     await accountForm.getByLabel('Merchant or terminal reference').fill('E2E-MERCHANT-1');
     await accountForm.getByLabel('Currency').fill('usd');
-    await accountForm.getByRole('button', { name: 'Add provider account' }).click();
+    await accountForm.getByRole('button', { name: 'Save account' }).click();
     // Step-up is reused for a few minutes, so no second prompt.
     await expect(
       page.getByText('Ready station terminal was added for Setup Ready Station.'),
@@ -233,22 +235,30 @@ test.describe('Setup readiness and payment setup', () => {
     page,
   }) => {
     await tab(page, 'Payments').click();
-    await expect(page.getByText('No bank accounts entered')).toBeVisible();
+    await expect(page.getByText('No bank accounts yet.').first()).toBeVisible();
+    // The form opens in a side panel from the card's own button.
+    await page.getByRole('button', { name: 'Add bank account', exact: true }).click();
     const bankForm = page.getByRole('form', { name: 'Add bank account' });
     await expect(bankForm).toBeVisible();
     await expect(bankForm.getByLabel('Masked account reference')).toBeVisible();
     await expect(
       bankForm.getByText('Do not enter the full bank account number.').first(),
     ).toBeVisible();
-    await expect(bankForm.getByRole('button', { name: 'Add bank account' })).toBeVisible();
+    await expect(bankForm.getByRole('button', { name: 'Save bank account' })).toBeVisible();
   });
 
   for (const width of WIDTHS) {
     test(`both panels fit ${width}px and have no accessibility violations`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
-      for (const name of ['Readiness', 'Payments']) {
-        await openSection(page, name);
-        await expect(content(page).getByRole('heading', { name, level: 2 })).toBeVisible();
+      // Payments is a stack of cards; the first one is Payment providers.
+      for (const [name, firstCard] of [
+        ['Readiness', 'Readiness'],
+        ['Payments', 'Payment providers'],
+      ]) {
+        await openSection(page, name!);
+        await expect(
+          content(page).getByRole('heading', { name: firstCard, level: 2 }),
+        ).toBeVisible();
         await expect(content(page).getByRole('region').first()).toBeVisible();
         await expectNoSidewaysScroll(page);
         const results = await new AxeBuilder({ page }).analyze();

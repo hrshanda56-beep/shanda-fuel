@@ -1,5 +1,24 @@
 # Shanda Fuel — Current Status
 
+## Settings screens polish — 2026-11-01 (branch `ui/profits-page`, uncommitted)
+
+Owner asked for the Settings screens to match the rest of the site and feel less overwhelming. UI
+only: no schema, auth, permission or API change, and no new commands.
+
+- Every Settings section is now a stack of calm white cards (new shared `SectionCard`, `CardRows`,
+  `CardTiles` in `src/design-system/section-card.tsx`), with the section list lightened.
+- **Station setup is no longer its own section.** Each station on Settings > Stations has a
+  "Station setup" button that opens that station's guided steps, with "Back to stations". Old
+  `?tab=setup` links still work, and the Readiness "Fix this" links open the right station
+  (`?tab=stations&setup=<station>`).
+- Payments: the add forms (provider, provider account, bank account, bank balance) moved into side
+  panels like Add station already used. Same commands, validation and identity check.
+- Activity log: plain lines ("Created · subject", then area, person and time). With "All stations"
+  there is no single station clock, so times are shown in UTC and say so.
+- UI lock re-baselined for these owner-requested changes. The Clerk-based Settings and Readiness
+  e2e specs were updated by reading and were not run here (no Clerk test keys). The setup-guide and
+  v1-panels specs and an axe scan of every section (light/dark, phone/desktop) did run locally.
+
 ## Hardening pass — 2026-10-29 (branch `fixtures`, from `main` 81168380, uncommitted)
 
 Code-verified audit of the existing features, with no new builds: see `docs/STATE_OF_PLAY.md` for

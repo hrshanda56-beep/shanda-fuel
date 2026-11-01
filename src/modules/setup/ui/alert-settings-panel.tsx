@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { Button, ErrorState, Field, LoadingState, SuccessState } from '@/design-system/primitives';
 
+import { SectionCard } from '@/design-system/section-card';
+
 import { friendlySetupError } from '../guided-setup';
-import { InfoTip } from '@/design-system/info-tip';
 
 type Loaded = {
   settings: {
@@ -129,28 +130,26 @@ export function AlertSettingsPanel({
   const editable = loaded.canManage && Boolean(stationId);
 
   return (
-    <section aria-labelledby="alert-settings-title" className="pg">
-      <h3 id="alert-settings-title" className="sr-only">
-        Reminders
-      </h3>
-      <InfoTip>
-        Choose when the system should remind you. Reminders appear on the Finance page. They never
-        stop anyone from working.
-        {loaded.version === null
+    <SectionCard
+      id="alert-settings"
+      title="Reminders"
+      note={`Choose when the system should remind you. Reminders appear on the Finance page and never stop anyone from working.${
+        loaded.version === null
           ? ' You have not changed these yet, so the starting values apply.'
-          : ''}
-      </InfoTip>
+          : ''
+      }`}
+    >
       {!loaded.canManage ? (
-        <p className="field-hint">Only the owner or an administrator can change these.</p>
+        <p className="sc-message">Only the owner or an administrator can change these.</p>
       ) : !stationId ? (
-        <p className="field-hint">Choose a station at the top of the page to save changes.</p>
+        <p className="sc-message">Choose a station at the top of the page to save changes.</p>
       ) : null}
       {error ? <ErrorState message={error} /> : null}
       {saved ? (
         <SuccessState title="Saved" message="Reminders will use these numbers from now on." />
       ) : null}
-      <form onSubmit={save} className="pg-form">
-        <div className="pg-form-grid">
+      <form onSubmit={save} className="sc-form">
+        <div className="sc-form-grid">
           <Field
             id="alert-due-soon"
             label="Warn about supplier invoices due within (days)"
@@ -204,12 +203,12 @@ export function AlertSettingsPanel({
             />
           </Field>
         </div>
-        <div className="pg-form-actions">
+        <div className="sc-form-actions">
           <Button type="submit" loading={busy} disabled={!editable}>
             Save reminders
           </Button>
         </div>
       </form>
-    </section>
+    </SectionCard>
   );
 }

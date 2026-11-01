@@ -15,7 +15,7 @@
   padding-block: 0;
 }
 
-/* Section pills on the left, one rounded panel with the details on the right. */
+/* Section list on the left, one calm card per topic on the right. */
 .layout {
   display: grid;
   grid-template-columns: 13rem minmax(0, 1fr);
@@ -29,7 +29,7 @@
   top: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .subnavItem {
@@ -38,8 +38,8 @@
   gap: var(--space-3);
   min-height: 2.75rem;
   padding: 0 var(--space-4);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-xl);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
@@ -50,45 +50,34 @@
 }
 
 .subnavItem:hover {
-  border-color: var(--border-strong);
   background: var(--bg-subtle);
   color: var(--text-primary);
 }
 
 .subnavItem[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--bg-selected);
-  color: var(--text-primary);
+  border-color: var(--border-subtle);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--accent-text);
   font-weight: var(--font-weight-medium);
+}
+
+.subnavItem:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .subnavIcon {
   flex-shrink: 0;
 }
 
+/* The cards sit straight on the page, the same way the Finance screens do. */
 .content {
   container: settings-content / inline-size;
   display: grid;
   align-content: start;
-  gap: var(--space-5);
+  gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-5);
-  border: var(--border-width) solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-xs);
-}
-
-.contentHeader {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.contentTitle {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold);
 }
 
 .note {
@@ -97,72 +86,10 @@
   font-size: var(--font-size-sm);
 }
 
-/* Blocks inside the panel: a heading, then outlined fields. */
-.section {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-  padding-top: var(--space-5);
-  border-top: var(--border-width) solid var(--border-subtle);
-}
-
-.sectionHead {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.sectionTitle {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-}
-
-/* Read-only values as outlined fields with the label sitting on the border. */
-.fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-5) var(--space-4);
-  margin: 0;
-}
-
-.fields > div {
-  position: relative;
-  min-width: 0;
-  padding: var(--space-4);
-  border: var(--border-width) solid var(--border-default);
-  border-radius: var(--radius-xl);
-}
-
-/* A lone tile (an odd last one) takes the full row so long names don't wrap in a half-width box. */
-.fields > div:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
-.fields dt {
-  position: absolute;
-  top: 0;
-  left: var(--space-3);
-  padding: 0 var(--space-2);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  line-height: 1;
-  transform: translateY(-50%);
-}
-
-.fields dd {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-medium);
-  overflow-wrap: anywhere;
-}
-
 .profileRow {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .avatar {
@@ -178,8 +105,34 @@
   font-weight: var(--font-weight-semibold);
 }
 
-.signOutRow {
-  display: flex;
+.profileFacts {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+}
+
+.profileFacts dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.profileFacts dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.roleLabel {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* "Back" arrow: the chevron turned to point left. */
+.backIcon {
+  transform: rotate(180deg);
 }
 
 .staffPanel {
@@ -296,20 +249,13 @@
     min-height: 2.5rem;
     padding: 0 var(--space-3);
   }
-
-  .content {
-    padding: var(--space-4);
-  }
 }
 
 @media (max-width: 30rem) {
-  .fields {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .profileRow {
     align-items: flex-start;
     flex-direction: column;
+    gap: var(--space-3);
   }
 }
 
@@ -388,7 +334,13 @@
 
 /* Last in the row, pushed to the right edge. */
 .staffInviteButton {
+  order: 2;
   margin-left: auto;
+}
+
+/* The status filters take the second line, so Invite stays beside the search. */
+.staffFilters {
+  order: 3;
 }
 
 .staffDanger {
@@ -623,23 +575,19 @@
   }
 }
 
-@container settings-content (max-width: 28rem) {
-  .fields {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 .sectionMenu {
   display: none;
 }
+/* "Role" and its dropdown on one line, level with the search box. */
 .staffRoleFilter {
-  display: grid;
-  gap: var(--space-1);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
 }
 .staffRoleFilter select {
-  min-height: 2.75rem;
+  min-height: 2.5rem;
   max-width: 100%;
   padding: 0 var(--space-3);
   border: 1px solid var(--border-default);

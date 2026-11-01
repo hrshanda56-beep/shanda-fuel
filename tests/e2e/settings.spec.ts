@@ -109,7 +109,7 @@ test.describe('Settings', () => {
     test('each section shows its own details once opened', async ({ page }) => {
       // Companies are listed on the Organisation section, under the organisation's own details.
       await expect(
-        content(page).getByRole('heading', { name: 'Companies', level: 3 }),
+        content(page).getByRole('heading', { name: 'Companies', level: 2 }),
       ).toBeVisible();
       await expect(
         content(page).getByText('Settings E2E Legal Entity', { exact: true }),
@@ -118,14 +118,14 @@ test.describe('Settings', () => {
       await sectionButton(page, 'Stations').click();
       await expectOnlyPressed(page, 'Stations');
       await expect(
-        content(page).getByRole('heading', { name: 'Stations', level: 2 }),
+        content(page).getByRole('heading', { name: 'Station details', level: 2 }),
       ).toBeVisible();
       await expect(content(page).getByText('Settings E2E Station', { exact: true })).toBeVisible();
 
       await sectionButton(page, 'Account').click();
       await expectOnlyPressed(page, 'Account');
-      await expect(content(page).getByRole('heading', { name: 'Account', level: 2 })).toBeVisible();
-      await expect(content(page).getByRole('heading', { name: 'Profile', level: 3 })).toBeVisible();
+      await expect(content(page).getByRole('heading', { name: 'Profile', level: 2 })).toBeVisible();
+      await expect(content(page).getByRole('heading', { name: 'Session', level: 2 })).toBeVisible();
       await expect(content(page).getByText('Name', { exact: true })).toBeVisible();
       await expect(content(page).getByText('Email', { exact: true })).toBeVisible();
       // The email is shown in the profile card and again in the details list.
