@@ -7243,14 +7243,7 @@ h3,
 }
 
 .today-figures .today-figure-value {
-  font-size: clamp(0.875rem, 15cqi, 2.25rem);
-}
-
-/* On a narrow phone two cards share the row, so a long amount (a negative one) needs a smaller size. */
-@media (max-width: 30rem) {
-  .today-figures .today-figure-value {
-    font-size: clamp(0.625rem, 9.5cqi, 2.25rem);
-  }
+  font-size: clamp(0.625rem, 10cqi, 2.25rem);
 }
 
 /* Shorter key figure cards: with no caption line they need less height. */
