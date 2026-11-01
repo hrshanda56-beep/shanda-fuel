@@ -133,11 +133,13 @@ export function SupplierDueView({
               </div>
               <ul className="list-rows" aria-label={group.label}>
                 {group.rows.map((row) => {
-                  const href = buildContextHref(
+                  const href = `${buildContextHref(
                     `/suppliers/${encodeURIComponent(row.supplierId)}`,
                     search,
-                    selection,
-                  );
+                    // A supplier belongs to the company, so "all stations" must not turn this
+                    // link into the supplier list.
+                    { ...selection, allStations: false },
+                  )}#record-payment`;
                   const due = dueWording(row);
                   return (
                     <li key={row.documentId} className="list-item">
@@ -159,6 +161,7 @@ export function SupplierDueView({
                         </span>
                         <span className="list-cell list-amount" data-label="Still to pay">
                           {formatTileMoney(row.balance)}
+                          <small>Submit payment</small>
                         </span>
                       </Link>
                     </li>
