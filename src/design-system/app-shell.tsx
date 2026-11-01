@@ -992,7 +992,9 @@ function AccountMenu({
   const panelRef = useRef<HTMLDivElement>(null);
   const displayName = displayableIdentity(userName);
   const displayRole = displayName ? displayableRole(role) : undefined;
-  const label = displayName ? `Account: ${displayName}` : 'Account';
+  const label = displayName
+    ? `Account: ${displayName}${displayRole ? ` ${displayRole}` : ''}`
+    : 'Account';
 
   useEffect(() => {
     if (!open) return;
@@ -1136,7 +1138,7 @@ export function GlobalSearchButton({ compact = false }: { compact?: boolean }) {
     <button
       type="button"
       className={`global-search ${compact ? 'global-search-compact' : ''}`.trim()}
-      aria-label={compact ? 'Search pages' : undefined}
+      aria-label={compact ? `Search pages ${shortcut}` : undefined}
       aria-haspopup="dialog"
       aria-keyshortcuts="Meta+K Control+K"
       onClick={() => shell?.openSearch()}
