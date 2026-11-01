@@ -942,6 +942,15 @@ a.operations-attention-row:hover {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
 }
 
+/* Phones: one centred column that fills the width (capped), not fixed-width
+   cards packed to the left with the spare room all on the right. */
+@media (max-width: 47.99rem) {
+  .tank-overview .tank-grid {
+    grid-template-columns: minmax(0, 24rem);
+    justify-content: center;
+  }
+}
+
 .tank-overview .tank-drum {
   max-width: none;
 }
@@ -6372,6 +6381,25 @@ h3,
   color: var(--accent-text);
 }
 
+/* On phones the empty slot is just a small centred button, not a whole card. */
+@media (max-width: 47.99rem) {
+  .tank-overview .tank-grid > li:has(> .tank-card-ghost) {
+    display: flex;
+    justify-content: center;
+  }
+
+  .tank-card-ghost {
+    flex: 0 0 auto;
+    min-height: 2.75rem;
+    padding: var(--space-2) var(--space-5);
+    border-radius: var(--radius-full, 999px);
+  }
+
+  .tank-card-ghost span {
+    display: none;
+  }
+}
+
 @media (max-width: 40rem) {
   .tank-hero {
     grid-template-columns: 1fr;
@@ -7271,26 +7299,35 @@ h3,
   box-shadow: none;
 }
 
-.next-step--embedded > .next-step-detail,
-.next-step--embedded > .next-step-action {
+.next-step--embedded > .next-step-detail {
   grid-column: 1 / -1;
   grid-row: auto;
 }
 
-/* "Step 3 of 4" and the step's name share one row. */
+/* "Step 3 of 4", the step's name and its button share one row; on a phone the button
+   drops below, full width, as a comfortable thumb target. */
 .today-section > .next-step.next-step--embedded {
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   column-gap: var(--space-3);
-  align-items: baseline;
+  align-items: center;
 }
 
 .next-step--embedded > .next-step-count {
   grid-column: 1;
 }
 
-.next-step--embedded > h2 {
+.next-step--embedded > h2,
+.next-step--embedded > .next-step-count {
+  align-self: baseline;
+}
+
+.today-section > .next-step--embedded > h2 {
   grid-column: 2;
-  font-size: var(--font-size-lg);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.25;
 }
 
 .next-step--embedded > h2:first-child,
@@ -7300,9 +7337,28 @@ h3,
 }
 
 .next-step--embedded > .next-step-action {
-  justify-self: stretch;
+  grid-column: 3;
+  grid-row: 1;
+  align-self: baseline;
+  justify-self: end;
   min-width: 0;
-  margin-top: var(--space-1);
+  min-height: 2.5rem;
+  padding-inline: var(--space-5);
+  white-space: nowrap;
+}
+
+@media (max-width: 40rem) {
+  .today-section > .next-step.next-step--embedded {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .next-step--embedded > .next-step-action {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-self: stretch;
+    min-height: 3rem;
+    margin-top: var(--space-1);
+  }
 }
 
 .next-step--embedded .next-step-trail {
@@ -7313,6 +7369,7 @@ h3,
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
+  line-height: 1.25;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -7338,33 +7395,13 @@ h3,
     margin-left: 0;
   }
 
-  .today-stats .today-periods {
-    gap: var(--space-1);
-    padding: var(--space-1);
-    border-radius: var(--radius-lg);
-    background: var(--bg-hover);
-  }
-
+  /* The range pills keep their desktop look at every width; only the tap height grows. */
   .today-stats .today-period {
     min-height: 2.5rem;
-    border-radius: var(--radius-md);
-    background: transparent;
-    font-size: var(--font-size-sm);
-  }
-
-  .today-stats .today-period[data-active] {
-    background: var(--text-primary);
-    color: var(--bg-canvas);
   }
 
   .today-stats .perf-chart {
     margin: var(--space-3) 0;
-  }
-
-  .today-stats .today-stats-summary {
-    margin: 0 0 var(--space-1);
-    font-size: var(--font-size-xs);
-    line-height: 1.5;
   }
 
   .today-stats .today-chart-table {

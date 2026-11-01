@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { InfoTip } from './info-tip';
 
 /**
  * Page and content composition. Every screen answers, in order:
@@ -98,6 +99,7 @@ export function MetricCard({
   meta,
   tone = 'default',
   href,
+  info,
 }: {
   label: string;
   value: ReactNode;
@@ -105,14 +107,40 @@ export function MetricCard({
   tone?: 'default' | 'critical';
   /** Where the detail behind this number lives, e.g. `#cash` or `/reports`. */
   href?: string;
+  /** An explanation kept behind a "?" so the card itself stays quiet. */
+  info?: string;
 }) {
-  const content = (
+  const body = (
     <>
-      <span className="metric-label">{label}</span>
       <strong className={`metric-value ${tone === 'critical' ? 'metric-critical' : ''}`.trim()}>
         {value}
       </strong>
       {meta ? <span className="metric-meta">{meta}</span> : null}
+    </>
+  );
+  if (info) {
+    // A "?" is a button, and a button cannot sit inside a link. So the label is the link and
+    // stretches over the whole card, which keeps the whole surface the target.
+    return (
+      <div className="card metric-card" data-linked={href ? '' : undefined}>
+        <span className="metric-label">
+          {href ? (
+            <Link className="metric-card-link" href={href}>
+              {label}
+            </Link>
+          ) : (
+            label
+          )}
+          <InfoTip text={info} label={`About ${label}`} />
+        </span>
+        {body}
+      </div>
+    );
+  }
+  const content = (
+    <>
+      <span className="metric-label">{label}</span>
+      {body}
     </>
   );
   return href ? (

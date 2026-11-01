@@ -251,9 +251,18 @@ async function loadWorkItems(
             .map((item) => {
               // What a company owes or is owed is the same whichever station is asked.
               const shared = item.area === 'Payables' || item.area === 'Receivables';
+              // Shorter wording for the dashboard; other screens keep the full sentence.
+              const shortTitle = item.title
+                .replace(
+                  / falls due to suppliers in the next (\d+) days/,
+                  ' due to suppliers in $1 days',
+                )
+                .replace(' falls due to suppliers today', ' due to suppliers today')
+                .replace(' collected but not yet banked', ' not yet banked')
+                .replace(/ is waiting for approval$/, ' needs approval');
               return {
                 id: shared ? `work-${item.id}` : `work-${target.stationId}-${item.id}`,
-                title: target.name && !shared ? `${target.name}: ${item.title}` : item.title,
+                title: target.name && !shared ? `${target.name}: ${shortTitle}` : shortTitle,
                 detail: item.detail,
                 href: item.href,
                 needsAction: item.tone === 'attention',

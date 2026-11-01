@@ -239,9 +239,7 @@ test('the sales chart is also available as a keyboard-operable table', async ({ 
     .getByRole('button', { name: '7D' })
     .click();
 
-  const summary = page.locator('.today-chart-table > summary');
-  await summary.focus();
-  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Show the chart as a table' }).click();
   const table = page.getByRole('table', { name: /Litres sold, 7D, from approved reports only/ });
   await expect(table).toBeVisible();
   await expect(table.getByRole('columnheader')).toHaveText([

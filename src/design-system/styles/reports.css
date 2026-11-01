@@ -453,7 +453,7 @@
   border-inline-start: var(--border-width) solid var(--border-subtle);
 }
 
-.reports-stack > .metric-grid > a.metric-card:hover {
+.reports-stack > .metric-grid > :is(a, [data-linked]).metric-card:hover {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 

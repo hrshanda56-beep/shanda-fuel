@@ -133,7 +133,7 @@ export function buildProfitView(report: ManagementReport): ProfitView {
 
   const explanation =
     state === 'no-sales'
-      ? 'Sales show here once a day is closed and checked. Try a longer period if you expected figures.'
+      ? 'Sales show here once a day is closed and checked.'
       : state === 'cost-missing'
         ? `We don’t know what the fuel cost for ${report.costing.unvaluedSaleCount} of ${report.costing.saleCount} sales, so profit would be wrong. Check that fuel deliveries and their prices have been entered.`
         : state === 'mismatch'
