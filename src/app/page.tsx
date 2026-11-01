@@ -10,6 +10,10 @@ import {
 } from '@/design-system/navigation-server';
 import { chartBuckets } from './_overview/dashboard-figures';
 import { businessToday } from '@/modules/reporting/period';
+import { requireAuthenticatedActor } from '@/modules/identity';
+import type { AvailableContext } from '@/modules/context/contracts';
+import { buildActionCenter } from '@/modules/approvals/action-center-model';
+import { loadActionCenterFacts } from '@/modules/approvals/action-center';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -17,7 +21,10 @@ import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-s
 import { getServerShellAccess } from '@/design-system/navigation-server';
 
 import { TodayOverview } from './_overview/today-overview';
-import { dashboardScopeFromCurrentContext } from './_overview/today-overview-model';
+import {
+  dashboardScopeFromCurrentContext,
+  type AttentionRow,
+} from './_overview/today-overview-model';
 
 export const metadata = {
   title: { absolute: 'Dashboard · Shanda Fuel' },
@@ -123,6 +130,7 @@ export default async function OverviewPage({
           legalEntityId={validatedContext?.legalEntityId ?? legalEntityId}
           stationId={validatedContext ? validatedContext.stationId : stationId}
           initialContext={initialContext}
+          available={access.status === 'ready' ? access.resolution?.available : undefined}
           showQuickActions={!managesBusiness}
         />
       </Suspense>
@@ -136,6 +144,7 @@ async function DashboardContent({
   legalEntityId,
   stationId,
   initialContext,
+  available,
   showQuickActions,
 }: {
   request: Request | null;
@@ -143,6 +152,7 @@ async function DashboardContent({
   legalEntityId?: string;
   stationId?: string;
   initialContext?: { tenantId: string; legalEntityId?: string; stationId?: string };
+  available?: AvailableContext;
   showQuickActions: boolean;
 }) {
   const scope = tenantId ? { tenantId, legalEntityId, stationId } : initialContext;
@@ -162,9 +172,12 @@ async function DashboardContent({
     fromDate: window.fromDate,
     toDate: window.toDate,
   });
+  const work = await loadWorkItems(request, scope, available);
   return (
     <TodayOverview
       key={`${scope.tenantId}|${scope.stationId ?? ''}`}
+      workItems={work.items}
+      workUnavailable={work.unavailable}
       tenantId={scope.tenantId}
       legalEntityId={scope.legalEntityId}
       stationId={scope.stationId}
@@ -172,4 +185,78 @@ async function DashboardContent({
       showQuickActions={showQuickActions}
     />
   );
+}
+
+/**
+ * Approvals, banking and payables waiting for a person, from the same list the Finance page
+ * shows, so "Needs attention" never says all clear while a report waits for approval. With no
+ * station chosen it looks at every live station of the company and names the station.
+ */
+async function loadWorkItems(
+  request: Request,
+  scope: { tenantId: string; legalEntityId?: string; stationId?: string },
+  available?: AvailableContext,
+): Promise<{ items: AttentionRow[]; unavailable: boolean }> {
+  const entities =
+    available?.organisations
+      .find((organisation) => organisation.id === scope.tenantId)
+      ?.legalEntities.filter(
+        (entity) => !scope.legalEntityId || entity.id === scope.legalEntityId,
+      ) ?? [];
+  const targets = scope.stationId
+    ? [{ legalEntityId: scope.legalEntityId, stationId: scope.stationId, name: null }]
+    : entities.flatMap((entity) =>
+        entity.stations
+          .filter((station) => station.status !== 'ONBOARDING')
+          .map((station) => ({
+            legalEntityId: entity.id,
+            stationId: station.id,
+            name: station.name as string | null,
+          })),
+      );
+  if (targets.length === 0) return { items: [], unavailable: false };
+  try {
+    const actor = await requireAuthenticatedActor(request);
+    const results = await Promise.all(
+      targets.map(async (target) => {
+        const center = buildActionCenter(
+          await loadActionCenterFacts(
+            request,
+            {
+              organisationId: scope.tenantId,
+              ...(target.legalEntityId ? { legalEntityId: target.legalEntityId } : {}),
+              stationId: target.stationId,
+              allStations: false,
+            },
+            actor,
+          ),
+        );
+        return {
+          unavailable: center.unavailable.length > 0,
+          items: center.items
+            .filter((item) => item.area !== 'Operations')
+            .map((item) => {
+              // What a company owes or is owed is the same whichever station is asked.
+              const shared = item.area === 'Payables' || item.area === 'Receivables';
+              return {
+                id: shared ? `work-${item.id}` : `work-${target.stationId}-${item.id}`,
+                title: target.name && !shared ? `${target.name}: ${item.title}` : item.title,
+                detail: item.detail,
+                href: item.href,
+              };
+            }),
+        };
+      }),
+    );
+    return {
+      items: [
+        ...new Map(
+          results.flatMap((result) => result.items).map((item) => [item.id, item]),
+        ).values(),
+      ].slice(0, 6),
+      unavailable: results.some((result) => result.unavailable),
+    };
+  } catch {
+    return { items: [], unavailable: true };
+  }
 }

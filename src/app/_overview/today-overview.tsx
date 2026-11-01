@@ -124,10 +124,15 @@ export function TodayOverview({
   initialContext,
   initialData,
   showQuickActions = true,
+  workItems = [],
+  workUnavailable = false,
 }: Scope & {
   initialContext?: Scope;
   initialData?: DashboardInitialData;
   showQuickActions?: boolean;
+  /** Approvals and payables waiting for a person, loaded with the page. */
+  workItems?: readonly AttentionRow[];
+  workUnavailable?: boolean;
 }) {
   const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
   const resolvedContext = initialContext ?? fallback;
@@ -321,6 +326,7 @@ export function TodayOverview({
       });
     }
   }
+  attention.push(...workItems);
   const attentionLoading =
     (Boolean(stationId) && operations.status === 'loading') || customers.status === 'loading';
 
@@ -489,7 +495,7 @@ export function TodayOverview({
                 Customer alerts are hidden because you don’t have access.
               </p>
             ) : null}
-            {operations.status === 'error' || customers.status === 'error' ? (
+            {operations.status === 'error' || customers.status === 'error' || workUnavailable ? (
               <p className="today-note">Some items could not be checked.</p>
             ) : null}
           </section>
