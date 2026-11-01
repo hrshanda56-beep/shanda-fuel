@@ -131,8 +131,8 @@ export function InventoryOperationalActions({
           <span className="eyebrow">Authorised station actions</span>
           <h2 id="inventory-actions-heading">Record an Inventory observation or movement</h2>
           <p>
-            These actions are sent to the named server command and remain scoped to{' '}
-            {context.stationName}. Server validation remains authoritative.
+            These actions apply to {context.stationName} only. Figures are checked again when you
+            save.
           </p>
         </div>
       </div>
@@ -264,6 +264,8 @@ function TankDipForm({
             value={physicalLitres}
             onChange={(event) => setPhysicalLitres(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
             placeholder="0.000"
           />
@@ -281,6 +283,8 @@ function TankDipForm({
               value={reading}
               onChange={(event) => setReading(event.target.value)}
               inputMode="decimal"
+              pattern="-?[0-9]*[.]?[0-9]*"
+              title="Enter a number, for example 1250.5"
               required
               placeholder="112.5"
             />
@@ -303,6 +307,8 @@ function TankDipForm({
         <input
           id="dip-measured-at"
           type="datetime-local"
+          min="2000-01-01T00:00"
+          max="2100-12-31T23:59"
           value={measuredAt}
           onChange={(event) => setMeasuredAt(event.target.value)}
           required
@@ -474,6 +480,8 @@ function AdjustmentForm({
           value={quantityLitres}
           onChange={(event) => setQuantityLitres(event.target.value)}
           inputMode="decimal"
+          pattern="-?[0-9]*[.]?[0-9]*"
+          title="Enter a number, for example 1250.5"
           required
           placeholder="0.000"
         />
@@ -482,6 +490,8 @@ function AdjustmentForm({
         <input
           id="adjustment-effective-at"
           type="datetime-local"
+          min="2000-01-01T00:00"
+          max="2100-12-31T23:59"
           value={effectiveAt}
           onChange={(event) => setEffectiveAt(event.target.value)}
           required
@@ -580,6 +590,8 @@ function OpeningInventoryForm({
           value={quantityLitres}
           onChange={(event) => setQuantityLitres(event.target.value)}
           inputMode="decimal"
+          pattern="-?[0-9]*[.]?[0-9]*"
+          title="Enter a number, for example 1250.5"
           required
           placeholder="0.000"
         />
@@ -590,6 +602,8 @@ function OpeningInventoryForm({
           value={unitCost}
           onChange={(event) => setUnitCost(event.target.value)}
           inputMode="decimal"
+          pattern="-?[0-9]*[.]?[0-9]*"
+          title="Enter a number, for example 1250.5"
           required
           placeholder="1.760"
         />
@@ -598,6 +612,8 @@ function OpeningInventoryForm({
         <input
           id="opening-effective-at"
           type="datetime-local"
+          min="2000-01-01T00:00"
+          max="2100-12-31T23:59"
           value={effectiveAt}
           onChange={(event) => setEffectiveAt(event.target.value)}
           required
@@ -936,6 +952,8 @@ export function DeliveryForm({
           <input
             id="delivery-delivered-at"
             type="datetime-local"
+            min="2000-01-01T00:00"
+            max="2100-12-31T23:59"
             value={deliveredAt}
             onChange={(event) => setDeliveredAt(event.target.value)}
             required
@@ -947,6 +965,8 @@ export function DeliveryForm({
             value={noteQuantityLitres}
             onChange={(event) => setNoteQuantityLitres(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
           />
         </Field>
@@ -956,6 +976,8 @@ export function DeliveryForm({
             value={actualQuantityLitres}
             onChange={(event) => setActualQuantityLitres(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
           />
         </Field>
@@ -965,6 +987,8 @@ export function DeliveryForm({
             value={allocationQuantityLitres}
             onChange={(event) => setAllocationQuantityLitres(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
           />
         </Field>
@@ -1095,6 +1119,8 @@ function ReceiptCostForm({
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             inputMode="decimal"
+            pattern="-?[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1250.5"
             required
             disabled={!enabled}
             placeholder="0.0000"
@@ -1112,6 +1138,8 @@ function ReceiptCostForm({
               value={fuelCost}
               onChange={(event) => setFuelCost(event.target.value)}
               inputMode="decimal"
+              pattern="-?[0-9]*[.]?[0-9]*"
+              title="Enter a number, for example 1250.5"
               required
               disabled={!enabled}
               placeholder="0.00"
@@ -1123,6 +1151,8 @@ function ReceiptCostForm({
               value={freight}
               onChange={(event) => setFreight(event.target.value)}
               inputMode="decimal"
+              pattern="-?[0-9]*[.]?[0-9]*"
+              title="Enter a number, for example 1250.5"
               disabled={!enabled}
               placeholder="0.00"
             />
@@ -1143,6 +1173,8 @@ function ReceiptCostForm({
               value={otherAmount}
               onChange={(event) => setOtherAmount(event.target.value)}
               inputMode="decimal"
+              pattern="-?[0-9]*[.]?[0-9]*"
+              title="Enter a number, for example 1250.5"
               disabled={!enabled}
               placeholder="0.00"
             />

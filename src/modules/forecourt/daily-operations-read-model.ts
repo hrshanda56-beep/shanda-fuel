@@ -10,6 +10,8 @@ export type RecordData = {
   /** Whether this person is an administrator who may correct a recorded opening reading. */
   canCorrectOpening?: boolean;
   requiresApproverNote?: boolean;
+  /** Fuels sold in this report whose stock has no known cost, so profit for the day is incomplete. */
+  unvaluedFuels?: string[];
   approvalNote: string | null;
   business_date: string;
   /** Customer accounts that may be charged at this station, with what they may still spend. */

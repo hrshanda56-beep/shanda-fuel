@@ -22,7 +22,7 @@ describe('order wording', () => {
     expect(orderStatus('APPROVED').label).not.toMatch(/_/);
   });
   it('groups statuses into plain filters', () => {
-    expect(orderMatchesFilter('DRAFT', 'waiting')).toBe(true);
+    expect(orderMatchesFilter('DRAFT', 'waiting')).toBe(false);
     expect(orderMatchesFilter('APPROVED', 'open')).toBe(true);
     expect(orderMatchesFilter('CANCELLED', 'finished')).toBe(true);
     expect(orderMatchesFilter('CANCELLED', 'open')).toBe(false);

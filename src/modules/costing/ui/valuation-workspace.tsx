@@ -134,14 +134,13 @@ function knownError(error: string, message: string) {
     return {
       title: 'Valuation is blocking this operation',
       message:
-        'This tank has no usable cost yet. Open the tank’s stock cost page, add the missing cost, then try again.',
+        'This stock has no usable cost yet. Open it in Valuation, add the missing cost, then try again.',
     };
   }
   if (message.includes('already has a revaluation workflow')) {
     return {
       title: 'A revaluation already exists',
-      message:
-        'This source movement is already covered by a revaluation workflow. Refresh the page before trying again.',
+      message: 'This stock is already being revalued. Refresh the page before trying again.',
     };
   }
   if (message.includes('Only a requested')) {
@@ -519,7 +518,7 @@ function RequestRevaluationDialog({
         </InfoTip>
         <Field
           id="revaluation-amount"
-          label="Authoritative cost"
+          label="Confirmed cost"
           hint="Missing cost must never be entered as zero."
           required
         >

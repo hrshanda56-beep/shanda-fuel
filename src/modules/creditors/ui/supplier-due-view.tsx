@@ -161,7 +161,9 @@ export function SupplierDueView({
                         const href = buildContextHref(
                           `/suppliers/${encodeURIComponent(row.supplierId)}`,
                           search,
-                          selection,
+                          // A supplier belongs to the company, so "all stations" must not turn this
+                          // link into the supplier list.
+                          { ...selection, allStations: false },
                         );
                         const due = dueWording(row);
                         return (

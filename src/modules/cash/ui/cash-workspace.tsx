@@ -798,9 +798,11 @@ export function CashWorkspace({
   const idleNote: string | null =
     !summary || !hasAnyAction || canConfirm || canBank || canCollect
       ? null
-      : summary.collections.length === 0
-        ? 'Nothing to do yet. Cash shows up here once a shift report is approved.'
-        : 'All caught up. Nothing needs doing right now.';
+      : !capabilities.viewDeposits && Number(summary.totals.availableAtStation) > 0
+        ? `${amountsHidden ? `${summary.currency} ${MASK}` : formatTileMoney(summary.totals.availableAtStation, summary.currency)} is at the station. Your role cannot see bank deposits, so this page cannot show whether it has been banked.`
+        : summary.collections.length === 0
+          ? 'Nothing to do yet. Cash shows up here once a shift report is approved.'
+          : 'All caught up. Nothing needs doing right now.';
 
   return (
     <div className="content-grid cash-workspace">
@@ -827,6 +829,7 @@ export function CashWorkspace({
             currency={summary.currency}
             hidden={amountsHidden}
             onToggleHidden={() => setAmountsHidden((value) => !value)}
+            accountsHidden={!capabilities.viewDeposits}
           />
         ) : null}
         <div className="cash-action-bar">
@@ -1066,9 +1069,10 @@ export function CashWorkspace({
                             placeholder="Choose cash"
                             defaultValue={row.collectionId}
                             onChange={(event) => {
+                              // Read the value now: currentTarget is cleared once the handler returns.
+                              const chosenCollectionId = event.currentTarget.value;
                               const picked = depositableCollections.find(
-                                (collection) =>
-                                  collection.collectionId === event.currentTarget.value,
+                                (collection) => collection.collectionId === chosenCollectionId,
                               );
                               if (index === 0 && picked) setDepositFrom(picked.currentLocationId);
                               setDepositRows((rows) =>
@@ -1076,7 +1080,7 @@ export function CashWorkspace({
                                   candidate.id === row.id
                                     ? {
                                         ...candidate,
-                                        collectionId: event.currentTarget.value,
+                                        collectionId: chosenCollectionId,
                                         amount: picked?.availableAtStation ?? '',
                                       }
                                     : candidate,

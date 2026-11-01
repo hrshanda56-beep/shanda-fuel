@@ -160,6 +160,8 @@ function stationCashPositionQuery(context: CashCommandContext) {
         select sum(e.amount) from app.expenses e
         where e.tenant_id = ${context.tenantId} and e.station_id = ${context.stationId}
           and e.payment_method = 'STATION_CASH' and e.shift_id is null
+          -- Already inside the approved shift report's cash count.
+          and (e.reference is null or e.reference not like 'SHIFTREPORT-%')
           and e.state in ('SUBMITTED', 'APPROVED', 'POSTED')
           and e.created_at > coalesce((
             select max(c.recorded_at) from app.cash_collections c

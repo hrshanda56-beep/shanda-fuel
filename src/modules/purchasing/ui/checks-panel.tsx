@@ -81,6 +81,11 @@ export function ChecksPanel({
     return showAll ? all : all.filter((row) => row.exceeded);
   }, [data, showAll]);
   const problemCount = (data?.deliveries ?? []).filter((row) => row.exceeded).length;
+  const unlinkedCount = (data?.deliveries ?? []).filter((row) => !row.purchaseOrderNumber).length;
+  const unlinkedNote =
+    unlinkedCount > 0
+      ? ` ${unlinkedCount} ${unlinkedCount === 1 ? 'delivery is' : 'deliveries are'} not linked to an order, so ${unlinkedCount === 1 ? 'it' : 'they'} could not be checked.`
+      : '';
 
   return (
     <div className={styles.stack}>
@@ -103,7 +108,7 @@ export function ChecksPanel({
               </span>
               <p className={styles.muted}>
                 {problemCount === 0
-                  ? 'Nothing needs a look right now.'
+                  ? `Nothing needs a look right now.${unlinkedNote}`
                   : `${problemCount} ${problemCount === 1 ? 'delivery needs' : 'deliveries need'} a look.`}
               </p>
             </div>
@@ -123,7 +128,7 @@ export function ChecksPanel({
               message={
                 showAll
                   ? 'Once fuel is delivered, it will show here with its invoice.'
-                  : 'Every invoice matches what was ordered and delivered, within your allowed differences.'
+                  : `Every checked invoice matches what was ordered and delivered, within your allowed differences.${unlinkedNote}`
               }
             />
           ) : (

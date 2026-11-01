@@ -95,7 +95,7 @@ describe('toAuditItem', () => {
         actorName: null,
         details: null,
       }),
-    ).toMatchObject({ who: 'Unknown person', changes: [], created: true, subject: null });
+    ).toMatchObject({ who: 'Name not recorded', changes: [], created: true, subject: null });
   });
 
   it('names what the event touched when the name is known', () => {

@@ -4,7 +4,7 @@ import { useContextFetch } from '@/modules/context/client-context';
 import Decimal from 'decimal.js';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   buildContextHref,
   contextRoutePolicy,
@@ -291,6 +291,8 @@ export function SupplierDetailWorkspace({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [openForm, setOpenForm] = useState<'document' | 'document-file' | 'payment' | null>(null);
+  // Payments Due links here with #record-payment, so the payment form is already open.
+  const openedFromLink = useRef(false);
   const [limitText, setLimitText] = useState('');
   const choices: InvoiceChoices = initial?.choices ?? {
     products: [],
@@ -708,6 +710,14 @@ export function SupplierDetailWorkspace({
       lines: form.lines.map((line, at) => (at === index ? { ...line, ...patch } : line)),
     }));
   }
+
+  useEffect(() => {
+    if (openedFromLink.current || !supplier) return;
+    openedFromLink.current = true;
+    if (window.location.hash === '#record-payment') {
+      void Promise.resolve().then(() => setOpenForm('payment'));
+    }
+  }, [supplier]);
 
   function openSubmitForm(form: 'document' | 'payment') {
     setActionError(null);

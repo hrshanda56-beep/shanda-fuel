@@ -57,7 +57,7 @@ export const ORDER_FILTERS: ReadonlyArray<{ value: OrderFilter; label: string }>
 ];
 
 export function orderMatchesFilter(state: string, filter: OrderFilter): boolean {
-  if (filter === 'waiting') return state === 'DRAFT' || state === 'SUBMITTED';
+  if (filter === 'waiting') return state === 'SUBMITTED';
   if (filter === 'open') return state === 'APPROVED' || state === 'PARTIALLY_RECEIVED';
   if (filter === 'finished') {
     return state === 'RECEIVED' || state === 'CLOSED' || state === 'CANCELLED';

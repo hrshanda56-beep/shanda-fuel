@@ -346,7 +346,9 @@ export function buildNetPosition(report: ManagementReport): Statement {
     customers.prepaidValueBalance !== null;
   const holds = customersKnown
     ? sumExact([
-        cash.collectedButNotBanked,
+        cash.atStation ?? cash.collectedButNotBanked,
+        cash.heldByManagement ?? '0',
+        cash.inTransit ?? '0',
         providers.unmatchedEvidenceAmount,
         customers.receivableBalance!,
       ])
@@ -359,7 +361,14 @@ export function buildNetPosition(report: ManagementReport): Statement {
       {
         heading: 'What the business holds or is owed',
         lines: [
-          { label: 'Cash collected, not yet banked', value: cash.collectedButNotBanked },
+          {
+            label: 'Cash collected, not yet banked',
+            value: sumExact([
+              cash.atStation ?? cash.collectedButNotBanked,
+              cash.heldByManagement ?? '0',
+              cash.inTransit ?? '0',
+            ]),
+          },
           {
             label: 'Card and mobile payments not yet received',
             value: providers.unmatchedEvidenceAmount,

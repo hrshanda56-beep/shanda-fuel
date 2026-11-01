@@ -365,15 +365,42 @@ async function readCash(
          and a.station_id = pd.station_id
          and a.deposit_id = pd.id
       )
+      , balance_collections as (
+        -- Where cash sits is a balance, not a flow: everything collected up to the end of the
+        -- period and not yet banked, whatever day it was collected or deposited.
+        select c.id, c.amount, l.location_type
+        from app.cash_collections c
+        join app.cash_locations l
+          on l.tenant_id = c.tenant_id
+         and l.station_id = c.station_id
+         and l.id = c.current_location_id
+        where c.tenant_id = ${filters.tenantId}
+          and c.state <> 'REVERSED'
+          and c.business_date <= ${filters.toDate}
+          ${stationClause('c', filters.stationIds)}
+      ), balance_allocations as (
+        select bc.id,
+          coalesce(sum(a.amount) filter (where d.state <> 'REVERSED'), 0) as allocated,
+          coalesce(sum(a.amount) filter (where d.state = 'CONFIRMED'), 0) as banked
+        from balance_collections bc
+        left join app.bank_deposit_allocations a
+          on a.tenant_id = ${filters.tenantId} and a.collection_id = bc.id
+        left join app.bank_deposits d
+          on d.tenant_id = a.tenant_id
+         and d.station_id = a.station_id
+         and d.id = a.deposit_id
+         and d.deposited_at < ((${filters.toDate}::date + interval '1 day') at time zone 'UTC')
+        group by bc.id
+      )
       select
         (select coalesce(sum(amount), 0)::text from period_collections) as collected,
         (select deposited from period_deposit_totals) as deposited,
         (select banked from period_deposit_totals) as banked,
-        (select coalesce(sum(greatest(c.amount - a.allocated::numeric, 0)) filter (where c.location_type in ('STATION_TILL', 'STATION_SAFE')), 0)::text
-         from period_collections c join allocation_totals a on a.id = c.id) as at_station,
-        (select coalesce(sum(greatest(c.amount - a.allocated::numeric, 0)) filter (where c.location_type = 'COLLECTOR'), 0)::text
-         from period_collections c join allocation_totals a on a.id = c.id) as held_by_management,
-        (select coalesce(sum(greatest(allocated::numeric - banked::numeric, 0)), 0)::text from allocation_totals) as in_transit,
+        (select coalesce(sum(greatest(bc.amount - ba.allocated, 0)) filter (where bc.location_type in ('STATION_TILL', 'STATION_SAFE')), 0)::text
+         from balance_collections bc join balance_allocations ba on ba.id = bc.id) as at_station,
+        (select coalesce(sum(greatest(bc.amount - ba.allocated, 0)) filter (where bc.location_type = 'COLLECTOR'), 0)::text
+         from balance_collections bc join balance_allocations ba on ba.id = bc.id) as held_by_management,
+        (select coalesce(sum(greatest(ba.allocated - ba.banked, 0)), 0)::text from balance_allocations ba) as in_transit,
         (select coalesce(array_agg(id order by id), ARRAY[]::uuid[]) from period_collections) as collection_ids,
         (select coalesce(array_agg(id order by id), ARRAY[]::uuid[]) from period_deposits) as deposit_ids
     `),
@@ -806,6 +833,7 @@ async function readInventory(
     varianceRedLitres: row.variance_red === null ? null : formatLitres(row.variance_red),
     expectedLitres: formatLitres(row.expected),
     physicalLitres: row.physical === null ? null : formatLitres(row.physical),
+    physicalDate: row.physical === null ? null : row.dip_date,
     varianceLitres: row.variance === null ? null : formatLitres(row.variance),
     lastDipDate: row.dip_date ?? null,
     deliveryLitres: formatLitres(row.delivery_litres),
