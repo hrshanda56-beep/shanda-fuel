@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import {
   createStaffInvitationFromRequest,
   deactivateStaffMemberFromRequest,
+  removeStaffMemberFromRequest,
   generateManualStaffActivationFromRequest,
   activateManualStaffFromRequest,
   resendStaffInvitationFromRequest,
@@ -51,6 +52,8 @@ export const POST = withRequestObservability(
           return response(await resendStaffInvitationFromRequest(request, body));
         case 'RevokeStaffInvitation':
           return response(await revokeStaffInvitationFromRequest(request, body));
+        case 'RemoveStaffMember':
+          return response(await removeStaffMemberFromRequest(request, body));
         case 'UpdateStaffAssignment':
           return response(await updateStaffAssignmentFromRequest(request, body));
         case 'DeactivateStaffMember': {

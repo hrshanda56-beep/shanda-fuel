@@ -76,6 +76,12 @@ const deactivateSchema = z.object({
   membershipId: z.string().uuid(),
 });
 
+const removeSchema = z.object({
+  commandType: z.literal('RemoveStaffMember'),
+  tenantId: z.string().uuid(),
+  membershipId: z.string().uuid(),
+});
+
 const updateAssignmentSchema = z.object({
   commandType: z.literal('UpdateStaffAssignment'),
   tenantId: z.string().uuid(),
@@ -780,6 +786,66 @@ export async function deactivateStaffMemberFromRequest(
         revocationStatus: 'PROVIDER_ERROR' as const,
       };
     }
+  } catch (error) {
+    throw transactionError(error);
+  }
+}
+
+/**
+ * Take a deactivated staff member off the Staff list. Someone with no records is erased; someone
+ * who appears in shifts, cash or approvals is hidden instead so their history stays intact
+ * (migration 0102). Active staff must be deactivated first.
+ */
+export async function removeStaffMemberFromRequest(
+  request: Request,
+  body: unknown,
+  deps: StaffCommandDependencies = {},
+) {
+  const input = removeSchema.parse(body);
+  const authority = await resolveStaffAuthority(request, input.tenantId, deps);
+  authorize({
+    actor: authority.authorization,
+    permissionCode: 'membership.disable',
+    requestedScope: { tenantId: input.tenantId, scopeType: 'TENANT' },
+  });
+  if (input.membershipId === authority.membership.membershipId) {
+    throw new AppError('FORBIDDEN', 'You cannot remove your own membership');
+  }
+
+  try {
+    return await withTenantTransaction(authority.transaction, async (transaction) => {
+      await transaction.execute(
+        sql`select id from app.tenants where id = ${input.tenantId} for update`,
+      );
+      const rows = await transaction.execute<{ outcome: 'DELETED' | 'HIDDEN' | null }>(sql`
+        select app.remove_staff_membership(${input.tenantId}::uuid, ${input.membershipId}::uuid)
+          as outcome
+      `);
+      const outcome = rows[0]?.outcome;
+      if (!outcome) {
+        throw new AppError(
+          'CONFLICT',
+          'Only deactivated staff can be removed, and only by an owner or administrator',
+        );
+      }
+      await appendSecurityEvent(
+        {
+          eventId: randomUUID(),
+          tenantId: input.tenantId,
+          membershipId: authority.membership.membershipId,
+          actorId: authority.actor.identityId,
+          actorType: 'HUMAN',
+          actionCode: 'STAFF.MEMBERSHIP_REMOVED',
+          subjectType: 'Membership',
+          subjectId: input.membershipId,
+          requestId: authority.transaction.requestId!,
+          occurredAt: new Date().toISOString(),
+        },
+        getAuditSigningKey(),
+        transaction,
+      );
+      return { membershipId: input.membershipId, outcome };
+    });
   } catch (error) {
     throw transactionError(error);
   }

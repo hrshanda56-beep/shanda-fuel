@@ -22,6 +22,7 @@ import {
   StatusBadge,
   SuccessState,
 } from '@/design-system/primitives';
+import { useToast } from '@/design-system/feedback-provider';
 import { Modal } from '@/design-system/modal';
 import { NotchedCard } from '@/design-system/notched-card';
 import { Icon } from '@/design-system/icons';
@@ -135,6 +136,8 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
     };
   }, [open]);
 
+  const toast = useToast();
+
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(row.code);
@@ -144,6 +147,7 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
         setOpen(false);
       }, 900);
     } catch {
+      toast.error('Could not copy the code. Copy it by hand instead.');
       setOpen(false);
     }
   }

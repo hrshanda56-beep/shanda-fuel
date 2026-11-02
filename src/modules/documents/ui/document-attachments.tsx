@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
+import { useToast } from '@/design-system/feedback-provider';
 import { Select } from '@/design-system/forms';
 import { Button, ErrorState, Field, LoadingState } from '@/design-system/primitives';
 
@@ -48,6 +49,7 @@ export function DocumentAttachments({
   const [canUpload, setCanUpload] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
   const [kind, setKind] = useState<DocumentKind>(defaultKind);
   const [fileError, setFileError] = useState<string | null>(null);
 
@@ -109,6 +111,7 @@ export function DocumentAttachments({
         throw new Error(result.message ?? 'The file could not be added. Nothing was saved.');
       }
       form.reset();
+      toast.success('File added.');
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The file could not be added.');
