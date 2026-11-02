@@ -582,6 +582,20 @@
       "when": 1793200097000,
       "tag": "0097_approval_trigger_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1793200098000,
+      "tag": "0098_attendant_eligibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1793200099000,
+      "tag": "0099_deposit_confirmation_grants",
+      "breakpoints": true
     }
   ]
 }

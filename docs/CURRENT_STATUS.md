@@ -13,14 +13,28 @@ and double resolution are still stopped by the parent locks and the existing uni
 `tests/integration/runtime-role-row-locks.test.ts` runs every locking statement in the source as
 `app_runtime` and fails the build if the database refuses one.
 
-**Not fixed here (found while testing):** a station-level supervisor or administrator cannot name
-another attendant as the responsible attendant (shift handover, meter boundary capture, meter
-exception report). The eligibility check reads `app.memberships`, whose row-level security only
-lets the person see their own record unless they are a tenant-wide owner or administrator, so the
-check finds nothing and the command answers 403 "The responsible attendant is not eligible for this
-station". Verified with the demo's own supervisor and attendant. A fix is a security-visibility
-change (for example a narrow `SECURITY DEFINER` check that returns only yes or no) and needs a
-migration and an owner decision, so it is left for a separate change.
+**Fixed afterwards, 2026-11-02 (branch `fix/attendant-eligibility`, migrations 0098 and 0099):** a
+station-level supervisor or administrator could not name another attendant as the responsible
+attendant (shift handover, meter boundary capture, meter exception report): the eligibility check
+read `app.memberships`, which row-level security hides from anyone but the person themselves and
+tenant-wide owners/administrators, so the command answered 403. It now asks `app.is_station_attendant`
+(0098), a SECURITY DEFINER yes/no function that requires the caller to hold a role covering the
+station and returns only true/false. No row visibility or table right changed. While proving this as
+`app_runtime`, confirming a bank deposit was also found refused: 0093 added `bank_date` and
+`confirmation_reason` without a column grant, so 0099 grants UPDATE on just those two columns.
+Both migrations must be applied to production for the fixes to work.
+
+**Same visibility limit, still open (found in the audit of that change; not fixed, each needs an owner
+decision):** other code reads `app.memberships` directly, so people below tenant-wide
+owner/administrator see only themselves there. (1) Customer-account exceptions: a supervisor
+choosing an owner or administrator as approver is told "Only an owner or an administrator can
+approve this" (`src/modules/customers/approver.ts`), and the approver list
+(`account-controls.ts`) holds only themselves. Verified with the demo supervisor: 0 of the
+owner/administrator rows visible. (2) `soleOwnerQuery` (`src/platform/security/separation-of-duties.ts`)
+could see no other owner for a station-scoped owner and so treat them as the sole owner. (3) Several
+display joins show "Unknown" for other people's names to station-level staff (for example
+`deliveredByName` on cash handovers; `cash-handover.test.ts` fails on that line when run as
+`app_runtime`). The same narrow yes/no or name-only definer-function pattern would fix each.
 
 ## Settings screens polish — 2026-11-01 (branch `ui/profits-page`, uncommitted)
 

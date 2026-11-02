@@ -236,22 +236,12 @@ async function assertAttendantEligibility(
   tenantId: string,
 ): Promise<void> {
   const tx = dbTransaction(transaction);
-  const rows = await tx.execute<{ eligible: number }>(sql`
-    SELECT 1 AS eligible
-    FROM app.memberships AS membership
-    JOIN app.membership_role_assignments AS assignment
-      ON assignment.tenant_id = membership.tenant_id
-     AND assignment.membership_id = membership.id
-    WHERE membership.tenant_id = ${tenantId}
-      AND membership.id = ${attendantId}
-      AND membership.status = 'ACTIVE'
-      AND assignment.scope_type = 'STATION'
-      AND assignment.station_id = ${stationId}
-      AND assignment.role_code = 'ATTENDANT'
-      AND (assignment.expires_at IS NULL OR assignment.expires_at > now())
-    FOR SHARE
+  // Row-level security hides other people's memberships from a station supervisor, so this asks a
+  // narrow yes/no function (migration 0098) instead of reading app.memberships directly.
+  const rows = await tx.execute<{ eligible: boolean }>(sql`
+    SELECT app.is_station_attendant(${tenantId}::uuid, ${stationId}::uuid, ${attendantId}::uuid) AS eligible
   `);
-  if (rows.length === 0) {
+  if (rows[0]?.eligible !== true) {
     throw new AppError('FORBIDDEN', 'The responsible attendant is not eligible for this station');
   }
 }
