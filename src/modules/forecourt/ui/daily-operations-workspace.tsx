@@ -2205,8 +2205,8 @@ export function DailyOperationsWorkspace({
                 {inReview && record?.unvaluedFuels?.length ? (
                   <p className="state state-warning" role="status">
                     <strong>Fuel cost missing:</strong> We do not know what the{' '}
-                    {record.unvaluedFuels.join(' and ')} cost. You can still approve, but profit for
-                    this day will be incomplete until the cost is entered.
+                    {record.unvaluedFuels.join(' and ')} cost. This day cannot be approved until the
+                    cost is entered under Inventory, then Valuation.
                   </p>
                 ) : null}
                 {approvalWaitsForSomeoneElse ? (

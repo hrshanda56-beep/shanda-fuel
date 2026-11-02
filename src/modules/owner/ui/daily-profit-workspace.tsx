@@ -153,6 +153,12 @@ export function DailyProfitWorkspace({
               >
                 {moneyOrUnavailable(summary.operatingProfitAfterBenefit)}
               </p>
+              {summary.fuels.length === 0 ? (
+                <p className="state state-warning" role="status">
+                  <strong>No fuel sales yet:</strong> No day has been closed in this period, so this
+                  only shows costs recorded so far. It is not a result for the period.
+                </p>
+              ) : null}
               <ProfitSplit summary={summary} />
             </Card>
 
