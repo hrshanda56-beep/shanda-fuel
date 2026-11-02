@@ -59,10 +59,9 @@ export const readSalesByAttendant: TableReportReader = async (transaction, filte
     litres: string;
   }>(sql`
     select st.name as station,
-      coalesce((select json_agg(json_build_object('id', am.id, 'name', coalesce(nullif(u.name, ''), u.email)) order by u.name)
+      coalesce((select json_agg(json_build_object('id', am.id, 'name', coalesce(am.name, 'Unknown')) order by am.name)
          from app.reconciliation_attendants ra
-         join app.memberships am on am.tenant_id = ra.tenant_id and am.id = ra.attendant_id
-         join app.users u on u.id = am.identity_id
+         join app.member_directory(ra.tenant_id) am on am.id = ra.attendant_id
         where ra.tenant_id = r.tenant_id and ra.station_id = r.station_id
           and ra.reconciliation_id = r.id), '[]'::json) as attendants,
       rev.expected_sales::text as sales, rev.accounted_sales::text as accounted,

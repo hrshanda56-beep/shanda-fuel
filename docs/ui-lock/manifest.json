@@ -149,7 +149,7 @@
     "src/design-system/entry/entry-logic.ts": "36e893a0c6f48dc0faf1324286ca657321839d33e90cb0ff9294899893478a18",
     "src/design-system/entry/entry-shell.tsx": "9eb3cb93b4b6cbf5d97cb5a576204ce1662acd211913e72598a25364e16b29bc",
     "src/design-system/entry/invitation.ts": "e1b21c7069c083df8d0c9d102e45f3168c4f505b09117729d91c84ebacd86c1f",
-    "src/design-system/entry/invite-acceptance.tsx": "d1f7d92f669dc753c7924ac6e7b182033d294a9f52440f1ad02c6a669dfafd40",
+    "src/design-system/entry/invite-acceptance.tsx": "8c621b079ce1ca2cc8d7213d2ae0560677e652da3ee440296f11d36fb5880876",
     "src/design-system/entry/invite-views.tsx": "4c18a51e0e9ddac48ed064524662921bbaf3389643178e0b51551708a4ba2c7c",
     "src/design-system/entry/login-form.tsx": "f8e8b7b05ca88b4c5503fd71456c8a5f472f90fb16d521cd425c9fa8f81c6737",
     "src/design-system/entry/manual-activation.tsx": "133db27661e5fa6c1914da1ed4eb692c33b81ce1f35486b3a3366ee8203474f4",

@@ -828,14 +828,12 @@ export async function getCashStationSummaryInTransaction(
     select h.id, h.from_location_id, h.to_location_id,
            h.expected_amount::text, h.counted_amount::text, h.variance::text,
            h.state, h.version, h.dispute_reason, h.resolution_note,
-           h.delivered_by, coalesce(du.name, 'Unknown') as delivered_by_name,
-           coalesce(ru.name, null) as received_by_name,
+           h.delivered_by, coalesce(dm.name, 'Unknown') as delivered_by_name,
+           rm.name as received_by_name,
            h.submitted_at, h.accepted_at, h.resolved_at
     from app.cash_handovers h
-    left join app.memberships dm on dm.tenant_id = h.tenant_id and dm.id = h.delivered_by
-    left join app.users du on du.id = dm.identity_id
-    left join app.memberships rm on rm.tenant_id = h.tenant_id and rm.id = coalesce(h.resolved_by, h.received_by)
-    left join app.users ru on ru.id = rm.identity_id
+    left join app.member_directory(h.tenant_id) dm on dm.id = h.delivered_by
+    left join app.member_directory(h.tenant_id) rm on rm.id = coalesce(h.resolved_by, h.received_by)
     where h.tenant_id = ${context.tenantId}
       and h.station_id = ${context.stationId}
       and (h.state in ('SUBMITTED', 'DISPUTED') or h.updated_at > now() - interval '14 days')

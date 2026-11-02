@@ -596,6 +596,20 @@
       "when": 1793200099000,
       "tag": "0099_deposit_confirmation_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1793200100000,
+      "tag": "0100_member_directory",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1793200101000,
+      "tag": "0101_staff_access_replace",
+      "breakpoints": true
     }
   ]
 }

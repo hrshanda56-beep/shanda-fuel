@@ -132,11 +132,10 @@ export async function readStationSetupFacts(
           and ba.status = 'ACTIVE') as bank_accounts,
       (select count(distinct m.id)
          from app.membership_role_assignments a
-         join app.memberships m on m.tenant_id = a.tenant_id and m.id = a.membership_id
+         join app.member_directory(s.tenant_id) m on m.id = a.membership_id
         where a.tenant_id = s.tenant_id and a.scope_type = 'STATION' and a.station_id = s.id
           and (a.expires_at is null or a.expires_at > now())
-          and m.status = 'ACTIVE' and m.disabled_at is null
-          and m.suspended_at is null and m.locked_at is null) as assigned_staff
+          and m.usable) as assigned_staff
     from app.stations s
     where s.tenant_id = current_setting('app.tenant_id')::uuid
       and s.status in ('ACTIVE', 'ONBOARDING')
