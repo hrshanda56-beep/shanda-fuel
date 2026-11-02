@@ -10,6 +10,7 @@ import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
 import { createResendEmailSender, type EmailSender } from '../../platform/email';
 import { createLogger } from '../../platform/logging';
+import { sqlState } from '../../platform/observability';
 import { appendSecurityEvent } from '../audit/contracts';
 import { authorize } from '../../platform/security/permissions';
 import { assertStepUp, ROLE_CODES, type RoleCode } from '../../platform/security';
@@ -105,22 +106,28 @@ export type StaffCommandDependencies = Readonly<{
   revokeClerkSessions?: typeof revokeClerkUserSessions;
 }>;
 
+/** A Postgres error field (such as constraint_name) from the error or the cause Drizzle wrapped it in. */
+function databaseErrorField(error: unknown, field: string): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
+    const value = (current as unknown as Record<string, unknown>)[field];
+    if (typeof value === 'string') return value;
+    current = current.cause;
+  }
+  return undefined;
+}
+
 function transactionError(error: unknown): AppError {
   if (error instanceof AppError) return error;
-  if (typeof error === 'object' && error !== null && 'code' in error) {
-    const code = (error as { code?: unknown }).code;
-    if (code === '23505')
-      return new AppError('CONFLICT', 'That staff number or invitation is already in use');
-    if (code === 'P0001')
-      return new AppError('FORBIDDEN', 'This invitation is no longer available');
-  }
+  const state = sqlState(error);
+  if (state === '23505')
+    return new AppError('CONFLICT', 'That staff number or invitation is already in use');
+  if (state === 'P0001') return new AppError('FORBIDDEN', 'This invitation is no longer available');
   // Say which database rule refused, never its values, so an unexpected failure can be diagnosed.
-  const detail =
-    typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {};
   createLogger({ component: 'staff.transaction' }).error('staff.transaction_failed', {
-    sqlState: typeof detail.code === 'string' ? detail.code : undefined,
-    constraint: typeof detail.constraint_name === 'string' ? detail.constraint_name : undefined,
-    routine: typeof detail.routine === 'string' ? detail.routine : undefined,
+    sqlState: state,
+    constraint: databaseErrorField(error, 'constraint_name'),
+    routine: databaseErrorField(error, 'routine'),
     errorType: error instanceof Error ? error.constructor.name : typeof error,
   });
   return new AppError('INTERNAL_ERROR', 'The staff operation could not be completed');
@@ -885,8 +892,13 @@ export async function updateStaffAssignmentFromRequest(
       const cleared = await transaction.execute<{ removed: number }>(sql`
         select app.clear_membership_assignments(${input.tenantId}::uuid, ${input.membershipId}::uuid) as removed
       `);
-      // Never add new assignments on top of old ones if the removal was declined or short.
-      if (Number(cleared[0]?.removed ?? 0) < current.length) {
+      // Never add new assignments on top of old ones if the removal was declined or short. The
+      // function declines unless the caller holds a tenant-wide owner or administrator role, and
+      // it also reports zero for a member with nothing to remove, so that is checked here too.
+      if (
+        !(hasTenantRole(authority, 'OWNER') || hasTenantRole(authority, 'ADMINISTRATOR')) ||
+        Number(cleared[0]?.removed ?? 0) < current.length
+      ) {
         throw new AppError('FORBIDDEN', 'You cannot change this staff member’s access');
       }
       if (scope.scopeType === 'STATION') {
