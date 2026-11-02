@@ -114,6 +114,15 @@ function transactionError(error: unknown): AppError {
     if (code === 'P0001')
       return new AppError('FORBIDDEN', 'This invitation is no longer available');
   }
+  // Say which database rule refused, never its values, so an unexpected failure can be diagnosed.
+  const detail =
+    typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {};
+  createLogger({ component: 'staff.transaction' }).error('staff.transaction_failed', {
+    sqlState: typeof detail.code === 'string' ? detail.code : undefined,
+    constraint: typeof detail.constraint_name === 'string' ? detail.constraint_name : undefined,
+    routine: typeof detail.routine === 'string' ? detail.routine : undefined,
+    errorType: error instanceof Error ? error.constructor.name : typeof error,
+  });
   return new AppError('INTERNAL_ERROR', 'The staff operation could not be completed');
 }
 
