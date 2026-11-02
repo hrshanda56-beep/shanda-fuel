@@ -44,12 +44,12 @@ async function accept(token: string) {
   return { status: response.status, body: (await response.json()) as Record<string, any> };
 }
 
-async function seedInvitation(tokenHash: string) {
+async function seedInvitation(tokenHash: string, email = 'accept-b-new@example.test') {
   const [row] = await client`
     insert into app.staff_invitations
       (tenant_id, invited_email, invited_name, assigned_role, scope_type, legal_entity_id,
        token_hash, expires_at, created_by_user_id, created_by_membership_id)
-    values (${ids.tenant}, 'accept-b-new@example.test', 'New Person', 'SUPERVISOR', 'STATION',
+    values (${ids.tenant}, ${email}, 'New Person', 'SUPERVISOR', 'STATION',
             ${ids.legal}, ${tokenHash}, now() + interval '3 days', ${ids.owner},
             ${ids.ownerMembership})
     returning id`;
@@ -116,5 +116,17 @@ describe('accepting a staff invitation as the application role', () => {
       role_code: 'SUPERVISOR',
       station_id: ids.station,
     });
+  });
+
+  it('refuses an account whose email is not the invited one and leaves the invitation pending', async () => {
+    const { token, tokenHash } = createInvitationToken();
+    const invitationId = await seedInvitation(tokenHash, 'someone-else@example.test');
+
+    const result = await accept(token);
+
+    expect(result.status).toBe(403);
+    const [row] = await client`
+      select status, accepted_membership_id from app.staff_invitations where id = ${invitationId}`;
+    expect(row).toMatchObject({ status: 'PENDING', accepted_membership_id: null });
   });
 });

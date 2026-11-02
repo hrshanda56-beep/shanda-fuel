@@ -101,7 +101,11 @@ export async function resolveInvitationView(token: string): Promise<InvitationVi
     const row = rows[0];
     if (!row) return { kind: 'unavailable' };
     return row.existing_identity
-      ? { kind: 'existing-identity', organisationName: row.organisation_name }
+      ? {
+          kind: 'existing-identity',
+          organisationName: row.organisation_name,
+          email: row.invited_email,
+        }
       : {
           kind: 'new-identity',
           organisationName: row.organisation_name,

@@ -12,8 +12,10 @@ export function matchesStaffScope(
   role: RoleCode | undefined,
   options: readonly StaffScopeOption[],
 ): boolean {
-  const entity = options.find((item) => item.stations.some((station) => station.id === stationId));
   if ('membershipId' in person) {
+    const entity = options.find((item) =>
+      item.stations.some((station) => station.id === stationId),
+    );
     if (!stationId) return !role || person.roles.includes(role);
     return (person.assignments ?? []).some(
       (assignment) =>
@@ -25,11 +27,7 @@ export function matchesStaffScope(
           (assignment.scopeType === 'STATION' && assignment.stationId === stationId)),
     );
   }
-  return (
-    (!role || person.role === role) &&
-    (!stationId ||
-      person.scopeType === 'TENANT' ||
-      (person.scopeType === 'LEGAL_ENTITY' && !!entity && person.legalEntityId === entity.id) ||
-      (person.scopeType === 'STATION' && person.stationIds.includes(stationId)))
-  );
+  // Invitations ignore the station picker: a pending invite blocks re-inviting the same
+  // email organisation-wide, so hiding it behind another station leaves no way to revoke it.
+  return !role || person.role === role;
 }
