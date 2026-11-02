@@ -140,7 +140,7 @@ test.describe('Settings', () => {
       ).toBeVisible();
     });
 
-    test('sections work from the keyboard and stay on the same address', async ({ page }) => {
+    test('sections work from the keyboard and are remembered in the address', async ({ page }) => {
       const url = page.url();
       await sectionButton(page, 'Organisation').focus();
       await page.keyboard.press('Tab');
@@ -160,8 +160,13 @@ test.describe('Settings', () => {
       await page.keyboard.press('Space');
       await expectOnlyPressed(page, 'Account');
 
-      // Sections are in-page state: no #account anchor or navigation.
-      expect(page.url()).toBe(url);
+      // The section is kept in the query string (no #account anchor, no navigation), so a
+      // refresh returns to it.
+      const after = new URL(page.url());
+      expect(after.pathname).toBe(new URL(url).pathname);
+      expect(after.searchParams.get('tab')).toBe('account');
+      await page.reload();
+      await expectOnlyPressed(page, 'Account');
     });
 
     test('is read-only: no save action in any section', async ({ page }) => {

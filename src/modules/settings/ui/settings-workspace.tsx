@@ -329,9 +329,17 @@ export function SettingsWorkspace({
   const stations = selectedStation ? [selectedStation] : (view.context.stations ?? []);
   const setupStation = canSetUp ? stations.find((item) => item.id === setupStationId) : undefined;
 
+  // The section lives in the address, so a refresh or a shared link returns to it.
   function choose(next: Tab) {
     setSetupStationId(null);
     setTab(next);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', next);
+      window.history.replaceState(window.history.state, '', url);
+    } catch {
+      // The section still works without a shareable link.
+    }
   }
 
   return (

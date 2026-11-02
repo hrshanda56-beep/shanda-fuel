@@ -1,11 +1,12 @@
 'use client';
 
 import { useReverification } from '@clerk/nextjs';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Icon } from '@/design-system/icons';
 import { Button, EmptyState, StatusBadge } from '@/design-system/primitives';
 import type { StatusTone } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
+import { useToast } from '@/design-system/feedback-provider';
 
 import type { RoleCode } from '@/modules/authorization';
 import type { SettingsView } from '../contracts';
@@ -48,7 +49,11 @@ function defaultScope(role: Role) {
       : 'STATION';
 }
 
-const INVITE_NOTICE_KEY = 'shanda-fuel:invite-notice';
+const COMMAND_SUCCESS_MESSAGES: Record<string, string> = {
+  ResendStaffInvitation: 'Invitation sent again.',
+  RevokeStaffInvitation: 'Invitation cancelled.',
+  UpdateStaffAssignment: 'Access updated.',
+};
 
 type StaffFilter = 'all' | 'active' | 'invited' | 'deactivated';
 
@@ -269,20 +274,7 @@ export function StaffPanel({
   const [deactivationBusy, setDeactivationBusy] = useState(false);
   const [deactivationOutcome, setDeactivationOutcome] = useState<DeactivationOutcome>();
   const deactivationInFlight = useRef(false);
-
-  useEffect(() => {
-    try {
-      const notice = sessionStorage.getItem(INVITE_NOTICE_KEY);
-      if (notice) {
-        sessionStorage.removeItem(INVITE_NOTICE_KEY);
-        // Read after mount: sessionStorage does not exist on the server render.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setMessage(notice);
-      }
-    } catch {
-      // Storage can be blocked; there is simply no notice to show.
-    }
-  }, []);
+  const toast = useToast();
 
   const legalEntity = useMemo(
     () => overview.scopeOptions.find((option) => option.id === legalEntityId),
@@ -317,6 +309,8 @@ export function StaffPanel({
       }
       const result = (await response.json().catch(() => null)) as unknown;
       setMessage('Saved.');
+      const done = COMMAND_SUCCESS_MESSAGES[String(body.commandType)];
+      if (done) toast.success(done);
       if (reload) window.location.reload();
       return result;
     } catch {
@@ -360,18 +354,15 @@ export function StaffPanel({
     } else if (result) {
       const email = typeof result === 'object' ? (result as { delivery?: string }) : {};
       const address = String(form.get('email') ?? '').trim();
-      // The page reloads to show the new invite, so the outcome is kept for the next load.
-      try {
-        sessionStorage.setItem(
-          INVITE_NOTICE_KEY,
-          email.delivery === 'failed'
-            ? `The invitation for ${address} was saved, but the email could not be sent. Check the address, then use Manual (staff number) to give them a code instead.`
-            : email.delivery === 'sent'
-              ? `Invitation email sent to ${address}. It can take a minute to arrive; ask them to check spam.`
-              : '',
+      // The toast is carried across the reload that shows the new invite.
+      if (email.delivery === 'failed') {
+        toast.error(
+          `The invitation for ${address} was saved, but the email could not be sent. Check the address, then use Manual (staff number) to give them a code instead.`,
         );
-      } catch {
-        // Storage can be blocked; the invite itself is already saved.
+      } else {
+        toast.success(
+          `Invitation email sent to ${address}. It can take a minute to arrive; ask them to check spam.`,
+        );
       }
       window.location.reload();
     }

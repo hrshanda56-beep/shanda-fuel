@@ -72,6 +72,10 @@ export function useConfirm() {
   return useFeedback().confirm;
 }
 
+/** A page that reloads right after a save would wipe its toast, so it is carried over. */
+const CARRIED_TOASTS_KEY = 'shanda-fuel:carried-toasts';
+const CARRIED_TOAST_MAX_AGE_MS = 10000;
+
 /** Wait this long before showing anything, so quick changes do not flicker. */
 const SHOW_AFTER_MS = 150;
 /** After this long, say so out loud. */
@@ -301,6 +305,38 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     toastRef.current = toast;
+  }, [toast]);
+
+  // Mirror what is on screen so the pagehide handler can carry it across a reload.
+  const visibleToasts = useRef<Array<Toast & { at: number }>>([]);
+  useEffect(() => {
+    visibleToasts.current = toasts.map((item) => ({ ...item, at: Date.now() }));
+  }, [toasts]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(CARRIED_TOASTS_KEY);
+      if (raw) {
+        sessionStorage.removeItem(CARRIED_TOASTS_KEY);
+        const carried = JSON.parse(raw) as Array<{ tone: ToastTone; message: string; at: number }>;
+        for (const item of carried) {
+          if (Date.now() - item.at < CARRIED_TOAST_MAX_AGE_MS) toast(item.tone, item.message);
+        }
+      }
+    } catch {
+      // Storage can be blocked; the toast was a courtesy, not the record.
+    }
+    function carryOver() {
+      try {
+        if (visibleToasts.current.length > 0) {
+          sessionStorage.setItem(CARRIED_TOASTS_KEY, JSON.stringify(visibleToasts.current));
+        }
+      } catch {
+        // Nothing to carry.
+      }
+    }
+    window.addEventListener('pagehide', carryOver);
+    return () => window.removeEventListener('pagehide', carryOver);
   }, [toast]);
 
   const confirm = useCallback(
