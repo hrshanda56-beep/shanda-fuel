@@ -314,6 +314,30 @@ describe('Clerk privileged step-up policy', () => {
     expect(new Date(result.expiresAt).getTime()).toBe(now.getTime() + 15 * 60_000);
   });
 
+  it('silent mode accepts a recent sign-in but never starts a challenge (DEC-052)', async () => {
+    mocks.hasRecentClerkSignIn.mockReturnValue(true);
+    const accepted = await establishStepUp({
+      request: request(),
+      context: context(),
+      action: CLERK_PRIVILEGED_ACTION,
+      now,
+      silent: true,
+    });
+    expect(accepted.level).toBe(1);
+
+    mocks.hasRecentClerkSignIn.mockReturnValue(false);
+    await expect(
+      establishStepUp({
+        request: request(),
+        context: context(),
+        action: CLERK_PRIVILEGED_ACTION,
+        now,
+        silent: true,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(mocks.appendSecurityEvent).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the configured reuse window', async () => {
     vi.stubEnv('STEP_UP_REUSE_MINUTES', '5');
     mocks.hasRecentClerkSignIn.mockReturnValue(true);

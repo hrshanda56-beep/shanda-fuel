@@ -43,6 +43,21 @@ function exportQuery(target: ReportActionTarget, format: ExportFormat): string {
   return params.toString();
 }
 
+/** Asks the server to accept the current sign-in as the identity check. Never opens a challenge. */
+async function confirmFromCurrentSignIn(tenantId: string): Promise<boolean> {
+  try {
+    const response = await fetch('/api/auth/step-up', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tenantId, action: 'PRIVILEGED_OPERATION', silent: true }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export function useReportActions() {
   const [status, setStatus] = useState<ActionStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -99,45 +114,52 @@ export function useReportActions() {
     }
   }, []);
 
-  const exportCsv = useCallback(
-    async (target: ReportActionTarget, afterStepUp = false, format: ExportFormat = 'csv') => {
-      setBusy(true);
-      setStatus(null);
-      try {
-        const response = await fetch(`/api/reports/export?${exportQuery(target, format)}`, {
-          credentials: 'same-origin',
-          cache: 'no-store',
-        });
-        if (!response.ok) {
-          const message = await errorMessage(response, 'The export could not be created.');
-          // A missing step-up is recoverable: confirm identity once, then retry the same export.
-          if (!afterStepUp && stepUpIsNeeded(response.status, message)) {
-            setStepUpFor({ target, format });
-            return;
+  const exportCsv = useCallback(async function runExport(
+    target: ReportActionTarget,
+    afterStepUp = false,
+    format: ExportFormat = 'csv',
+  ): Promise<void> {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const response = await fetch(`/api/reports/export?${exportQuery(target, format)}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const message = await errorMessage(response, 'The export could not be created.');
+        // A missing step-up is recoverable: confirm identity once, then retry the same export.
+        if (!afterStepUp && stepUpIsNeeded(response.status, message)) {
+          // A person who is already signed in is not asked again (DEC-052): try the
+          // confirmation the server can give from the current sign-in, and only show the
+          // dialog when that is not enough.
+          if (await confirmFromCurrentSignIn(target.tenantId)) {
+            return await runExport(target, true, format);
           }
-          setStatus({ tone: 'critical', message });
+          setStepUpFor({ target, format });
           return;
         }
-        const disposition = response.headers.get('content-disposition') ?? '';
-        const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `${target.slug}.${format}`;
-        const url = URL.createObjectURL(await response.blob());
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = filename;
-        document.body.append(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(url);
-        setStatus({ tone: 'positive', message: `Exported ${filename}` });
-        window.dispatchEvent(new Event(REPORT_ACTIVITY_CHANGED));
-      } catch {
-        setStatus({ tone: 'critical', message: 'The export could not be created. Try again.' });
-      } finally {
-        setBusy(false);
+        setStatus({ tone: 'critical', message });
+        return;
       }
-    },
-    [],
-  );
+      const disposition = response.headers.get('content-disposition') ?? '';
+      const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `${target.slug}.${format}`;
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setStatus({ tone: 'positive', message: `Exported ${filename}` });
+      window.dispatchEvent(new Event(REPORT_ACTIVITY_CHANGED));
+    } catch {
+      setStatus({ tone: 'critical', message: 'The export could not be created. Try again.' });
+    } finally {
+      setBusy(false);
+    }
+  }, []);
 
   const stepUp = stepUpFor
     ? {

@@ -3,6 +3,11 @@ import { NextResponse } from 'next/server';
 
 import { isLocalDevBypassEnabled } from '@/platform/auth/dev-bypass';
 import type { NextFetchEvent, NextRequest } from 'next/server';
+import {
+  carriesOrganisationSlug,
+  pageUrlWithOrganisationId,
+  resolveOrganisationSlug,
+} from '@/modules/context/organisation-slug-rewrite';
 
 // Clerk's Frontend API is accessed directly by the browser in development.
 // Keep this proxy limited to session integration; resource authorization belongs
@@ -27,7 +32,28 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   // Local development only: guarded by isLocalDevBypassEnabled (never on a
   // deployed build or a non-local database); Clerk is not contacted at all.
   if (isLocalDevBypassEnabled()) return NextResponse.next();
+  // `?org=<slug>` pages are served from the `?tenantId=<id>` form while the address bar keeps the
+  // slug. Anything that does not resolve for this visitor continues unchanged.
+  let slugTarget: URL | null = null;
+  if (carriesOrganisationSlug(request.nextUrl, request.method)) {
+    const organisationId = await resolveOrganisationSlug(
+      request.nextUrl.origin,
+      request.nextUrl.searchParams.get('org')!,
+      {
+        cookie: request.headers.get('cookie'),
+        authorization: request.headers.get('authorization'),
+      },
+    );
+    if (organisationId) slugTarget = pageUrlWithOrganisationId(request.nextUrl, organisationId);
+  }
+
   const response = await clerkProxy(request, event);
+  if (slugTarget) {
+    const rewritten = response ?? NextResponse.next();
+    rewritten.headers.delete('x-middleware-next');
+    rewritten.headers.set('x-middleware-rewrite', slugTarget.toString());
+    return rewritten;
+  }
   if (!response) return NextResponse.next();
 
   // Clerk decorates its response with a rewrite to the current URL so the

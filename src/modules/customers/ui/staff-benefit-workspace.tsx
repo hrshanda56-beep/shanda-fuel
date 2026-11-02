@@ -3,12 +3,13 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent } from 'react';
-import { Select } from '@/design-system/forms';
 import { Button, Card, ErrorState, Field, StatusBadge } from '@/design-system/primitives';
 import { ExactDecimal } from '@/platform/domain/primitives';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { StaffBenefitRow } from '../staff-benefit-rows';
+import type { StaffPickerOption } from '../staff-picker-options';
+import { StaffPicker } from './staff-picker';
 import { makeReference, STAFF_CUSTOMER_KIND } from './customer-reference';
 import styles from './staff-benefit.module.css';
 
@@ -25,6 +26,7 @@ export function StaffBenefitWorkspace({
   tenantId,
   rows,
   customers,
+  staff,
   canOpenAccount,
   legalEntityId,
 }: {
@@ -34,6 +36,8 @@ export function StaffBenefitWorkspace({
   rows: readonly StaffBenefitRow[];
   /** Active customers that may be given a staff benefit account. */
   customers: readonly StaffBenefitCustomerOption[];
+  /** Active staff (from Settings > Staff) who are not yet on a benefit. */
+  staff: readonly StaffPickerOption[];
   canOpenAccount: boolean;
 }) {
   const router = useRouter();
@@ -45,8 +49,7 @@ export function StaffBenefitWorkspace({
     (sum, row) => sum.add(new ExactDecimal(row.balance)),
     new ExactDecimal('0'),
   );
-  const [customerId, setCustomerId] = useState('');
-  const [staffName, setStaffName] = useState('');
+  const [membershipId, setMembershipId] = useState('');
   const [limit, setLimit] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,31 +61,38 @@ export function StaffBenefitWorkspace({
   const reference = useRef<string | null>(null);
 
   async function save(alreadyConfirmed = false) {
-    // A new staff member is one command: the customer record (marked Staff) and the benefit
-    // account together, so a cancelled identity check saves nothing. Choosing an existing staff
-    // record only opens the benefit account on it.
-    reference.current ??= makeReference(staffName);
-    const body = customerId
+    // Staff are chosen from the staff list, never typed. A staff member who is already kept as a
+    // customer record (same name, marked Staff) gets the benefit account on that record; otherwise
+    // the record and the benefit account are created together, so a cancelled identity check saves
+    // nothing.
+    const person = staff.find((option) => option.membershipId === membershipId);
+    if (!person) return;
+    const existing = customers.find(
+      (customer) => customer.name.trim().toLowerCase() === person.name.trim().toLowerCase(),
+    );
+    reference.current ??= makeReference(person.name);
+    const staffBenefit = { staffName: person.name, staffMembershipId: person.membershipId };
+    const body = existing
       ? {
           commandType: 'CreateCustomerAccount',
           tenantId,
-          customerId,
+          customerId: existing.customerId,
           accountType: 'CREDIT',
           currency: 'USD',
           creditLimit: limit.trim(),
-          staffBenefit: { staffName: staffName.trim() },
+          staffBenefit,
         }
       : {
           commandType: 'CreateCustomerWithAccount',
           tenantId,
           accountReference: reference.current,
-          displayName: staffName.trim(),
+          displayName: person.name,
           ...(legalEntityId ? { legalEntityId } : {}),
           contactMetadata: { kind: STAFF_CUSTOMER_KIND },
           accountType: 'CREDIT',
           currency: 'USD',
           creditLimit: limit.trim(),
-          staffBenefit: { staffName: staffName.trim() },
+          staffBenefit,
         };
     const fingerprint = JSON.stringify(body);
     if (attempt.current?.fingerprint !== fingerprint) {
@@ -111,9 +121,8 @@ export function StaffBenefitWorkspace({
       }
       attempt.current = null;
       reference.current = null;
-      setDone(`${staffName.trim()} added.`);
-      setCustomerId('');
-      setStaffName('');
+      setDone(`${person.name} added.`);
+      setMembershipId('');
       setLimit('');
       router.refresh();
     } catch (cause) {
@@ -126,7 +135,7 @@ export function StaffBenefitWorkspace({
   function submit(event: FormEvent) {
     event.preventDefault();
     setDone(null);
-    if (!staffName.trim()) return setError('Enter the staff member’s name.');
+    if (!membershipId) return setError('Choose a staff member.');
     if (!POSITIVE_MONEY.test(limit.trim())) {
       return setError('Enter the monthly limit in US dollars, for example 60 or 60.50.');
     }
@@ -244,40 +253,17 @@ export function StaffBenefitWorkspace({
             </div>
             <form className="form-stack" onSubmit={submit} noValidate>
               <div className={styles.formGrid}>
-                {customers.length > 0 ? (
-                  <div className={styles.wide}>
-                    <Field
-                      id="staff-customer"
-                      label="Existing staff record"
-                      hint="Leave empty to add a new staff member. Only people already kept as staff are listed."
-                      optional
-                    >
-                      <Select
-                        id="staff-customer"
-                        value={customerId}
-                        onChange={(event) => {
-                          const chosen = customers.find(
-                            (customer) => customer.customerId === event.target.value,
-                          );
-                          setCustomerId(event.target.value);
-                          if (chosen) setStaffName(chosen.name);
-                        }}
-                        placeholder="A new staff member"
-                        options={customers.map((customer) => ({
-                          value: customer.customerId,
-                          label: `${customer.name} (${customer.reference})`,
-                        }))}
-                      />
-                    </Field>
-                  </div>
-                ) : null}
-                <Field id="staff-name" label="Staff member" required>
-                  <input
-                    id="staff-name"
-                    autoComplete="off"
-                    placeholder="Full name"
-                    value={staffName}
-                    onChange={(event) => setStaffName(event.target.value)}
+                <Field
+                  id="staff-member"
+                  label="Staff member"
+                  hint="Choose from your staff. New people are added in Settings > Staff."
+                  required
+                >
+                  <StaffPicker
+                    id="staff-member"
+                    options={staff}
+                    value={membershipId}
+                    onChange={setMembershipId}
                   />
                 </Field>
                 <Field id="staff-limit" label="Monthly limit" required>

@@ -1,5 +1,18 @@
 # Shanda Fuel — Current Status
 
+## Manual QA issue list — 2026-11-02 (branch `codex/qa-issue-list-20261102`, PR #213)
+
+Fixed from the owner's manual QA report: real PDF and styled Excel report downloads (DEC-052),
+Print removed from Reports and Profit, action-then-period report flow, exports reuse the current
+sign-in, compact purchase-order Settings, polished All-stations cards, explicit station choice on
+write forms under All stations, a working Customer controls link under All stations, a shorter
+customer row, and a staff picker (from Settings staff) on Staff fuel benefit. Organisation slug
+addresses (`?org=<slug>`) are accepted and written by the work-context selector (DEC-053). Not
+done: station slugs, widening the offline queue (needs a decision, see DEC-053). Not run: browser,
+Playwright and database integration tests (no Clerk test keys or local database here), `next
+build`. UI-lock manifest re-baselined for the 17 locked files changed. Not deployed;
+production not contacted.
+
 ## Row locks the application role cannot take — 2026-11-02 (branch `fix/runtime-row-locks`)
 
 The application connects as `app_runtime`, which may read and add rows to the append-only ledgers

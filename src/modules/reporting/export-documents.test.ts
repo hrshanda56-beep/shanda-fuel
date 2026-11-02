@@ -7,6 +7,7 @@ import {
   buildReportXlsx,
   parseReportExportFormat,
   reportExportFilename,
+  reportExportMeta,
 } from './export-documents';
 import type { ManagementReport } from './contracts';
 
@@ -75,11 +76,11 @@ describe('report document contents match the CSV they come from', () => {
     const sheet = files.get('xl/worksheets/sheet1.xml')!;
     const styles = files.get('xl/styles.xml')!;
     // Stored values are untouched; only the display format differs.
-    expect(sheet).toContain('<c r="B2" s="1" t="n"><v>450.0000</v></c>');
-    expect(sheet).toContain('<c r="C2" s="1" t="n"><v>1200.500</v></c>');
-    expect(sheet).toContain('<c r="D2" s="2" t="n"><v>1.455000</v></c>');
+    expect(sheet).toContain('<c r="B2" s="3" t="n"><v>450.0000</v></c>');
+    expect(sheet).toContain('<c r="C2" s="3" t="n"><v>1200.500</v></c>');
+    expect(sheet).toContain('<c r="D2" s="4" t="n"><v>1.455000</v></c>');
     expect(sheet).toContain('<c r="E2" t="n"><v>12</v></c>');
-    expect(styles).toContain('numFmtId="4"');
+    expect(styles).toContain('formatCode="#,##0.00"');
     expect(styles).toContain('formatCode="#,##0.000"');
   });
 
@@ -119,5 +120,71 @@ describe('report document exports', () => {
     const xlsx = buildReportXlsx('cash', report);
     expect(xlsx.subarray(0, 2).toString('binary')).toBe('PK');
     expect(xlsx.length).toBeGreaterThan(500);
+  });
+});
+
+describe('report document layout', () => {
+  const meta = reportExportMeta('Income Statement', '2026-10-01', '2026-10-31', 2);
+  const rows = Array.from({ length: 120 }, (_, index) => `Station ${index},${index}.5000,Café`);
+  const csv = ['Station,Litres,Note', ...rows].join('\r\n');
+
+  it('builds the period line from business dates', () => {
+    expect(meta).toEqual({
+      title: 'Income Statement',
+      subtitle: '01 Oct 2026 to 31 Oct 2026 · 2 stations',
+    });
+    expect(reportExportMeta('Cash', '2026-10-05', '2026-10-05', 0).subtitle).toBe('05 Oct 2026');
+  });
+
+  it('lays the PDF out as a titled table that repeats its header on every page', () => {
+    const text = buildPdfFromCsv(csv, meta).toString('latin1');
+    expect(text).toContain('(Income Statement)');
+    expect(text).toContain('(01 Oct 2026 to 31 Oct 2026');
+    expect(text).toContain('/Helvetica-Bold');
+    const pages = Number(/\/Count (\d+)/.exec(text)![1]);
+    expect(pages).toBeGreaterThan(1);
+    expect(text).toContain(`Page 1 of ${pages}`);
+    expect(text).toContain(`Page ${pages} of ${pages}`);
+    expect((text.match(/\(Station\) Tj/g) ?? []).length).toBe(pages);
+    // Accented text is drawn, not replaced by "?".
+    expect(text).toContain('Caf\xe9');
+  });
+
+  it('draws dashes and quotes from the WinAnsi set', () => {
+    const text = buildPdfFromCsv('Note\r\nA – B “q”\r\n').toString('latin1');
+    expect(text).toContain('A \x96 B \x93q\x94');
+  });
+
+  it('draws an empty report as its heading plus a plain note', () => {
+    const text = buildPdfFromCsv('Station,Litres\r\n', meta).toString('latin1');
+    expect(text).toContain('(Station) Tj');
+    expect(text).toContain('No rows for this period.');
+    expect(text).toContain('Page 1 of 1');
+  });
+
+  it('never prints text wider than its column', () => {
+    const long = `Station,Note\r\nMain,${'x'.repeat(400)}`;
+    const text = buildPdfFromCsv(long).toString('latin1');
+    expect(text).toContain('...)');
+    expect(text).not.toContain('x'.repeat(400));
+  });
+
+  it('styles the workbook: title block, frozen bold header, number formats', () => {
+    const files = readZip(buildXlsxFromCsv('Station,Litres\r\nMain,1200.5\r\nDepot,3\r\n', meta));
+    const sheet = files.get('xl/worksheets/sheet1.xml')!;
+    expect(sheet).toContain('Income Statement');
+    expect(sheet).toContain('<pane ySplit="4"');
+    expect(sheet).toContain('<c r="A4" s="1"');
+    expect(sheet).toContain('<c r="B5" s="3" t="n"><v>1200.5</v>');
+    expect(sheet).toContain('<cols>');
+    const styles = files.get('xl/styles.xml')!;
+    expect(styles).toContain('formatCode="#,##0.0"');
+    expect(styles).toContain('<b/>');
+  });
+
+  it('keeps the original row layout when no title is given', () => {
+    const sheet = readZip(buildXlsxFromCsv('A,B\r\n1,2\r\n')).get('xl/worksheets/sheet1.xml')!;
+    expect(sheet).toContain('<pane ySplit="1"');
+    expect(sheet).toContain('<row r="1">');
   });
 });

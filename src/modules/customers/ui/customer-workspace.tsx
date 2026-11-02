@@ -28,7 +28,6 @@ import type {
   CustomerAccountsResponse,
   CustomerCapabilities,
   CustomerSummary,
-  CustomerTransaction,
 } from './types';
 
 function getErrorMessage(result: unknown, fallback: string): string {
@@ -82,47 +81,6 @@ function accountIndicator(account: CustomerAccount): string {
   return account.productBalances
     .map((product) => `${product.productCode} ${formatLitres(product.availableLitres)}`)
     .join(' · ');
-}
-
-// Fixed to the station's timezone so the server and browser always print the same text.
-const DISPLAY_TIME_ZONE = 'Africa/Harare';
-
-function formatWhen(value: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: DISPLAY_TIME_ZONE,
-  }).format(new Date(value));
-}
-
-function transactionLabel(transaction: CustomerTransaction): string {
-  switch (transaction.entryType) {
-    case 'CREDIT_FUEL_CHARGE':
-      return 'Fuel charged';
-    case 'CUSTOMER_PAYMENT':
-      return 'Payment';
-    case 'PREPAID_TOPUP':
-      return 'Prepaid top-up';
-    case 'PREPAID_FUEL_USAGE':
-      return 'Fuel usage';
-    case 'ADJUSTMENT':
-      return 'Adjustment';
-    case 'REVERSAL':
-      return 'Reversal';
-  }
-}
-
-function transactionValue(transaction: CustomerTransaction): string {
-  if (transaction.amount !== null) return money(transaction.amount, transaction.currency);
-  if (transaction.litres !== null) return formatLitres(transaction.litres);
-  return '—';
-}
-
-function stationScopeLabel(account: CustomerAccount): string {
-  if (!account.stationScopeConfigured) return 'Stations not chosen yet';
-  if (account.stationScope === 'ALL') return 'All stations';
-  const count = account.allowedStationIds.length;
-  return `${count} selected ${count === 1 ? 'station' : 'stations'}`;
 }
 
 /** The figures that matter for one account, in plain words. */
@@ -532,71 +490,35 @@ export function CustomerWorkspace({
                         </div>
                         {open ? (
                           <div className="customer-expanded" id={detailsId}>
-                            <DetailList
-                              id={`${detailsId}-about`}
-                              items={[
-                                { label: 'Account reference', value: customer.accountReference },
-                                {
-                                  label: 'Legal entity',
-                                  value: customer.legalEntityName ?? 'Not set',
-                                },
-                                {
-                                  label: 'Status',
-                                  value: formatStatusLabel(customer.status),
-                                },
-                                {
-                                  label: 'Accounts opened',
-                                  value: customer.accounts.length || 'None yet',
-                                },
-                                ...contacts.map(([key, value]) => ({
-                                  label: formatStatusLabel(key),
-                                  value,
-                                })),
-                              ]}
-                            />
                             {customer.accounts.map((account) => (
                               <section
                                 key={account.accountId}
                                 className="customer-account"
                                 aria-label={`${accountTypeLabel(account.accountType)} account`}
                               >
-                                <h3>
-                                  {accountTypeLabel(account.accountType)} account
-                                  <StatusBadge
-                                    tone={account.status === 'ACTIVE' ? 'positive' : 'neutral'}
-                                  >
-                                    {formatStatusLabel(account.status)}
-                                  </StatusBadge>
-                                </h3>
+                                {customer.accounts.length > 1 ? (
+                                  <h3>{accountTypeLabel(account.accountType)} account</h3>
+                                ) : null}
                                 <DetailList
                                   id={`${detailsId}-${account.accountId}`}
-                                  items={[
-                                    ...accountFigures(account),
-                                    { label: 'Works at', value: stationScopeLabel(account) },
-                                    {
-                                      label: 'Ready for fuel sales',
-                                      value: account.ready ? 'Yes' : 'Not yet',
-                                    },
-                                  ]}
+                                  items={accountFigures(account)}
                                 />
+                                {account.ready ? null : (
+                                  <p className="customer-activity-empty">
+                                    Not ready for fuel sales yet.
+                                  </p>
+                                )}
                               </section>
                             ))}
-                            <section className="customer-account" aria-label="Latest activity">
-                              <h3>Latest activity</h3>
-                              {customer.recentTransactions.length > 0 ? (
-                                <ul className="customer-activity">
-                                  {customer.recentTransactions.slice(0, 3).map((transaction) => (
-                                    <li key={transaction.id}>
-                                      <span>{transactionLabel(transaction)}</span>
-                                      <span>{formatWhen(transaction.occurredAt)}</span>
-                                      <strong>{transactionValue(transaction)}</strong>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <p className="customer-activity-empty">Nothing recorded yet.</p>
-                              )}
-                            </section>
+                            {contacts.length > 0 ? (
+                              <DetailList
+                                id={`${detailsId}-about`}
+                                items={contacts.map(([key, value]) => ({
+                                  label: formatStatusLabel(key),
+                                  value,
+                                }))}
+                              />
+                            ) : null}
                             <Link
                               className="button button-primary customer-open"
                               href={customerHref(customer)}

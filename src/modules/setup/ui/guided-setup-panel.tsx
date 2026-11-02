@@ -1036,9 +1036,13 @@ function GuideSteps({
 }
 
 function Guide({ overview }: { overview: Ready }) {
-  const [stationId, setStationId] = useState(overview.stationOptions[0]?.id ?? '');
+  // With several stations the person chooses; no station is picked for them, so nothing is set up
+  // on the wrong one.
+  const [stationId, setStationId] = useState(
+    overview.stationOptions.length === 1 ? overview.stationOptions[0]!.id : '',
+  );
   const station = overview.stationOptions.find((s) => s.id === stationId);
-  if (!station) {
+  if (overview.stationOptions.length === 0) {
     return (
       <AccessDeniedState message="No stations are available to you yet. Ask the owner to add one." />
     );
@@ -1051,22 +1055,25 @@ function Guide({ overview }: { overview: Ready }) {
       </p>
       {overview.stationOptions.length > 1 ? (
         <div className={styles.form}>
-          <Field id="guide-station" label="Which station are you setting up?">
+          <Field id="guide-station" label="Which station are you setting up?" required>
             <Select
               id="guide-station"
               value={stationId}
               onChange={(event) => setStationId(event.target.value)}
+              placeholder="Choose a station"
               options={overview.stationOptions.map((s) => ({ value: s.id, label: s.name }))}
             />
           </Field>
         </div>
       ) : null}
-      <StationSetupGuide
-        key={station.id}
-        tenantId={overview.tenantId}
-        stationId={station.id}
-        stationName={station.name}
-      />
+      {station ? (
+        <StationSetupGuide
+          key={station.id}
+          tenantId={overview.tenantId}
+          stationId={station.id}
+          stationName={station.name}
+        />
+      ) : null}
     </div>
   );
 }

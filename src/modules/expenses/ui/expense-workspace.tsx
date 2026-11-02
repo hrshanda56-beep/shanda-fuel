@@ -1313,17 +1313,26 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   />
                 </Field>
               </div>
-              {stations.length > 1 && !(current.stationId && !current.allStations) ? (
-                <Field id="expense-station" label="Station" required>
-                  <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
-                    <option value="">Choose…</option>
-                    {stations.map((station) => (
-                      <option key={station.id} value={station.id}>
-                        {station.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+              {stations.length > 1 ? (
+                current.stationId && !current.allStations ? (
+                  <p className={styles.muted}>
+                    Recording this for <strong>{stationName(stationId)}</strong>.
+                  </p>
+                ) : (
+                  <Field id="expense-station" label="Which station is this for?" required>
+                    <select
+                      value={stationId}
+                      onChange={(event) => setStationId(event.target.value)}
+                    >
+                      <option value="">Choose a station…</option>
+                      {stations.map((station) => (
+                        <option key={station.id} value={station.id}>
+                          {station.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )
               ) : null}
               <Field
                 id="expense-payment-method"
@@ -1396,9 +1405,9 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   ))}
                 </select>
               </Field>
-              <Field id="regular-station" label="Station" required>
+              <Field id="regular-station" label="Which station is this for?" required>
                 <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
-                  <option value="">Choose…</option>
+                  <option value="">Choose a station…</option>
                   {stations.map((station) => (
                     <option key={station.id} value={station.id}>
                       {station.name}

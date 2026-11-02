@@ -17,7 +17,7 @@ import type { ContextResolution } from './contracts';
 import { portfolioStations, readLimiter, type PortfolioArea } from './portfolio';
 import { getSupplierSummaryFromRequest } from '@/modules/creditors/queries';
 import { PortfolioOperationsTable, PortfolioStationRow } from './portfolio-table';
-import { loadPortfolioStation } from './portfolio-data';
+import { loadPortfolioStation, type PortfolioFact } from './portfolio-data';
 const paths: Record<PortfolioArea, string> = {
   operations: '/operations/daily',
   reconciliations: '/operations/reconciliations',
@@ -68,9 +68,11 @@ export function PortfolioOverview({
     );
   return (
     <section className="portfolio-overview" aria-label="All stations overview">
-      <p>{rows.length} stations · Open a station to view its records.</p>
+      <p className="portfolio-note portfolio-note-lead">
+        {rows.length} stations · Open a station to view its records.
+      </p>
       {area === 'finance' ? (
-        <p>
+        <p className="portfolio-note">
           Payables and credit warnings belong to a legal entity and may appear at more than one
           station. They are not added together.
         </p>
@@ -83,10 +85,14 @@ export function PortfolioOverview({
               : paths[area];
           return (
             <Card as="section" className="panel portfolio-station-card" key={row.station.id}>
-              <h2>
-                <Link href={buildContextHref(path, '', row.selection)}>{row.station.name}</Link>
-              </h2>
-              <p>{row.entityName}</p>
+              <div className="portfolio-card-head">
+                <div>
+                  <h2>
+                    <Link href={buildContextHref(path, '', row.selection)}>{row.station.name}</Link>
+                  </h2>
+                  <p className="portfolio-card-entity">{row.entityName}</p>
+                </div>
+              </div>
               <Suspense fallback={<LoadingState label={`Loading ${row.station.name}…`} />}>
                 <StationFacts request={request} row={row} area={area} run={run} />
               </Suspense>
@@ -147,15 +153,46 @@ async function StationFacts({
   }
   if (table) return <PortfolioStationRow {...rowProps} facts={facts} />;
   if (!facts.length) return <p>No records available.</p>;
+  const shown = facts.slice(0, VISIBLE_FACTS);
+  const more = facts.slice(VISIBLE_FACTS);
   return (
-    <dl className="portfolio-facts">
-      {facts.map((fact, index) => (
-        <div key={index}>
-          <dt>{fact.label}</dt>
-          <dd>{fact.href ? <Link href={fact.href}>{fact.value}</Link> : fact.value}</dd>
-        </div>
-      ))}
-    </dl>
+    <>
+      <dl className="portfolio-facts">
+        {shown.map((fact, index) => (
+          <PortfolioFactRow key={index} fact={fact} />
+        ))}
+      </dl>
+      {more.length > 0 ? (
+        <details className="portfolio-more">
+          <summary>Show {more.length} more</summary>
+          <dl className="portfolio-facts">
+            {more.map((fact, index) => (
+              <PortfolioFactRow key={index} fact={fact} />
+            ))}
+          </dl>
+        </details>
+      ) : null}
+    </>
+  );
+}
+
+/** A card shows the first few items; the rest stay one tap away. */
+const VISIBLE_FACTS = 4;
+
+/** "Headline — explanation": the headline is the link, the explanation sits quietly beneath. */
+function PortfolioFactRow({ fact }: { fact: PortfolioFact }) {
+  const [headline = '', ...rest] = fact.value.split(' — ');
+  const detail = rest.join(' — ');
+  return (
+    <div>
+      <dt>{fact.label}</dt>
+      <dd>
+        <span className="portfolio-fact-headline">
+          {fact.href ? <Link href={fact.href}>{headline}</Link> : headline}
+        </span>
+        {detail ? <small className="portfolio-fact-detail">{detail}</small> : null}
+      </dd>
+    </div>
   );
 }
 

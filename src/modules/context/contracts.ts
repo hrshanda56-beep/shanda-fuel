@@ -20,6 +20,8 @@ export type ContextLegalEntity = Readonly<{
 export type ContextOrganisation = Readonly<{
   id: string;
   name: string;
+  /** Short readable name used in page addresses instead of the id. Absent on older snapshots. */
+  slug?: string;
   legalEntities: readonly ContextLegalEntity[];
 }>;
 

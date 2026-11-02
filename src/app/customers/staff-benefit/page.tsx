@@ -2,6 +2,7 @@ import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { getCustomerAccountsFromRequest } from '@/modules/customers/queries';
 import { getStaffBenefitAccountsFromRequest } from '@/modules/customers/staff-benefit-read';
+import { getStaffBenefitStaffOptionsFromRequest } from '@/modules/customers/staff-benefit-staff-read';
 import { staffRecordsWithoutBenefit } from '@/modules/customers/staff-records';
 import { StaffBenefitWorkspace } from '@/modules/customers/ui/staff-benefit-workspace';
 
@@ -22,11 +23,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
       load={async (request, resolution) => {
         const current = resolution.current;
         if (!current) return null;
-        const [rows, accounts] = await Promise.all([
+        const [rows, accounts, staff] = await Promise.all([
           getStaffBenefitAccountsFromRequest(request, { tenantId: current.organisationId }),
           getCustomerAccountsFromRequest(request, { tenantId: current.organisationId }),
+          getStaffBenefitStaffOptionsFromRequest(request, { tenantId: current.organisationId }),
         ]);
-        return { rows, accounts };
+        return { rows, accounts, staff };
       }}
       render={(data, resolution) => {
         const current = resolution.current;
@@ -55,6 +57,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
             tenantId={current.organisationId}
             rows={[...data.rows]}
             customers={customers}
+            staff={[...data.staff]}
             canOpenAccount={data.accounts.capabilities.openAccount}
             legalEntityId={legalEntityId}
           />

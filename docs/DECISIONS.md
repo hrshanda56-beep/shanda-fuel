@@ -55,6 +55,47 @@ same solo-operator rule already used for purchase orders, expenses, revaluations
 
 **Not decided:** the rates for the estimate.
 
+## DEC-053 — Organisation slug in page addresses; offline queue not widened yet (slug ACCEPTED by the project lead in chat, 2026-11-02; offline note PROPOSED)
+
+- **Slug addresses.** Page addresses can carry `?org=<slug>` (the organisation's existing
+  `tenants.slug`) instead of `?tenantId=<id>`. The slug is looked up only among the organisations
+  the signed-in person may already select, so it cannot reveal or choose anything outside their list;
+  an unknown slug is refused like a bad id. The proxy turns it into the id for the page, so pages
+  and APIs still work on the id. Old `?tenantId=` links keep working unchanged. The work-context
+  selector now writes the slug form; other links still write the id form until they are moved.
+  Stations keep their ids in addresses (no station slug, no migration). The slug is not served
+  while `CONSOLIDATED_CONTEXT_READS=1` uses migration 0034's snapshot, which does not carry it.
+- **Offline queue.** Not widened. Daily-report saves stay the only queued action (DEC-045). An
+  expense or cash count needs the person's identity on the device (the queue is kept per person so
+  a shared phone cannot replay one person's entry under another's sign-in); those screens do not
+  have it yet, and what to do when a replayed entry needs a fresh identity check is not decided.
+
+## DEC-052 — Report exports use the current sign-in; downloads are real documents (ACCEPTED by the project lead in chat, 2026-11-02)
+
+**Date:** 2026-11-02. **Status:** accepted on the project lead's instruction after manual QA. It
+refines DEC-047 and does not replace it.
+
+**Decision (project lead, in chat):** a person who is already signed in should not be asked to prove
+who they are again just to download a report. Excel and PDF downloads had a separate confirmation
+dialog even straight after sign-in.
+
+**What changes:**
+- When an export is refused for a missing step-up, the browser first asks the server to accept the
+  current sign-in (`POST /api/auth/step-up` with `silent: true`). The server accepts it only when a
+  check is still active or the sign-in is inside the existing reuse window
+  (`STEP_UP_REUSE_MINUTES`, default 15, maximum 60). Silent mode never starts a challenge.
+- If the sign-in is older than that window, the existing confirmation dialog still appears. Nothing
+  is weakened for staff deactivation, closing a business day or payment setup, and the audit event
+  for each accepted check is unchanged.
+- The window itself is not changed here. If a longer window is wanted for exports, raise
+  `STEP_UP_REUSE_MINUTES` (a human decision, since it also covers the other privileged actions).
+- PDF and Excel downloads are now formatted documents (title and period, aligned columns, repeated
+  header row, page numbers; Excel has a frozen header and number formats). Values are written exactly
+  as the CSV carries them. The Print button on report pages is removed; Download PDF replaces it.
+
+**Affected:** `src/modules/identity/step-up.ts`, `src/app/api/auth/step-up/route.ts`,
+`src/modules/reporting/ui/use-report-actions.ts`, `src/modules/reporting/export-documents.ts`.
+
 ## DEC-047 — Run v1 without paid multi-factor sign-in (ACCEPTED by the project lead in chat, 2026-10-24)
 
 **Date:** 2026-10-24. **Status:** accepted, including the export fix below (approved in chat 2026-10-24). The fix is built on its own branch and is not merged.

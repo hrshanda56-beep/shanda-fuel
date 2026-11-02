@@ -12,9 +12,19 @@ function routeSelection(available: AvailableContext, route: ContextRoute): Conte
     return null;
   }
 
-  if (route.organisationId) {
+  // `?org=<slug>` is looked up only in the organisations this user may already see, so a slug
+  // can never reveal or select anything outside their own list.
+  const organisationId =
+    route.organisationId ??
+    (route.organisationSlug
+      ? available.organisations.find((organisation) => organisation.slug === route.organisationSlug)
+          ?.id
+      : undefined);
+  if (route.organisationSlug && !organisationId) throw invalidContext('route context');
+
+  if (organisationId) {
     return {
-      organisationId: route.organisationId,
+      organisationId,
       ...(route.legalEntityId ? { legalEntityId: route.legalEntityId } : {}),
       ...(route.stationId ? { stationId: route.stationId } : {}),
       allStations: route.allStations,
