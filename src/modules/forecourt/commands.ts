@@ -1667,7 +1667,7 @@ export async function confirmBoundaryFromRequest(request: Request, input: unknow
             and e.shift_id = ${payload.shiftId}
             and e.status = 'BLOCKING'
             and b.reading_status = 'UNAVAILABLE'
-          for update
+          for update of b
         `);
         if (!exception[0] || new Date(exception[0].effective_at) >= new Date(now))
           throw new AppError(
@@ -1955,7 +1955,7 @@ export async function resetMeterFromRequest(request: Request, input: unknown) {
             and e.shift_id = ${payload.shiftId}
             and e.status = 'BLOCKING'
             and b.reading_status = 'UNAVAILABLE'
-          for update
+          for update of b
         `);
         if (!exception[0])
           throw new AppError('CONFLICT', 'The reset is not linked to the exact meter exception');
@@ -2147,7 +2147,7 @@ export async function replaceMeterFromRequest(request: Request, input: unknown) 
             and e.shift_id = ${payload.shiftId}
             and e.status = 'BLOCKING'
             and b.reading_status = 'UNAVAILABLE'
-          for update
+          for update of b
         `);
         if (!exception[0])
           throw new AppError(
@@ -2324,7 +2324,7 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
             where successor.tenant_id=m.tenant_id and successor.station_id=m.station_id
               and (successor.correction_of_segment_id=m.id or successor.reversal_of_segment_id=m.id)
           )
-        for update of m, ob, cb
+        for update of ob, cb
       `);
       const source = rows[0];
       if (!source)
@@ -2377,7 +2377,7 @@ export async function correctMeterSegmentFromRequest(request: Request, input: un
             and e.meter_installation_id=${source.meter_installation_id}
             and e.status='BLOCKING'
             and b.reading_status='UNAVAILABLE'
-          for update
+          for update of b
         `);
         linkedException = exceptions[0];
         if (

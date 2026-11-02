@@ -424,10 +424,12 @@ export async function allocateProviderSettlementInTransaction(
     );
   }
 
+  // Allocation rows are append-only: the application role may read and add them but never update
+  // them, so the database refuses a row lock on them. The payment evidence and the settlement are
+  // already locked above, and the unique (tenant, allocation key) index is the final guard.
   const duplicate = await transaction.execute<{ id: string }>(sql`
     select id from app.provider_settlement_allocations
      where tenant_id = ${context.tenantId} and allocation_key = ${input.allocationKey}
-     for update
   `);
   if (duplicate[0]) throw new AppError('CONFLICT', 'This settlement allocation key already exists');
   await transaction.execute(sql`
@@ -466,6 +468,9 @@ export async function reverseProviderSettlementAllocationInTransaction(
     expectedVersion: number;
   },
 ) {
+  // Allocation rows are append-only and cannot be row-locked by the application role. A posted
+  // allocation never changes, and a second reversal is stopped below: the payment evidence and the
+  // settlement are locked first, then the "already reversed" check is read again.
   const originals = await transaction.execute<{
     id: string;
     settlement_id: string;
@@ -478,7 +483,6 @@ export async function reverseProviderSettlementAllocationInTransaction(
      where tenant_id = ${context.tenantId}
        and station_id = ${context.stationId}
        and id = ${input.allocationId}
-     for update
   `);
   const original = originals[0];
   if (!original) throw new AppError('NOT_FOUND', 'The settlement allocation was not found');
@@ -505,7 +509,6 @@ export async function reverseProviderSettlementAllocationInTransaction(
      where tenant_id = ${context.tenantId}
        and reversal_of_id = ${original.id}
        and state = 'REVERSED'
-     for update
   `);
   if (existing[0]) throw new AppError('CONFLICT', 'The settlement allocation is already reversed');
   await transaction.execute(sql`
