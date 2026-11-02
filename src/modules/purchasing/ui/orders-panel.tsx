@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Select } from '@/design-system/forms';
+import { NotchedCard } from '@/design-system/notched-card';
 import { Icon } from '@/design-system/icons';
 import {
   Button,
@@ -148,21 +149,17 @@ export function OrdersPanel({
   return (
     <div className={styles.stack}>
       {notice ? <SuccessState title="Done" message={notice} /> : null}
-      <Card as="section" className="panel" aria-labelledby="po-orders-title">
-        <h3 id="po-orders-title" className="visually-hidden">
-          Purchase orders
-        </h3>
+      <NotchedCard
+        title="Purchase orders"
+        titleId="po-orders-title"
+        notchWidth={11.5}
+        actions={
+          capabilities.createOrders ? (
+            <Button onClick={() => setCreateOpen(true)}>New purchase order</Button>
+          ) : null
+        }
+      >
         <div className="list-toolbar">
-          {stations.length > 1 ? (
-            <Field id="po-station" label="Station">
-              <Select
-                id="po-station"
-                value={stationId}
-                onChange={(event) => setStationId(event.target.value)}
-                options={stations.map((s) => ({ value: s.id, label: s.name }))}
-              />
-            </Field>
-          ) : null}
           {orders.length > 0 ? (
             <>
               <label className="list-search">
@@ -191,11 +188,6 @@ export function OrdersPanel({
                 ))}
               </div>
             </>
-          ) : null}
-          {capabilities.createOrders ? (
-            <Button className="list-toolbar-action" onClick={() => setCreateOpen(true)}>
-              New purchase order
-            </Button>
           ) : null}
         </div>
 
@@ -232,7 +224,7 @@ export function OrdersPanel({
               <span>Order</span>
               <span>Status</span>
               <span>Fuel</span>
-              <span className={styles.numeric}>Total</span>
+              <span className={styles.numeric}>Litres</span>
               <span className={styles.numeric}>Fuel expected by</span>
             </div>
             <ul className="list-rows" aria-label="Purchase orders">
@@ -260,7 +252,7 @@ export function OrdersPanel({
                       <span className={styles.cell} data-label="Fuel">
                         {orderFuelSummary(order.lines) || '—'}
                       </span>
-                      <span className={`${styles.numeric} ${styles.cell}`} data-label="Total">
+                      <span className={`${styles.numeric} ${styles.cell}`} data-label="Litres">
                         {litresText(totalOrderedLitres(order.lines))}
                       </span>
                       <span
@@ -276,7 +268,7 @@ export function OrdersPanel({
             </ul>
           </div>
         ) : null}
-      </Card>
+      </NotchedCard>
 
       <OrderForm
         open={createOpen}

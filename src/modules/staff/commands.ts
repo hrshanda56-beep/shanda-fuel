@@ -10,9 +10,10 @@ import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
 import { createResendEmailSender, type EmailSender } from '../../platform/email';
 import { createLogger } from '../../platform/logging';
+import { sqlState } from '../../platform/observability';
 import { appendSecurityEvent } from '../audit/contracts';
 import { authorize } from '../../platform/security/permissions';
-import { assertStepUp } from '../../platform/security';
+import { assertStepUp, ROLE_CODES, type RoleCode } from '../../platform/security';
 import { requireAuthenticatedActor } from '../identity';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/server';
 import {
@@ -51,7 +52,7 @@ const createSchema = z.object({
   invitedEmail: z.string().trim().email().max(320).optional(),
   staffNumber: z.string().trim().max(32).optional(),
   deliveryMethod: z.enum(['EMAIL', 'MANUAL']).default('EMAIL'),
-  assignedRole: z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']),
+  assignedRole: z.enum(ROLE_CODES),
   scopeType: z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']),
   legalEntityId: z.string().uuid().optional(),
   stationIds: z.array(z.string().uuid()).max(100).default([]),
@@ -75,11 +76,17 @@ const deactivateSchema = z.object({
   membershipId: z.string().uuid(),
 });
 
+const removeSchema = z.object({
+  commandType: z.literal('RemoveStaffMember'),
+  tenantId: z.string().uuid(),
+  membershipId: z.string().uuid(),
+});
+
 const updateAssignmentSchema = z.object({
   commandType: z.literal('UpdateStaffAssignment'),
   tenantId: z.string().uuid(),
   membershipId: z.string().uuid(),
-  assignedRole: z.enum(['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT']),
+  assignedRole: z.enum(ROLE_CODES),
   scopeType: z.enum(['TENANT', 'LEGAL_ENTITY', 'STATION']),
   legalEntityId: z.string().uuid().optional(),
   stationIds: z.array(z.string().uuid()).max(100).default([]),
@@ -105,15 +112,30 @@ export type StaffCommandDependencies = Readonly<{
   revokeClerkSessions?: typeof revokeClerkUserSessions;
 }>;
 
+/** A Postgres error field (such as constraint_name) from the error or the cause Drizzle wrapped it in. */
+function databaseErrorField(error: unknown, field: string): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
+    const value = (current as unknown as Record<string, unknown>)[field];
+    if (typeof value === 'string') return value;
+    current = current.cause;
+  }
+  return undefined;
+}
+
 function transactionError(error: unknown): AppError {
   if (error instanceof AppError) return error;
-  if (typeof error === 'object' && error !== null && 'code' in error) {
-    const code = (error as { code?: unknown }).code;
-    if (code === '23505')
-      return new AppError('CONFLICT', 'That staff number or invitation is already in use');
-    if (code === 'P0001')
-      return new AppError('FORBIDDEN', 'This invitation is no longer available');
-  }
+  const state = sqlState(error);
+  if (state === '23505')
+    return new AppError('CONFLICT', 'That staff number or invitation is already in use');
+  if (state === 'P0001') return new AppError('FORBIDDEN', 'This invitation is no longer available');
+  // Say which database rule refused, never its values, so an unexpected failure can be diagnosed.
+  createLogger({ component: 'staff.transaction' }).error('staff.transaction_failed', {
+    sqlState: state,
+    constraint: databaseErrorField(error, 'constraint_name'),
+    routine: databaseErrorField(error, 'routine'),
+    errorType: error instanceof Error ? error.constructor.name : typeof error,
+  });
   return new AppError('INTERNAL_ERROR', 'The staff operation could not be completed');
 }
 
@@ -125,7 +147,7 @@ function hasTenantRole(authority: TenantExecutionContext, role: 'OWNER' | 'ADMIN
 
 function authorizeInvitation(
   authority: TenantExecutionContext,
-  role: 'OWNER' | 'ADMINISTRATOR' | 'FINANCE' | 'SUPERVISOR' | 'ATTENDANT',
+  role: RoleCode,
   scope: StaffInvitationScope,
 ) {
   const tenantScope = { tenantId: authority.membership.tenantId, scopeType: 'TENANT' as const };
@@ -259,7 +281,7 @@ export async function createStaffInvitationFromRequest(
         join app.users identity on identity.id = membership.identity_id
         where membership.tenant_id = ${input.tenantId}
           and lower(btrim(identity.email)) = ${email}
-        for update
+        for update of membership
       `)
         : [];
       if (existingMembership[0]) {
@@ -770,6 +792,66 @@ export async function deactivateStaffMemberFromRequest(
 }
 
 /**
+ * Take a deactivated staff member off the Staff list. Someone with no records is erased; someone
+ * who appears in shifts, cash or approvals is hidden instead so their history stays intact
+ * (migration 0102). Active staff must be deactivated first.
+ */
+export async function removeStaffMemberFromRequest(
+  request: Request,
+  body: unknown,
+  deps: StaffCommandDependencies = {},
+) {
+  const input = removeSchema.parse(body);
+  const authority = await resolveStaffAuthority(request, input.tenantId, deps);
+  authorize({
+    actor: authority.authorization,
+    permissionCode: 'membership.disable',
+    requestedScope: { tenantId: input.tenantId, scopeType: 'TENANT' },
+  });
+  if (input.membershipId === authority.membership.membershipId) {
+    throw new AppError('FORBIDDEN', 'You cannot remove your own membership');
+  }
+
+  try {
+    return await withTenantTransaction(authority.transaction, async (transaction) => {
+      await transaction.execute(
+        sql`select id from app.tenants where id = ${input.tenantId} for update`,
+      );
+      const rows = await transaction.execute<{ outcome: 'DELETED' | 'HIDDEN' | null }>(sql`
+        select app.remove_staff_membership(${input.tenantId}::uuid, ${input.membershipId}::uuid)
+          as outcome
+      `);
+      const outcome = rows[0]?.outcome;
+      if (!outcome) {
+        throw new AppError(
+          'CONFLICT',
+          'Only deactivated staff can be removed, and only by an owner or administrator',
+        );
+      }
+      await appendSecurityEvent(
+        {
+          eventId: randomUUID(),
+          tenantId: input.tenantId,
+          membershipId: authority.membership.membershipId,
+          actorId: authority.actor.identityId,
+          actorType: 'HUMAN',
+          actionCode: 'STAFF.MEMBERSHIP_REMOVED',
+          subjectType: 'Membership',
+          subjectId: input.membershipId,
+          requestId: authority.transaction.requestId!,
+          occurredAt: new Date().toISOString(),
+        },
+        getAuditSigningKey(),
+        transaction,
+      );
+      return { membershipId: input.membershipId, outcome };
+    });
+  } catch (error) {
+    throw transactionError(error);
+  }
+}
+
+/**
  * Change an active staff member's role and where it applies. The old assignments are replaced
  * as one unit, so a person never ends up with half of the old access and half of the new.
  */
@@ -871,10 +953,20 @@ export async function updateStaffAssignmentFromRequest(
           throw new AppError('FORBIDDEN', 'The selected legal entity is not available');
       }
 
-      await transaction.execute(sql`
-        delete from app.membership_role_assignments
-        where tenant_id = ${input.tenantId} and membership_id = ${input.membershipId}
+      // The application role cannot delete role assignments directly; this removes the member's
+      // old ones for an owner or administrator of the organisation (migration 0101).
+      const cleared = await transaction.execute<{ removed: number }>(sql`
+        select app.clear_membership_assignments(${input.tenantId}::uuid, ${input.membershipId}::uuid) as removed
       `);
+      // Never add new assignments on top of old ones if the removal was declined or short. The
+      // function declines unless the caller holds a tenant-wide owner or administrator role, and
+      // it also reports zero for a member with nothing to remove, so that is checked here too.
+      if (
+        !(hasTenantRole(authority, 'OWNER') || hasTenantRole(authority, 'ADMINISTRATOR')) ||
+        Number(cleared[0]?.removed ?? 0) < current.length
+      ) {
+        throw new AppError('FORBIDDEN', 'You cannot change this staff member’s access');
+      }
       if (scope.scopeType === 'STATION') {
         for (const stationId of scope.stationIds) {
           await transaction.execute(sql`

@@ -3,7 +3,7 @@ import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   buildContextHref,
   type ContextApiResponse,
@@ -11,6 +11,7 @@ import {
   type ContextSelection,
 } from '@/modules/context';
 import { Icon } from '@/design-system/icons';
+import { Pagination, usePagination } from '@/design-system/pagination';
 import {
   Card,
   ContextRequiredState,
@@ -151,13 +152,6 @@ function matchesFilter(customer: CustomerSummary, filter: CustomerFilter): boole
   return true;
 }
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return (
-    (parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts.at(-1)?.[0] ?? '') : '')
-  ).toUpperCase();
-}
-
 export function CustomerWorkspace({
   initial,
 }: {
@@ -287,6 +281,7 @@ export function CustomerWorkspace({
         .includes(query);
     });
   }, [customers, searchTerm, filter]);
+  const customerPage = usePagination(filteredCustomers);
 
   const counts = useMemo(
     () => ({
@@ -310,6 +305,38 @@ export function CustomerWorkspace({
   const filterCount = (value: CustomerFilter) =>
     !countsReady ? '—' : customers.filter((customer) => matchesFilter(customer, value)).length;
 
+  const links =
+    hasRequiredContext && current ? (
+      <nav className="profit-links" aria-label="Customer actions">
+        <AddCustomer
+          tenantId={current.organisationId}
+          legalEntityId={
+            current.legalEntityId ??
+            // With one company in this organisation there is nothing to choose.
+            (() => {
+              const companies =
+                context?.available?.organisations.find((o) => o.id === current.organisationId)
+                  ?.legalEntities ?? [];
+              return companies.length === 1 ? (companies[0]?.id ?? null) : null;
+            })()
+          }
+          companies={
+            context?.available?.organisations
+              .find((o) => o.id === current.organisationId)
+              ?.legalEntities.map((entity) => ({ id: entity.id, name: entity.name })) ?? []
+          }
+          canAdd={capabilities?.manageCustomer ?? false}
+          canOpenAccount={capabilities?.openAccount ?? false}
+        />
+        <Link
+          className="button button-primary"
+          href={buildContextHref('/customers/account-controls', search, current)}
+        >
+          Customer controls
+        </Link>
+      </nav>
+    ) : null;
+
   return (
     <div className="content-grid wide-workspace customer-workspace">
       {contextLoading ? <LoadingState label="Loading authorised context" /> : null}
@@ -321,219 +348,201 @@ export function CustomerWorkspace({
         />
       ) : null}
 
-      {hasRequiredContext && current ? (
-        <div className="content-span customer-toolbar">
-          <AddCustomer
-            tenantId={current.organisationId}
-            legalEntityId={
-              current.legalEntityId ??
-              // With one company in this organisation there is nothing to choose.
-              (() => {
-                const companies =
-                  context?.available?.organisations.find((o) => o.id === current.organisationId)
-                    ?.legalEntities ?? [];
-                return companies.length === 1 ? (companies[0]?.id ?? null) : null;
-              })()
-            }
-            companies={
-              context?.available?.organisations
-                .find((o) => o.id === current.organisationId)
-                ?.legalEntities.map((entity) => ({ id: entity.id, name: entity.name })) ?? []
-            }
-            canAdd={capabilities?.manageCustomer ?? false}
-            canOpenAccount={capabilities?.openAccount ?? false}
-          />
-          <Link
-            className="button button-secondary"
-            href={buildContextHref('/customers/account-controls', search, current)}
-          >
-            Customer controls
-          </Link>
-        </div>
-      ) : null}
-
       {hasRequiredContext ? (
-        <Card as="section" className="panel content-span" aria-labelledby="customer-list-title">
-          <h2 id="customer-list-title" className="visually-hidden">
-            Customer accounts
-          </h2>
+        <div
+          className="profit-fuel-wrap content-span"
+          data-narrow-notch={capabilities?.manageCustomer ? undefined : ''}
+          style={
+            { '--notch-w': capabilities?.manageCustomer ? '20.5rem' : '11rem' } as CSSProperties
+          }
+        >
+          <Card
+            as="section"
+            className="panel profit-panel profit-fuel-card"
+            aria-labelledby="customer-list-title"
+          >
+            <h2 id="customer-list-title" className="profit-title">
+              Customer accounts
+            </h2>
 
-          {customers.length > 0 ? (
-            <div className="list-toolbar">
-              <label className="list-search">
-                <Icon name="search" />
-                <input
-                  id="customer-search"
-                  type="search"
-                  aria-label="Search customers"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Search customers…"
-                  autoComplete="off"
-                />
-              </label>
-              <div className="list-filters" role="group" aria-label="Filter customers">
-                {FILTERS.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    className="list-filter"
-                    aria-pressed={filter === item.value}
-                    onClick={() => setFilter(item.value)}
-                  >
-                    {item.label}
-                    <span>{filterCount(item.value)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {loading ? <LoadingState label="Loading customer accounts" /> : null}
-          {error ? (
-            <ErrorState
-              message={error}
-              action={
-                <button
-                  className="button button-secondary"
-                  onClick={() => current && void loadCustomers(current)}
-                >
-                  Retry
-                </button>
-              }
-            />
-          ) : null}
-          {!loading && !error && customers.length === 0 ? (
-            <EmptyState
-              layout="block"
-              icon="users"
-              title="No customers yet"
-              message="Use Add customer above to set up the first one."
-            />
-          ) : null}
-          {!loading && !error && customers.length > 0 && filteredCustomers.length === 0 ? (
-            <EmptyState
-              layout="block"
-              icon="search"
-              title="No matching customers"
-              message="Try a different name or reference."
-            />
-          ) : null}
-          {!loading && !error && filteredCustomers.length > 0 ? (
-            <div className="list-table customer-table">
-              <div className="list-head" aria-hidden="true">
-                <span>Customer</span>
-                <span>Account Type</span>
-                <span>Status</span>
-                <span>Balance</span>
-              </div>
-              <ul className="list-rows" aria-label="Customer accounts">
-                {filteredCustomers.map((customer) => {
-                  const open = expanded.has(customer.customerId);
-                  const detailsId = `customer-details-${customer.customerId}`;
-                  const contacts = Object.entries(customer.contactMetadata);
-                  return (
-                    <li
-                      key={customer.customerId}
-                      className="customer-item"
-                      data-open={open || undefined}
+            {customers.length > 0 ? (
+              <div className="list-toolbar">
+                <label className="list-search">
+                  <Icon name="search" />
+                  <input
+                    id="customer-search"
+                    type="search"
+                    aria-label="Search customers"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="Search customers…"
+                    autoComplete="off"
+                  />
+                </label>
+                <div className="list-filters" role="group" aria-label="Filter customers">
+                  {FILTERS.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      className="list-filter"
+                      aria-pressed={filter === item.value}
+                      onClick={() => setFilter(item.value)}
                     >
-                      <div
-                        className="list-row customer-row"
-                        onClick={() => toggleRow(customer.customerId)}
+                      {item.label}
+                      <span>{filterCount(item.value)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {loading ? <LoadingState label="Loading customer accounts" /> : null}
+            {error ? (
+              <ErrorState
+                message={error}
+                action={
+                  <button
+                    className="button button-secondary"
+                    onClick={() => current && void loadCustomers(current)}
+                  >
+                    Retry
+                  </button>
+                }
+              />
+            ) : null}
+            {!loading && !error && customers.length === 0 ? (
+              <EmptyState
+                layout="block"
+                icon="users"
+                title="No customers yet"
+                message="Use Add customer above to set up the first one."
+              />
+            ) : null}
+            {!loading && !error && customers.length > 0 && filteredCustomers.length === 0 ? (
+              <EmptyState
+                layout="block"
+                icon="search"
+                title="No matching customers"
+                message="Try a different name or reference."
+              />
+            ) : null}
+            {!loading && !error && filteredCustomers.length > 0 ? (
+              <div className="list-table customer-table">
+                <div className="list-head" aria-hidden="true">
+                  <span>Customer</span>
+                  <span>Account Type</span>
+                  <span>Status</span>
+                  <span>Balance</span>
+                </div>
+                <ul className="list-rows" aria-label="Customer accounts">
+                  {customerPage.rows.map((customer) => {
+                    const open = expanded.has(customer.customerId);
+                    const detailsId = `customer-details-${customer.customerId}`;
+                    const contacts = Object.entries(customer.contactMetadata);
+                    return (
+                      <li
+                        key={customer.customerId}
+                        className="customer-item"
+                        data-open={open || undefined}
                       >
-                        <span className="list-name">
-                          <span className="list-avatar" aria-hidden="true">
-                            {initials(customer.displayName)}
-                          </span>
-                          <span>
-                            <strong>{customer.displayName}</strong>
-                            <small>{customer.accountReference}</small>
-                          </span>
-                        </span>
-                        <span className="list-cell" data-label="Account type">
-                          {customer.accounts.length > 0
-                            ? customer.accounts.map((account) => (
-                                <span key={account.accountId}>
-                                  {accountTypeLabel(account.accountType)}
-                                </span>
-                              ))
-                            : 'No account opened'}
-                        </span>
-                        <span className="list-cell" data-label="Status">
-                          <StatusBadge tone={customer.status === 'ACTIVE' ? 'positive' : 'neutral'}>
-                            {formatStatusLabel(customer.status)}
-                          </StatusBadge>
-                        </span>
-                        <span className="list-cell" data-label="Balance">
-                          {customer.accounts.length > 0
-                            ? customer.accounts.map((account) => (
-                                <span key={account.accountId}>{accountIndicator(account)}</span>
-                              ))
-                            : 'No account yet'}
-                        </span>
-                        <button
-                          type="button"
-                          className="customer-toggle"
-                          aria-expanded={open}
-                          aria-controls={detailsId}
-                          aria-label={`${open ? 'Hide' : 'Show'} details for ${customer.displayName}`}
+                        <div
+                          className="list-row customer-row"
+                          onClick={() => toggleRow(customer.customerId)}
                         >
-                          <Icon name="chevron-down" />
-                        </button>
-                      </div>
-                      {open ? (
-                        <div className="customer-expanded" id={detailsId}>
-                          {customer.accounts.map((account) => (
-                            <section
-                              key={account.accountId}
-                              className="customer-account"
-                              aria-label={`${accountTypeLabel(account.accountType)} account`}
+                          <span className="list-name">
+                            <span>
+                              <strong>{customer.displayName}</strong>
+                              <small>{customer.accountReference}</small>
+                            </span>
+                          </span>
+                          <span className="list-cell" data-label="Account type">
+                            {customer.accounts.length > 0
+                              ? customer.accounts.map((account) => (
+                                  <span key={account.accountId}>
+                                    {accountTypeLabel(account.accountType)}
+                                  </span>
+                                ))
+                              : 'No account opened'}
+                          </span>
+                          <span className="list-cell" data-label="Status">
+                            <StatusBadge
+                              tone={customer.status === 'ACTIVE' ? 'positive' : 'neutral'}
                             >
-                              {customer.accounts.length > 1 ? (
-                                <h3>{accountTypeLabel(account.accountType)} account</h3>
-                              ) : null}
-                              <DetailList
-                                id={`${detailsId}-${account.accountId}`}
-                                items={accountFigures(account)}
-                              />
-                              {account.ready ? null : (
-                                <p className="customer-activity-empty">
-                                  Not ready for fuel sales yet.
-                                </p>
-                              )}
-                            </section>
-                          ))}
-                          {contacts.length > 0 ? (
-                            <DetailList
-                              id={`${detailsId}-about`}
-                              items={contacts.map(([key, value]) => ({
-                                label: formatStatusLabel(key),
-                                value,
-                              }))}
-                            />
-                          ) : null}
-                          <Link
-                            className="button button-primary customer-open"
-                            href={customerHref(customer)}
-                            onClick={(event) => {
-                              // Go there explicitly, so the row's own click can never swallow it.
-                              event.preventDefault();
-                              router.push(customerHref(customer));
-                            }}
+                              {formatStatusLabel(customer.status)}
+                            </StatusBadge>
+                          </span>
+                          <span className="list-cell" data-label="Balance">
+                            {customer.accounts.length > 0
+                              ? customer.accounts.map((account) => (
+                                  <span key={account.accountId}>{accountIndicator(account)}</span>
+                                ))
+                              : 'No account yet'}
+                          </span>
+                          <button
+                            type="button"
+                            className="customer-toggle"
+                            aria-expanded={open}
+                            aria-controls={detailsId}
+                            aria-label={`${open ? 'Hide' : 'Show'} details for ${customer.displayName}`}
                           >
-                            Open full account
-                            <Icon name="arrow-right" />
-                          </Link>
+                            <Icon name="chevron-down" />
+                          </button>
                         </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ) : null}
-        </Card>
+                        {open ? (
+                          <div className="customer-expanded" id={detailsId}>
+                            {customer.accounts.map((account) => (
+                              <section
+                                key={account.accountId}
+                                className="customer-account"
+                                aria-label={`${accountTypeLabel(account.accountType)} account`}
+                              >
+                                {customer.accounts.length > 1 ? (
+                                  <h3>{accountTypeLabel(account.accountType)} account</h3>
+                                ) : null}
+                                <DetailList
+                                  id={`${detailsId}-${account.accountId}`}
+                                  items={accountFigures(account)}
+                                />
+                                {account.ready ? null : (
+                                  <p className="customer-activity-empty">
+                                    Not ready for fuel sales yet.
+                                  </p>
+                                )}
+                              </section>
+                            ))}
+                            {contacts.length > 0 ? (
+                              <DetailList
+                                id={`${detailsId}-about`}
+                                items={contacts.map(([key, value]) => ({
+                                  label: formatStatusLabel(key),
+                                  value,
+                                }))}
+                              />
+                            ) : null}
+                            <Link
+                              className="button button-primary customer-open"
+                              href={customerHref(customer)}
+                              onClick={(event) => {
+                                // Go there explicitly, so the row's own click can never swallow it.
+                                event.preventDefault();
+                                router.push(customerHref(customer));
+                              }}
+                            >
+                              Open full account
+                              <Icon name="arrow-right" />
+                            </Link>
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+                <Pagination slice={customerPage} label="Customers pages" noun="customers" />
+              </div>
+            ) : null}
+          </Card>
+          {links}
+        </div>
       ) : null}
     </div>
   );

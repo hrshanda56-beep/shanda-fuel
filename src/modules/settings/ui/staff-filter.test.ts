@@ -53,7 +53,9 @@ describe('staff display scope', () => {
       ),
     ).toBe(true);
     expect(matchesStaffScope(invitation, 'a', 'FINANCE', options)).toBe(true);
-    expect(matchesStaffScope(invitation, 'unknown', undefined, options)).toBe(false);
+  });
+  it('shows invitations at every station so they can always be revoked', () => {
+    expect(matchesStaffScope(invitation, 'unknown', undefined, options)).toBe(true);
     expect(
       matchesStaffScope(
         { ...invitation, scopeType: 'STATION', stationIds: ['a'] },
@@ -61,6 +63,7 @@ describe('staff display scope', () => {
         undefined,
         options,
       ),
-    ).toBe(false);
+    ).toBe(true);
+    expect(matchesStaffScope(invitation, 'a', 'OWNER', options)).toBe(false);
   });
 });

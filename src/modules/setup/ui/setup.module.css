@@ -1,61 +1,16 @@
+/* Setup panels (readiness, station setup, payments) sit on the shared section cards. This file only
+   holds what is particular to them: forms, the setup steps and the readiness notices. */
 .stack {
   display: grid;
   gap: var(--space-4);
   min-width: 0;
 }
 
-.card {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-  padding-top: var(--space-5);
-  border-top: var(--border-width) solid var(--border-subtle);
-}
-
-.cardHeader {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-}
-
-.cardTitle {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  overflow-wrap: anywhere;
-}
-
 .note {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-}
-
-.list {
-  display: grid;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-1) var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--bg-subtle);
-}
-
-.rowMain {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
+  line-height: var(--line-height-snug);
 }
 
 .rowTitle {
@@ -68,50 +23,15 @@
 .rowDetail {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
   overflow-wrap: anywhere;
 }
 
+/* A form: plain labelled fields, one under the other. */
 .form {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-4);
   max-width: 32rem;
-  margin-top: var(--space-2);
-}
-
-/* Form fields in settings: the label sits on the outline, hints and errors below. */
-.form :global(.field) {
-  position: relative;
-}
-
-.form :global(.field > label) {
-  position: absolute;
-  top: 0;
-  left: var(--space-3);
-  z-index: 1;
-  padding: 0 var(--space-2);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  line-height: 1;
-  transform: translateY(-50%);
-}
-
-.form :global(.field > div) {
-  order: 1;
-}
-
-.form :global(.field .field-hint) {
-  order: 2;
-}
-
-.form :global(.field .field-error) {
-  order: 3;
-}
-
-.form :global(.field input),
-.form :global(.field select) {
-  min-height: 3rem;
-  border-radius: var(--radius-xl);
 }
 
 .formActions {
@@ -125,6 +45,66 @@
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
+}
+
+.messageError {
+  margin: 0;
+  color: var(--tone-critical-text);
+  font-size: var(--font-size-sm);
+}
+
+/* Optional fields stay out of the way until they are wanted. */
+.more {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.more > summary {
+  width: fit-content;
+  color: var(--accent-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.more[open] > summary {
+  margin-bottom: var(--space-4);
+}
+
+/* What still blocks a station from going live, and the notice about blocked transactions. */
+.todo {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.todoList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.todoItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-2) 0;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.todoItem:first-child {
+  border-top: 0;
+}
+
+.todoItem > div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 /* Guided station setup */
@@ -175,8 +155,12 @@
 .step {
   min-width: 0;
   border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
+}
+
+.step:has(> .stepHeader[aria-expanded='true']) {
+  border-color: var(--border-default);
 }
 
 .stepHeader {
@@ -196,13 +180,17 @@
   cursor: pointer;
 }
 
+.stepHeader:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
 .stepHeader:disabled {
   cursor: default;
   opacity: 0.65;
 }
 
 .stepHeader:focus-visible {
-  outline: 2px solid var(--focus-ring, currentColor);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -214,7 +202,13 @@
   border-radius: 50%;
   background: var(--bg-subtle);
   color: var(--text-secondary);
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
+}
+
+.stepHeader[data-status='done'] .stepNumber {
+  background: var(--accent-muted);
+  color: var(--accent-text);
 }
 
 .stepText {
@@ -226,7 +220,7 @@
 .stepBody {
   display: grid;
   gap: var(--space-4);
-  padding: 0 var(--space-4) var(--space-5);
+  padding: var(--space-1) var(--space-4) var(--space-5) calc(var(--space-4) + 2rem + var(--space-4));
 }
 
 .itemList {
@@ -257,21 +251,7 @@
   border: 0;
 }
 
-.messageError {
-  margin: 0;
-  color: var(--text-critical, var(--text-primary));
-  font-size: var(--font-size-sm);
-}
-
-@media (max-width: 30rem) {
-  .card {
-    padding: var(--space-4);
-  }
-
-  .row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
+@media (max-width: 40rem) {
   .stepHeader {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -279,5 +259,13 @@
   .stepHeader > :last-child {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .stepBody {
+    padding-left: var(--space-4);
+  }
+
+  .todoItem {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

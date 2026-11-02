@@ -10,6 +10,10 @@ import {
 } from '@/design-system/navigation-server';
 import { chartBuckets } from './_overview/dashboard-figures';
 import { businessToday } from '@/modules/reporting/period';
+import { requireAuthenticatedActor } from '@/modules/identity';
+import type { AvailableContext } from '@/modules/context/contracts';
+import { buildActionCenter } from '@/modules/approvals/action-center-model';
+import { loadActionCenterFacts } from '@/modules/approvals/action-center';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -17,7 +21,11 @@ import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-s
 import { getServerShellAccess } from '@/design-system/navigation-server';
 
 import { TodayOverview } from './_overview/today-overview';
-import { dashboardScopeFromCurrentContext } from './_overview/today-overview-model';
+import { resolveDashboardPeriod, type ResolvedDashboardPeriod } from './_overview/dashboard-period';
+import {
+  dashboardScopeFromCurrentContext,
+  type AttentionRow,
+} from './_overview/today-overview-model';
 
 export const metadata = {
   title: { absolute: 'Dashboard · Shanda Fuel' },
@@ -32,9 +40,15 @@ export default async function OverviewPage({
     legalEntityId?: string;
     stationId?: string;
     allStations?: string;
+    period?: string;
+    fromDate?: string;
+    toDate?: string;
   }>;
 }) {
-  const { tenantId, legalEntityId, stationId, allStations } = await searchParams;
+  const { tenantId, legalEntityId, stationId, allStations, period, fromDate, toDate } =
+    await searchParams;
+  // One period for every period figure on the page; Today unless the person chose another (B1).
+  const dashboardPeriod = resolveDashboardPeriod({ period, fromDate, toDate }, businessToday());
 
   // Someone whose permissions are only shift and meter work lands on My Shift
   // instead of an empty management dashboard. Decided from resolved permissions.
@@ -101,16 +115,15 @@ export default async function OverviewPage({
       ? dashboardScopeFromCurrentContext(access.current)
       : undefined;
 
-  // Quick actions are for people who run shifts. Owners, administrators and finance see
-  // Suppliers in their navigation; supervisors do not, so this follows resolved permissions.
-  const managesBusiness =
-    access.status === 'ready' &&
-    Boolean(access.projection?.some((entry) => entry.key === 'suppliers' && entry.visible));
-
   return (
     <AppShell searchPlacement="header" shellAccess={access}>
       <Suspense
-        key={JSON.stringify(validatedContext ?? [tenantId, stationId])}
+        key={JSON.stringify([
+          validatedContext ?? [tenantId, stationId],
+          dashboardPeriod.period,
+          dashboardPeriod.fromDate,
+          dashboardPeriod.toDate,
+        ])}
         fallback={<p role="status">Loading dashboard…</p>}
       >
         <DashboardContent
@@ -123,7 +136,8 @@ export default async function OverviewPage({
           legalEntityId={validatedContext?.legalEntityId ?? legalEntityId}
           stationId={validatedContext ? validatedContext.stationId : stationId}
           initialContext={initialContext}
-          showQuickActions={!managesBusiness}
+          available={access.status === 'ready' ? access.resolution?.available : undefined}
+          period={dashboardPeriod}
         />
       </Suspense>
     </AppShell>
@@ -136,14 +150,16 @@ async function DashboardContent({
   legalEntityId,
   stationId,
   initialContext,
-  showQuickActions,
+  available,
+  period,
 }: {
   request: Request | null;
   tenantId?: string;
   legalEntityId?: string;
   stationId?: string;
   initialContext?: { tenantId: string; legalEntityId?: string; stationId?: string };
-  showQuickActions: boolean;
+  available?: AvailableContext;
+  period: ResolvedDashboardPeriod;
 }) {
   const scope = tenantId ? { tenantId, legalEntityId, stationId } : initialContext;
   if (!request || !scope?.tenantId)
@@ -153,23 +169,119 @@ async function DashboardContent({
         legalEntityId={legalEntityId}
         stationId={stationId}
         initialContext={initialContext}
-        showQuickActions={showQuickActions}
       />
     );
-  const window = chartBuckets('30D', businessToday());
+  // The chart keeps its own 30-day window; everything else follows the chosen period.
+  const chartWindow = chartBuckets('30D', businessToday());
   const data = await getDashboardFromRequest(request, {
     ...scope,
-    fromDate: window.fromDate,
-    toDate: window.toDate,
+    fromDate: period.fromDate,
+    toDate: period.toDate,
+    chartFromDate: chartWindow.fromDate,
+    chartToDate: chartWindow.toDate,
   });
+  const work = await loadWorkItems(request, scope, available);
   return (
     <TodayOverview
-      key={`${scope.tenantId}|${scope.stationId ?? ''}`}
+      key={`${scope.tenantId}|${scope.stationId ?? ''}|${period.period}|${period.fromDate}|${period.toDate}`}
+      workItems={work.items}
+      workMore={work.more}
+      workUnavailable={work.unavailable}
       tenantId={scope.tenantId}
       legalEntityId={scope.legalEntityId}
       stationId={scope.stationId}
-      initialData={{ ...data, key: `${scope.tenantId}|${scope.stationId ?? ''}|30D` }}
-      showQuickActions={showQuickActions}
+      initialData={{
+        ...data,
+        key: `${scope.tenantId}|${scope.stationId ?? ''}|30D`,
+        period,
+        asOf: new Date().toISOString(),
+      }}
     />
   );
+}
+
+/**
+ * Approvals, banking and payables waiting for a person, from the same list the Finance page
+ * shows, so "Needs attention" never says all clear while a report waits for approval. With no
+ * station chosen it looks at every live station of the company and names the station.
+ */
+async function loadWorkItems(
+  request: Request,
+  scope: { tenantId: string; legalEntityId?: string; stationId?: string },
+  available?: AvailableContext,
+): Promise<{ items: AttentionRow[]; more: number; unavailable: boolean }> {
+  const entities =
+    available?.organisations
+      .find((organisation) => organisation.id === scope.tenantId)
+      ?.legalEntities.filter(
+        (entity) => !scope.legalEntityId || entity.id === scope.legalEntityId,
+      ) ?? [];
+  const targets = scope.stationId
+    ? [{ legalEntityId: scope.legalEntityId, stationId: scope.stationId, name: null }]
+    : entities.flatMap((entity) =>
+        entity.stations
+          .filter((station) => station.status !== 'ONBOARDING')
+          .map((station) => ({
+            legalEntityId: entity.id,
+            stationId: station.id,
+            name: station.name as string | null,
+          })),
+      );
+  if (targets.length === 0) return { items: [], more: 0, unavailable: false };
+  try {
+    const actor = await requireAuthenticatedActor(request);
+    const results = await Promise.all(
+      targets.map(async (target) => {
+        const center = buildActionCenter(
+          await loadActionCenterFacts(
+            request,
+            {
+              organisationId: scope.tenantId,
+              ...(target.legalEntityId ? { legalEntityId: target.legalEntityId } : {}),
+              stationId: target.stationId,
+              allStations: false,
+            },
+            actor,
+          ),
+        );
+        return {
+          unavailable: center.unavailable.length > 0,
+          items: center.items
+            .filter((item) => item.area !== 'Operations')
+            .map((item) => {
+              // What a company owes or is owed is the same whichever station is asked.
+              const shared = item.area === 'Payables' || item.area === 'Receivables';
+              // Shorter wording for the dashboard; other screens keep the full sentence.
+              const shortTitle = item.title
+                .replace(
+                  / falls due to suppliers in the next (\d+) days/,
+                  ' due to suppliers in $1 days',
+                )
+                .replace(' falls due to suppliers today', ' due to suppliers today')
+                .replace(' collected but not yet banked', ' not yet banked')
+                .replace(/ is waiting for approval$/, ' needs approval');
+              return {
+                id: shared ? `work-${item.id}` : `work-${target.stationId}-${item.id}`,
+                title: target.name && !shared ? `${target.name}: ${shortTitle}` : shortTitle,
+                detail: item.detail,
+                href: item.href,
+                needsAction: item.tone === 'attention',
+              };
+            }),
+        };
+      }),
+    );
+    // Each station's list is already most-urgent-first; merge them so one station's
+    // information-only items cannot push another station's approval out of view.
+    const all = [
+      ...new Map(results.flatMap((result) => result.items).map((item) => [item.id, item])).values(),
+    ].sort((a, b) => Number(b.needsAction) - Number(a.needsAction));
+    return {
+      items: all.slice(0, 6).map(({ needsAction: _needsAction, ...row }) => row),
+      more: Math.max(0, all.length - 6),
+      unavailable: results.some((result) => result.unavailable),
+    };
+  } catch {
+    return { items: [], more: 0, unavailable: true };
+  }
 }

@@ -1,0 +1,126 @@
+/* Activity log: a quiet list of what people changed. One line says what happened, the line under it
+   says where, who and when. The before-and-after values open underneath. */
+.filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.filter select {
+  min-height: 2.5rem;
+}
+
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.mark {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.mark[data-kind='created'] {
+  background: var(--accent-muted);
+  color: var(--accent-text);
+}
+
+.body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.title {
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.subject {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-regular);
+}
+
+.meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.toggle {
+  align-self: center;
+  color: var(--accent-text);
+}
+
+.details {
+  grid-column: 2 / -1;
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.details > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  gap: var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+.details dt {
+  color: var(--text-secondary);
+}
+
+.details dd {
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.before {
+  color: var(--text-secondary);
+}
+
+@media (max-width: 40rem) {
+  .item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .toggle {
+    grid-column: 2;
+    justify-self: start;
+    align-self: start;
+  }
+
+  .details {
+    grid-column: 1 / -1;
+  }
+
+  .details > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+}

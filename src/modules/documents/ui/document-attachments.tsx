@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
+import { useToast } from '@/design-system/feedback-provider';
 import { Select } from '@/design-system/forms';
 import { Button, ErrorState, Field, LoadingState } from '@/design-system/primitives';
 
@@ -48,6 +49,7 @@ export function DocumentAttachments({
   const [canUpload, setCanUpload] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
   const [kind, setKind] = useState<DocumentKind>(defaultKind);
   const [fileError, setFileError] = useState<string | null>(null);
 
@@ -109,6 +111,7 @@ export function DocumentAttachments({
         throw new Error(result.message ?? 'The file could not be added. Nothing was saved.');
       }
       form.reset();
+      toast.success('File added.');
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The file could not be added.');
@@ -135,11 +138,15 @@ export function DocumentAttachments({
   }
 
   return (
-    <section aria-label={title} className="stack">
-      <h4>{title}</h4>
+    <section aria-label={title} className="doc-attach">
+      <div className="doc-attach-head">
+        <h4>{title}</h4>
+        {items && items.length === 0 ? (
+          <span className="field-hint">No documents added yet.</span>
+        ) : null}
+      </div>
       {error ? <ErrorState message={error} /> : null}
       {items === null && !error ? <LoadingState label="Loading documents" /> : null}
-      {items && items.length === 0 ? <p className="field-hint">No documents added yet.</p> : null}
       {items && items.length > 0 ? (
         <ul className="stack" aria-label={`${title} added`}>
           {items.map((item) => (
@@ -156,7 +163,7 @@ export function DocumentAttachments({
         </ul>
       ) : null}
       {canUpload ? (
-        <form onSubmit={upload} className="stack">
+        <form onSubmit={upload} className="doc-attach-form">
           <Field id={`doc-kind-${subjectId}`} label="What is it?">
             <Select
               id={`doc-kind-${subjectId}`}
@@ -165,23 +172,23 @@ export function DocumentAttachments({
               options={DOCUMENT_KINDS.map((entry) => ({ value: entry.value, label: entry.label }))}
             />
           </Field>
-          <Field
-            id={`doc-file-${subjectId}`}
-            label="File"
-            hint="A photo or PDF, up to 10 MB."
-            error={fileError ?? undefined}
-          >
+          <Field id={`doc-file-${subjectId}`} label="File">
             <input
               id={`doc-file-${subjectId}`}
               name="file"
               type="file"
               accept={ACCEPT}
-              style={{ width: '100%', minWidth: 0 }}
+              className="doc-attach-file"
             />
           </Field>
-          <Button type="submit" variant="secondary" loading={busy}>
+          <Button type="submit" variant="secondary" loading={busy} className="doc-attach-add">
             Add file
           </Button>
+          {fileError ? (
+            <p className="field-error doc-attach-error" role="alert">
+              {fileError}
+            </p>
+          ) : null}
         </form>
       ) : null}
     </section>

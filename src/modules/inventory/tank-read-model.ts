@@ -11,6 +11,7 @@ export type TankRow = {
   varianceRedLitres?: string | null;
   expectedLitres: string;
   physicalLitres: string | null;
+  physicalDate?: string | null;
   varianceLitres: string | null;
 };
 

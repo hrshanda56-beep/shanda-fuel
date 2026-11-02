@@ -24,7 +24,11 @@ export function WorkplacePicker({
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string>();
   const [failed, setFailed] = useState(false);
-  const [secondsRemaining, setSecondsRemaining] = useState(DEFAULT_STATION_COUNTDOWN_SECONDS);
+  // With only one place to work there is nothing to choose, so do not make anyone wait for it.
+  const onlyChoice = options.length === 1 && allStationsOptions.length === 0;
+  const [secondsRemaining, setSecondsRemaining] = useState(
+    onlyChoice ? 0 : DEFAULT_STATION_COUNTDOWN_SECONDS,
+  );
   const pendingRef = useRef(false);
   const selectionStartedRef = useRef(false);
 

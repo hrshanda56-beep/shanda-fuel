@@ -4,11 +4,18 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { Select } from '@/design-system/forms';
 import { Icon } from '@/design-system/icons';
-import { Button, EmptyState, ErrorState, Field, LoadingState } from '@/design-system/primitives';
+import { Pagination, pageOf, usePageState, type PageSlice } from '@/design-system/pagination';
+import { Button, EmptyState, ErrorState, LoadingState } from '@/design-system/primitives';
+import { SectionCard } from '@/design-system/section-card';
 
 import type { AuditItem } from '../audit-view';
+import styles from './audit-panel.module.css';
 
 type Page = { items: AuditItem[]; next: string | null };
+
+/** Changes shown on one page of the log. The server is asked for two pages at a time. */
+const AUDIT_PAGE_SIZE = 20;
+const BATCH_SIZE = AUDIT_PAGE_SIZE * 2;
 
 const AREAS = [
   { value: '', label: 'Everything' },
@@ -23,23 +30,34 @@ const AREAS = [
   { value: 'REPORT', label: 'Reports' },
 ];
 
-/** "Cash: submit cash handover" becomes the area ("Cash") and what happened ("submit cash handover"). */
-function splitAction(action: string): { label: string; detail: string } {
+/**
+ * "Cash: submit cash handover" becomes the area ("Cash") and what happened ("Submit cash
+ * handover"). An action with no area is the whole sentence.
+ */
+function splitAction(action: string): { area: string; what: string } {
   const colon = action.indexOf(': ');
-  return colon < 0
-    ? { label: action, detail: '' }
-    : { label: `${action.slice(0, colon)}:`, detail: action.slice(colon + 2) };
+  const area = colon < 0 ? '' : action.slice(0, colon);
+  const what = colon < 0 ? action : action.slice(colon + 2);
+  return { area, what: what.charAt(0).toUpperCase() + what.slice(1) };
 }
 
+/**
+ * The station's own clock when one is chosen. With every station in view there is no single clock,
+ * so the time is shown in UTC and says so rather than guessing a zone.
+ */
 function when(iso: string, timeZone: string | undefined): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  if (!timeZone) return date.toISOString();
-  try {
-    return date.toLocaleString('en-GB', { timeZone, dateStyle: 'medium', timeStyle: 'short' });
-  } catch {
-    return date.toISOString();
+  const format = (zone: string) =>
+    date.toLocaleString('en-GB', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' });
+  if (timeZone) {
+    try {
+      return format(timeZone);
+    } catch {
+      // An unreadable zone falls through to the explicit UTC time below.
+    }
   }
+  return `${format('UTC')} UTC`;
 }
 
 /**
@@ -62,7 +80,7 @@ export function AuditPanel({
       setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({ tenantId, limit: '25' });
+        const params = new URLSearchParams({ tenantId, limit: String(BATCH_SIZE) });
         if (stationId) params.set('stationId', stationId);
         if (area) params.set('area', area);
         if (after) params.set('after', after);
@@ -96,17 +114,31 @@ export function AuditPanel({
     void Promise.resolve().then(() => load());
   }, [load]);
 
+  // Pages are cut from what is loaded; asking for the page after the last one loaded fetches the
+  // next batch first, so "Next" works for as long as the log has older changes.
+  const pageState = usePageState(area);
+  const loaded = pageOf(page?.items ?? [], pageState, AUDIT_PAGE_SIZE);
+  const pager: PageSlice<AuditItem> = {
+    ...loaded,
+    more: Boolean(page?.next),
+    setPage: (next) => {
+      if (next > loaded.pages && page?.next) {
+        if (loading) return;
+        void load(page.next).then(() => pageState.setRequested(next));
+        return;
+      }
+      pageState.setRequested(next);
+    },
+  };
+
   return (
-    <section aria-labelledby="audit-title" className="pg">
-      <h3 id="audit-title" className="sr-only">
-        Activity log
-      </h3>
-      <p className="pg-intro">
-        Every change people make is recorded here, with who made it and when. This list can only be
-        read, never changed.
-      </p>
-      <div className="pg-filter">
-        <Field id="audit-area" label="Show">
+    <SectionCard
+      id="audit"
+      title="Activity log"
+      note="Every change people make is recorded here, with who made it and when. This list can only be read, never changed."
+      action={
+        <div className={styles.filter}>
+          <label htmlFor="audit-area">Show</label>
           <Select
             id="audit-area"
             value={area}
@@ -117,9 +149,9 @@ export function AuditPanel({
             }}
             options={AREAS}
           />
-        </Field>
-      </div>
-
+        </div>
+      }
+    >
       {error ? (
         <ErrorState
           message={error}
@@ -135,88 +167,75 @@ export function AuditPanel({
       ) : null}
 
       {page && page.items.length > 0 ? (
-        <ol className="pg-timeline" aria-label="Recent changes">
-          {page.items.map((item) => {
+        <ol className={styles.list} aria-label="Recent changes">
+          {loaded.rows.map((item) => {
             const expanded = open === item.id;
-            const { label, detail } = splitAction(item.action);
+            const { area: areaName, what } = splitAction(item.action);
             return (
-              <li key={item.id} className="pg-timeline-item">
+              <li key={item.id} className={styles.item}>
                 <span
-                  className="pg-timeline-mark"
+                  className={styles.mark}
                   data-kind={item.created ? 'created' : 'changed'}
                   aria-hidden="true"
                 >
                   <Icon name={item.created ? 'check' : 'tag'} />
                 </span>
-                <div className="pg-timeline-body">
-                  <p className="pg-timeline-line">
-                    <span>
-                      <span className="pg-timeline-area">{label}</span>
-                      {detail ? (
-                        <>
-                          {' '}
-                          <strong>{detail}</strong>
-                        </>
-                      ) : null}
-                    </span>
-                    {item.subject ? <strong>{item.subject}</strong> : null}
-                    <span className="pg-timeline-meta">
-                      by {item.who}
-                      <span className="pg-timeline-dot" aria-hidden="true">
-                        •
-                      </span>
-                      {when(item.occurredAt, timezone)}
-                    </span>
+                <div className={styles.body}>
+                  <span className={styles.title}>
+                    {what}
+                    {item.subject ? (
+                      <span className={styles.subject}> · {item.subject}</span>
+                    ) : null}
+                  </span>
+                  <p className={styles.meta}>
+                    {[areaName, `by ${item.who}`, when(item.occurredAt, timezone)]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </p>
-                  {item.reason ? <p className="pg-timeline-meta">Reason: {item.reason}</p> : null}
-                  {item.changes.length > 0 ? (
-                    <>
-                      <Button
-                        variant="quiet"
-                        size="sm"
-                        aria-expanded={expanded}
-                        onClick={() => setOpen(expanded ? null : item.id)}
-                      >
-                        {expanded
-                          ? 'Hide the details'
-                          : item.created
-                            ? 'What was recorded'
-                            : 'What changed'}
-                      </Button>
-                      {expanded ? (
-                        <dl className="pg-details">
-                          {item.changes.map((change) => (
-                            <div key={change.field}>
-                              <dt>{change.field}</dt>
-                              <dd>
-                                {item.created ? (
-                                  (change.after ?? 'Empty')
-                                ) : (
-                                  <>
-                                    <span>{change.before ?? 'Empty'}</span>
-                                    {' → '}
-                                    <strong>{change.after ?? 'Empty'}</strong>
-                                  </>
-                                )}
-                              </dd>
-                            </div>
-                          ))}
-                        </dl>
-                      ) : null}
-                    </>
-                  ) : null}
+                  {item.reason ? <p className={styles.meta}>Reason: {item.reason}</p> : null}
                 </div>
+                {item.changes.length > 0 ? (
+                  <Button
+                    className={styles.toggle}
+                    variant="quiet"
+                    size="sm"
+                    aria-expanded={expanded}
+                    onClick={() => setOpen(expanded ? null : item.id)}
+                  >
+                    {expanded
+                      ? 'Hide the details'
+                      : item.created
+                        ? 'What was recorded'
+                        : 'What changed'}
+                  </Button>
+                ) : null}
+                {expanded ? (
+                  <dl className={styles.details}>
+                    {item.changes.map((change) => (
+                      <div key={change.field}>
+                        <dt>{change.field}</dt>
+                        <dd>
+                          {item.created ? (
+                            (change.after ?? 'Empty')
+                          ) : (
+                            <>
+                              <span className={styles.before}>{change.before ?? 'Empty'}</span>
+                              {' → '}
+                              <strong>{change.after ?? 'Empty'}</strong>
+                            </>
+                          )}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : null}
               </li>
             );
           })}
         </ol>
       ) : null}
 
-      {page?.next ? (
-        <Button variant="secondary" disabled={loading} onClick={() => void load(page.next!)}>
-          Show older changes
-        </Button>
-      ) : null}
-    </section>
+      <Pagination slice={pager} label="Activity log pages" noun="changes" />
+    </SectionCard>
   );
 }

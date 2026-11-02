@@ -23,7 +23,7 @@ test.describe('management reporting surface', () => {
     const pageHeader = page.getByRole('region', { name: 'Page header and work context' });
     await expect(pageHeader.getByRole('heading', { name: 'Reports', level: 1 })).toBeVisible();
     await expect(
-      pageHeader.getByText('Operational Financial Position', { exact: true }),
+      pageHeader.getByText('Open, share or download a report.', { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole('heading', { name: 'Choose an organisation to view reports' }),
@@ -113,9 +113,8 @@ test.describe('management reporting surface', () => {
       await page.getByLabel('Period', { exact: true }).first().click();
       await page.getByRole('option', { name: 'Last month' }).click();
       await expect(page.getByLabel('Period', { exact: true }).first()).toHaveText('Last month');
-      await page.getByRole('link', { name: 'Cash Evidence to Bank' }).click();
-      await expect(page).toHaveURL(/\/reports\/cash\?.*period=3m/);
-      await expect(page.getByRole('region', { name: 'Cash Evidence to Bank' })).toBeVisible();
+      await page.getByRole('link', { name: 'Cash Movement' }).click();
+      await expect(page).toHaveURL(/\/reports\/cash-movement\?.*period=3m/);
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });
@@ -127,7 +126,7 @@ test.describe('management reporting surface', () => {
       await signIn(context);
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await gotoAndWaitForHydration(page, `/reports?tenantId=${ids.tenant}&period=last-month`);
-      const menuButton = page.getByRole('button', { name: 'More actions for Sales & Payments' });
+      const menuButton = page.getByRole('button', { name: 'More actions for Income Statement' });
 
       // Keyboard: opens with ArrowDown, items move with arrows, Escape returns focus.
       await menuButton.focus();
@@ -154,12 +153,12 @@ test.describe('management reporting surface', () => {
       await periodDialog.getByRole('button', { name: 'Create link' }).click();
       await expect(page.getByText(/Private link copied/)).toBeVisible();
       const link = await page.evaluate(() => navigator.clipboard.readText());
-      expect(link).toContain(`/reports/sales?tenantId=${ids.tenant}&period=last-month`);
+      expect(link).toContain(`/reports/profit-loss?tenantId=${ids.tenant}&period=last-month`);
       expect(link).not.toMatch(/token|secret|session|signature/i);
 
       // Recent activity lists the share.
       const rail = page.getByRole('complementary', { name: 'Browse reports' });
-      await expect(rail.getByText('Sales & Payments link shared')).toBeVisible();
+      await expect(rail.getByText('Income Statement link shared')).toBeVisible();
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });

@@ -315,10 +315,14 @@ export async function getAccountControlsPageDataFromRequest(
     );
   const approvers = await withTenantTransaction(context.authority.transaction, (transaction) =>
     transaction.execute<{ membership_id: string; name: string }>(sql`
-      select m.id as membership_id, coalesce(nullif(u.name, ''), u.email) as name
-      from app.memberships m
-      join app.users u on u.id = m.identity_id
-      where m.tenant_id = ${context.tenantId} and m.status = 'ACTIVE'
+      select m.id as membership_id, coalesce(m.name, 'Unknown') as name
+      from app.member_directory(${context.tenantId}::uuid) m
+      where m.status = 'ACTIVE'
+        and exists (
+          select 1 from app.membership_role_assignments r
+          where r.tenant_id = ${context.tenantId} and r.membership_id = m.id
+            and r.role_code in ('OWNER', 'ADMINISTRATOR')
+        )
       order by 2, 1
     `),
   );

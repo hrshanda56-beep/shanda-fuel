@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
-import { formatBusinessDate } from '../../../design-system/formatters';
+import { formatBusinessDate, formatLitres } from '../../../design-system/formatters';
 import {
   Button,
   Card,
@@ -15,6 +15,7 @@ import {
 import { formatTileLitres } from '../../reporting/format';
 import { classifyStockVariance } from '../../approvals/operations-alerts';
 import { TankDrum } from './tank-drum';
+import { placeholderTankCount } from './tank-detail-model';
 import { fuelKind, tankLabel, tankLevel, tanksForStation } from './tank-overview-model';
 
 import type { InventoryReport } from '../tank-read-model';
@@ -69,11 +70,19 @@ export function TankOverview({
   stationId,
   contextHref = '',
   report,
+  canAddTank = false,
+  onRefresh,
+  refreshing = false,
 }: {
   tenantId: string;
   stationId: string;
   contextHref?: string;
   report?: InventoryReport;
+  /** Only people who may manage tanks are offered the "Add a tank" card. */
+  canAddTank?: boolean;
+  /** When given, a Refresh button sits at the top right of the card. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const contextQuery = contextHref.split('?')[1];
   const key = `${tenantId}|${stationId}`;
@@ -104,12 +113,17 @@ export function TankOverview({
   return (
     <Card as="section" className="panel tank-overview" aria-labelledby="tank-overview-title">
       <div className="panel-heading">
-        <div>
+        <div className="tank-overview-title">
           <h2 id="tank-overview-title">Tanks</h2>
           {state.status === 'ready' ? (
             <p className="tank-asof">{formatBusinessDate(state.report.filters.toDate)}</p>
           ) : null}
         </div>
+        {onRefresh ? (
+          <Button variant="secondary" loading={refreshing} onClick={onRefresh}>
+            Refresh
+          </Button>
+        ) : null}
       </div>
 
       {state.status === 'loading' ? <Skeleton lines={4} label="Loading tanks" /> : null}
@@ -168,7 +182,7 @@ export function TankOverview({
                       />
                     </span>
                     <span className="tank-figure">
-                      <TankDrum level={level} />
+                      <TankDrum level={level} tight />
                       <span className="tank-percent">
                         {level.percent === null ? (
                           '—'
@@ -201,13 +215,36 @@ export function TankOverview({
                           Estimated
                         </span>
                       ) : (
-                        <StatusBadge tone="informational">Last dip</StatusBadge>
+                        <span
+                          className="tank-card-note"
+                          title="The drawing shows the last dip reading; book stock is worked out from deliveries and sales"
+                        >
+                          {tank.physicalDate
+                            ? `Dip ${formatBusinessDate(tank.physicalDate)}`
+                            : 'Last dip'}
+                          {' · Books '}
+                          {compact(tank.expectedLitres)}
+                        </span>
                       )}
                     </span>
                   </Link>
                 </li>
               );
             })}
+            {Array.from(
+              { length: canAddTank ? placeholderTankCount(tanks.length) : 0 },
+              (_, index) => (
+                <li key={`ghost-${index}`}>
+                  <Link
+                    href={`/settings?tab=setup${contextQuery ? `&${contextQuery}` : ''}`}
+                    className="tank-card-ghost"
+                  >
+                    <strong>Add a tank</strong>
+                    <span>Set up another tank for this station</span>
+                  </Link>
+                </li>
+              ),
+            )}
           </ul>
         </>
       ) : null}
@@ -223,7 +260,14 @@ function StockSignalBadge({
 }: Readonly<{ variance: string | null; tolerance: string | null; red: string | null }>) {
   const signal = classifyStockVariance(variance, tolerance, red);
   if (signal === 'unjudged') {
-    return <StatusBadge tone="neutral">Not checked</StatusBadge>;
+    // No allowed difference is set, so we cannot judge it, but a real gap should still be seen.
+    if (variance === null || Number(variance) === 0) return null;
+    const below = variance.startsWith('-');
+    return (
+      <StatusBadge tone="neutral">
+        {formatLitres(below ? variance.slice(1) : variance)} {below ? 'under' : 'over'} books
+      </StatusBadge>
+    );
   }
   if (signal === 'ok') return <StatusBadge tone="positive">Matches books</StatusBadge>;
   if (signal === 'watch') return <StatusBadge tone="warning">Small difference</StatusBadge>;

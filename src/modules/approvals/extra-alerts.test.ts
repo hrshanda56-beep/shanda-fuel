@@ -42,7 +42,7 @@ describe('extra alerts', () => {
     });
     expect(alerts).toHaveLength(1);
     expect(alerts[0]!.title).toContain('150.3');
-    expect(alerts[0]!.detail).toContain('2026-10-15');
+    expect(alerts[0]!.detail).toContain('15 Oct 2026');
   });
 
   it('flags expenses at or above the threshold only', () => {
@@ -227,15 +227,15 @@ describe('extra alerts', () => {
   it('reminds the shift to take opening and closing dips, once per shift and kind', () => {
     const alerts = run({
       dipReminders: [
-        { shiftId: 'sh1', kind: 'OPENING', tankCodes: ['T1'] },
-        { shiftId: 'sh1', kind: 'CLOSING', tankCodes: ['T1', 'T2'] },
+        { shiftId: 'sh1', businessDate: '2026-10-29', kind: 'OPENING', tankCodes: ['T1'] },
+        { shiftId: 'sh1', businessDate: '2026-10-29', kind: 'CLOSING', tankCodes: ['T1', 'T2'] },
       ],
     });
     expect(alerts.map((a) => a.id)).toEqual([
       'dip-reminder-opening-sh1',
       'dip-reminder-closing-sh1',
     ]);
-    expect(alerts[0]!.title).toContain('opening dip reading on T1');
+    expect(alerts[0]!.title).toContain('opening dip reading on T1 for 29 Oct 2026');
     expect(alerts[1]!.title).toContain('closing dip reading on T1, T2');
     expect(run({ dipReminders: null })).toEqual([]);
   });

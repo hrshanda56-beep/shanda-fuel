@@ -55,6 +55,7 @@ export async function AuthorizedAppShell({
     <WorkContextProvider resolution={access.resolution}>
       <AppShell
         {...props}
+        userName={props.userName ?? access.accountName}
         authProvider={'CLERK'}
         navigationContext={
           access.current

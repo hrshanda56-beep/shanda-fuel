@@ -1,18 +1,19 @@
 'use client';
 import { useContextFetch } from '@/modules/context/client-context';
-import { NextStepCard } from '@/modules/forecourt/ui/next-step-card';
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import { formatBusinessDate } from '@/design-system/formatters';
 import { Icon, type IconName } from '@/design-system/icons';
+import { InfoTip } from '@/design-system/info-tip';
 import { Button, ErrorState, Skeleton, StatusBadge } from '@/design-system/primitives';
 import { MetricCard } from '@/design-system/layout';
 import { TableScrollRegion } from '@/design-system/table';
+import { Pagination, usePagination } from '@/design-system/pagination';
+import { NextStepCard } from '@/modules/forecourt/ui/next-step-card';
 
 import { businessToday } from '@/modules/reporting/period';
-import { addExact } from '@/modules/reporting/domain';
 import { formatTileLitres, formatTileMoney } from '@/modules/reporting/format';
 
 import {
@@ -24,7 +25,6 @@ import {
   dailyTotals,
   litresSeries,
   plotValue,
-  productTotals,
   signedLitres,
   signedMoney,
   varianceTone,
@@ -35,17 +35,22 @@ import {
 } from './dashboard-figures';
 import { FinanceTiles } from '@/modules/owner/ui/finance-tiles';
 import type { FinanceTile } from '@/modules/reporting/finance-tiles';
-import {
-  countDaysWithoutReport,
-  type DashboardSnapshot,
-} from '@/modules/reporting/dashboard-snapshot';
+import type { DashboardSnapshot } from '@/modules/reporting/dashboard-snapshot';
 
+import {
+  asAtLabel,
+  resolveDashboardPeriod,
+  type ResolvedDashboardPeriod,
+} from './dashboard-period';
 import { PerformanceChart } from './performance-chart';
+import { useOpenedRows } from './use-opened-rows';
+
+/** Rows the card always has room for, filled or blank. */
+const ATTENTION_ROWS = 6;
 import {
   approvalLabel,
   CLOSE_STATUS_PRESENTATION,
   countSuspendedCustomers,
-  operationsAttention,
   shiftSummary,
   type AttentionRow,
   type TodayOperations,
@@ -123,11 +128,17 @@ export function TodayOverview({
   stationId: urlStationId,
   initialContext,
   initialData,
-  showQuickActions = true,
+  workItems = [],
+  workMore = 0,
+  workUnavailable = false,
 }: Scope & {
   initialContext?: Scope;
   initialData?: DashboardInitialData;
-  showQuickActions?: boolean;
+  /** Approvals and payables waiting for a person, loaded with the page. */
+  workItems?: readonly AttentionRow[];
+  /** How many more waiting items there are than the list shows. */
+  workMore?: number;
+  workUnavailable?: boolean;
 }) {
   const fallback = useCurrentContext(!urlTenantId && !initialContext?.tenantId);
   const resolvedContext = initialContext ?? fallback;
@@ -150,10 +161,21 @@ export function TodayOverview({
     initialData?.finance ?? { status: 'loading' },
   );
   const [attempt, setAttempt] = useState(0);
+  const { isUnread, markOpened } = useOpenedRows();
+
+  // One period for every period figure; the server read the records for exactly this window.
+  const period = useMemo(
+    () => initialData?.period ?? resolveDashboardPeriod({}, businessToday()),
+    [initialData],
+  );
+  const [asAt] = useState(() =>
+    asAtLabel(initialData?.asOf ? new Date(initialData.asOf) : new Date()),
+  );
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   const [range, setRange] = useState<ChartRange>('30D');
+  const [asTable, setAsTable] = useState(false);
   const [chart, setChart] = useState<
     Section<{ sales: { rows: readonly SalesRow[] } }> & { key?: string }
   >({
@@ -174,11 +196,13 @@ export function TodayOverview({
       setOperations({ status: 'loading' });
       setFinance({ status: 'loading' });
     }, 0);
-    const initialWindow = chartBuckets('30D', businessToday());
+    const chartWindow = chartBuckets('30D', businessToday());
     const params = new URLSearchParams({
       tenantId,
-      fromDate: initialWindow.fromDate,
-      toDate: initialWindow.toDate,
+      fromDate: period.fromDate,
+      toDate: period.toDate,
+      chartFromDate: chartWindow.fromDate,
+      chartToDate: chartWindow.toDate,
     });
     if (stationId) params.set('stationId', stationId);
     load<{
@@ -212,7 +236,7 @@ export function TodayOverview({
       window.clearTimeout(reset);
       controller.abort();
     };
-  }, [tenantId, stationId, attempt, initialData]);
+  }, [tenantId, stationId, attempt, initialData, period]);
 
   useEffect(() => {
     if (
@@ -295,6 +319,13 @@ export function TodayOverview({
     [finance, tenantId, legalEntityId, stationId],
   );
 
+  // Stock value shares one card with stock variance, so it leaves the money tiles.
+  const stockTile = contextualFinanceTiles.find((tile) => tile.id === 'stockValue');
+  const profitTile = contextualFinanceTiles.find((tile) => tile.id === 'profit');
+  const otherFinanceTiles = contextualFinanceTiles.filter(
+    (tile) => tile.id !== 'stockValue' && tile.id !== 'profit',
+  );
+
   if (!tenantId) {
     return (
       <div className="today">
@@ -306,10 +337,6 @@ export function TodayOverview({
   }
 
   const attention: AttentionRow[] = [];
-  if (operations.status === 'ready') {
-    const row = operationsAttention(operations.data, dailyHref);
-    if (row) attention.push(row);
-  }
   if (customers.status === 'ready') {
     const suspended = countSuspendedCustomers(customers.data.customers);
     if (suspended > 0) {
@@ -321,24 +348,33 @@ export function TodayOverview({
       });
     }
   }
+  attention.push(...workItems);
   const attentionLoading =
     (Boolean(stationId) && operations.status === 'loading') || customers.status === 'loading';
 
   const totals = daily.status === 'ready' ? dailyTotals(daily.data.rows) : null;
+  const profitValue =
+    profitTile && profitTile.value !== null ? formatTileMoney(profitTile.value) : null;
+  const profitLoading = finance.status === 'loading';
   const figureValues: (string | null)[] = totals
     ? [
         formatTileMoney(totals.salesValue),
         formatTileLitres(totals.litresSold),
-        signedMoney(totals.cashVariance),
-        formatTileMoney(totals.accountSales),
+        // The third card is profit for people who may see it; account sales for everyone else.
+        profitTile
+          ? profitTile.value === null
+            ? null
+            : formatTileMoney(profitTile.value)
+          : formatTileMoney(totals.accountSales),
       ]
-    : [null, null, null, null];
+    : [null, null, null];
   const figureState: FigureState =
     daily.status === 'ready' ? (totals ? 'ready' : 'none') : daily.status;
 
   const chartReady = chart.status === 'ready' && chart.key === chartKey ? chart : null;
   const salesRows = chartReady ? chartReady.data.sales.rows : [];
   const points = litresSeries(salesRows, rangeWindow.buckets);
+  const chartShown = chartReady !== null;
   const series = chartReady
     ? points.map((point) => ({
         label: point.label,
@@ -348,29 +384,18 @@ export function TodayOverview({
           .join(' · '),
       }))
     : null;
-  const rangeSummary = productTotals(salesRows);
 
   return (
     <>
-      {showQuickActions && stationId ? (
-        <NextStepCard tenantId={tenantId} stationId={stationId} />
-      ) : null}
       <div className="today today-dashboard">
         <section
           className="today-section today-figures-section"
           aria-labelledby="today-figures-heading"
         >
           <h2 id="today-figures-heading">Key figures</h2>
-          <p className="today-figures-note">
-            {stationId ? '' : 'All stations · '}Approved figures for{' '}
-            {daily.status === 'ready' && daily.data.filters?.fromDate
-              ? formatBusinessDate(daily.data.filters.fromDate)
-              : 'today'}
-            .
-          </p>
           <dl
             className="today-figures"
-            // One size for all four cards, from the longest figure shown.
+            // One size for all the cards, from the longest figure shown.
             style={
               {
                 '--figure-chars': Math.max(
@@ -380,7 +405,7 @@ export function TodayOverview({
             }
           >
             <Figure
-              label="Sales today"
+              label={`Sales ${period.phrase}`}
               href={reportsHref}
               icon="dollar"
               state={figureState}
@@ -392,48 +417,60 @@ export function TodayOverview({
               icon="drop"
               state={figureState}
               value={figureValues[1] ?? null}
-              sub={
-                totals && !stationId
-                  ? `${totals.stationCount} ${totals.stationCount === 1 ? 'station' : 'stations'} approved`
-                  : null
-              }
             />
-            <Figure
-              label="Cash variance"
-              href={reportsHref}
-              icon="wallet"
-              state={figureState}
-              value={figureValues[2] ?? null}
-              sub={totals ? CASH_VARIANCE_WORDS[varianceTone(totals.cashVariance)] : null}
-              tone={totals ? varianceTone(totals.cashVariance) : undefined}
-            />
-            <Figure
-              label="Account sales"
-              href={customersHref}
-              icon="users"
-              state={figureState}
-              value={figureValues[3] ?? null}
-              sub={totals ? 'Credit and prepaid accounts' : null}
-            />
+            {profitTile || profitLoading ? (
+              <Figure
+                label={`Profit ${period.phrase}`}
+                href={profitTile?.href ?? reportsHref}
+                icon="chart"
+                state={profitLoading ? 'loading' : profitValue !== null ? 'ready' : 'none'}
+                value={profitValue}
+                emptyCaption="Not available"
+                info={
+                  profitTile?.value === null ? profitTile.unavailableReason : profitTile?.detail
+                }
+                tone={profitTile && isLoss(profitTile.value) ? 'short' : undefined}
+              />
+            ) : (
+              <Figure
+                label="Account sales"
+                href={customersHref}
+                icon="users"
+                state={figureState}
+                value={figureValues[2] ?? null}
+              />
+            )}
           </dl>
-          {snapshot.status === 'ready' ? (
-            <SnapshotTiles
-              snapshot={snapshot.data}
-              daysWithoutReport={
-                daily.status === 'ready'
-                  ? countDaysWithoutReport(daily.data.rows, daily.data.expectedBusinessDays)
-                  : null
-              }
-              reportsHref={reportsHref}
-              dailyHref={dailyHref}
-              inventoryHref={inventoryHref}
-            />
-          ) : null}
-          {/* Money at a glance: only for people allowed to see the management figures. */}
-          {finance.status === 'ready' ? (
-            <div style={{ marginBlockStart: 'var(--space-6)' }}>
-              <FinanceTiles tiles={contextualFinanceTiles} />
-            </div>
+          {/* One row of white cards. The money ones show only for people allowed to see them. */}
+          {snapshot.status === 'ready' || finance.status === 'ready' ? (
+            <section
+              className="metric-grid today-money"
+              aria-label="Cash, stock, reports and what is owed"
+              style={{ marginBlockStart: 'var(--space-6)' }}
+            >
+              {snapshot.status === 'ready' ? (
+                <SnapshotTiles
+                  snapshot={snapshot.data}
+                  stock={stockTile}
+                  daysWithoutReport={
+                    daily.status === 'ready' ? (daily.data.missingReportDays ?? null) : null
+                  }
+                  reportsHref={reportsHref}
+                  dailyHref={dailyHref}
+                  inventoryHref={inventoryHref}
+                  periodPhrase={period.phrase}
+                  asAt={asAt}
+                />
+              ) : null}
+              {finance.status === 'ready' ? (
+                <FinanceTiles
+                  bare
+                  tiles={otherFinanceTiles}
+                  periodPhrase={period.phrase}
+                  asAt={asAt}
+                />
+              ) : null}
+            </section>
           ) : null}
         </section>
 
@@ -459,7 +496,15 @@ export function TodayOverview({
                 }
               />
             ) : (
-              <OperationsRow operations={operations.data} href={dailyHref} />
+              <>
+                <OperationsRow operations={operations.data} href={dailyHref} />
+                <NextStepCard
+                  embedded
+                  tenantId={tenantId}
+                  stationId={stationId}
+                  onChanged={retry}
+                />
+              </>
             )}
           </section>
 
@@ -467,29 +512,55 @@ export function TodayOverview({
             <h2 id="today-attention-heading">Needs attention</h2>
             {attentionLoading && attention.length === 0 ? (
               <Skeleton lines={2} label="Checking for items that need attention" />
-            ) : attention.length > 0 ? (
+            ) : (
               <ul className="today-list">
                 {attention.map((row) => (
                   <li key={row.id}>
-                    <Link className="today-row" href={row.href}>
+                    <Link
+                      className="today-row"
+                      href={row.href}
+                      data-unread={isUnread(row) || undefined}
+                      onClick={() => markOpened(row, attention)}
+                    >
                       <span className="today-row-text">
-                        <span className="today-row-title">{row.title}</span>
-                        <span className="today-row-detail">{row.detail}</span>
+                        <span className="today-row-title">
+                          {isUnread(row) ? (
+                            <span className="visually-hidden">Not opened. </span>
+                          ) : null}
+                          {row.title}
+                        </span>
                       </span>
                       <Icon name="chevron-right" className="today-row-chevron" />
                     </Link>
                   </li>
                 ))}
+                {workMore > 0 ? (
+                  <li className="today-note">
+                    <Link href="/finance">
+                      {workMore === 1
+                        ? '1 more item is waiting.'
+                        : `${workMore} more items are waiting.`}
+                    </Link>
+                  </li>
+                ) : null}
+                {/* Blank rows keep the card the same height however little needs attention. */}
+                {Array.from({ length: Math.max(0, ATTENTION_ROWS - attention.length) }, (_, i) => (
+                  <li
+                    key={`blank-${i}`}
+                    className="today-row-blank"
+                    aria-hidden={attention.length > 0 || i > 0}
+                  >
+                    {attention.length === 0 && i === 0 ? 'Nothing needs attention.' : null}
+                  </li>
+                ))}
               </ul>
-            ) : (
-              <p className="today-note">Nothing needs attention.</p>
             )}
             {customers.status === 'forbidden' ? (
               <p className="today-note">
                 Customer alerts are hidden because you don’t have access.
               </p>
             ) : null}
-            {operations.status === 'error' || customers.status === 'error' ? (
+            {operations.status === 'error' || customers.status === 'error' || workUnavailable ? (
               <p className="today-note">Some items could not be checked.</p>
             ) : null}
           </section>
@@ -500,7 +571,7 @@ export function TodayOverview({
             <h2 id="today-stats-heading">
               Sales performance <span className="today-stats-sub">Litres</span>
             </h2>
-            <div className="today-periods" role="group" aria-label="Period">
+            <div className="today-periods" role="group" aria-label="Chart range">
               {CHART_RANGES.map((option) => (
                 <button
                   key={option}
@@ -531,62 +602,65 @@ export function TodayOverview({
             <Skeleton lines={4} label="Loading sales trend" />
           ) : (
             <>
-              <PerformanceChart
-                series={series}
-                xLabels={axisLabels(points.map((point) => point.label))}
-                formatValue={(value) => formatTileLitres(String(Math.round(value)))}
-                label={`Litres sold, ${range}, approved days only`}
-                emptyMessage="No approved sales in this period yet."
-                gapMessage="No approved report"
-              />
-              {rangeSummary.length > 0 ? (
-                <p className="today-stats-summary">
-                  {range} ·{' '}
-                  {formatTileLitres(
-                    points.reduce(
-                      (sum, point) => (point.litres === null ? sum : addExact(sum, point.litres)),
-                      '0',
-                    ),
-                  )}
-                  {rangeSummary.map((product) => (
-                    <span key={product.name}>
-                      {' · '}
-                      {product.name} {formatTileLitres(product.litres)}
-                    </span>
-                  ))}
-                </p>
-              ) : null}
-              <ChartTableView points={points} range={range} />
+              {asTable ? (
+                <ChartTableView points={points} range={range} />
+              ) : (
+                <PerformanceChart
+                  series={series}
+                  xLabels={axisLabels(points.map((point) => point.label))}
+                  formatValue={(value) => formatTileLitres(String(Math.round(value)))}
+                  label={`Litres sold, ${range}, approved days only`}
+                  emptyMessage="No approved sales in this period yet."
+                  gapMessage="No approved report"
+                />
+              )}
             </>
           )}
-          <p className="today-note">
+          <div className="today-stats-foot">
+            {chartShown ? (
+              <button
+                type="button"
+                className="button button-secondary today-chart-toggle"
+                aria-pressed={asTable}
+                onClick={() => setAsTable((value) => !value)}
+              >
+                {asTable ? 'Show the chart' : 'Show the chart as a table'}
+              </button>
+            ) : null}
             <Link href={reportsHref}>Open reports</Link>
-          </p>
+          </div>
         </section>
       </div>
     </>
   );
 }
 
-const CASH_VARIANCE_WORDS = {
-  none: 'No cash variance',
-  short: 'Cash short',
-  over: 'Cash over',
-} as const;
-
 type DailyReport = {
   filters?: { fromDate?: string };
-  expectedBusinessDays?: number;
+  missingReportDays?: readonly { stationId: string; businessDate: string }[];
   rows: readonly DailyRow[];
 };
 
 type FigureState = 'loading' | 'ready' | 'forbidden' | 'error' | 'none';
+
+const isLoss = (value: string | null) => value !== null && /^-(?!0(\.0+)?$)/.test(value.trim());
 
 const FIGURE_CAPTION: Partial<Record<FigureState, string>> = {
   forbidden: 'No access',
   error: 'Unavailable',
   none: 'No approved report yet',
 };
+
+/** Shows a leading currency code ("USD 5,961.45") smaller than the amount so the figure fits one row. */
+function renderFigureValue(value: string) {
+  const match = /^([A-Z]{3})\s+(\S.*)$/.exec(value);
+  if (!match) return value;
+  return (
+    <>
+      <span className="today-figure-currency">{match[1]}</span> {match[2]}
+    </>
+  );
+}
 
 function Figure({
   label,
@@ -596,6 +670,8 @@ function Figure({
   value,
   sub = null,
   tone,
+  info,
+  emptyCaption,
 }: {
   label: string;
   href: string;
@@ -604,6 +680,10 @@ function Figure({
   value: string | null;
   sub?: string | null;
   tone?: 'none' | 'over' | 'short';
+  /** An explanation kept behind a "?" beside the label. */
+  info?: string;
+  /** What to say when there is no figure, in place of the usual caption for the state. */
+  emptyCaption?: string;
 }) {
   return (
     <div className="today-figure" data-state={state} data-tone={tone}>
@@ -615,13 +695,14 @@ function Figure({
         <Link className="today-figure-link" href={href}>
           {label}
         </Link>
+        {info ? <InfoTip text={info} label={`About ${label}`} /> : null}
       </dt>
       <dd>
         {state === 'loading' ? (
           <Skeleton lines={1} label={`Loading ${label.toLowerCase()}`} />
         ) : value !== null ? (
           <>
-            <span className="today-figure-value">{value}</span>
+            <span className="today-figure-value">{renderFigureValue(value)}</span>
             {sub ? <span className="today-figure-caption">{sub}</span> : null}
           </>
         ) : (
@@ -629,7 +710,7 @@ function Figure({
             <span className="today-figure-value" aria-hidden="true">
               —
             </span>
-            <span className="today-figure-caption">{FIGURE_CAPTION[state]}</span>
+            <span className="today-figure-caption">{emptyCaption ?? FIGURE_CAPTION[state]}</span>
           </>
         )}
       </dd>
@@ -639,63 +720,82 @@ function Figure({
 
 function SnapshotTiles({
   snapshot,
+  stock,
   daysWithoutReport,
   reportsHref,
   dailyHref,
   inventoryHref,
+  periodPhrase,
+  asAt,
 }: {
   snapshot: DashboardSnapshot;
-  daysWithoutReport: number | null;
+  /** Fuel stock at cost, when the person may see money figures. */
+  stock?: FinanceTile;
+  daysWithoutReport: readonly { stationId: string; businessDate: string }[] | null;
   reportsHref: string;
   dailyHref: string;
   inventoryHref: string;
+  /** The chosen period in words, for the tiles that are totals over it. */
+  periodPhrase: string;
+  /** "As at 14:05", for the tiles that are a position right now. */
+  asAt: string;
 }) {
   const { cash, stockVariance } = snapshot;
-  const litres = snapshot.litresByProduct.length
-    ? snapshot.litresByProduct
-        .map((row) => `${row.productName} ${formatTileLitres(row.litres)}`)
-        .join(' · ')
-    : 'No fuel sold yet';
   return (
-    <section
-      className="metric-grid"
-      aria-label="Litres, cash and stock"
-      style={{ marginBlockStart: 'var(--space-6)' }}
-    >
-      <MetricCard label="Litres sold by fuel" value={litres} href={reportsHref} />
+    <>
       <MetricCard
-        label="Cash expected"
+        label="Expected cash"
         value={formatTileMoney(cash.expected)}
-        meta={`Collected ${formatTileMoney(cash.collected)} · ${
+        meta={
           varianceTone(cash.difference) === 'none'
-            ? 'matches'
+            ? 'Matches'
             : `${signedMoney(cash.difference)} difference`
-        }`}
+        }
+        info={`Cash expected ${periodPhrase}: ${formatTileMoney(cash.expected)}. Collected so far: ${formatTileMoney(cash.collected)}.`}
         tone={varianceTone(cash.difference) === 'short' ? 'critical' : 'default'}
         href={reportsHref}
       />
       <MetricCard
-        label="Stock variance"
-        value={stockVariance.litres === null ? 'Not available' : signedLitres(stockVariance.litres)}
-        meta={
-          stockVariance.litres === null
-            ? 'No tank has a dip reading yet.'
-            : `${stockVariance.tanksMeasured} of ${stockVariance.tanksTotal} tanks measured`
+        label={stock ? 'Fuel stock' : 'Stock variance'}
+        value={
+          stock
+            ? stock.value === null
+              ? 'Not available'
+              : formatTileMoney(stock.value)
+            : stockVariance.litres === null
+              ? 'Not available'
+              : signedLitres(stockVariance.litres)
         }
+        meta={asAt}
+        info={[
+          stock?.value === null ? stock.unavailableReason : undefined,
+          stockVariance.litres === null
+            ? 'No tank has a dip reading for the last day yet.'
+            : `Stock variance ${signedLitres(stockVariance.litres)}, from ${stockVariance.tanksMeasured} of ${stockVariance.tanksTotal} tanks measured.`,
+        ]
+          .filter(Boolean)
+          .join(' ')}
         href={inventoryHref}
       />
       <MetricCard
-        label="Reports not submitted"
-        value={daysWithoutReport === null ? 'Not available' : String(daysWithoutReport)}
+        label="Missing reports"
+        value={daysWithoutReport === null ? 'Not available' : String(daysWithoutReport.length)}
         meta={
-          daysWithoutReport === 0
-            ? 'Every day has a report.'
-            : 'Days with activity but no approved report'
+          daysWithoutReport === null
+            ? undefined
+            : daysWithoutReport.length === 0
+              ? asAt
+              : `Oldest: ${formatBusinessDate(daysWithoutReport.map((day) => day.businessDate).sort()[0]!)}`
         }
-        tone={daysWithoutReport ? 'critical' : 'default'}
+        info={
+          daysWithoutReport?.length === 0
+            ? 'Every day has a report.'
+            : 'Days that have no submitted report.'
+        }
+        tone={daysWithoutReport?.length ? 'critical' : 'default'}
         href={dailyHref}
       />
-    </section>
+    </>
   );
 }
 
@@ -709,7 +809,8 @@ function OperationsRow({ operations, href }: { operations: TodayOperations; href
       </span>
       <span className="today-hero-title">{operations.station.name}</span>
       <span className="today-hero-detail">
-        {formatBusinessDate(operations.currentBusinessDate)} · {shiftSummary(operations.shifts)}
+        {formatBusinessDate(operations.selectedBusinessDay?.date ?? operations.currentBusinessDate)}{' '}
+        · {shiftSummary(operations.shifts)}
         {approval ? ` · ${approval}` : ''}
       </span>
       <span className="today-hero-status">
@@ -735,9 +836,9 @@ function periodLabel(from: string, to: string): string {
  */
 function ChartTableView({ points, range }: { points: LitresPoint[]; range: ChartRange }) {
   const table = chartTable(points);
+  const page = usePagination(table.rows, { resetKey: range });
   return (
-    <details className="today-chart-table">
-      <summary>Show the chart as a table</summary>
+    <div className="today-chart-table">
       <TableScrollRegion label={`Litres sold by period, ${range}`}>
         <table className="responsive-table">
           <caption>Litres sold, {range}, from approved reports only</caption>
@@ -753,7 +854,7 @@ function ChartTableView({ points, range }: { points: LitresPoint[]; range: Chart
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((row) => (
+            {page.rows.map((row) => (
               <tr key={row.from}>
                 <th scope="row" data-label="Business date">
                   {periodLabel(row.from, row.to)}
@@ -790,12 +891,16 @@ function ChartTableView({ points, range }: { points: LitresPoint[]; range: Chart
           </tbody>
         </table>
       </TableScrollRegion>
-    </details>
+      <Pagination slice={page} label="Sales table pages" noun="periods" />
+    </div>
   );
 }
 
 export type DashboardInitialData = {
   key: string;
+  /** The period the figures were read for, and when they were read. */
+  period: ResolvedDashboardPeriod;
+  asOf: string;
   daily: Section<DailyReport>;
   customers: Section<{ customers: readonly { status: string }[] }>;
   operations: Section<TodayOperations> | null;

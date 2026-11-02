@@ -134,14 +134,20 @@ export function reportExportMeta(
   return { title, subtitle: `${period}${stations}` };
 }
 
-const MAX_DECIMALS = 6;
 const HEADER_STYLE = 1;
 const TITLE_STYLE = 2;
 const FIRST_NUMBER_STYLE = 3;
 
+/**
+ * Decimals Excel displays; the stored value is never rounded. Money and litres (three or four
+ * decimals) show two, a price per litre (five or more) shows three, and values that already have
+ * up to two decimals are shown as they are.
+ */
 function decimalPlaces(value: string): number {
-  const dot = value.indexOf('.');
-  return dot === -1 ? 0 : Math.min(MAX_DECIMALS, value.length - dot - 1);
+  const decimals = value.split('.')[1]?.length ?? 0;
+  if (decimals >= 5) return 3;
+  if (decimals >= 3) return 2;
+  return decimals;
 }
 
 type Worksheet = Readonly<{ xml: string; decimalFormats: readonly number[] }>;

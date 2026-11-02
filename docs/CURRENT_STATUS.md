@@ -1,6 +1,6 @@
 # Shanda Fuel — Current Status
 
-## Manual QA issue list — 2026-11-02 (branch `codex/qa-issue-list-20261102`, uncommitted)
+## Manual QA issue list — 2026-11-02 (branch `codex/qa-issue-list-20261102`, PR #213)
 
 Fixed from the owner's manual QA report: real PDF and styled Excel report downloads (DEC-052),
 Print removed from Reports and Profit, action-then-period report flow, exports reuse the current
@@ -10,8 +10,67 @@ customer row, and a staff picker (from Settings staff) on Staff fuel benefit. Or
 addresses (`?org=<slug>`) are accepted and written by the work-context selector (DEC-053). Not
 done: station slugs, widening the offline queue (needs a decision, see DEC-053). Not run: browser,
 Playwright and database integration tests (no Clerk test keys or local database here), `next
-build`. UI-lock manifest re-baselined for the 17 locked files changed. Nothing committed, pushed or
-deployed; production not contacted.
+build`. UI-lock manifest re-baselined for the 17 locked files changed. Not deployed;
+production not contacted.
+
+## Row locks the application role cannot take — 2026-11-02 (branch `fix/runtime-row-locks`)
+
+The application connects as `app_runtime`, which may read and add rows to the append-only ledgers
+but not update them, and PostgreSQL refuses a row lock (`FOR UPDATE`) on a table the role cannot
+update. The integration suite seeds and runs as a superuser, so it never saw this. Email staff
+invitations failed for that reason (fixed in #204). The same fault was in: supplier payment and
+document reversal, provider payout allocation and its reversal, and the meter exception
+(resolve, reset, replace, correct) and segment version paths. Each now locks the mutable parent row
+(payment, document, settlement, meter boundary) instead of the append-only rows; double reversal
+and double resolution are still stopped by the parent locks and the existing unique indexes.
+`tests/integration/runtime-role-row-locks.test.ts` runs every locking statement in the source as
+`app_runtime` and fails the build if the database refuses one.
+
+**Fixed afterwards, 2026-11-02 (branch `fix/attendant-eligibility`, migrations 0098 and 0099):** a
+station-level supervisor or administrator could not name another attendant as the responsible
+attendant (shift handover, meter boundary capture, meter exception report): the eligibility check
+read `app.memberships`, which row-level security hides from anyone but the person themselves and
+tenant-wide owners/administrators, so the command answered 403. It now asks `app.is_station_attendant`
+(0098), a SECURITY DEFINER yes/no function that requires the caller to hold a role covering the
+station and returns only true/false. No row visibility or table right changed. While proving this as
+`app_runtime`, confirming a bank deposit was also found refused: 0093 added `bank_date` and
+`confirmation_reason` without a column grant, so 0099 grants UPDATE on just those two columns.
+Both migrations must be applied to production for the fixes to work.
+
+**Fixed on branch `fix/staff-visibility-and-access` (migrations 0100 and 0101):** other code read
+`app.memberships` directly, so people below tenant-wide owner/administrator saw only themselves.
+`app.member_directory` (0100, SECURITY DEFINER, names/status only, active members of the same
+organisation only) now serves: customer-account approver choosing and the approver list (now only
+owners and administrators), the sole-owner check for expense approval, names on cash handovers,
+reports, daily report, documents, costing and audit, the report employee filter, and station setup
+(supervisor list and eligibility, staff count). Also found: "Change access" for a staff member
+always failed because the application role could not DELETE role assignments (a deliberate
+hardening that `db.smoke` asserts); 0101 adds `app.clear_membership_assignments`, a definer function
+only a tenant-wide owner or administrator can use, and the command refuses to add new assignments if
+the removal was declined. Both migrations must be
+applied to production. Tests: `tests/integration/staff-visibility-runtime.test.ts` (as `app_runtime`,
+real application code, station-level actors) and a change-access case in
+`staff-invitation-runtime.test.ts`. Still reading memberships directly, by design (owner or
+administrator screens): the staff list/management commands in `src/modules/staff`.
+
+## Settings screens polish — 2026-11-01 (branch `ui/profits-page`, uncommitted)
+
+Owner asked for the Settings screens to match the rest of the site and feel less overwhelming. UI
+only: no schema, auth, permission or API change, and no new commands.
+
+- Every Settings section is now a stack of calm white cards (new shared `SectionCard`, `CardRows`,
+  `CardTiles` in `src/design-system/section-card.tsx`), with the section list lightened.
+- **Station setup is no longer its own section.** Each station on Settings > Stations has a
+  "Station setup" button that opens that station's guided steps, with "Back to stations". Old
+  `?tab=setup` links still work, and the Readiness "Fix this" links open the right station
+  (`?tab=stations&setup=<station>`).
+- Payments: the add forms (provider, provider account, bank account, bank balance) moved into side
+  panels like Add station already used. Same commands, validation and identity check.
+- Activity log: plain lines ("Created · subject", then area, person and time). With "All stations"
+  there is no single station clock, so times are shown in UTC and say so.
+- UI lock re-baselined for these owner-requested changes. The Clerk-based Settings and Readiness
+  e2e specs were updated by reading and were not run here (no Clerk test keys). The setup-guide and
+  v1-panels specs and an axe scan of every section (light/dark, phone/desktop) did run locally.
 
 ## Hardening pass — 2026-10-29 (branch `fixtures`, from `main` 81168380, uncommitted)
 

@@ -101,7 +101,11 @@ export async function resolveInvitationView(token: string): Promise<InvitationVi
     const row = rows[0];
     if (!row) return { kind: 'unavailable' };
     return row.existing_identity
-      ? { kind: 'existing-identity', organisationName: row.organisation_name }
+      ? {
+          kind: 'existing-identity',
+          organisationName: row.organisation_name,
+          email: row.invited_email,
+        }
       : {
           kind: 'new-identity',
           organisationName: row.organisation_name,
@@ -176,6 +180,7 @@ async function readOverview(transaction: StaffTransaction): Promise<{
      and assignment.membership_id = membership.id
      and (assignment.expires_at is null or assignment.expires_at > now())
     where membership.tenant_id = current_setting('app.tenant_id')::uuid
+      and membership.removed_at is null
     group by membership.id, identity.id, identity.name, identity.email, membership.status
     order by identity.name, identity.email
   `);

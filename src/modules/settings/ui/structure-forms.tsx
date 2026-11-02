@@ -2,11 +2,13 @@
 
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent } from 'react';
+import { useToast } from '@/design-system/feedback-provider';
 import { Select } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
 import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { StepUpDialog } from '../../setup/ui/step-up-dialog';
 import type { SettingsLegalEntity, SettingsStation } from '../contracts';
+import { InfoTip } from '@/design-system/info-tip';
 
 const COMMON_ZONES = [
   'Africa/Harare',
@@ -21,6 +23,7 @@ const COMMON_ZONES = [
 /** Sends one settings command. A retry of the same form keeps its key, so it never saves twice. */
 function useSettingsCommand(tenantId: string, onSaved: () => void) {
   const router = useRouter();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Changing the business structure needs a fresh identity check; the form waits while it runs.
@@ -50,6 +53,7 @@ function useSettingsCommand(tenantId: string, onSaved: () => void) {
         throw new Error(message);
       }
       attempt.current = null;
+      toast.success('Saved. Your change is now in effect.');
       onSaved();
       router.refresh();
       return true;
@@ -234,13 +238,14 @@ export function EditCompany({
         variant="secondary"
         size="sm"
         aria-haspopup="dialog"
+        aria-label={`Edit ${company.name}`}
         onClick={() => {
           setName(company.name);
           setError(null);
           setOpen(true);
         }}
       >
-        Edit {company.name}
+        Edit
       </Button>
       <Modal
         open={open && !waiting}
@@ -335,7 +340,6 @@ export function AddStation({
       >
         Add station
       </Button>
-      {companies.length === 0 ? <p className="field-hint">Add a company first.</p> : null}
       <Modal
         open={open && !waiting}
         onClose={() => !busy && setOpen(false)}
@@ -381,10 +385,10 @@ export function AddStation({
             />
           </Field>
           <ZoneField id="station-zone" value={zone} onChange={setZone} />
-          <p className="field-hint">
-            The station starts in setup. Add its fuels, tanks and pumps under Station setup, then
-            switch it on.
-          </p>
+          <InfoTip>
+            The station starts in setup. Press Station setup next to it to add its fuels, tanks and
+            pumps, then switch it on.
+          </InfoTip>
           {fieldError ? (
             <p className="field-error" role="alert">
               {fieldError}
@@ -438,6 +442,7 @@ export function EditStation({ tenantId, station }: { tenantId: string; station: 
         variant="secondary"
         size="sm"
         aria-haspopup="dialog"
+        aria-label={`Edit ${station.name}`}
         onClick={() => {
           setName(station.name);
           setZone(station.timezone);
@@ -445,7 +450,7 @@ export function EditStation({ tenantId, station }: { tenantId: string; station: 
           setOpen(true);
         }}
       >
-        Edit {station.name}
+        Edit
       </Button>
       <Modal
         open={open && !waiting}

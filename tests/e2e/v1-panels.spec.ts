@@ -137,8 +137,8 @@ test.describe('New v1 screens', () => {
     await page.getByLabel('Amount you actually counted').fill('90');
     await expect(page.getByLabel('Why is it different?')).toBeVisible();
     await page.getByLabel('Why is it different?').fill('Till was short');
-    await page.getByRole('button', { name: 'Hand over cash' }).click();
-    await expect(page.getByText(/now needs to accept it/)).toBeVisible();
+    await page.getByRole('button', { name: 'Hand over cash', exact: true }).click();
+    await expect(page.getByText(/now needs to accept it/).first()).toBeVisible();
     expect(posted[0]).toMatchObject({
       commandType: 'SubmitCashHandover',
       expectedAmount: '100',
@@ -160,25 +160,27 @@ test.describe('New v1 screens', () => {
 
   test('shows the activity log with what changed, and loads older entries', async ({ page }) => {
     await mockApi(page);
-    await page.goto('/dev-preview/v1-panels');
+    await page.goto('/dev-preview/v1-panels?sheet=closed');
     const log = page.getByRole('list', { name: 'Recent changes' });
-    await expect(log.getByText('Supplier: credit limit set')).toBeVisible();
+    await expect(log.getByText('Credit limit set')).toBeVisible();
     await log.getByRole('button', { name: 'What changed' }).click();
     await expect(log.getByText('Credit limit', { exact: true })).toBeVisible();
     await expect(log.getByText('1000')).toBeVisible();
     await expect(log.getByText('2000')).toBeVisible();
     await log.getByRole('button', { name: 'What was recorded' }).click();
     await expect(log.getByText('50', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Show older changes' }).click();
-    await expect(log.getByText('Cash: accept cash handover')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Show older changes' })).toHaveCount(0);
+    const next = page.getByRole('button', { name: 'Next', exact: true });
+    await next.click();
+    await expect(log.getByText('Accept cash handover')).toBeVisible();
+    // Three entries fit on one page, so the pager goes away.
+    await expect(next).toHaveCount(0);
   });
 
   test('lists documents, uploads a file and opens one through a short-lived link', async ({
     page,
   }) => {
     const { uploads } = await mockApi(page);
-    await page.goto('/dev-preview/v1-panels');
+    await page.goto('/dev-preview/v1-panels?sheet=closed');
     const docs = page.getByRole('region', { name: 'Delivery note and photos' });
     await expect(docs.getByText('Delivery note: note.pdf')).toBeVisible();
     await expect(docs.getByText(/312 KB · added by Tendai Moyo/)).toBeVisible();
@@ -207,7 +209,7 @@ test.describe('New v1 screens', () => {
 
   test('explains the reminder settings, checks the numbers, and saves them', async ({ page }) => {
     const { posted } = await mockApi(page);
-    await page.goto('/dev-preview/v1-panels');
+    await page.goto('/dev-preview/v1-panels?sheet=closed');
     await expect(page.getByText(/starting values apply/)).toBeVisible();
     await page.getByLabel(/Warn about supplier invoices due within/).fill('0');
     await page.getByRole('button', { name: 'Save reminders' }).click();
@@ -236,7 +238,7 @@ test.describe('New v1 screens', () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/dev-preview/v1-panels');
       await expect(page.getByText('Delivery note: note.pdf')).toBeVisible();
-      await expect(page.getByText('Supplier: credit limit set')).toBeVisible();
+      await expect(page.getByText('Credit limit set')).toBeVisible();
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );

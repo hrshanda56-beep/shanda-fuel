@@ -103,7 +103,8 @@ describe('matching suggestions', () => {
 
 describe('settlement wording', () => {
   it('uses the shared plain status names', () => {
-    expect(settlementStateLabel('RECORDED')).toBe('Awaiting settlement');
+    // A payout already received is not "awaiting settlement" (C6).
+    expect(settlementStateLabel('RECORDED')).toBe('Received, not matched to sales yet');
     expect(settlementStateLabel('RECONCILED')).toBe('Settled');
     expect(settlementStateLabel('EXCEPTION')).toBe('Settled with a difference');
   });

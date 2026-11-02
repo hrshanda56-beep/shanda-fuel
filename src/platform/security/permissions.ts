@@ -120,7 +120,16 @@ export const PERMISSION_CODES = [
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
 
-export const ROLE_CODES = ['OWNER', 'ADMINISTRATOR', 'FINANCE', 'SUPERVISOR', 'ATTENDANT'] as const;
+export const ROLE_CODES = [
+  'OWNER',
+  'ADMINISTRATOR',
+  'FINANCE',
+  'SUPERVISOR',
+  'ATTENDANT',
+  'AUDITOR',
+  'AREA_MANAGER',
+  'CASH_COLLECTOR',
+] as const;
 
 export type RoleCode = (typeof ROLE_CODES)[number];
 export type ScopeType = 'TENANT' | 'LEGAL_ENTITY' | 'STATION';
@@ -204,7 +213,9 @@ const highRiskPermissions = new Set<PermissionCode>([
   'expense.policy.manage',
 ]);
 
-const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
+type OriginalRole = 'OWNER' | 'ADMINISTRATOR' | 'FINANCE' | 'SUPERVISOR' | 'ATTENDANT';
+
+const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> = {
   OWNER: PERMISSION_CODES,
   ADMINISTRATOR: [
     'tenant.context.select',
@@ -456,6 +467,32 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
     'shift.view',
     'meter.view',
     'meter.boundary.capture',
+  ],
+};
+
+/**
+ * The extra roles (D2). Each is a set of existing permissions, written the same way in migration
+ * 0094 and compared with the database in an integration test.
+ * - AUDITOR: every view permission and nothing that acts, so it can read everything and change
+ *   nothing (no export, no approval, no recording).
+ * - AREA_MANAGER: the supervisor's permissions plus the finance reports, over the several
+ *   stations it is assigned (which stations comes from the assignments, as for a supervisor).
+ * - CASH_COLLECTOR: receives collections and accepts or submits handovers, and sees deposits.
+ */
+const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
+  ...originalRolePermissions,
+  AUDITOR: PERMISSION_CODES.filter(
+    (code) => code === 'tenant.context.select' || /\.view(\.|$)/.test(code),
+  ),
+  AREA_MANAGER: [...originalRolePermissions.SUPERVISOR, 'report.finance.view'],
+  CASH_COLLECTOR: [
+    'tenant.context.select',
+    'station.view',
+    'cash.collection.view',
+    'cash.collection.receive',
+    'cash.handover.submit',
+    'cash.handover.accept',
+    'cash.deposit.view',
   ],
 };
 

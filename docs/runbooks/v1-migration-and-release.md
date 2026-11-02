@@ -1,6 +1,8 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-10-27** for branch `fix/audit-round-3-20261027` (on top of `main`; not yet merged or applied to production): 72 migrations, 0000 to 0086. Production's own count is not known from the repository: read it first (section 4, step 2).
+**Updated 2026-11-01** for `main` at `6e4bb214`: 88 migrations, 0000 to 0102 (0098 to 0102 added 2026-11-02). Production's own count is not known from the repository: read it first (section 4, step 2).
+
+> **Urgent, 2026-11-01:** the application code for 0087 to 0097 is already live, but those migrations are not recorded as applied to production. **0097 is required**: without it the app's database role cannot approve a reconciliation that has pump readings (the validation triggers fail with "permission denied"). Apply 0084 to 0102 in order after reading production's level (section 4, step 2).
 
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
@@ -82,8 +84,24 @@ that was reviewed.
 | 0084 | opening_balance_import | Go-live opening balances: a reviewed, approved, then locked CSV batch (`opening_balance_batches`, `opening_balance_lines`) | Not applied to production. New tables only, with RLS |
 | 0085 | supervisor_permissions | Supervisor role: `report.finance.view`, `expense.approve.any_amount`, station-level staff and activity views, supervisor expense approval limit, `app.station_staff_directory` | Not applied to production. Adds permission rows, one nullable column and one definer function |
 | 0086 | supplier_payment_bank_account | Supplier payment method and optional tenant-scoped bank account for bank payments | Not applied to production. Additive nullable field, validation constraint, foreign key and index |
+| 0087 | reconciliation_approver_notes | Approval note on a reconciliation (needed for a red stock variance); a tank dip can be voided with who, when and why | Not applied to production. Additive nullable columns and a foreign key |
+| 0088 | reconciliation_metric_snapshot | The computed figures are stored with a submitted reconciliation so approval can detect stale source facts | Not applied to production. One nullable column |
+| 0089 | hardening_guards | Database refuses: confirming a deposit without a slip, editing meter boundaries (except linking a price change), moving a shift to another station or day | Not applied to production. No new tables or columns; replaces/adds trigger functions. Existing rows must already satisfy these rules |
+| 0090 | station_attendants | Lists attendants at a station for supervisors, who cannot read membership rows under RLS | Not applied to production. New definer function |
+| 0091 | other_station_attendants | Lists attendants assigned to the organisation's other stations, for cover shifts | Not applied to production. New definer function |
+| 0092 | shift_no_duplicates_or_overlap | Database refuses duplicate or overlapping shifts | Not applied to production. **Check production for existing duplicate or overlapping shifts first**; the migration can fail on them |
+| 0093 | deposit_confirmation_details | Optional bank date and difference reason on deposits | Not applied to production. Nullable columns; existing deposits keep NULL |
+| 0094 | extra_roles | Three new roles, including a read-only AUDITOR, built from existing permission codes | Not applied to production. Adds role and permission-grant rows, no new permission codes |
+| 0095 | delivery_draft_edit | The app role may update a draft delivery's single allocation row (tank, litres) | Not applied to production. Grant change only |
+| 0096 | reconciliation_submitter | Lets Finance and the owner see who submitted a day (name and time only, to people who can view reconciliations) | Not applied to production. New SECURITY DEFINER function owned by `migration_owner` |
+| 0097 | approval_trigger_locks | Six validation trigger functions become SECURITY DEFINER (fixed search path, owned by `migration_owner`) | **Required.** Without it no reconciliation with pump readings can be approved as `app_runtime`. Needs the `migration_owner` role (stops with an error if absent). No new table rights for `app_runtime` |
+| 0098 | attendant_eligibility | New yes/no SECURITY DEFINER function `app.is_station_attendant` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only) so a station supervisor can name another attendant | **Required for station supervisors/administrators** to hand over shifts, capture meter boundaries and report meter exceptions naming someone else. Changes no row visibility and no table rights |
+| 0099 | deposit_confirmation_grants | `GRANT UPDATE (bank_date, confirmation_reason) ON app.bank_deposits` to `app_runtime` | **Required.** Without it no bank deposit can be confirmed as `app_runtime` (0093 added the columns without the grant) |
+| 0100 | member_directory | New SECURITY DEFINER function `app.member_directory(tenant)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only): member id, display name, status and "can sign in" for the caller's own organisation, to active members only. No email | **Required for station-level staff** to see people's names, pick an owner/administrator as customer approver, and for a station-level owner not to be treated as sole owner. Changes no row visibility and no table rights |
+| 0101 | staff_access_replace | New SECURITY DEFINER function `app.clear_membership_assignments(tenant, membership)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only); callable only by a tenant-wide owner or administrator of that organisation; removes one member's assignments there. No table DELETE right is granted | **Required.** Without it "Change access" for a staff member fails with "permission denied" for everyone (the command replaces assignments by delete and insert). `db.smoke` still asserts the application role has no other deletes |
+| 0102 | staff_remove | New nullable column `app.memberships.removed_at`; new SECURITY DEFINER function `app.remove_staff_membership(tenant, membership)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only); callable only by a tenant-wide owner or administrator, for a deactivated member other than themself; erases a member with no records, otherwise sets `removed_at` to hide them. No table DELETE right is granted | **Required for the Remove button** on deactivated staff. Without it, Remove fails; nothing else is affected |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 72 entries, 0000 to 0086 (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 88 entries, 0000 to 0102 (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -238,6 +256,22 @@ fe3af7cff3c83ceb2a1b1ecb9672c52b2f695f3afcaf75c83e4e5a1ba6d92d0a  0082_tank_vari
 ee6939320c530b4aeace890da6811068855fba3dd43708036c8c279937f6a78a  0084_opening_balance_import.sql
 93d2426c734e68bc0fee2740d74bb123daa4614ccfc66d6d2e64ed22423858ce  0085_supervisor_permissions.sql
 7ab933a267c427733e16952af83d7129db919ed3df5a5f33384926c5fd0e0b42  0086_supplier_payment_bank_account.sql
+2a9759f787accd4584fb373c4e879c290f1d2be1b2c8cd6127c0bbbda125a98a  0087_reconciliation_approver_notes.sql
+fc7ff7833089c5866f4c3468fe7acc37ecbdca83c54c93986d88a20d1f8e72db  0088_reconciliation_metric_snapshot.sql
+7296b3a7de0a13c4e727edea8e577479d5dfbc6b6b2cc16123e21c0ff338f880  0089_hardening_guards.sql
+e1f7397c5cbdad9dd403ffe9f3559d73f41dbd1a575cb05cc4716d60efd562d3  0090_station_attendants.sql
+44c3181df3d78a7cb6b1b5649135a5b7f5e72371549a67d4e33e0b588ea354fa  0091_other_station_attendants.sql
+59c9e15fb2a46f14903ff3f958cfffadca96918e152f0a9f6bc5a88cc72c2c0e  0092_shift_no_duplicates_or_overlap.sql
+516e0ffd35c2ebd5cff71153a9fa93f36bd211eff99b47f3bf07b7bd262cc985  0093_deposit_confirmation_details.sql
+06e8c858b262eabc6f7c75edc33adbc1eff0c491cfa59081d8596eb523f3363d  0094_extra_roles.sql
+947036506ba41f916a9d06d2f6d5f865c2a48f847b996ef48ef08b26f6d266c6  0095_delivery_draft_edit.sql
+36d759b320a4ab2c2c26928257787796eebf89e25a409d38481a6903c2601b86  0096_reconciliation_submitter.sql
+97a05cb67943ec66aa21a664dc667446f04b4b8158a378d78ce193f9d93534fc  0097_approval_trigger_locks.sql
+156068781071ca81fb123ec88bdea286da832eeecb68498226b109b91ea7ad91  0098_attendant_eligibility.sql
+37188cb7181f183ade1284d9f0839f6d98a53a19d836540918d7d013a5f3abfa  0099_deposit_confirmation_grants.sql
+d050f34732c8c791ecee6dc29011f6cb7a4aa0826bd7476322690f74fd2a0797  0100_member_directory.sql
+e05eca7376ca738a1c246ec9b42daadfdd7e85d12b85780a822bc96e7bb02dc8  0101_staff_access_replace.sql
+f789ca29da899a2037ae6175554a5305ddb9e250d3e9fd6f4de0827980916081  0102_staff_remove.sql
 ```
 
 ## 7. Release record (copy this and fill it in)

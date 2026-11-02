@@ -107,6 +107,7 @@ export const memberships = appSchema.table(
     disabledAt: timestamp('disabled_at'),
     suspendedAt: timestamp('suspended_at'),
     lockedAt: timestamp('locked_at'),
+    removedAt: timestamp('removed_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },

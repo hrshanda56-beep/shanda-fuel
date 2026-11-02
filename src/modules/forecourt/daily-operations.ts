@@ -41,7 +41,9 @@ type DailyOperationsContext = {
     plannedEndAt: string;
     version: number;
   };
-  attendants: Array<{ id: string; name: string; email: string }>;
+  attendants: Array<{ id: string; name: string }>;
+  /** Attendants whose usual station is another one; they can still be added to a shift here. */
+  otherAttendants: Array<{ id: string; name: string; stationName: string }>;
   availableReadings: Array<{
     nozzleId: string;
     pumpNumber: string;
@@ -131,20 +133,15 @@ async function loadDailyOperationsContext(
   const shiftStart = new Date(shift.planned_start_at).toISOString();
   const shiftEnd = new Date(shift.planned_end_at).toISOString();
 
-  const [attendants, readings] = await Promise.all([
-    transaction.execute<{ id: string; name: string; email: string }>(sql`
-      select m.id, u.name, u.email
-      from app.memberships m
-      join app.users u on u.id = m.identity_id
-      join app.membership_role_assignments a
-        on a.tenant_id = m.tenant_id and a.membership_id = m.id
-      where m.tenant_id = ${context.tenantId}
-        and m.status = 'ACTIVE'
-        and a.scope_type = 'STATION'
-        and a.station_id = ${input.stationId}
-        and a.role_code = 'ATTENDANT'
-        and (a.expires_at is null or a.expires_at > ${shiftStart}::timestamptz)
-      order by u.name, m.id
+  const [attendants, otherAttendants, readings] = await Promise.all([
+    transaction.execute<{ id: string; name: string }>(sql`
+      select id, name
+      from app.station_attendants(${context.tenantId}::uuid, ${input.stationId}::uuid, ${shiftStart}::timestamptz)
+    `),
+    transaction.execute<{ id: string; name: string; stationName: string }>(sql`
+      select id, name, station_name as "stationName"
+      from app.other_station_attendants(${context.tenantId}::uuid, ${input.stationId}::uuid, ${shiftStart}::timestamptz)
+      order by name, id
     `),
     transaction.execute<DailyOperationsContext['availableReadings'][number]>(sql`
       select n.id as "nozzleId", p.number as "pumpNumber", n.number as "nozzleNumber",
@@ -228,6 +225,7 @@ async function loadDailyOperationsContext(
       version: Number(shift.version),
     },
     attendants,
+    otherAttendants,
     availableReadings: readings.map((row) => ({
       ...row,
       unitPrice: row.unitPrice === null ? null : String(row.unitPrice),

@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent } from 'react';
-import { PageHeader } from '@/design-system/layout';
 import { Button, Card, ErrorState, Field, StatusBadge } from '@/design-system/primitives';
 import { ExactDecimal } from '@/platform/domain/primitives';
 import { formatTileMoney } from '@/modules/reporting/format';
@@ -29,8 +28,11 @@ export function StaffBenefitWorkspace({
   customers,
   staff,
   canOpenAccount,
+  legalEntityId,
 }: {
   tenantId: string;
+  /** The company the new staff account belongs to, so its month can be worked out. */
+  legalEntityId?: string | undefined;
   rows: readonly StaffBenefitRow[];
   /** Active customers that may be given a staff benefit account. */
   customers: readonly StaffBenefitCustomerOption[];
@@ -85,6 +87,7 @@ export function StaffBenefitWorkspace({
           tenantId,
           accountReference: reference.current,
           displayName: person.name,
+          ...(legalEntityId ? { legalEntityId } : {}),
           contactMetadata: { kind: STAFF_CUSTOMER_KIND },
           accountType: 'CREDIT',
           currency: 'USD',
@@ -141,15 +144,6 @@ export function StaffBenefitWorkspace({
 
   return (
     <>
-      <PageHeader
-        title="Staff fuel benefit"
-        eyebrow="Customers"
-        actions={
-          <Link className="button button-secondary" href="/customers">
-            All customers
-          </Link>
-        }
-      />
       <div className={styles.stack}>
         {rows.length > 0 ? (
           <>
@@ -210,7 +204,11 @@ export function StaffBenefitWorkspace({
                         <StatusBadge tone="critical">Over limit</StatusBadge>
                       ) : (
                         <span>
-                          {row.use ? `${formatTileMoney(row.use.remaining)} left` : 'Limit not set'}
+                          {row.use
+                            ? `${formatTileMoney(row.use.remaining)} left`
+                            : row.limit
+                              ? `Limit ${formatTileMoney(row.limit)} a month`
+                              : 'Limit not set'}
                         </span>
                       )}
                       <Link href={`/customers/${encodeURIComponent(row.customerId)}`}>
@@ -241,7 +239,11 @@ export function StaffBenefitWorkspace({
               </svg>
             </span>
             <h2>No staff benefits yet</h2>
-            <p>Add the first one below.</p>
+            <p>
+              {canOpenAccount
+                ? 'Add the first one below.'
+                : 'Someone who manages customer accounts can add the first one.'}
+            </p>
           </Card>
         )}
         {canOpenAccount ? (

@@ -6,7 +6,6 @@
 import type { ReportCategoryId } from '../catalog';
 import { CUSTOMER_AGEING_REPORT } from './customer-ageing';
 import { SALES_BY_PERIOD_REPORT } from './sales-by-period';
-import { STATION_DAILY_REPORT } from './station-daily-report';
 import { STOCK_VARIANCE_REPORT } from './stock-variance';
 
 export type TableReportColumn = Readonly<{
@@ -232,49 +231,8 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     ],
   },
   CUSTOMER_AGEING_REPORT,
-  STATION_DAILY_REPORT,
   SALES_BY_PERIOD_REPORT,
   STOCK_VARIANCE_REPORT,
-  {
-    slug: 'purchases',
-    title: 'Purchases',
-    description: 'Supplier invoices and credit notes, what has been paid and what is still owed.',
-    category: 'credit',
-    scope: 'station',
-    emptyMessage: 'No supplier invoices were recorded for these dates.',
-    filters: ['supplier', 'product'],
-    columns: [
-      { key: 'date', label: 'Invoice date', kind: 'text' },
-      { key: 'supplier', label: 'Supplier', kind: 'text' },
-      { key: 'type', label: 'Type', kind: 'text' },
-      { key: 'reference', label: 'Reference', kind: 'text' },
-      { key: 'dueDate', label: 'Due date', kind: 'text' },
-      { key: 'status', label: 'Status', kind: 'text' },
-      { key: 'amount', label: 'Amount (USD)', kind: 'number' },
-      { key: 'paid', label: 'Paid so far (USD)', kind: 'number' },
-      { key: 'owed', label: 'Still owed (USD)', kind: 'number' },
-    ],
-  },
-  {
-    slug: 'supplier-payments',
-    title: 'Supplier Payments',
-    description: 'Every payment made to suppliers and how much of it has been matched to invoices.',
-    category: 'credit',
-    scope: 'station',
-    emptyMessage: 'No supplier payments were recorded for these dates.',
-    filters: ['supplier'],
-    columns: [
-      { key: 'date', label: 'Payment date', kind: 'text' },
-      { key: 'supplier', label: 'Supplier', kind: 'text' },
-      { key: 'reference', label: 'Our reference', kind: 'text' },
-      { key: 'method', label: 'How it was paid', kind: 'text' },
-      { key: 'proof', label: 'Bank or proof reference', kind: 'text' },
-      { key: 'status', label: 'Status', kind: 'text' },
-      { key: 'amount', label: 'Amount (USD)', kind: 'number' },
-      { key: 'matched', label: 'Matched to invoices (USD)', kind: 'number' },
-      { key: 'unmatched', label: 'Not yet matched (USD)', kind: 'number' },
-    ],
-  },
   {
     slug: 'sales-by-attendant',
     audience: 'operational',

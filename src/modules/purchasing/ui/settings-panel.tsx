@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Modal } from '@/design-system/modal';
 import { Select } from '@/design-system/forms';
 import { Icon } from '@/design-system/icons';
+import { InfoTip } from '@/design-system/info-tip';
 import {
   Button,
   Card,
@@ -83,10 +84,6 @@ export function SettingsPanel({
 
   return (
     <div className={styles.stack}>
-      <p className={styles.intro}>
-        How closely a supplier&apos;s invoice must match what you ordered and received. Suppliers
-        follow the company settings unless you give them their own.
-      </p>
       {notice ? <SuccessState title="Saved" message={notice} /> : null}
       {loading ? <LoadingState label="Loading settings" /> : null}
       {error ? (
@@ -98,9 +95,14 @@ export function SettingsPanel({
 
       {data && r && !loading && !error ? (
         <>
-          <Card as="section" className="panel" aria-labelledby="po-company-settings">
+          <Card as="section" className="panel profit-panel" aria-labelledby="po-company-settings">
             <div className={styles.toolbar}>
-              <h3 id="po-company-settings">For the whole company</h3>
+              <span className="heading-with-tip">
+                <h2 id="po-company-settings" className="profit-title">
+                  For The Whole Company
+                </h2>
+                <InfoTip text="These settings decide how closely a supplier's invoice has to match what you ordered and received, and how VAT is treated. Set them once for the whole company, then give a supplier its own settings only if it needs different rules." />
+              </span>
               {capabilities.manageSettings ? (
                 <Button
                   className={styles.toolbarEnd}
@@ -152,11 +154,13 @@ export function SettingsPanel({
             </dl>
           </Card>
 
-          <Card as="section" className="panel" aria-labelledby="po-supplier-settings">
-            <h3 id="po-supplier-settings">Suppliers with different rules</h3>
-            <p className={styles.muted}>
-              Every supplier follows the company settings unless you give it its own.
-            </p>
+          <Card as="section" className="panel profit-panel" aria-labelledby="po-supplier-settings">
+            <span className="heading-with-tip">
+              <h2 id="po-supplier-settings" className="profit-title">
+                Suppliers With Different Rules
+              </h2>
+              <InfoTip text="Every supplier follows the company settings unless you give it its own." />
+            </span>
             {suppliers.length === 0 ? (
               <EmptyState
                 title="No suppliers yet"

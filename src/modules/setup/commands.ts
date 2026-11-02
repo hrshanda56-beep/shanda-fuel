@@ -433,10 +433,10 @@ export function setResponsibleSupervisorCommand(
     execute: async (transaction) => {
       if (payload.membershipId) {
         const eligible = await transaction.execute<{ id: string }>(sql`
-          select membership.id from app.memberships membership
+          select membership.id from app.member_directory(${context.tenantId}::uuid) membership
           join app.membership_role_assignments assignment
-            on assignment.tenant_id = membership.tenant_id and assignment.membership_id = membership.id
-          where membership.tenant_id = ${context.tenantId} and membership.id = ${payload.membershipId}
+            on assignment.tenant_id = ${context.tenantId} and assignment.membership_id = membership.id
+          where membership.id = ${payload.membershipId}::uuid
             and membership.status = 'ACTIVE'
             and assignment.role_code = 'SUPERVISOR' and assignment.scope_type = 'STATION'
             and assignment.station_id = ${context.stationId}

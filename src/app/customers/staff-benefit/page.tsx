@@ -40,6 +40,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
             />
           );
         }
+        // A staff account needs a company so its month follows that company's station time. With
+        // one company in the organisation there is nothing to choose, so it is used.
+        const companies =
+          resolution.available.organisations.find((org) => org.id === current.organisationId)
+            ?.legalEntities ?? [];
+        const legalEntityId =
+          current.legalEntityId ?? (companies.length === 1 ? companies[0]!.id : undefined);
         const customers = staffRecordsWithoutBenefit(
           data.accounts.customers,
           new Set(data.rows.map((row) => row.customerId)),
@@ -51,9 +58,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
             rows={[...data.rows]}
             customers={customers}
             staff={[...data.staff]}
-            canOpenAccount={data.accounts.customers.some(
-              (customer) => customer.capabilities.openAccount,
-            )}
+            canOpenAccount={data.accounts.capabilities.openAccount}
+            legalEntityId={legalEntityId}
           />
         );
       }}

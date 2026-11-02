@@ -237,6 +237,12 @@ describe('permission authorization', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.ATTENDANT).not.toContain('reconciliation.return');
   });
 
+  it('lets a supervisor read operational reports but not finance reports or download', () => {
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).toContain('report.view');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('report.finance.view');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('report.export');
+  });
+
   it('rejects a tenant scope carrying narrower identifiers', () => {
     expect(() =>
       scopeCovers(

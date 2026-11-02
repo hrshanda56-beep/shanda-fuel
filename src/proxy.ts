@@ -1,5 +1,7 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
+
+import { isLocalDevBypassEnabled } from '@/platform/auth/dev-bypass';
 import type { NextFetchEvent, NextRequest } from 'next/server';
 import {
   carriesOrganisationSlug,
@@ -27,6 +29,9 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   ) {
     return NextResponse.next();
   }
+  // Local development only: guarded by isLocalDevBypassEnabled (never on a
+  // deployed build or a non-local database); Clerk is not contacted at all.
+  if (isLocalDevBypassEnabled()) return NextResponse.next();
   // `?org=<slug>` pages are served from the `?tenantId=<id>` form while the address bar keeps the
   // slug. Anything that does not resolve for this visitor continues unchanged.
   let slugTarget: URL | null = null;

@@ -9,7 +9,10 @@ vi.mock('../../platform/db/transaction', () => ({
   withTenantTransaction: vi.fn(async (_context, work) => work({ execute: transactionExecute })),
 }));
 vi.mock('../tenancy/server', () => ({ resolveTenantExecutionContext: resolveAuthority }));
-vi.mock('../../platform/security/permissions', () => ({ authorize }));
+vi.mock('../../platform/security/permissions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../platform/security/permissions')>()),
+  authorize,
+}));
 vi.mock('../audit/contracts', () => ({ appendSecurityEvent }));
 vi.mock('../../platform/config/env', () => ({
   getAuditSigningKey: vi.fn(() => ({ keyId: 'test', secret: 'test' })),
@@ -346,7 +349,8 @@ describe("Changing a staff member's access", () => {
         },
       ]) // current
       .mockResolvedValueOnce([{ station_id: stationId }]) // station check
-      .mockResolvedValue([]); // delete + insert
+      .mockResolvedValueOnce([{ removed: 1 }]) // old assignments removed
+      .mockResolvedValue([]); // insert
     const result = await updateStaffAssignmentFromRequest(request, change);
     expect(result).toMatchObject({ role: 'SUPERVISOR', scopeType: 'STATION' });
     expect(appendSecurityEvent).toHaveBeenCalledWith(
@@ -357,6 +361,30 @@ describe("Changing a staff member's access", () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  it('adds nothing and writes no audit event when the old assignments were not removed', async () => {
+    resolveAuthority.mockResolvedValueOnce(privilegedAuthority());
+    transactionExecute
+      .mockResolvedValueOnce([]) // tenant lock
+      .mockResolvedValueOnce([{ status: 'ACTIVE' }]) // target
+      .mockResolvedValueOnce([
+        {
+          role_code: 'ATTENDANT',
+          scope_type: 'STATION',
+          legal_entity_id: entityId,
+          station_id: 'x',
+        },
+      ]) // current
+      .mockResolvedValueOnce([{ station_id: stationId }]) // station check
+      .mockResolvedValueOnce([{ removed: 0 }]) // removal declined
+      .mockResolvedValue([]);
+    await expect(updateStaffAssignmentFromRequest(request, change)).rejects.toThrow(
+      /cannot change this staff member/,
+    );
+    expect(appendSecurityEvent).not.toHaveBeenCalled();
+    // Only the lock, target, current, station and removal statements ran: nothing was inserted.
+    expect(transactionExecute).toHaveBeenCalledTimes(5);
   });
 
   it('only lets an owner change an administrator', async () => {

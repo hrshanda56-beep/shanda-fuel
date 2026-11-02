@@ -572,6 +572,46 @@ export async function returnSupplierDocumentInTransaction(
   };
 }
 
+/** Locks supplier payments in id order, so two commands that need the same ones cannot cross. */
+async function lockSupplierPayments(
+  transaction: SupplierTransaction,
+  tenantId: string,
+  paymentIds: readonly string[],
+) {
+  const ids = [...new Set(paymentIds)].sort();
+  if (ids.length === 0) return;
+  await transaction.execute(sql`
+    select id from app.supplier_payments
+    where tenant_id = ${tenantId}
+      and id in (${sql.join(
+        ids.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+    order by id
+    for update
+  `);
+}
+
+/** Locks supplier documents in id order, so two commands that need the same ones cannot cross. */
+async function lockSupplierDocuments(
+  transaction: SupplierTransaction,
+  tenantId: string,
+  documentIds: readonly string[],
+) {
+  const ids = [...new Set(documentIds)].sort();
+  if (ids.length === 0) return;
+  await transaction.execute(sql`
+    select id from app.supplier_documents
+    where tenant_id = ${tenantId}
+      and id in (${sql.join(
+        ids.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+    order by id
+    for update
+  `);
+}
+
 export async function reverseSupplierDocumentInTransaction(
   transaction: SupplierTransaction,
   context: SupplierCommandContext,
@@ -631,20 +671,29 @@ export async function reverseSupplierDocumentInTransaction(
       ${document.document_date}, ${original[0]?.id ?? null}, ${context.authority.membership.membershipId}
     )
   `);
-  const allocations = await transaction.execute<{
-    id: string;
-    payment_id: string;
-    amount: string;
-  }>(sql`
-    select a.id, a.payment_id, a.amount::text
-    from app.supplier_payment_allocations a
-    where a.tenant_id = ${context.tenantId} and a.document_id = ${document.id}
-      and a.state = 'POSTED'
-      and not exists (select 1 from app.supplier_payment_allocations r
-        where r.tenant_id = a.tenant_id and r.reversal_of_id = a.id and r.state = 'REVERSED')
-    order by a.id
-    for update
-  `);
+  const readActiveAllocations = () =>
+    transaction.execute<{
+      id: string;
+      payment_id: string;
+      amount: string;
+    }>(sql`
+      select a.id, a.payment_id, a.amount::text
+      from app.supplier_payment_allocations a
+      where a.tenant_id = ${context.tenantId} and a.document_id = ${document.id}
+        and a.state = 'POSTED'
+        and not exists (select 1 from app.supplier_payment_allocations r
+          where r.tenant_id = a.tenant_id and r.reversal_of_id = a.id and r.state = 'REVERSED')
+      order by a.id
+    `);
+  // Allocation rows are append-only and cannot be row-locked by the application role, so the
+  // payments they belong to are locked instead (in id order), and the allocations are read again
+  // once the locks are held. This document is already locked, so no new allocation can appear.
+  await lockSupplierPayments(
+    transaction,
+    context.tenantId,
+    (await readActiveAllocations()).map((allocation) => allocation.payment_id),
+  );
+  const allocations = await readActiveAllocations();
   const affectedPayments = new Set<string>();
   for (const allocation of allocations) {
     affectedPayments.add(allocation.payment_id);
@@ -942,20 +991,29 @@ export async function reverseSupplierPaymentInTransaction(
       ${payment.payment_date}, ${original[0]?.id ?? null}, ${context.authority.membership.membershipId}
     )
   `);
-  const allocations = await transaction.execute<{
-    id: string;
-    document_id: string;
-    amount: string;
-  }>(sql`
-    select a.id, a.document_id, a.amount::text
-    from app.supplier_payment_allocations a
-    where a.tenant_id = ${context.tenantId} and a.payment_id = ${payment.id}
-      and a.state = 'POSTED'
-      and not exists (select 1 from app.supplier_payment_allocations r
-        where r.tenant_id = a.tenant_id and r.reversal_of_id = a.id and r.state = 'REVERSED')
-    order by a.id
-    for update
-  `);
+  const readActiveAllocations = () =>
+    transaction.execute<{
+      id: string;
+      document_id: string;
+      amount: string;
+    }>(sql`
+      select a.id, a.document_id, a.amount::text
+      from app.supplier_payment_allocations a
+      where a.tenant_id = ${context.tenantId} and a.payment_id = ${payment.id}
+        and a.state = 'POSTED'
+        and not exists (select 1 from app.supplier_payment_allocations r
+          where r.tenant_id = a.tenant_id and r.reversal_of_id = a.id and r.state = 'REVERSED')
+      order by a.id
+    `);
+  // Allocation rows are append-only and cannot be row-locked by the application role, so the
+  // documents they belong to are locked instead (in id order), and the allocations are read again
+  // once the locks are held. This payment is already locked, so no new allocation can appear.
+  await lockSupplierDocuments(
+    transaction,
+    context.tenantId,
+    (await readActiveAllocations()).map((allocation) => allocation.document_id),
+  );
+  const allocations = await readActiveAllocations();
   for (const allocation of allocations) {
     await transaction.execute(sql`
       insert into app.supplier_payment_allocations (

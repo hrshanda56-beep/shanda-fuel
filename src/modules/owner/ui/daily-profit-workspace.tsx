@@ -1,16 +1,19 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useMemo, type ReactNode } from 'react';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
+import { Pagination, usePagination } from '@/design-system/pagination';
+import { InfoTip } from '@/design-system/info-tip';
 import { Card, EmptyState, ErrorState, StatusBadge } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
-import { profitSign } from '@/modules/profitability/daily-profit';
+import { CashDonut } from '@/modules/cash/ui/cash-visuals';
+import { profitSign, type DailyProfitSummary } from '@/modules/profitability/daily-profit';
 import { formatPerLitre, moneyOrUnavailable } from '@/modules/profitability/ui/profit-model';
+import { parseReportFilters } from '@/modules/reporting/filters';
+import { REPORT_PERIOD_LABELS } from '@/modules/reporting/period';
 import type { ManagementReport } from '@/modules/reporting/contracts';
 import { dailyProfitFromReport } from '@/modules/reporting/daily-profit';
-import { OwnerPeriodBar } from './owner-period-bar';
 
 export type DailyProfitInitial = Readonly<{
   tenantId: string;
@@ -30,112 +33,152 @@ function FlagBadge({ value, loss, gain }: { value: string | null; loss: string; 
   return <StatusBadge tone="positive">{gain}</StatusBadge>;
 }
 
-export function DailyProfitWorkspace({ initial }: { initial: DailyProfitInitial }) {
+function num(value: string | null): number {
+  const n = value === null ? 0 : Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Where each dollar of sales went. Sizes are for the picture only. */
+function ProfitSplit({ summary }: { summary: DailyProfitSummary }) {
+  const sales = num(summary.combined.sales);
+  const parts = [
+    { key: 'cost', label: 'Fuel cost', amount: summary.combined.costOfFuelSold, tone: 1 },
+    { key: 'expenses', label: 'Expenses', amount: summary.combined.expenses, tone: 2 },
+    { key: 'fixed', label: 'Fixed costs', amount: summary.combined.fixedCosts, tone: 3 },
+    { key: 'staff', label: 'Fuel given to staff', amount: summary.fuelBenefit, tone: 4 },
+    { key: 'profit', label: 'Profit', amount: summary.operatingProfitAfterBenefit, tone: 0 },
+  ]
+    .map((part) => ({ ...part, value: num(part.amount) }))
+    .filter((part) => part.value > 0);
+  const total = Math.max(
+    sales,
+    parts.reduce((sum, part) => sum + part.value, 0),
+  );
+  if (total === 0) return null;
+  return (
+    <div className="profit-split">
+      <CashDonut
+        slices={parts.map((part) => ({
+          key: part.key,
+          label: part.label,
+          total: String(part.value),
+          count: 0,
+          detail: `${Math.round((part.value / total) * 100)}% of sales`,
+          display: moneyOrUnavailable(part.amount),
+          tone: part.tone,
+        }))}
+        currency="USD"
+        centreLabel="Fuel sold"
+        centreValue={moneyOrUnavailable(summary.combined.sales)}
+        selectOpensDialog={false}
+      />
+    </div>
+  );
+}
+
+/** `embedded` drops the period line, for use under the Profits tabs, which already show it. */
+export function DailyProfitWorkspace({
+  initial,
+  links,
+  embedded = false,
+}: {
+  initial: DailyProfitInitial;
+  /** The related-screen buttons, shared with the This Month tab. */
+  links: ReactNode;
+  embedded?: boolean;
+}) {
   const router = useRouter();
+  const search = useSearchParams();
+  const filters = useMemo(() => parseReportFilters(search), [search]);
   const report = initial.report;
   const summary = useMemo(() => (report ? dailyProfitFromReport(report) : null), [report]);
   const hasActivity = summary !== null && summary.days.length > 0;
-  const range = report
-    ? { fromDate: report.filters.fromDate, toDate: report.filters.toDate }
-    : null;
+  const dayPage = usePagination(summary?.days ?? []);
   const missingCost = summary?.fuels.some((fuel) => fuel.grossProfit === null) ?? false;
+  const period = report
+    ? `${formatBusinessDate(report.filters.fromDate)} to ${formatBusinessDate(report.filters.toDate)}`
+    : null;
 
   return (
     <div className="profit-workspace">
-      <OwnerPeriodBar tenantId={initial.tenantId} range={range}>
-        {({ pending }) =>
-          initial.badRange ? (
-            <EmptyState
-              title="Choose both dates"
-              message="Pick a start date and an end date, with the start on or before the end."
-            />
-          ) : initial.error ? (
-            <ErrorState
-              title="Daily profit could not be loaded"
-              message={initial.error}
-              action={
-                <button
-                  type="button"
-                  className="button button-secondary"
-                  onClick={() => router.refresh()}
-                >
-                  Try again
-                </button>
-              }
-            />
-          ) : !summary || !report ? null : !hasActivity ? (
-            <EmptyState
-              title="No sales or costs in these dates"
-              message="Nothing was sold and no costs were recorded in this period. Try other dates."
-            />
-          ) : (
-            <div className="profit-body" data-pending={pending || undefined}>
-              <div className="profit-overview">
-                <Card
-                  as="section"
-                  className="panel profit-panel"
-                  aria-labelledby="dp-summary-title"
-                >
-                  <div className="panel-heading">
-                    <h2 id="dp-summary-title">Operating profit</h2>
-                    <FlagBadge
-                      value={summary.operatingProfitAfterBenefit}
-                      loss="Loss"
-                      gain="Profit"
-                    />
-                  </div>
-                  <p
-                    className="profit-hero"
-                    data-tone={tone(summary.operatingProfitAfterBenefit) ?? 'good'}
-                  >
-                    {moneyOrUnavailable(summary.operatingProfitAfterBenefit)}
-                  </p>
-                  <p className="profit-headline">
-                    What is left after the fuel cost, the day-to-day expenses and each day&rsquo;s
-                    share of the fixed costs.
-                  </p>
-                  {missingCost ? (
-                    <p className="profit-explain" role="status">
-                      <StatusBadge tone="warning">Not worked out yet</StatusBadge> Some sales have
-                      no fuel cost yet, so profit is not shown for them.
-                    </p>
-                  ) : null}
-                </Card>
-                <Card as="section" className="panel profit-panel" aria-labelledby="dp-adds-title">
-                  <div className="panel-heading">
-                    <h2 id="dp-adds-title">How it adds up</h2>
-                  </div>
-                  <dl className="profit-rows" aria-label="How the operating profit adds up">
-                    <Line
-                      label="Fuel sold"
-                      value={summary.combined.sales}
-                      note={formatLitres(summary.combined.litres)}
-                    />
-                    <Line label="Cost of the fuel" value={summary.combined.costOfFuelSold} />
-                    <Line
-                      label="Profit before expenses"
-                      value={summary.combined.grossProfit}
-                      note={formatPerLitre(summary.combined.grossProfitPerLitre)}
-                    />
-                    <Line label="Expenses" value={summary.combined.expenses} />
-                    <Line label="Fixed costs, by the day" value={summary.combined.fixedCosts} />
-                    {exactPositive(summary.fuelBenefit) ? (
-                      <Line label="Fuel given to staff" value={summary.fuelBenefit} />
-                    ) : null}
-                    <Line
-                      label="Operating profit"
-                      value={summary.operatingProfitAfterBenefit}
-                      strong
-                    />
-                  </dl>
-                </Card>
-              </div>
+      {embedded ? null : (
+        <div className="profit-top">
+          <p className="profit-period">
+            {report ? <strong>{REPORT_PERIOD_LABELS[filters.period]}</strong> : null}
+            {period ? <span>{period}</span> : null}
+          </p>
+        </div>
+      )}
 
-              <Card as="section" className="panel profit-panel" aria-labelledby="dp-fuels-title">
+      {initial.badRange ? (
+        <EmptyState
+          title="Choose both dates"
+          message="Pick a start date and an end date, with the start on or before the end."
+        />
+      ) : initial.error ? (
+        <ErrorState
+          title="Daily profit could not be loaded"
+          message={initial.error}
+          action={
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => router.refresh()}
+            >
+              Try again
+            </button>
+          }
+        />
+      ) : !summary || !report ? null : !hasActivity ? (
+        <EmptyState
+          title="No sales or costs in these dates"
+          message="Nothing was sold and no costs were recorded in this period. Try other dates."
+        />
+      ) : (
+        <div className="profit-body">
+          <div className="profit-overview">
+            <Card as="section" className="panel profit-panel" aria-labelledby="dp-summary-title">
+              <div className="panel-heading">
+                <span className="heading-with-tip">
+                  <h2 id="dp-summary-title">Operating profit</h2>
+                  <InfoTip
+                    text={`What is left after the fuel cost, the day-to-day expenses and each day's share of the fixed costs.${missingCost ? ' Some sales have no fuel cost yet, so profit is not shown for them.' : ''}`}
+                  />
+                </span>
+                <FlagBadge value={summary.operatingProfitAfterBenefit} loss="Loss" gain="Profit" />
+              </div>
+              <p
+                className="profit-hero"
+                data-tone={tone(summary.operatingProfitAfterBenefit) ?? 'good'}
+              >
+                {moneyOrUnavailable(summary.operatingProfitAfterBenefit)}
+              </p>
+              {summary.fuels.length === 0 ? (
+                <p className="state state-warning" role="status">
+                  <strong>No fuel sales yet:</strong> No day has been closed in this period, so this
+                  only shows costs recorded so far. It is not a result for the period.
+                </p>
+              ) : null}
+              <ProfitSplit summary={summary} />
+            </Card>
+
+            <div className="profit-fuel-wrap">
+              <Card
+                as="section"
+                className="panel profit-panel profit-fuel-card"
+                aria-labelledby="dp-fuels-title"
+              >
                 <h2 id="dp-fuels-title" className="profit-title">
                   Profit by fuel
                 </h2>
-                <TableScrollRegion label="Profit by fuel">
+                {summary.fuels.length === 0 ? (
+                  <EmptyState
+                    layout="block"
+                    title="No fuel sold"
+                    message="Fuel appears here once a day's sales are closed and checked."
+                    icon="fuel"
+                  />
+                ) : (
                   <table className="data-table profit-table">
                     <caption className="visually-hidden">Profit by fuel</caption>
                     <thead>
@@ -143,7 +186,6 @@ export function DailyProfitWorkspace({ initial }: { initial: DailyProfitInitial 
                         <th scope="col">Fuel</th>
                         <th scope="col">Litres sold</th>
                         <th scope="col">Fuel sold</th>
-                        <th scope="col">Cost of fuel</th>
                         <th scope="col">Profit before expenses</th>
                         <th scope="col">Profit per litre</th>
                       </tr>
@@ -154,9 +196,6 @@ export function DailyProfitWorkspace({ initial }: { initial: DailyProfitInitial 
                           <th scope="row">{fuel.productName}</th>
                           <td data-label="Litres sold">{formatLitres(fuel.litres)}</td>
                           <td data-label="Fuel sold">{moneyOrUnavailable(fuel.sales)}</td>
-                          <td data-label="Cost of fuel">
-                            {moneyOrUnavailable(fuel.costOfFuelSold)}
-                          </td>
                           <td
                             data-label="Profit before expenses"
                             data-negative={profitSign(fuel.grossProfit) === 'LOSS' || undefined}
@@ -164,7 +203,7 @@ export function DailyProfitWorkspace({ initial }: { initial: DailyProfitInitial 
                             {moneyOrUnavailable(fuel.grossProfit)}
                           </td>
                           <td data-label="Profit per litre">
-                            {formatPerLitre(fuel.grossProfitPerLitre)}
+                            {formatPerLitre(fuel.grossProfitPerLitre).replace(' per litre', '')}
                           </td>
                         </tr>
                       ))}
@@ -175,128 +214,85 @@ export function DailyProfitWorkspace({ initial }: { initial: DailyProfitInitial 
                           <td data-label="Fuel sold">
                             {moneyOrUnavailable(summary.combined.sales)}
                           </td>
-                          <td data-label="Cost of fuel">
-                            {moneyOrUnavailable(summary.combined.costOfFuelSold)}
-                          </td>
                           <td data-label="Profit before expenses">
                             {moneyOrUnavailable(summary.combined.grossProfit)}
                           </td>
                           <td data-label="Profit per litre">
-                            {formatPerLitre(summary.combined.grossProfitPerLitre)}
+                            {formatPerLitre(summary.combined.grossProfitPerLitre).replace(
+                              ' per litre',
+                              '',
+                            )}
                           </td>
                         </tr>
                       ) : null}
                     </tbody>
                   </table>
-                </TableScrollRegion>
+                )}
               </Card>
-
-              <Card as="section" className="panel profit-panel" aria-labelledby="dp-days-title">
-                <h2 id="dp-days-title" className="profit-title">
-                  Day by day
-                </h2>
-                <TableScrollRegion label="Operating profit day by day">
-                  <table className="data-table profit-table">
-                    <caption className="visually-hidden">Operating profit day by day</caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">Day</th>
-                        <th scope="col">Fuel sold</th>
-                        <th scope="col">Cost of fuel</th>
-                        <th scope="col">Profit before expenses</th>
-                        <th scope="col">Expenses</th>
-                        <th scope="col">Fixed costs</th>
-                        <th scope="col">Operating profit</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summary.days.map((day) => (
-                        <tr key={day.date}>
-                          <th scope="row">
-                            {formatBusinessDate(day.date)}
-                            <span className="profit-row-note">
-                              {day.fuels
-                                .map((f) => `${f.productName} ${moneyOrUnavailable(f.sales)}`)
-                                .join(' · ') || 'No sales'}
-                            </span>
-                          </th>
-                          <td data-label="Fuel sold">{moneyOrUnavailable(day.combined.sales)}</td>
-                          <td data-label="Cost of fuel">
-                            {moneyOrUnavailable(day.combined.costOfFuelSold)}
-                          </td>
-                          <td data-label="Profit before expenses">
-                            {moneyOrUnavailable(day.combined.grossProfit)}
-                          </td>
-                          <td data-label="Expenses">{moneyOrUnavailable(day.combined.expenses)}</td>
-                          <td data-label="Fixed costs">
-                            {moneyOrUnavailable(day.combined.fixedCosts)}
-                          </td>
-                          <td
-                            data-label="Operating profit"
-                            data-negative={
-                              profitSign(day.combined.operatingProfit) === 'LOSS' || undefined
-                            }
-                          >
-                            {moneyOrUnavailable(day.combined.operatingProfit)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </TableScrollRegion>
-                <p className="profit-footnote">
-                  Fixed costs such as rent are spread evenly over the days of their month. Fuel
-                  given to staff is taken off the period total only, not off each day.
-                </p>
-              </Card>
-
-              <nav className="profit-links" aria-label="Related screens">
-                <Link className="button button-secondary" href="/financial-position">
-                  Financial position
-                </Link>
-                <Link className="button button-secondary" href="/profitability">
-                  Profit
-                </Link>
-                <Link className="button button-secondary" href="/expenses">
-                  Expenses
-                </Link>
-              </nav>
+              {links}
             </div>
-          )
-        }
-      </OwnerPeriodBar>
-    </div>
-  );
-}
+          </div>
 
-function exactPositive(value: string): boolean {
-  return profitSign(value) === 'PROFIT';
-}
-
-function Line({
-  label,
-  value,
-  note,
-  strong,
-}: {
-  label: string;
-  value: string | null;
-  note?: string;
-  strong?: boolean;
-}) {
-  return (
-    <div
-      className="profit-row"
-      data-tone={
-        value === null ? 'missing' : profitSign(value) === 'LOSS' && strong ? 'bad' : undefined
-      }
-      data-strong={strong || undefined}
-    >
-      <dt>
-        {label}
-        {note ? <span className="profit-row-note">{note}</span> : null}
-      </dt>
-      <dd>{moneyOrUnavailable(value)}</dd>
+          <Card as="section" className="panel profit-panel" aria-labelledby="dp-days-title">
+            <span className="heading-with-tip">
+              <h2 id="dp-days-title" className="profit-title">
+                Day by day
+              </h2>
+              <InfoTip text="Fixed costs such as rent are spread evenly over the days of their month. Fuel given to staff is taken off the period total only, not off each day." />
+            </span>
+            <TableScrollRegion label="Operating profit day by day">
+              <table className="data-table profit-table">
+                <caption className="visually-hidden">Operating profit day by day</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Day</th>
+                    <th scope="col">Fuel sold</th>
+                    <th scope="col">Cost of fuel</th>
+                    <th scope="col">Profit before expenses</th>
+                    <th scope="col">Expenses</th>
+                    <th scope="col">Fixed costs</th>
+                    <th scope="col">Operating profit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dayPage.rows.map((day) => (
+                    <tr key={day.date}>
+                      <th scope="row">
+                        {formatBusinessDate(day.date)}
+                        <span className="profit-row-note">
+                          {day.fuels
+                            .map((f) => `${f.productName} ${moneyOrUnavailable(f.sales)}`)
+                            .join(' · ') || 'No sales'}
+                        </span>
+                      </th>
+                      <td data-label="Fuel sold">{moneyOrUnavailable(day.combined.sales)}</td>
+                      <td data-label="Cost of fuel">
+                        {moneyOrUnavailable(day.combined.costOfFuelSold)}
+                      </td>
+                      <td data-label="Profit before expenses">
+                        {moneyOrUnavailable(day.combined.grossProfit)}
+                      </td>
+                      <td data-label="Expenses">{moneyOrUnavailable(day.combined.expenses)}</td>
+                      <td data-label="Fixed costs">
+                        {moneyOrUnavailable(day.combined.fixedCosts)}
+                      </td>
+                      <td
+                        data-label="Operating profit"
+                        data-negative={
+                          profitSign(day.combined.operatingProfit) === 'LOSS' || undefined
+                        }
+                      >
+                        {moneyOrUnavailable(day.combined.operatingProfit)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScrollRegion>
+            <Pagination slice={dayPage} label="Day by day pages" noun="days" />
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

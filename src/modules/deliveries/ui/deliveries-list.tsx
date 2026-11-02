@@ -3,12 +3,17 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Notice } from '@/design-system/feedback';
+import { useToast } from '@/design-system/feedback-provider';
 import { Checkbox } from '@/design-system/forms';
 import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
-import { Button, Card, EmptyState, StatusBadge } from '@/design-system/primitives';
+import { Modal } from '@/design-system/modal';
+import { Button, Card, StatusBadge } from '@/design-system/primitives';
+import { Pagination, usePagination } from '@/design-system/pagination';
 import { TableScrollRegion } from '@/design-system/table';
 import type { DeliveryList } from '../queries';
 import { RecordDelivery } from './record-delivery';
+import { InfoTip } from '@/design-system/info-tip';
+import { NotchedCard } from '@/design-system/notched-card';
 
 export function DeliveriesList({
   context,
@@ -20,6 +25,7 @@ export function DeliveriesList({
   contextQuery: string;
   initialData: DeliveryList;
 }) {
+  const toast = useToast();
   const [required, setRequired] = useState(initialData.waterTestRequired);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -43,6 +49,11 @@ export function DeliveriesList({
         throw new Error(body.message || 'Only an owner can change this.');
       }
       setRequired(next);
+      toast.success(
+        next
+          ? 'Saved. A water test is now required.'
+          : 'Saved. A water test is no longer required.',
+      );
     } catch (error) {
       setProblem(error instanceof Error ? error.message : 'That could not be saved.');
     } finally {
@@ -52,115 +63,148 @@ export function DeliveriesList({
 
   const { deliveries } = initialData;
   const [recording, setRecording] = useState(false);
+  const page = usePagination(deliveries);
+  const missing = (delivery: (typeof deliveries)[number]) =>
+    [
+      delivery.compartmentCount === 0 ? 'truck compartments' : null,
+      delivery.hasWaterTest ? null : 'water test',
+      delivery.driverConfirmed ? null : 'driver confirmation',
+    ].filter(Boolean) as string[];
   return (
     <div className="pg">
-      <p className="pg-intro">
-        Open a delivery to record its truck compartments, seals, water test and what the driver
-        confirmed.
-      </p>
-      {recording ? (
+      <NotchedCard
+        title={
+          <>
+            Deliveries
+            {deliveries.length > 0 ? (
+              <span className="deliveries-count"> {deliveries.length}</span>
+            ) : null}
+          </>
+        }
+        titleId="deliveries-title"
+        titleAside={
+          deliveries.length > 0 ? <InfoTip>Open a delivery to see its full details.</InfoTip> : null
+        }
+        className="pg-card deliveries-card"
+        notchWidth={10.5}
+        actions={
+          initialData.canRecord ? (
+            <Button type="button" onClick={() => setRecording(true)}>
+              Record delivery
+            </Button>
+          ) : null
+        }
+      >
+        {deliveries.length === 0 ? (
+          <p className="deliveries-empty table-secondary">
+            No deliveries yet.
+            {initialData.canRecord ? ' Record one when a fuel truck arrives.' : ''}
+          </p>
+        ) : (
+          <>
+            <TableScrollRegion label="Fuel deliveries">
+              <table className="data-table">
+                <caption className="visually-hidden">Fuel deliveries</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Delivery note</th>
+                    <th scope="col">Fuel</th>
+                    <th scope="col">On the note</th>
+                    <th scope="col">Received</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {page.rows.map((delivery) => {
+                    const gaps = delivery.status === 'DRAFT' ? missing(delivery) : [];
+                    return (
+                      <tr key={delivery.id}>
+                        <th scope="row">
+                          <Link
+                            className="row-link"
+                            href={`/inventory/deliveries/${delivery.id}${contextQuery ? `?${contextQuery}` : ''}`}
+                          >
+                            {delivery.deliveryNoteNumber}
+                          </Link>
+                          <span className="table-secondary">
+                            {formatBusinessDate(delivery.businessDate)}
+                            {delivery.supplierName ? ` · ${delivery.supplierName}` : ''}
+                          </span>
+                        </th>
+                        <td data-label="Fuel">{delivery.productName}</td>
+                        <td data-label="On the note">{formatLitres(delivery.noteLitres)}</td>
+                        <td data-label="Received">
+                          {formatLitres(delivery.receivedLitres)}
+                          {delivery.receipt === 'FULL' ? null : (
+                            <span className="table-secondary">
+                              {delivery.receipt === 'PARTIAL'
+                                ? 'Less than the note'
+                                : 'More than the note'}
+                            </span>
+                          )}
+                        </td>
+                        <td data-label="Status">
+                          <StatusBadge
+                            tone={
+                              delivery.status === 'CONFIRMED'
+                                ? 'positive'
+                                : delivery.status === 'DRAFT'
+                                  ? 'pending'
+                                  : 'neutral'
+                            }
+                          >
+                            {delivery.status === 'CONFIRMED'
+                              ? 'Confirmed'
+                              : delivery.status === 'DRAFT'
+                                ? 'Not confirmed yet'
+                                : 'Cancelled'}
+                          </StatusBadge>
+                          {gaps.length > 0 ? (
+                            <span className="table-secondary">Still needs: {gaps.join(', ')}</span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableScrollRegion>
+            <Pagination slice={page} label="Deliveries pages" noun="deliveries" />
+          </>
+        )}
+      </NotchedCard>
+      {initialData.canSetWaterTestRule ? (
+        <Card className="pg-card">
+          <details className="deliveries-rules">
+            <summary>Delivery rules</summary>
+            <InfoTip>
+              Only an owner can change this. It applies to every station in the organisation.
+            </InfoTip>
+            <Checkbox
+              label="A delivery cannot be confirmed until its water test is recorded"
+              hint="Left off, the water test is still recorded but never stops a delivery."
+              checked={required}
+              disabled={saving}
+              onChange={(event) => void changeRule(event.target.checked)}
+            />
+            {problem ? <Notice tone="critical">{problem}</Notice> : null}
+          </details>
+        </Card>
+      ) : null}
+      <Modal
+        open={recording}
+        onClose={() => setRecording(false)}
+        title="Record delivery"
+        presentation="side"
+        size="lg"
+      >
         <RecordDelivery
+          framed={false}
           tenantId={context.tenantId}
           stationId={context.stationId}
           tanks={initialData.tanks}
         />
-      ) : (
-        <div className="pg-actions">
-          <Button type="button" onClick={() => setRecording(true)}>
-            Record delivery
-          </Button>
-        </div>
-      )}
-      {deliveries.length === 0 ? (
-        <EmptyState
-          title="No deliveries yet"
-          message="Deliveries you record for this station will show here."
-        />
-      ) : (
-        <TableScrollRegion label="Fuel deliveries">
-          <table className="data-table">
-            <caption className="visually-hidden">Fuel deliveries</caption>
-            <thead>
-              <tr>
-                <th scope="col">Delivery note</th>
-                <th scope="col">Fuel</th>
-                <th scope="col">On the note</th>
-                <th scope="col">Received</th>
-                <th scope="col">Details recorded</th>
-              </tr>
-            </thead>
-            <tbody>
-              {deliveries.map((delivery) => (
-                <tr key={delivery.id}>
-                  <th scope="row">
-                    <Link
-                      className="row-link"
-                      href={`/inventory/deliveries/${delivery.id}${contextQuery ? `?${contextQuery}` : ''}`}
-                    >
-                      {delivery.deliveryNoteNumber}
-                    </Link>
-                    <span className="table-secondary">
-                      {formatBusinessDate(delivery.businessDate)}
-                      {delivery.supplierName ? ` · ${delivery.supplierName}` : ''}
-                    </span>
-                  </th>
-                  <td data-label="Fuel">{delivery.productName}</td>
-                  <td data-label="On the note">{formatLitres(delivery.noteLitres)}</td>
-                  <td data-label="Received">
-                    {formatLitres(delivery.receivedLitres)}
-                    {delivery.receipt === 'FULL' ? null : (
-                      <span className="table-secondary">
-                        {delivery.receipt === 'PARTIAL' ? 'Partial delivery' : 'More than the note'}
-                      </span>
-                    )}
-                  </td>
-                  <td data-label="Details recorded">
-                    <span className="cluster">
-                      <StatusBadge tone={delivery.compartmentCount > 0 ? 'positive' : 'neutral'}>
-                        {delivery.compartmentCount > 0
-                          ? `${delivery.compartmentCount} compartment${delivery.compartmentCount === 1 ? '' : 's'}`
-                          : 'No compartments'}
-                      </StatusBadge>
-                      <StatusBadge tone={delivery.hasWaterTest ? 'positive' : 'neutral'}>
-                        {delivery.hasWaterTest ? 'Water tested' : 'No water test'}
-                      </StatusBadge>
-                      <StatusBadge
-                        tone={
-                          delivery.driverConfirmed === null
-                            ? 'neutral'
-                            : delivery.driverConfirmed
-                              ? 'positive'
-                              : 'warning'
-                        }
-                      >
-                        {delivery.driverConfirmed === null
-                          ? 'Driver not recorded'
-                          : delivery.driverConfirmed
-                            ? 'Driver confirmed'
-                            : 'Driver has not confirmed'}
-                      </StatusBadge>
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableScrollRegion>
-      )}
-      <Card className="pg-card">
-        <h2>Water test rule</h2>
-        <p className="table-secondary">
-          Only an owner can change this. It applies to every station in the organisation.
-        </p>
-        <Checkbox
-          label="A delivery cannot be confirmed until its water test is recorded"
-          hint="Left off, the water test is still recorded but never stops a delivery."
-          checked={required}
-          disabled={saving}
-          onChange={(event) => void changeRule(event.target.checked)}
-        />
-        {problem ? <Notice tone="critical">{problem}</Notice> : null}
-      </Card>
+      </Modal>
     </div>
   );
 }

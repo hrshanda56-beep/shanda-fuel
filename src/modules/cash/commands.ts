@@ -83,6 +83,13 @@ const confirmDepositSchema = commandContext.extend({
   expectedVersion: z.number().int().nonnegative(),
   confirmedAmount: decimalString,
   bankReference: z.string().trim().min(1).max(120),
+  /** The date the bank gives for the deposit. Not in the future. */
+  bankDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter the bank date as a calendar date.')
+    .optional(),
+  /** Required when the bank confirmed a different amount from the one deposited. */
+  differenceReason: z.string().trim().max(500).optional(),
 });
 
 const submitHandoverSchema = commandContext.extend({

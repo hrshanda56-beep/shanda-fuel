@@ -38,9 +38,11 @@ function confirmLabel(action: RowAction): string {
 export function ReportList({
   tenantId,
   financeReports = true,
+  canExport = true,
 }: {
   tenantId: string;
   financeReports?: boolean;
+  canExport?: boolean;
 }) {
   const searchParams = useSearchParams();
   const actions = useReportActions();
@@ -83,6 +85,7 @@ export function ReportList({
               customTo: pageFilters.customTo,
             }}
             busy={actions.busy}
+            canExport={canExport}
             onShare={(target) => void actions.share(target, report.title)}
             onExport={(target, format) => void actions.exportCsv(target, false, format)}
           />
@@ -99,6 +102,7 @@ function ReportRow({
   stationIds,
   defaultPeriod,
   busy,
+  canExport,
   onShare,
   onExport,
 }: {
@@ -108,6 +112,7 @@ function ReportRow({
   stationIds: readonly string[];
   defaultPeriod: RowPeriod;
   busy: boolean;
+  canExport: boolean;
   onShare: (target: ReportActionTarget) => void;
   onExport: (target: ReportActionTarget, format: ExportFormat) => void;
 }) {
@@ -174,7 +179,7 @@ function ReportRow({
               label: 'Share private link',
               onSelect: () => setPending({ kind: 'share' }),
             },
-            ...(report.exportable
+            ...(report.exportable && canExport
               ? (['xlsx', 'pdf', 'csv'] as const).map((format) => ({
                   kind: 'action' as const,
                   label: EXPORT_LABELS[format],
