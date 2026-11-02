@@ -1,8 +1,8 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-11-01** for `main` at `6e4bb214`: 83 migrations, 0000 to 0097. Production's own count is not known from the repository: read it first (section 4, step 2).
+**Updated 2026-11-01** for `main` at `6e4bb214`: 85 migrations, 0000 to 0099 (0098 and 0099 added 2026-11-02). Production's own count is not known from the repository: read it first (section 4, step 2).
 
-> **Urgent, 2026-11-01:** the application code for 0087 to 0097 is already live, but those migrations are not recorded as applied to production. **0097 is required**: without it the app's database role cannot approve a reconciliation that has pump readings (the validation triggers fail with "permission denied"). Apply 0084 to 0097 in order after reading production's level (section 4, step 2).
+> **Urgent, 2026-11-01:** the application code for 0087 to 0097 is already live, but those migrations are not recorded as applied to production. **0097 is required**: without it the app's database role cannot approve a reconciliation that has pump readings (the validation triggers fail with "permission denied"). Apply 0084 to 0099 in order after reading production's level (section 4, step 2).
 
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
@@ -95,8 +95,10 @@ that was reviewed.
 | 0095 | delivery_draft_edit | The app role may update a draft delivery's single allocation row (tank, litres) | Not applied to production. Grant change only |
 | 0096 | reconciliation_submitter | Lets Finance and the owner see who submitted a day (name and time only, to people who can view reconciliations) | Not applied to production. New SECURITY DEFINER function owned by `migration_owner` |
 | 0097 | approval_trigger_locks | Six validation trigger functions become SECURITY DEFINER (fixed search path, owned by `migration_owner`) | **Required.** Without it no reconciliation with pump readings can be approved as `app_runtime`. Needs the `migration_owner` role (stops with an error if absent). No new table rights for `app_runtime` |
+| 0098 | attendant_eligibility | New yes/no SECURITY DEFINER function `app.is_station_attendant` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only) so a station supervisor can name another attendant | **Required for station supervisors/administrators** to hand over shifts, capture meter boundaries and report meter exceptions naming someone else. Changes no row visibility and no table rights |
+| 0099 | deposit_confirmation_grants | `GRANT UPDATE (bank_date, confirmation_reason) ON app.bank_deposits` to `app_runtime` | **Required.** Without it no bank deposit can be confirmed as `app_runtime` (0093 added the columns without the grant) |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 83 entries, 0000 to 0097 (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 85 entries, 0000 to 0099 (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -262,6 +264,8 @@ e1f7397c5cbdad9dd403ffe9f3559d73f41dbd1a575cb05cc4716d60efd562d3  0090_station_a
 947036506ba41f916a9d06d2f6d5f865c2a48f847b996ef48ef08b26f6d266c6  0095_delivery_draft_edit.sql
 36d759b320a4ab2c2c26928257787796eebf89e25a409d38481a6903c2601b86  0096_reconciliation_submitter.sql
 97a05cb67943ec66aa21a664dc667446f04b4b8158a378d78ce193f9d93534fc  0097_approval_trigger_locks.sql
+7f05defdc4e07269990ec98d2446933c726abeca05e034da31ec8452e12276c1  0098_attendant_eligibility.sql
+37188cb7181f183ade1284d9f0839f6d98a53a19d836540918d7d013a5f3abfa  0099_deposit_confirmation_grants.sql
 ```
 
 ## 7. Release record (copy this and fill it in)
