@@ -7,7 +7,7 @@
 CREATE FUNCTION app.is_station_attendant(p_tenant_id uuid, p_station_id uuid, p_membership_id uuid)
 RETURNS boolean
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog, app, platform
 AS $$
@@ -35,19 +35,23 @@ BEGIN
     RETURN false;
   END IF;
 
-  RETURN EXISTS (
-    SELECT 1
-    FROM app.memberships m
-    JOIN app.membership_role_assignments a
-      ON a.tenant_id = m.tenant_id AND a.membership_id = m.id
-    WHERE m.tenant_id = p_tenant_id
-      AND m.id = p_membership_id
-      AND m.status = 'ACTIVE'
-      AND a.scope_type = 'STATION'
-      AND a.station_id = p_station_id
-      AND a.role_code = 'ATTENDANT'
-      AND (a.expires_at IS NULL OR a.expires_at > now())
-  );
+  -- Share-lock the rows relied on, as the check this replaces did, so the person cannot be
+  -- deactivated or have the role removed between this answer and the end of the caller's
+  -- transaction. That is why the function is VOLATILE: PostgreSQL does not allow row locks in a
+  -- STABLE one.
+  PERFORM 1
+  FROM app.memberships m
+  JOIN app.membership_role_assignments a
+    ON a.tenant_id = m.tenant_id AND a.membership_id = m.id
+  WHERE m.tenant_id = p_tenant_id
+    AND m.id = p_membership_id
+    AND m.status = 'ACTIVE'
+    AND a.scope_type = 'STATION'
+    AND a.station_id = p_station_id
+    AND a.role_code = 'ATTENDANT'
+    AND (a.expires_at IS NULL OR a.expires_at > now())
+  FOR SHARE OF m, a;
+  RETURN FOUND;
 END;
 $$;
 --> statement-breakpoint
