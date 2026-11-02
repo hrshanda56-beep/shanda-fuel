@@ -98,7 +98,7 @@ that was reviewed.
 | 0098 | attendant_eligibility | New yes/no SECURITY DEFINER function `app.is_station_attendant` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only) so a station supervisor can name another attendant | **Required for station supervisors/administrators** to hand over shifts, capture meter boundaries and report meter exceptions naming someone else. Changes no row visibility and no table rights |
 | 0099 | deposit_confirmation_grants | `GRANT UPDATE (bank_date, confirmation_reason) ON app.bank_deposits` to `app_runtime` | **Required.** Without it no bank deposit can be confirmed as `app_runtime` (0093 added the columns without the grant) |
 | 0100 | member_directory | New SECURITY DEFINER function `app.member_directory(tenant)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only): member id, display name, status and "can sign in" for the caller's own organisation, to active members only. No email | **Required for station-level staff** to see people's names, pick an owner/administrator as customer approver, and for a station-level owner not to be treated as sole owner. Changes no row visibility and no table rights |
-| 0101 | staff_access_replace | `GRANT DELETE ON app.membership_role_assignments` to `app_runtime` | **Required.** Without it "Change access" for a staff member fails with "permission denied" for everyone (the command replaces assignments by delete and insert). Row-level security still confines it to the caller's organisation |
+| 0101 | staff_access_replace | New SECURITY DEFINER function `app.clear_membership_assignments(tenant, membership)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only); callable only by a tenant-wide owner or administrator of that organisation; removes one member's assignments there. No table DELETE right is granted | **Required.** Without it "Change access" for a staff member fails with "permission denied" for everyone (the command replaces assignments by delete and insert). `db.smoke` still asserts the application role has no other deletes |
 
 The journal in `src/platform/db/migrations/meta/_journal.json` lists 87 entries, 0000 to 0101 (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
@@ -269,7 +269,7 @@ e1f7397c5cbdad9dd403ffe9f3559d73f41dbd1a575cb05cc4716d60efd562d3  0090_station_a
 156068781071ca81fb123ec88bdea286da832eeecb68498226b109b91ea7ad91  0098_attendant_eligibility.sql
 37188cb7181f183ade1284d9f0839f6d98a53a19d836540918d7d013a5f3abfa  0099_deposit_confirmation_grants.sql
 d050f34732c8c791ecee6dc29011f6cb7a4aa0826bd7476322690f74fd2a0797  0100_member_directory.sql
-09c7362a4188a4e75eaca5c851685886a6f24a6b2c6fedb3a4b16734e172ae01  0101_staff_access_replace.sql
+e05eca7376ca738a1c246ec9b42daadfdd7e85d12b85780a822bc96e7bb02dc8  0101_staff_access_replace.sql
 ```
 
 ## 7. Release record (copy this and fill it in)

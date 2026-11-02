@@ -31,8 +31,10 @@ organisation only) now serves: customer-account approver choosing and the approv
 owners and administrators), the sole-owner check for expense approval, names on cash handovers,
 reports, daily report, documents, costing and audit, the report employee filter, and station setup
 (supervisor list and eligibility, staff count). Also found: "Change access" for a staff member
-always failed because the application role could not DELETE role assignments; 0101 grants that
-(rows stay confined to the caller's organisation by row-level security). Both migrations must be
+always failed because the application role could not DELETE role assignments (a deliberate
+hardening that `db.smoke` asserts); 0101 adds `app.clear_membership_assignments`, a definer function
+only a tenant-wide owner or administrator can use, and the command refuses to add new assignments if
+the removal was declined. Both migrations must be
 applied to production. Tests: `tests/integration/staff-visibility-runtime.test.ts` (as `app_runtime`,
 real application code, station-level actors) and a change-access case in
 `staff-invitation-runtime.test.ts`. Still reading memberships directly, by design (owner or

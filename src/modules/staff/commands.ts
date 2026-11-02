@@ -871,10 +871,15 @@ export async function updateStaffAssignmentFromRequest(
           throw new AppError('FORBIDDEN', 'The selected legal entity is not available');
       }
 
-      await transaction.execute(sql`
-        delete from app.membership_role_assignments
-        where tenant_id = ${input.tenantId} and membership_id = ${input.membershipId}
+      // The application role cannot delete role assignments directly; this removes the member's
+      // old ones for an owner or administrator of the organisation (migration 0101).
+      const cleared = await transaction.execute<{ removed: number }>(sql`
+        select app.clear_membership_assignments(${input.tenantId}::uuid, ${input.membershipId}::uuid) as removed
       `);
+      // Never add new assignments on top of old ones if the removal was declined or short.
+      if (Number(cleared[0]?.removed ?? 0) < current.length) {
+        throw new AppError('FORBIDDEN', 'You cannot change this staff member’s access');
+      }
       if (scope.scopeType === 'STATION') {
         for (const stationId of scope.stationIds) {
           await transaction.execute(sql`

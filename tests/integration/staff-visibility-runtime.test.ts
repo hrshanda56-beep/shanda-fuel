@@ -186,6 +186,34 @@ describe('station-level staff can see who people are, as the application role', 
     });
   });
 
+  it('removes a member’s assignments only for a tenant-wide owner or administrator', async () => {
+    // The application role has no DELETE right on assignments; this function is the way in.
+    const remaining = (transaction: TransactionSql) =>
+      transaction`select count(*)::int as n from app.membership_role_assignments
+        where membership_id = ${membership('attendant')}`;
+    const clear = (transaction: TransactionSql, tenant: string) =>
+      transaction`select app.clear_membership_assignments(${tenant}::uuid, ${membership('attendant')}::uuid) as removed`;
+
+    const bySupervisor = await asMember(ids.tenant, 'supervisor', async (transaction) => {
+      const removed = (await clear(transaction, ids.tenant))[0]?.removed;
+      return { removed, left: (await remaining(transaction))[0]?.n };
+    });
+    expect(bySupervisor).toEqual({ removed: 0, left: 1 });
+
+    const byAdmin = await asMember(ids.tenant, 'admin', async (transaction) => {
+      const removed = (await clear(transaction, ids.tenant))[0]?.removed;
+      return { removed, left: (await remaining(transaction))[0]?.n };
+    });
+    expect(byAdmin).toEqual({ removed: 1, left: 0 });
+
+    // Another organisation's id does not widen what an administrator can touch.
+    const otherTenant = await asMember(ids.tenant, 'admin', async (transaction) => {
+      const removed = (await clear(transaction, ids.otherTenant))[0]?.removed;
+      return { removed, left: (await remaining(transaction))[0]?.n };
+    });
+    expect(otherTenant).toEqual({ removed: 0, left: 1 });
+  });
+
   it('still treats the only owner as the sole owner', async () => {
     await asMember(ids.tenant, 'owner', async (transaction) => {
       const sole = await soleOwnerMayApproveOwn(executor(transaction) as never, {
