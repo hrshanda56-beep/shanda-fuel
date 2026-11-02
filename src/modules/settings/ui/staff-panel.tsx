@@ -53,6 +53,7 @@ const COMMAND_SUCCESS_MESSAGES: Record<string, string> = {
   ResendStaffInvitation: 'Invitation sent again.',
   RevokeStaffInvitation: 'Invitation cancelled.',
   UpdateStaffAssignment: 'Access updated.',
+  RemoveStaffMember: 'Staff member removed.',
 };
 
 type StaffFilter = 'all' | 'active' | 'invited' | 'deactivated';
@@ -271,6 +272,7 @@ export function StaffPanel({
   }>();
   const [editTarget, setEditTarget] = useState<StaffMember>();
   const [deactivationTarget, setDeactivationTarget] = useState<StaffMember>();
+  const [removeTarget, setRemoveTarget] = useState<StaffMember>();
   const [deactivationBusy, setDeactivationBusy] = useState(false);
   const [deactivationOutcome, setDeactivationOutcome] = useState<DeactivationOutcome>();
   const deactivationInFlight = useRef(false);
@@ -628,7 +630,18 @@ export function StaffPanel({
       scope: scopeText(member.scopeLabels),
       statusLabel: 'Deactivated',
       tone: 'neutral',
-      actions: null,
+      actions: overview.canManage ? (
+        <Button
+          type="button"
+          variant="quiet"
+          className={styles.staffDanger}
+          size="sm"
+          onClick={() => setRemoveTarget(member)}
+          disabled={busy}
+        >
+          Remove
+        </Button>
+      ) : null,
     })),
   ];
 
@@ -1055,6 +1068,43 @@ export function StaffPanel({
               <dd>{new Date(manualActivation.expiresAt).toLocaleString()}</dd>
             </div>
           </dl>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(removeTarget)}
+        onClose={() => setRemoveTarget(undefined)}
+        title="Remove staff member?"
+        description="They are already deactivated and cannot sign in."
+        role="alertdialog"
+        dismissible={!busy}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRemoveTarget(undefined)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy}
+              onClick={async () => {
+                if (!removeTarget) return;
+                await command({
+                  commandType: 'RemoveStaffMember',
+                  membershipId: removeTarget.membershipId,
+                });
+                setRemoveTarget(undefined);
+              }}
+            >
+              Remove
+            </Button>
+          </>
+        }
+      >
+        {removeTarget ? (
+          <InfoTip>
+            {removeTarget.name} will be taken off this list. If they appear in shifts, cash or other
+            records, those records stay as they are and only their name is hidden here.
+          </InfoTip>
         ) : null}
       </Modal>
 

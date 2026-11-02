@@ -180,6 +180,7 @@ async function readOverview(transaction: StaffTransaction): Promise<{
      and assignment.membership_id = membership.id
      and (assignment.expires_at is null or assignment.expires_at > now())
     where membership.tenant_id = current_setting('app.tenant_id')::uuid
+      and membership.removed_at is null
     group by membership.id, identity.id, identity.name, identity.email, membership.status
     order by identity.name, identity.email
   `);

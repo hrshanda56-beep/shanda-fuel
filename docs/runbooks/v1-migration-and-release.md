@@ -1,8 +1,8 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-11-01** for `main` at `6e4bb214`: 87 migrations, 0000 to 0101 (0098 to 0101 added 2026-11-02). Production's own count is not known from the repository: read it first (section 4, step 2).
+**Updated 2026-11-01** for `main` at `6e4bb214`: 88 migrations, 0000 to 0102 (0098 to 0102 added 2026-11-02). Production's own count is not known from the repository: read it first (section 4, step 2).
 
-> **Urgent, 2026-11-01:** the application code for 0087 to 0097 is already live, but those migrations are not recorded as applied to production. **0097 is required**: without it the app's database role cannot approve a reconciliation that has pump readings (the validation triggers fail with "permission denied"). Apply 0084 to 0101 in order after reading production's level (section 4, step 2).
+> **Urgent, 2026-11-01:** the application code for 0087 to 0097 is already live, but those migrations are not recorded as applied to production. **0097 is required**: without it the app's database role cannot approve a reconciliation that has pump readings (the validation triggers fail with "permission denied"). Apply 0084 to 0102 in order after reading production's level (section 4, step 2).
 
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
@@ -99,8 +99,9 @@ that was reviewed.
 | 0099 | deposit_confirmation_grants | `GRANT UPDATE (bank_date, confirmation_reason) ON app.bank_deposits` to `app_runtime` | **Required.** Without it no bank deposit can be confirmed as `app_runtime` (0093 added the columns without the grant) |
 | 0100 | member_directory | New SECURITY DEFINER function `app.member_directory(tenant)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only): member id, display name, status and "can sign in" for the caller's own organisation, to active members only. No email | **Required for station-level staff** to see people's names, pick an owner/administrator as customer approver, and for a station-level owner not to be treated as sole owner. Changes no row visibility and no table rights |
 | 0101 | staff_access_replace | New SECURITY DEFINER function `app.clear_membership_assignments(tenant, membership)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only); callable only by a tenant-wide owner or administrator of that organisation; removes one member's assignments there. No table DELETE right is granted | **Required.** Without it "Change access" for a staff member fails with "permission denied" for everyone (the command replaces assignments by delete and insert). `db.smoke` still asserts the application role has no other deletes |
+| 0102 | staff_remove | New nullable column `app.memberships.removed_at`; new SECURITY DEFINER function `app.remove_staff_membership(tenant, membership)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only); callable only by a tenant-wide owner or administrator, for a deactivated member other than themself; erases a member with no records, otherwise sets `removed_at` to hide them. No table DELETE right is granted | **Required for the Remove button** on deactivated staff. Without it, Remove fails; nothing else is affected |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 87 entries, 0000 to 0101 (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 88 entries, 0000 to 0102 (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -270,6 +271,7 @@ e1f7397c5cbdad9dd403ffe9f3559d73f41dbd1a575cb05cc4716d60efd562d3  0090_station_a
 37188cb7181f183ade1284d9f0839f6d98a53a19d836540918d7d013a5f3abfa  0099_deposit_confirmation_grants.sql
 d050f34732c8c791ecee6dc29011f6cb7a4aa0826bd7476322690f74fd2a0797  0100_member_directory.sql
 e05eca7376ca738a1c246ec9b42daadfdd7e85d12b85780a822bc96e7bb02dc8  0101_staff_access_replace.sql
+f789ca29da899a2037ae6175554a5305ddb9e250d3e9fd6f4de0827980916081  0102_staff_remove.sql
 ```
 
 ## 7. Release record (copy this and fill it in)
