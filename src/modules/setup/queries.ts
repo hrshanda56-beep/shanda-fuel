@@ -142,16 +142,15 @@ export async function getSetupOverview(args: {
     const supervisors = view.stationView
       ? await tx.execute<{ membership_id: string; name: string }>(sql`
           select membership.id as membership_id,
-            coalesce(nullif(identity.name, ''), identity.email) as name
+            coalesce(membership.name, 'Unknown') as name
           from app.membership_role_assignments assignment
-          join app.memberships membership
-            on membership.tenant_id = assignment.tenant_id and membership.id = assignment.membership_id
-          join app.users identity on identity.id = membership.identity_id
+          join app.member_directory(${tenantId}::uuid) membership
+            on membership.id = assignment.membership_id
           where assignment.tenant_id = ${tenantId} and assignment.role_code = 'SUPERVISOR'
             and assignment.scope_type = 'STATION' and assignment.station_id = ${stationId}
             and membership.status = 'ACTIVE'
             and (assignment.expires_at is null or assignment.expires_at > now())
-          group by membership.id, identity.name, identity.email
+          group by membership.id, membership.name
           order by 2`)
       : null;
     const station = await tx.execute<{

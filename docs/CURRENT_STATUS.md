@@ -24,17 +24,19 @@ station and returns only true/false. No row visibility or table right changed. W
 `confirmation_reason` without a column grant, so 0099 grants UPDATE on just those two columns.
 Both migrations must be applied to production for the fixes to work.
 
-**Same visibility limit, still open (found in the audit of that change; not fixed, each needs an owner
-decision):** other code reads `app.memberships` directly, so people below tenant-wide
-owner/administrator see only themselves there. (1) Customer-account exceptions: a supervisor
-choosing an owner or administrator as approver is told "Only an owner or an administrator can
-approve this" (`src/modules/customers/approver.ts`), and the approver list
-(`account-controls.ts`) holds only themselves. Verified with the demo supervisor: 0 of the
-owner/administrator rows visible. (2) `soleOwnerQuery` (`src/platform/security/separation-of-duties.ts`)
-could see no other owner for a station-scoped owner and so treat them as the sole owner. (3) Several
-display joins show "Unknown" for other people's names to station-level staff (for example
-`deliveredByName` on cash handovers; `cash-handover.test.ts` fails on that line when run as
-`app_runtime`). The same narrow yes/no or name-only definer-function pattern would fix each.
+**Fixed on branch `fix/staff-visibility-and-access` (migrations 0100 and 0101):** other code read
+`app.memberships` directly, so people below tenant-wide owner/administrator saw only themselves.
+`app.member_directory` (0100, SECURITY DEFINER, names/status only, active members of the same
+organisation only) now serves: customer-account approver choosing and the approver list (now only
+owners and administrators), the sole-owner check for expense approval, names on cash handovers,
+reports, daily report, documents, costing and audit, the report employee filter, and station setup
+(supervisor list and eligibility, staff count). Also found: "Change access" for a staff member
+always failed because the application role could not DELETE role assignments; 0101 grants that
+(rows stay confined to the caller's organisation by row-level security). Both migrations must be
+applied to production. Tests: `tests/integration/staff-visibility-runtime.test.ts` (as `app_runtime`,
+real application code, station-level actors) and a change-access case in
+`staff-invitation-runtime.test.ts`. Still reading memberships directly, by design (owner or
+administrator screens): the staff list/management commands in `src/modules/staff`.
 
 ## Settings screens polish — 2026-11-01 (branch `ui/profits-page`, uncommitted)
 

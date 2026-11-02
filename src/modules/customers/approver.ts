@@ -16,10 +16,10 @@ export async function assertApproverAllowed(
 ): Promise<void> {
   const rows = await transaction.execute<{ role_code: string }>(sql`
     select distinct r.role_code
-    from app.memberships m
+    from app.member_directory(${context.tenantId}::uuid) m
     join app.membership_role_assignments r
-      on r.tenant_id = m.tenant_id and r.membership_id = m.id
-    where m.tenant_id = ${context.tenantId} and m.id = ${approverMembershipId}
+      on r.tenant_id = ${context.tenantId} and r.membership_id = m.id
+    where m.id = ${approverMembershipId}::uuid
       and m.status = 'ACTIVE' and r.role_code in ('OWNER', 'ADMINISTRATOR')
   `);
   if (rows.length === 0) {

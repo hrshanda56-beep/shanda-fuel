@@ -341,7 +341,7 @@ export const readCashCustody: TableReportReader = async (transaction, filters) =
   }>(sql`
     select to_char((coalesce(h.submitted_at, h.created_at) at time zone st.timezone)::date, 'YYYY-MM-DD') as date,
       st.name as station, fl.name as from_name, tl.name as to_name,
-      du.name as handed_by, ru.name as received_by,
+      dm.name as handed_by, rm.name as received_by,
       h.expected_amount::text as expected, h.counted_amount::text as counted,
       h.variance::text as difference, h.state,
       coalesce(h.resolution_note, h.dispute_reason) as note,
@@ -350,11 +350,8 @@ export const readCashCustody: TableReportReader = async (transaction, filters) =
     join app.stations st on st.tenant_id = h.tenant_id and st.id = h.station_id
     join app.cash_locations fl on fl.tenant_id = h.tenant_id and fl.id = h.from_location_id
     join app.cash_locations tl on tl.tenant_id = h.tenant_id and tl.id = h.to_location_id
-    left join app.memberships dm on dm.tenant_id = h.tenant_id and dm.id = h.delivered_by
-    left join app.users du on du.id = dm.identity_id
-    left join app.memberships rm on rm.tenant_id = h.tenant_id
-      and rm.id = coalesce(h.resolved_by, h.received_by)
-    left join app.users ru on ru.id = rm.identity_id
+    left join app.member_directory(h.tenant_id) dm on dm.id = h.delivered_by
+    left join app.member_directory(h.tenant_id) rm on rm.id = coalesce(h.resolved_by, h.received_by)
     where h.tenant_id = ${filters.tenantId} and h.state <> 'DRAFT'
       and (coalesce(h.submitted_at, h.created_at) at time zone st.timezone)::date between ${filters.fromDate}::date and ${filters.toDate}::date
       ${stationClause('h', filters.stationIds)}
@@ -463,10 +460,9 @@ export const readDailyReconciliation: TableReportReader = async (transaction, fi
   }>(sql`
     select bd.business_date as date, st.name as station,
       to_char(sh.planned_start_at at time zone st.timezone, 'HH24:MI') as shift,
-      (select string_agg(u.name, ', ' order by u.name)
+      (select string_agg(coalesce(am.name, 'Unknown'), ', ' order by am.name)
          from app.reconciliation_attendants ra
-         join app.memberships am on am.tenant_id = ra.tenant_id and am.id = ra.attendant_id
-         join app.users u on u.id = am.identity_id
+         join app.member_directory(ra.tenant_id) am on am.id = ra.attendant_id
         where ra.tenant_id = r.tenant_id and ra.station_id = r.station_id
           and ra.reconciliation_id = r.id) as attendants,
       r.state, rev.expected_sales::text as expected, rev.accounted_sales::text as accounted,

@@ -202,9 +202,9 @@ const revaluationFrom = sql`
 `;
 
 const actorSelect = sql`
-  (select u.name from app.memberships m join app.users u on u.id = m.identity_id where m.tenant_id = r.tenant_id and m.id = r.requested_by) as requested_actor_name,
-  (select u.name from app.memberships m join app.users u on u.id = m.identity_id where m.tenant_id = r.tenant_id and m.id = r.approved_by) as approved_actor_name,
-  (select u.name from app.memberships m join app.users u on u.id = m.identity_id where m.tenant_id = r.tenant_id and m.id = r.posted_by) as posted_actor_name
+  (select m.name from app.member_directory(r.tenant_id) m where m.id = r.requested_by) as requested_actor_name,
+  (select m.name from app.member_directory(r.tenant_id) m where m.id = r.approved_by) as approved_actor_name,
+  (select m.name from app.member_directory(r.tenant_id) m where m.id = r.posted_by) as posted_actor_name
 `;
 
 async function contextFor(request: Request, input: unknown) {
