@@ -259,7 +259,7 @@ export async function createStaffInvitationFromRequest(
         join app.users identity on identity.id = membership.identity_id
         where membership.tenant_id = ${input.tenantId}
           and lower(btrim(identity.email)) = ${email}
-        for update
+        for update of membership
       `)
         : [];
       if (existingMembership[0]) {
