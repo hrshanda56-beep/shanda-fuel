@@ -256,6 +256,11 @@ async function assertAttendantEligibility(
   }
 }
 
+/** Subjects whose rows the application role may update, and so may lock. */
+function rowLockable(subjectType: string): boolean {
+  return subjectType !== 'MeterSegment';
+}
+
 async function assertExpectedVersion(
   transaction: ForecourtTransaction,
   subjectType: ForecourtVersionSubject,
@@ -270,10 +275,14 @@ async function assertExpectedVersion(
   }
   const qualifiedTable = sql.raw(`"app"."${tableName}"`);
   const tx = dbTransaction(transaction);
+  // Sealed meter segments are append-only: the application role may read but never update them,
+  // so the database refuses a row lock on them. A segment's version cannot change, and a
+  // second correction or reversal is stopped by unique indexes, so there is nothing to lock.
+  const lock = rowLockable(subjectType) ? sql`FOR UPDATE` : sql``;
   const rows = await tx.execute<{ version: number | string }>(sql`
     SELECT version FROM ${qualifiedTable}
     WHERE tenant_id = ${tenantId} AND station_id = ${stationId} AND id = ${subjectId}
-    FOR UPDATE
+    ${lock}
   `);
   const row = rows[0];
   if (!row) {

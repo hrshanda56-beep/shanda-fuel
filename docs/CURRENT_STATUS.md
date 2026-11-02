@@ -1,5 +1,27 @@
 # Shanda Fuel — Current Status
 
+## Row locks the application role cannot take — 2026-11-02 (branch `fix/runtime-row-locks`)
+
+The application connects as `app_runtime`, which may read and add rows to the append-only ledgers
+but not update them, and PostgreSQL refuses a row lock (`FOR UPDATE`) on a table the role cannot
+update. The integration suite seeds and runs as a superuser, so it never saw this. Email staff
+invitations failed for that reason (fixed in #204). The same fault was in: supplier payment and
+document reversal, provider payout allocation and its reversal, and the meter exception
+(resolve, reset, replace, correct) and segment version paths. Each now locks the mutable parent row
+(payment, document, settlement, meter boundary) instead of the append-only rows; double reversal
+and double resolution are still stopped by the parent locks and the existing unique indexes.
+`tests/integration/runtime-role-row-locks.test.ts` runs every locking statement in the source as
+`app_runtime` and fails the build if the database refuses one.
+
+**Not fixed here (found while testing):** a station-level supervisor or administrator cannot name
+another attendant as the responsible attendant (shift handover, meter boundary capture, meter
+exception report). The eligibility check reads `app.memberships`, whose row-level security only
+lets the person see their own record unless they are a tenant-wide owner or administrator, so the
+check finds nothing and the command answers 403 "The responsible attendant is not eligible for this
+station". Verified with the demo's own supervisor and attendant. A fix is a security-visibility
+change (for example a narrow `SECURITY DEFINER` check that returns only yes or no) and needs a
+migration and an owner decision, so it is left for a separate change.
+
 ## Settings screens polish — 2026-11-01 (branch `ui/profits-page`, uncommitted)
 
 Owner asked for the Settings screens to match the rest of the site and feel less overwhelming. UI
