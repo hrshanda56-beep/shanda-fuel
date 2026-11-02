@@ -18,15 +18,15 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for staff invitation tests.');
 
 const ids = {
-  tenant: 'b5720000-0000-4000-8000-000000000001',
-  legal: 'b5720000-0000-4000-8000-000000000011',
-  station: 'b5720000-0000-4000-8000-000000000021',
-  owner: 'b5720000-0000-4000-8000-000000000030',
-  ownerMembership: 'b5720000-0000-4000-8000-000000000040',
-  invitee: 'b5720000-0000-4000-8000-000000000031',
-  session: 'b5720000-0000-4000-8000-000000000051',
+  tenant: 'b5730000-0000-4000-8000-000000000001',
+  legal: 'b5730000-0000-4000-8000-000000000011',
+  station: 'b5730000-0000-4000-8000-000000000021',
+  owner: 'b5730000-0000-4000-8000-000000000030',
+  ownerMembership: 'b5730000-0000-4000-8000-000000000040',
+  invitee: 'b5730000-0000-4000-8000-000000000031',
+  session: 'b5730000-0000-4000-8000-000000000051',
 };
-const SESSION_TOKEN = 'b572-invitee-token';
+const SESSION_TOKEN = 'accept-b-invitee-token';
 const RUNTIME_PASSWORD = 'staff-accept-runtime-only';
 let client: Sql;
 let runtimeWasLogin = false;
@@ -49,7 +49,7 @@ async function seedInvitation(tokenHash: string) {
     insert into app.staff_invitations
       (tenant_id, invited_email, invited_name, assigned_role, scope_type, legal_entity_id,
        token_hash, expires_at, created_by_user_id, created_by_membership_id)
-    values (${ids.tenant}, 'b572-new@example.test', 'New Person', 'SUPERVISOR', 'STATION',
+    values (${ids.tenant}, 'accept-b-new@example.test', 'New Person', 'SUPERVISOR', 'STATION',
             ${ids.legal}, ${tokenHash}, now() + interval '3 days', ${ids.owner},
             ${ids.ownerMembership})
     returning id`;
@@ -63,8 +63,8 @@ describe('accepting a staff invitation as the application role', () => {
   beforeAll(async () => {
     process.env.APP_ENV ??= 'test';
     process.env.APP_URL ??= 'http://127.0.0.1:3000';
-    process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-b572-key';
-    process.env.AUDIT_SIGNING_KEY ??= 'integration-b572-secret';
+    process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-accept-b-key';
+    process.env.AUDIT_SIGNING_KEY ??= 'integration-accept-b-secret';
     client = postgres(databaseUrl!, { max: 1, prepare: false });
     const [role] = await client`select rolcanlogin from pg_roles where rolname = 'app_runtime'`;
     runtimeWasLogin = Boolean(role?.rolcanlogin);
@@ -76,10 +76,10 @@ describe('accepting a staff invitation as the application role', () => {
 
     await client.unsafe(`
       insert into app.tenants (id, name, slug) values
-        ('${ids.tenant}', 'Accept Tenant', 'b572-accept-tenant') on conflict (id) do nothing;
+        ('${ids.tenant}', 'Accept Tenant', 'accept-b-accept-tenant') on conflict (id) do nothing;
       insert into app.users (id, name, email) values
-        ('${ids.owner}', 'Accept Owner', 'b572-owner@example.test'),
-        ('${ids.invitee}', 'New Person', 'b572-new@example.test') on conflict (id) do nothing;
+        ('${ids.owner}', 'Accept Owner', 'accept-b-owner@example.test'),
+        ('${ids.invitee}', 'New Person', 'accept-b-new@example.test') on conflict (id) do nothing;
       insert into app.memberships (id, tenant_id, identity_id, status) values
         ('${ids.ownerMembership}', '${ids.tenant}', '${ids.owner}', 'ACTIVE')
         on conflict (id) do nothing;
