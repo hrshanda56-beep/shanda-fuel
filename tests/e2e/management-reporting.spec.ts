@@ -110,11 +110,18 @@ test.describe('management reporting surface', () => {
       await gotoAndWaitForHydration(page, `/reports?tenantId=${ids.tenant}&period=3m`);
       await expect(page.getByRole('heading', { name: 'Available reports' })).toBeVisible();
       await expect(page.getByText('Nothing shared or exported yet.')).toBeVisible();
-      await page.getByLabel('Period', { exact: true }).first().click();
-      await page.getByRole('option', { name: 'Last month' }).click();
-      await expect(page.getByLabel('Period', { exact: true }).first()).toHaveText('Last month');
+      // The page keeps its period in the link; a row's title opens the report with it.
       await page.getByRole('link', { name: 'Cash Movement' }).click();
       await expect(page).toHaveURL(/\/reports\/cash-movement\?.*period=3m/);
+      await page.goBack();
+      // Choosing an action asks for the period next, starting from the page's period.
+      await page.getByRole('button', { name: 'More actions for Cash Movement' }).click();
+      await page.getByRole('menuitem', { name: 'View' }).click();
+      const periodDialog = page.getByRole('dialog', { name: 'Choose a period' });
+      await periodDialog.getByLabel('Period', { exact: true }).click();
+      await page.getByRole('option', { name: 'Last month' }).click();
+      await periodDialog.getByRole('button', { name: 'Open report' }).click();
+      await expect(page).toHaveURL(/\/reports\/cash-movement\?.*period=last-month/);
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });
