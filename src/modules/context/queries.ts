@@ -44,6 +44,7 @@ type TenantIdRow = { tenant_id: string };
 type ContextRow = {
   organisation_id: string;
   organisation_name: string;
+  organisation_slug?: string;
   legal_entity_id: string | null;
   legal_entity_name: string | null;
   station_id: string | null;
@@ -93,6 +94,7 @@ async function readTenantRows(
       select
         t.id as organisation_id,
         t.name as organisation_name,
+        t.slug as organisation_slug,
         le.id as legal_entity_id,
         le.legal_name as legal_entity_name,
         s.id as station_id,
@@ -179,6 +181,7 @@ export function filterAuthorizedContextRows(
       organisation = {
         id: row.organisation_id,
         name: row.organisation_name,
+        ...(row.organisation_slug ? { slug: row.organisation_slug } : {}),
         legalEntities: [],
       };
       organisations.set(row.organisation_id, organisation);

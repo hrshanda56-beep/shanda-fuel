@@ -164,6 +164,13 @@ export function ReadinessView({
         This is read from what has been entered. Anything marked Not entered or Incomplete has not
         been set up, and transactions that depend on it are blocked until it is.
       </p>
+      <p className={styles.note}>
+        To add or change fuel types such as diesel or petrol, their prices, tanks or pumps, open{' '}
+        <a href={typeof window === 'undefined' ? '/settings?tab=setup' : tabHref('setup')}>
+          Station setup
+        </a>
+        .
+      </p>
       {overview.stations.map((station) => (
         <StationCard
           key={station.stationId}

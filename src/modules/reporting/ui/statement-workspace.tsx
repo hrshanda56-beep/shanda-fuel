@@ -155,13 +155,6 @@ export function StatementWorkspace({
               </button>
             </>
           ) : null}
-          <button
-            type="button"
-            className="button button-secondary button-sm"
-            onClick={() => window.print()}
-          >
-            Print
-          </button>
         </div>
       </div>
       <ReportActionStatus

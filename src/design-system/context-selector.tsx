@@ -165,7 +165,17 @@ export function ContextSelector({
       }
       const nextSelection = body.data.current;
       onClose();
-      router.push(buildContextHref(pathname, search, nextSelection));
+      const slug =
+        state.status === 'ready'
+          ? state.resolution.available.organisations.find(
+              (organisation) => organisation.id === nextSelection.organisationId,
+            )?.slug
+          : undefined;
+      router.push(
+        buildContextHref(pathname, search, nextSelection, {
+          ...(slug ? { organisationSlug: slug } : {}),
+        }),
+      );
     } catch (error: unknown) {
       setSubmitError(
         error instanceof Error

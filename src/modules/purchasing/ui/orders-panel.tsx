@@ -45,7 +45,11 @@ export function OrdersPanel({
   capabilities: PurchasingCapabilities;
 }) {
   const router = useRouter();
-  const [stationId, setStationId] = useState(initialStationId ?? stations[0]?.id ?? '');
+  const [stationId, setStationId] = useState(
+    // With several stations and none chosen ("All stations"), the person picks one; no station
+    // is chosen for them, so an order can never land on the wrong one.
+    initialStationId ?? (stations.length === 1 ? stations[0]!.id : ''),
+  );
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [reference, setReference] = useState<OrderReference | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,6 +115,33 @@ export function OrdersPanel({
         title="No station to order for"
         message="Purchase orders are placed for a station. Ask the owner to add a station to this company."
       />
+    );
+  }
+
+  if (!stationId) {
+    return (
+      <Card as="section" className="panel" aria-labelledby="po-orders-title">
+        <h3 id="po-orders-title" className="visually-hidden">
+          Purchase orders
+        </h3>
+        <div className="list-toolbar">
+          <Field id="po-station" label="Station" required>
+            <Select
+              id="po-station"
+              value={stationId}
+              onChange={(event) => setStationId(event.target.value)}
+              placeholder="Choose a station"
+              options={stations.map((s) => ({ value: s.id, label: s.name }))}
+            />
+          </Field>
+        </div>
+        <EmptyState
+          layout="block"
+          icon="building"
+          title="Choose a station"
+          message="Purchase orders are placed for one station. Choose which station to see and order for."
+        />
+      </Card>
     );
   }
 

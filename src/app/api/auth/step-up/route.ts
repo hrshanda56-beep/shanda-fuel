@@ -49,6 +49,7 @@ function logDeactivationStepUp(
 const requestSchema = z.object({
   tenantId: z.string().uuid(),
   action: z.enum([CLERK_STEP_UP_ACTION, CLERK_DEACTIVATE_STAFF_ACTION, CLERK_PRIVILEGED_ACTION]),
+  silent: z.boolean().optional(),
 });
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -74,6 +75,7 @@ export const POST = withRequestObservability(
         request,
         context,
         action: body.action,
+        silent: body.silent === true,
       });
       if (deactivationAction) logDeactivationStepUp(request, 'reverified', 200);
       const response = jsonResponse(

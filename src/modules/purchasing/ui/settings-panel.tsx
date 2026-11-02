@@ -84,9 +84,8 @@ export function SettingsPanel({
   return (
     <div className={styles.stack}>
       <p className={styles.intro}>
-        These settings decide how closely a supplier&apos;s invoice has to match what you ordered
-        and received, and how VAT is treated. Set them once for the whole company, then give a
-        supplier its own settings only if it needs different rules.
+        How closely a supplier&apos;s invoice must match what you ordered and received. Suppliers
+        follow the company settings unless you give them their own.
       </p>
       {notice ? <SuccessState title="Saved" message={notice} /> : null}
       {loading ? <LoadingState label="Loading settings" /> : null}
@@ -118,47 +117,39 @@ export function SettingsPanel({
                 added. Choose Set up to say how much difference is acceptable.
               </p>
             ) : null}
-            <div className={styles.settingsGrid}>
-              <div className={styles.settingBlock}>
-                <h4>Litres on the invoice compared with litres received</h4>
-                <p>
-                  {litresAllowanceSentence(r.quantityToleranceLitres, r.quantityTolerancePercent)}
-                </p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>Litres received compared with the delivery note</h4>
-                <p>
-                  {litresAllowanceSentence(
+            <dl className={styles.settingsList}>
+              {[
+                [
+                  'Invoice litres vs litres received',
+                  litresAllowanceSentence(r.quantityToleranceLitres, r.quantityTolerancePercent),
+                ],
+                [
+                  'Litres received vs delivery note',
+                  litresAllowanceSentence(
                     r.overReceiptToleranceLitres,
                     r.overReceiptTolerancePercent,
-                  )}
-                </p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>Invoice price compared with the agreed price</h4>
-                <p>{percentAllowanceSentence(r.priceTolerancePercent)}</p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>Invoice total compared with what we expect</h4>
-                <p>{amountAllowanceSentence(r.amountTolerance)}</p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>If a difference is bigger than allowed</h4>
-                <p>{toleranceActionText(r.toleranceAction)}</p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>VAT</h4>
-                <p>{vatModeText(r.vatMode, r.defaultVatRate)}</p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>Invoice lines</h4>
-                <p>
-                  {r.requireInvoiceLines
-                    ? 'Each invoice must list the fuel it is for'
-                    : 'Invoices can be entered as a single total'}
-                </p>
-              </div>
-            </div>
+                  ),
+                ],
+                [
+                  'Invoice price vs agreed price',
+                  percentAllowanceSentence(r.priceTolerancePercent),
+                ],
+                ['Invoice total vs expected', amountAllowanceSentence(r.amountTolerance)],
+                ['When a difference is too big', toleranceActionText(r.toleranceAction)],
+                ['VAT', vatModeText(r.vatMode, r.defaultVatRate)],
+                [
+                  'Invoice lines',
+                  r.requireInvoiceLines
+                    ? 'Each invoice lists the fuel it is for'
+                    : 'A single total is fine',
+                ],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
           </Card>
 
           <Card as="section" className="panel" aria-labelledby="po-supplier-settings">

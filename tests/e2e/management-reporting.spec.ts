@@ -148,6 +148,10 @@ test.describe('management reporting surface', () => {
       // Share.
       await menuButton.click();
       await page.getByRole('menuitem', { name: 'Share private link' }).click();
+      // The action comes first; the period is chosen next and starts from the page's period.
+      const periodDialog = page.getByRole('dialog', { name: 'Choose a period' });
+      await expect(periodDialog).toBeVisible();
+      await periodDialog.getByRole('button', { name: 'Create link' }).click();
       await expect(page.getByText(/Private link copied/)).toBeVisible();
       const link = await page.evaluate(() => navigator.clipboard.readText());
       expect(link).toContain(`/reports/sales?tenantId=${ids.tenant}&period=last-month`);
@@ -169,6 +173,10 @@ test.describe('management reporting surface', () => {
       const download = page.waitForEvent('download');
       await menuButton.click();
       await page.getByRole('menuitem', { name: 'Export CSV' }).click();
+      await page
+        .getByRole('dialog', { name: 'Choose a period' })
+        .getByRole('button', { name: 'Export CSV' })
+        .click();
       const file = await download;
       expect(file.suggestedFilename()).toMatch(
         /^sales_\d{4}-\d{2}-\d{2}_to_\d{4}-\d{2}-\d{2}\.csv$/,

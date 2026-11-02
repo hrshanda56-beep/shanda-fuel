@@ -34,7 +34,10 @@ export function BankBalancePanel({
   /** Changes whenever the bank accounts change, so the list below is read again. */
   refreshKey?: string;
 }>) {
-  const [stationId, setStationId] = useState<string | undefined>(stations[0]?.id);
+  const [stationId, setStationId] = useState<string | undefined>(
+    // With several stations the person chooses; none is picked for them.
+    stations.length === 1 ? stations[0]?.id : undefined,
+  );
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -123,11 +126,12 @@ export function BankBalancePanel({
         the bank once every account has one; until then it uses the deposits recorded in the app.
       </p>
       {loaded.canRecord && stations.length > 1 ? (
-        <Field id="balance-station" label="Entering as station">
+        <Field id="balance-station" label="Entering as station" required>
           <Select
             id="balance-station"
             value={stationId ?? ''}
             onChange={(event) => setStationId(event.target.value)}
+            placeholder="Choose a station"
             options={stations.map((station) => ({
               value: station.id,
               label: `${station.name} (${station.code})`,

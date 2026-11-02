@@ -9,6 +9,8 @@ export type ContextRoutePolicy = Readonly<{
 export type ContextRoute = Readonly<{
   pathname: string;
   organisationId?: string;
+  /** Readable organisation name from `?org=`; resolved to an id only against the user's own list. */
+  organisationSlug?: string;
   legalEntityId?: string;
   stationId?: string;
   allStations: boolean;
@@ -90,6 +92,8 @@ export function readContextRoute(
   const stationInPath = path.match(/^\/stations\/([^/]+)/)?.[1];
   const organisationId =
     searchParams?.get('organisationId') ?? searchParams?.get('tenantId') ?? undefined;
+  const rawSlug = searchParams?.get('org') ?? undefined;
+  const organisationSlug = !organisationId && rawSlug ? rawSlug : undefined;
   const legalEntityId = searchParams?.get('legalEntityId') ?? undefined;
   const stationId = stationInPath
     ? safeDecode(stationInPath)
@@ -100,10 +104,11 @@ export function readContextRoute(
   return {
     pathname: path,
     ...(organisationId ? { organisationId } : {}),
+    ...(organisationSlug ? { organisationSlug } : {}),
     ...(legalEntityId ? { legalEntityId } : {}),
     ...(stationId ? { stationId } : {}),
     allStations,
-    hasExplicitOrganisation: Boolean(organisationId),
+    hasExplicitOrganisation: Boolean(organisationId || organisationSlug),
     hasExplicitLegalEntity: Boolean(legalEntityId),
     hasExplicitStation: Boolean(stationId),
     hasExplicitAllStations: allStationsValue !== null && allStationsValue !== undefined,
@@ -136,6 +141,7 @@ export function buildContextHref(
   pathname: string | null | undefined,
   search: string | URLSearchParams | null | undefined,
   selection: ContextSelection,
+  options: { organisationSlug?: string } = {},
 ): string {
   const requestedPath = pathname || '/';
   const path = selection.allStations
@@ -149,7 +155,14 @@ export function buildContextHref(
   );
   if (selection.allStations)
     for (const key of ['businessDayId', 'shiftId', 'reconciliationId']) params.delete(key);
-  params.set('tenantId', selection.organisationId);
+  // A readable address when the caller knows the organisation's slug; the id form still works.
+  if (options.organisationSlug && isOrganisationSlug(options.organisationSlug)) {
+    params.set('org', options.organisationSlug);
+    params.delete('tenantId');
+  } else {
+    params.set('tenantId', selection.organisationId);
+    params.delete('org');
+  }
   params.delete('organisationId');
 
   if (selection.legalEntityId) params.set('legalEntityId', selection.legalEntityId);
@@ -179,6 +192,13 @@ export function buildContextHref(
   return withSearch(path, params);
 }
 
+/** Lower-case words joined by hyphens, as stored in `tenants.slug`. */
+export function isOrganisationSlug(value: string): boolean {
+  return /^[a-z0-9](?:[a-z0-9-]{0,62})$/.test(value);
+}
+
+const CUSTOMER_FIXED_PAGES = ['/customers/account-controls', '/customers/staff-benefit'] as const;
+
 /** Return to an overview when switching away from an individual station or record. */
 export function allStationsPath(path: string): string {
   const station = path.match(/^\/stations\/[^/]+\/(cash|settlements|reconciliations)(?:\/|$)/);
@@ -186,6 +206,10 @@ export function allStationsPath(path: string): string {
     return station[1] === 'reconciliations' ? '/operations/reconciliations' : `/${station[1]}`;
   if (path.startsWith('/inventory/')) return '/inventory/valuation';
   if (path.startsWith('/operations/') || path === '/my-shift') return '/operations/daily';
+  // A customer record collapses to the list, but fixed pages under /customers are real screens in
+  // their own right: collapsing them made "Customer controls" link back to the page you are on.
+  if (CUSTOMER_FIXED_PAGES.some((page) => path === page || path.startsWith(`${page}/`)))
+    return path;
   if (path.startsWith('/customers/')) return '/customers';
   if (path.startsWith('/suppliers/')) return '/suppliers';
   if (path.startsWith('/purchasing/')) return '/purchasing';

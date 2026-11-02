@@ -494,6 +494,37 @@ export async function deactivateCustomerInTransaction(
   );
 }
 
+/**
+ * A benefit that names a staff member is tied to that person's record: the member must be active
+ * in this organisation and not already on a benefit, and the stored name is the staff record's own
+ * name, not whatever the browser sent. A benefit without a membership keeps the typed name.
+ */
+async function resolveBenefitStaff(
+  transaction: CustomerTransaction,
+  tenantId: string,
+  benefit: { staffName: string; staffMembershipId?: string | undefined },
+): Promise<{ name: string; membershipId: string | null }> {
+  if (!benefit.staffMembershipId) return { name: benefit.staffName.trim(), membershipId: null };
+  const staff = await transaction.execute<{ name: string }>(sql`
+    select coalesce(nullif(trim(u.name), ''), u.email) as name
+    from app.memberships m
+    join app.users u on u.id = m.identity_id
+    where m.tenant_id = ${tenantId} and m.id = ${benefit.staffMembershipId} and m.status = 'ACTIVE'
+  `);
+  if (!staff[0]) {
+    throw new AppError('VALIDATION_FAILED', 'That staff member was not found or is not active.');
+  }
+  const existing = await transaction.execute<{ account_id: string }>(sql`
+    select account_id from app.customer_staff_benefit_terms
+    where tenant_id = ${tenantId} and staff_membership_id = ${benefit.staffMembershipId}
+    limit 1
+  `);
+  if (existing[0]) {
+    throw new AppError('CONFLICT', `${staff[0].name} already has a staff fuel benefit.`);
+  }
+  return { name: staff[0].name, membershipId: benefit.staffMembershipId };
+}
+
 export async function createCustomerAccountInTransaction(
   transaction: CustomerTransaction,
   context: CustomerCommandContext,
@@ -548,11 +579,12 @@ export async function createCustomerAccountInTransaction(
     );
   }
   if (input.staffBenefit) {
+    const staff = await resolveBenefitStaff(transaction, context.tenantId, input.staffBenefit);
     await transaction.execute(sql`
       insert into app.customer_staff_benefit_terms
         (tenant_id, account_id, staff_name, staff_membership_id, created_by)
-      values (${context.tenantId}, ${accountId}, ${input.staffBenefit.staffName.trim()},
-              ${input.staffBenefit.staffMembershipId ?? null}, ${context.authority.membership.membershipId})
+      values (${context.tenantId}, ${accountId}, ${staff.name},
+              ${staff.membershipId}, ${context.authority.membership.membershipId})
     `);
   }
   return { accountId, accountType: input.accountType, stationScope, stationScopeConfigured };

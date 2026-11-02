@@ -389,13 +389,6 @@ export function ProfitWorkspace({ initial }: { initial: ProfitInitial }) {
             <Link className="button button-secondary" href={statementHref}>
               Full statement
             </Link>
-            <button
-              type="button"
-              className="button button-secondary"
-              onClick={() => window.print()}
-            >
-              Print
-            </button>
           </nav>
         </div>
       ) : null}
