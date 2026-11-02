@@ -42,9 +42,9 @@ export async function loadFilterOptions(
         where tenant_id = ${tenantId} order by display_name limit ${MAX_OPTIONS}`);
     } else if (key === 'employee') {
       out.employee = await take(sql`
-        select m.id, coalesce(nullif(u.name, ''), u.email) as label
-        from app.memberships m join app.users u on u.id = m.identity_id
-        where m.tenant_id = ${tenantId} and m.status = 'ACTIVE'
+        select m.id, coalesce(m.name, 'Unknown') as label
+        from app.member_directory(${tenantId}::uuid) m
+        where m.status = 'ACTIVE'
         order by 2 limit ${MAX_OPTIONS}`);
     } else if (key === 'shift') {
       out.shift = await take(sql`

@@ -276,10 +276,9 @@ export async function listDocumentsFromRequest(request: Request, rawInput: unkno
     const rows = await transaction.execute<DocumentRow>(sql`
       select d.id, d.subject_type, d.subject_id, d.kind, d.station_id, d.legal_entity_id,
              d.file_name, d.content_type, d.byte_size, d.sha256, d.uploaded_at::text as uploaded_at,
-             coalesce(nullif(u.name, ''), u.email) as uploaded_by_name, d.object_key
+             m.name as uploaded_by_name, d.object_key
       from app.documents d
-      left join app.memberships m on m.tenant_id = d.tenant_id and m.id = d.uploaded_by
-      left join app.users u on u.id = m.identity_id
+      left join app.member_directory(d.tenant_id) m on m.id = d.uploaded_by
       where d.tenant_id = ${context.tenantId}
         ${
           isEntityScopedSubject(input.subjectType as DocumentSubjectType)

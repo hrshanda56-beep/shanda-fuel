@@ -145,4 +145,33 @@ describe('staff invitations as the application role', () => {
     expect(result.body).toMatchObject({ deliveryMethod: 'MANUAL' });
     expect(result.body.staffNumber).toBeTruthy();
   });
+
+  it('changes a staff member’s access, replacing their old assignments', async () => {
+    // The command deletes the old assignment rows and inserts the new ones. The application role
+    // had no DELETE right on them, so every change failed with "permission denied".
+    const first = await command({
+      commandType: 'UpdateStaffAssignment',
+      tenantId: ids.tenant,
+      membershipId: ids.memberMembership,
+      assignedRole: 'SUPERVISOR',
+      scopeType: 'STATION',
+      legalEntityId: ids.legal,
+      stationIds: [ids.active, ids.onboarding],
+    });
+    expect(first.status).toBe(200);
+    const second = await command({
+      commandType: 'UpdateStaffAssignment',
+      tenantId: ids.tenant,
+      membershipId: ids.memberMembership,
+      assignedRole: 'ATTENDANT',
+      scopeType: 'STATION',
+      legalEntityId: ids.legal,
+      stationIds: [ids.active],
+    });
+    expect(second.status).toBe(200);
+    const rows = await client`
+      select role_code, station_id from app.membership_role_assignments
+      where membership_id = ${ids.memberMembership}`;
+    expect(rows).toEqual([{ role_code: 'ATTENDANT', station_id: ids.active }]);
+  });
 });

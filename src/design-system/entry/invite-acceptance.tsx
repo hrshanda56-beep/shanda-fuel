@@ -77,14 +77,16 @@ export function ExistingInviteFlow({ token }: { token: string }) {
         <h1 id="entry-title">Join your new workspace</h1>
         <p>Your account is ready to join this organisation.</p>
       </header>
-      {failed ? (
-        <p className="entry-alert" role="alert">
-          We couldn&apos;t complete that. Try again, or ask your manager for a new invitation.
-        </p>
-      ) : null}
-      <Button type="button" variant="primary" size="lg" block loading={loading} onClick={accept}>
-        Accept invitation
-      </Button>
+      <div className="entry-form">
+        {failed ? (
+          <p className="entry-alert" role="alert">
+            We couldn&apos;t complete that. Try again, or ask your manager for a new invitation.
+          </p>
+        ) : null}
+        <Button type="button" variant="primary" size="lg" block loading={loading} onClick={accept}>
+          Accept invitation
+        </Button>
+      </div>
     </section>
   );
 }
