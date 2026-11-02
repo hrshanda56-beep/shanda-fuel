@@ -64,6 +64,7 @@ type TodayOptions = {
   customerStatus?: number;
   daily?: unknown[];
   sales?: unknown[];
+  finance?: unknown[];
 };
 function dashboardBody(options: TodayOptions = {}) {
   const operation = options.operations ?? { status: 200, body: operationsOverview('IN_PROGRESS') };
@@ -87,6 +88,7 @@ function dashboardBody(options: TodayOptions = {}) {
           ? { status: 'error', message: 'Operations could not be loaded.' }
           : { status: 'ready', data: operation.body },
     chart: { status: 'ready', data: { sales: { rows: options.sales ?? [] } } },
+    ...(options.finance ? { finance: { status: 'ready', data: options.finance } } : {}),
   };
 }
 async function mockToday(page: Page, options: TodayOptions = {}) {
@@ -135,7 +137,7 @@ test('key figures say when no approved report exists yet', async ({ page }) => {
   await mockToday(page);
   await page.goto(TODAY);
   const figures = page.locator('.today-figures');
-  for (const label of ['Sales today', 'Litres sold', 'Cash variance', 'Account sales']) {
+  for (const label of ['Sales today', 'Litres sold', 'Account sales']) {
     await expect(figures.locator('.today-figure', { hasText: label })).toContainText(
       'No approved report yet',
     );
@@ -145,7 +147,7 @@ test('key figures say when no approved report exists yet', async ({ page }) => {
   await expect(page.locator('.card')).toHaveCount(0);
 });
 
-test('key figures show approved totals with signed variances', async ({ page }) => {
+test('key figures show the approved totals', async ({ page }) => {
   await mockToday(page, { daily: [dailyRow()] });
   await page.goto(TODAY);
   const figures = page.locator('.today-figures');
@@ -155,9 +157,6 @@ test('key figures show approved totals with signed variances', async ({ page }) 
   await expect(figures.locator('.today-figure', { hasText: 'Litres sold' })).toContainText(
     '1,284 L',
   );
-  const cash = figures.locator('.today-figure', { hasText: 'Cash variance' });
-  await expect(cash).toContainText('−USD 30.85');
-  await expect(cash).not.toContainText('Cash short');
   await expect(figures.locator('.today-figure', { hasText: 'Account sales' })).toContainText(
     'USD 100.00',
   );
@@ -187,9 +186,6 @@ test('an approved zero is shown as zero, unlike a day with no approved report', 
   const figures = page.locator('.today-figures');
   await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
     'USD 0.00',
-  );
-  await expect(figures.locator('.today-figure', { hasText: 'Cash variance' })).not.toContainText(
-    'No cash variance',
   );
   await expect(figures).not.toContainText('No approved report yet');
   await expect(figures).not.toContainText('Stock variance');
@@ -239,9 +235,7 @@ test('the sales chart is also available as a keyboard-operable table', async ({ 
     .getByRole('button', { name: '7D' })
     .click();
 
-  const summary = page.locator('.today-chart-table > summary');
-  await summary.focus();
-  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Show the chart as a table' }).click();
   const table = page.getByRole('table', { name: /Litres sold, 7D, from approved reports only/ });
   await expect(table).toBeVisible();
   await expect(table.getByRole('columnheader')).toHaveText([
@@ -284,14 +278,20 @@ test('the phone dock gives More the same tap target as the other tabs', async ({
   }
 });
 
-test('a cash shortage stays readable on its pastel card in dark mode', async ({ page }) => {
+test('a loss stays readable on its pastel card in dark mode', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
-  await mockToday(page, { daily: [dailyRow()] });
+  await mockToday(page, {
+    daily: [dailyRow()],
+    // The third card is profit for people who may see it; a loss is shown in dark red.
+    finance: [
+      { id: 'profit', label: 'Profit', value: '-30.85', href: '/profitability', basis: 'period' },
+    ],
+  });
   for (const width of [375, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(TODAY);
     const value = page.locator('.today-figure[data-tone="short"] .today-figure-value');
-    await expect(value).toHaveText('−USD 30.85');
+    await expect(value).toHaveText('USD -30.85');
     await expect(value).toHaveCSS('color', 'rgb(143, 29, 29)');
   }
 });
@@ -341,12 +341,13 @@ test('today surfaces blocked operations and suspended customers', async ({ page 
   });
   await page.goto(TODAY);
 
+  // A blocked day shows on the station's own row; the attention list holds what needs a person.
+  const day = page.getByRole('link', { name: /Bindura/ });
+  await expect(day).toContainText('Blocked');
+  await expect(day).toContainText('Returned for changes');
   const attention = page
     .getByRole('region', { name: 'Needs attention' })
     .or(page.locator('section[aria-labelledby="today-attention-heading"]'));
-  await expect(attention.getByRole('link', { name: /Bindura is blocked/ })).toContainText(
-    'Returned for changes',
-  );
   await expect(attention.getByRole('link', { name: /2 customers are suspended/ })).toBeVisible();
 });
 

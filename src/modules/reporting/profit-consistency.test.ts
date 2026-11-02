@@ -112,7 +112,7 @@ describe('one operating profit across screens', () => {
   })();
 
   it('the dashboard tile gives the expected figure', () => {
-    const tile = buildFinanceTiles(report).find((t) => t.id === 'operatingProfit')!;
+    const tile = buildFinanceTiles(report).find((t) => t.id === 'profit')!;
     expect(cents(tile.value)).toBe(expected);
   });
 

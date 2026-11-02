@@ -17,23 +17,24 @@ export function FinanceTiles({
   tiles,
   periodPhrase,
   asAt,
+  bare = false,
 }: {
+  /** Return only the cards, for a grid the caller already owns. */
+  bare?: boolean;
   tiles: readonly FinanceTile[];
   /** The chosen period in words, for example "today" or "this month". */
   periodPhrase: string;
   /** "As at 14:05". */
   asAt: string;
 }) {
-  return (
-    <section className="metric-grid" aria-label="Money at a glance">
+  const cards = (
+    <>
       {tiles.map((tile) => {
         const covers = tile.basis === 'as-at' ? asAt : capitalised(periodPhrase);
+        // The reason a figure is missing sits behind the "?"; the card keeps only what it covers.
+        const reason = tile.value === null ? tile.unavailableReason : tile.detail;
         const note =
-          tile.value === null
-            ? tile.unavailableReason
-            : tile.count !== undefined
-              ? `${tile.count} waiting`
-              : undefined;
+          tile.value !== null && tile.count !== undefined ? `${tile.count} waiting` : undefined;
         return (
           <MetricCard
             key={tile.id}
@@ -42,9 +43,17 @@ export function FinanceTiles({
             meta={note ? `${covers} · ${note}` : covers}
             tone={isLoss(tile.value) ? 'critical' : 'default'}
             href={tile.href}
+            info={reason ?? undefined}
           />
         );
       })}
+    </>
+  );
+  return bare ? (
+    cards
+  ) : (
+    <section className="metric-grid" aria-label="Money at a glance">
+      {cards}
     </section>
   );
 }

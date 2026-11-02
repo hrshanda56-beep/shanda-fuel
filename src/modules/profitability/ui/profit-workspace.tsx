@@ -243,9 +243,16 @@ export function ProfitWorkspace({ initial }: { initial: ProfitInitial }) {
   );
 
   const report = initial.report;
+  // A single day reads as one date, not "1 Nov to 1 Nov".
   const period = report
-    ? `${formatBusinessDate(report.filters.fromDate)} to ${formatBusinessDate(report.filters.toDate)}`
+    ? report.filters.fromDate === report.filters.toDate
+      ? formatBusinessDate(report.filters.fromDate)
+      : `${formatBusinessDate(report.filters.fromDate)} to ${formatBusinessDate(report.filters.toDate)}`
     : null;
+  // The first tab follows the chosen period, so it never says "This Month" over three months.
+  const monthTabLabel = REPORT_PERIOD_LABELS[filters.period].replace(/\b\w/g, (c) =>
+    c.toUpperCase(),
+  );
 
   return (
     <div className="profit-workspace">
@@ -257,7 +264,7 @@ export function ProfitWorkspace({ initial }: { initial: ProfitInitial }) {
         <div className="profit-tabs" role="tablist" aria-label="Profit views">
           {(
             [
-              ['month', 'This Month'],
+              ['month', monthTabLabel],
               ['daily', 'Daily'],
               ['position', 'Financial Position'],
             ] as const
@@ -308,39 +315,56 @@ export function ProfitWorkspace({ initial }: { initial: ProfitInitial }) {
         />
       ) : view && report ? (
         <div className="profit-body">
-          <div className="profit-overview">
+          {view.state === 'no-sales' ? (
             <Card
               as="section"
               className="panel profit-panel"
               aria-labelledby="profit-summary-title"
             >
               <div className="panel-heading">
-                <span className="heading-with-tip">
-                  <h2 id="profit-summary-title">Profit</h2>
-                  <InfoTip text={[view.headline, view.explanation].filter(Boolean).join(' ')} />
-                </span>
-                {view.profit !== null ? (
-                  <StatusBadge tone={isNegative(view.profit) ? 'critical' : 'positive'}>
-                    {isNegative(view.profit) ? 'Loss' : 'Profit'}
-                  </StatusBadge>
-                ) : (
-                  <StatusBadge tone="warning">
-                    {view.state === 'no-sales' ? 'No sales' : 'Not worked out yet'}
-                  </StatusBadge>
-                )}
+                <h2 id="profit-summary-title">Profit</h2>
+                <StatusBadge tone="warning">No sales</StatusBadge>
               </div>
-              <p
-                className="profit-hero"
-                data-tone={
-                  view.profit === null ? 'missing' : isNegative(view.profit) ? 'bad' : 'good'
-                }
-              >
-                {moneyOrUnavailable(view.profit)}
-              </p>
-              <SalesSplit view={view} />
+              <EmptyState
+                layout="block"
+                title="No fuel sales yet"
+                message={view.explanation ?? view.headline}
+                icon="chart"
+              />
             </Card>
-            {view.state !== 'no-sales' ? <FuelTable view={view} links={links} /> : null}
-          </div>
+          ) : (
+            <div className="profit-overview">
+              <Card
+                as="section"
+                className="panel profit-panel"
+                aria-labelledby="profit-summary-title"
+              >
+                <div className="panel-heading">
+                  <span className="heading-with-tip">
+                    <h2 id="profit-summary-title">Profit</h2>
+                    <InfoTip text={[view.headline, view.explanation].filter(Boolean).join(' ')} />
+                  </span>
+                  {view.profit !== null ? (
+                    <StatusBadge tone={isNegative(view.profit) ? 'critical' : 'positive'}>
+                      {isNegative(view.profit) ? 'Loss' : 'Profit'}
+                    </StatusBadge>
+                  ) : (
+                    <StatusBadge tone="warning">Not worked out yet</StatusBadge>
+                  )}
+                </div>
+                <p
+                  className="profit-hero"
+                  data-tone={
+                    view.profit === null ? 'missing' : isNegative(view.profit) ? 'bad' : 'good'
+                  }
+                >
+                  {moneyOrUnavailable(view.profit)}
+                </p>
+                <SalesSplit view={view} />
+              </Card>
+              <FuelTable view={view} links={links} />
+            </div>
+          )}
 
           {view.state !== 'no-sales' ? <StationTable view={view} /> : null}
           {view.state !== 'no-sales' && view.fuels.length > 0 ? null : links}

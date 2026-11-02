@@ -6,8 +6,8 @@ import { FinanceTiles } from './finance-tiles';
 
 const tiles: FinanceTile[] = [
   {
-    id: 'grossProfit',
-    label: 'Gross profit',
+    id: 'profit',
+    label: 'Profit',
     value: '12.5000',
     href: '/profitability?view=daily',
     basis: 'period',
@@ -48,8 +48,12 @@ describe('FinanceTiles', () => {
 
   it('says what each tile covers: the chosen period, or as at a time (B1)', () => {
     expect(html).toContain('Today');
-    expect(html).toContain('As at 14:05 · Some stock has no cost yet.');
     expect(html).toContain('As at 14:05 · 3 waiting');
+  });
+
+  it('keeps the reason a figure is missing behind the "?", not on the card line', () => {
+    expect(html).toContain('About Fuel stock value');
+    expect(html).not.toContain('As at 14:05 · Some stock has no cost yet.');
   });
 
   it('follows the chosen period in its words', () => {

@@ -165,52 +165,63 @@ export function DailyProfitWorkspace({
                 <h2 id="dp-fuels-title" className="profit-title">
                   Profit by fuel
                 </h2>
-                <table className="data-table profit-table">
-                  <caption className="visually-hidden">Profit by fuel</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Fuel</th>
-                      <th scope="col">Litres sold</th>
-                      <th scope="col">Fuel sold</th>
-                      <th scope="col">Profit before expenses</th>
-                      <th scope="col">Profit per litre</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.fuels.map((fuel) => (
-                      <tr key={fuel.productId}>
-                        <th scope="row">{fuel.productName}</th>
-                        <td data-label="Litres sold">{formatLitres(fuel.litres)}</td>
-                        <td data-label="Fuel sold">{moneyOrUnavailable(fuel.sales)}</td>
-                        <td
-                          data-label="Profit before expenses"
-                          data-negative={profitSign(fuel.grossProfit) === 'LOSS' || undefined}
-                        >
-                          {moneyOrUnavailable(fuel.grossProfit)}
-                        </td>
-                        <td data-label="Profit per litre">
-                          {formatPerLitre(fuel.grossProfitPerLitre).replace(' per litre', '')}
-                        </td>
-                      </tr>
-                    ))}
-                    {summary.fuels.length > 1 ? (
+                {summary.fuels.length === 0 ? (
+                  <EmptyState
+                    layout="block"
+                    title="No fuel sold"
+                    message="Fuel appears here once a day's sales are closed and checked."
+                    icon="fuel"
+                  />
+                ) : (
+                  <table className="data-table profit-table">
+                    <caption className="visually-hidden">Profit by fuel</caption>
+                    <thead>
                       <tr>
-                        <th scope="row">Both fuels</th>
-                        <td data-label="Litres sold">{formatLitres(summary.combined.litres)}</td>
-                        <td data-label="Fuel sold">{moneyOrUnavailable(summary.combined.sales)}</td>
-                        <td data-label="Profit before expenses">
-                          {moneyOrUnavailable(summary.combined.grossProfit)}
-                        </td>
-                        <td data-label="Profit per litre">
-                          {formatPerLitre(summary.combined.grossProfitPerLitre).replace(
-                            ' per litre',
-                            '',
-                          )}
-                        </td>
+                        <th scope="col">Fuel</th>
+                        <th scope="col">Litres sold</th>
+                        <th scope="col">Fuel sold</th>
+                        <th scope="col">Profit before expenses</th>
+                        <th scope="col">Profit per litre</th>
                       </tr>
-                    ) : null}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {summary.fuels.map((fuel) => (
+                        <tr key={fuel.productId}>
+                          <th scope="row">{fuel.productName}</th>
+                          <td data-label="Litres sold">{formatLitres(fuel.litres)}</td>
+                          <td data-label="Fuel sold">{moneyOrUnavailable(fuel.sales)}</td>
+                          <td
+                            data-label="Profit before expenses"
+                            data-negative={profitSign(fuel.grossProfit) === 'LOSS' || undefined}
+                          >
+                            {moneyOrUnavailable(fuel.grossProfit)}
+                          </td>
+                          <td data-label="Profit per litre">
+                            {formatPerLitre(fuel.grossProfitPerLitre).replace(' per litre', '')}
+                          </td>
+                        </tr>
+                      ))}
+                      {summary.fuels.length > 1 ? (
+                        <tr>
+                          <th scope="row">Both fuels</th>
+                          <td data-label="Litres sold">{formatLitres(summary.combined.litres)}</td>
+                          <td data-label="Fuel sold">
+                            {moneyOrUnavailable(summary.combined.sales)}
+                          </td>
+                          <td data-label="Profit before expenses">
+                            {moneyOrUnavailable(summary.combined.grossProfit)}
+                          </td>
+                          <td data-label="Profit per litre">
+                            {formatPerLitre(summary.combined.grossProfitPerLitre).replace(
+                              ' per litre',
+                              '',
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                )}
               </Card>
               {links}
             </div>

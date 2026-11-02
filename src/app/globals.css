@@ -942,6 +942,15 @@ a.operations-attention-row:hover {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 18rem));
 }
 
+/* Phones: one centred column that fills the width (capped), not fixed-width
+   cards packed to the left with the spare room all on the right. */
+@media (max-width: 47.99rem) {
+  .tank-overview .tank-grid {
+    grid-template-columns: minmax(0, 24rem);
+    justify-content: center;
+  }
+}
+
 .tank-overview .tank-drum {
   max-width: none;
 }
@@ -6372,6 +6381,25 @@ h3,
   color: var(--accent-text);
 }
 
+/* On phones the empty slot is just a small centred button, not a whole card. */
+@media (max-width: 47.99rem) {
+  .tank-overview .tank-grid > li:has(> .tank-card-ghost) {
+    display: flex;
+    justify-content: center;
+  }
+
+  .tank-card-ghost {
+    flex: 0 0 auto;
+    min-height: 2.75rem;
+    padding: var(--space-2) var(--space-5);
+    border-radius: var(--radius-full, 999px);
+  }
+
+  .tank-card-ghost span {
+    display: none;
+  }
+}
+
 @media (max-width: 40rem) {
   .tank-hero {
     grid-template-columns: 1fr;
@@ -7271,26 +7299,35 @@ h3,
   box-shadow: none;
 }
 
-.next-step--embedded > .next-step-detail,
-.next-step--embedded > .next-step-action {
+.next-step--embedded > .next-step-detail {
   grid-column: 1 / -1;
   grid-row: auto;
 }
 
-/* "Step 3 of 4" and the step's name share one row. */
+/* "Step 3 of 4", the step's name and its button share one row; on a phone the button
+   drops below, full width, as a comfortable thumb target. */
 .today-section > .next-step.next-step--embedded {
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   column-gap: var(--space-3);
-  align-items: baseline;
+  align-items: center;
 }
 
 .next-step--embedded > .next-step-count {
   grid-column: 1;
 }
 
-.next-step--embedded > h2 {
+.next-step--embedded > h2,
+.next-step--embedded > .next-step-count {
+  align-self: baseline;
+}
+
+.today-section > .next-step--embedded > h2 {
   grid-column: 2;
-  font-size: var(--font-size-lg);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.25;
 }
 
 .next-step--embedded > h2:first-child,
@@ -7300,9 +7337,28 @@ h3,
 }
 
 .next-step--embedded > .next-step-action {
-  justify-self: stretch;
+  grid-column: 3;
+  grid-row: 1;
+  align-self: baseline;
+  justify-self: end;
   min-width: 0;
-  margin-top: var(--space-1);
+  min-height: 2.5rem;
+  padding-inline: var(--space-5);
+  white-space: nowrap;
+}
+
+@media (max-width: 40rem) {
+  .today-section > .next-step.next-step--embedded {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .next-step--embedded > .next-step-action {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-self: stretch;
+    min-height: 3rem;
+    margin-top: var(--space-1);
+  }
 }
 
 .next-step--embedded .next-step-trail {
@@ -7313,6 +7369,7 @@ h3,
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
+  line-height: 1.25;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -7338,33 +7395,13 @@ h3,
     margin-left: 0;
   }
 
-  .today-stats .today-periods {
-    gap: var(--space-1);
-    padding: var(--space-1);
-    border-radius: var(--radius-lg);
-    background: var(--bg-hover);
-  }
-
+  /* The range pills keep their desktop look at every width; only the tap height grows. */
   .today-stats .today-period {
     min-height: 2.5rem;
-    border-radius: var(--radius-md);
-    background: transparent;
-    font-size: var(--font-size-sm);
-  }
-
-  .today-stats .today-period[data-active] {
-    background: var(--text-primary);
-    color: var(--bg-canvas);
   }
 
   .today-stats .perf-chart {
     margin: var(--space-3) 0;
-  }
-
-  .today-stats .today-stats-summary {
-    margin: 0 0 var(--space-1);
-    font-size: var(--font-size-xs);
-    line-height: 1.5;
   }
 
   .today-stats .today-chart-table {
@@ -8278,4 +8315,263 @@ h3,
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
   gap: var(--space-4) var(--space-6);
   align-items: start;
+}
+
+/* Station actions: a tidy list of tappable rows that open their form in place. */
+.inventory-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+.inventory-action-disclosure {
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 0.75rem);
+  background: var(--bg-surface);
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+.inventory-action-disclosure:hover {
+  border-color: var(--border-default);
+  background: var(--bg-subtle);
+}
+.inventory-action-disclosure[open] {
+  grid-column: 1 / -1;
+  background: var(--bg-surface);
+}
+.inventory-action-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 3.5rem;
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+  border-radius: inherit;
+}
+.inventory-action-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.inventory-action-disclosure > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.inventory-action-text {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+.inventory-action-text small {
+  color: var(--text-secondary);
+  font-size: var(--text-sm, 0.875rem);
+}
+.inventory-action-chevron {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid var(--text-secondary);
+  border-bottom: 2px solid var(--text-secondary);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.inventory-action-disclosure[open] > summary .inventory-action-chevron {
+  transform: rotate(45deg);
+}
+.inventory-action-content {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+.inventory-action-highlight {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-surface));
+}
+.inventory-action-highlight:hover {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-surface));
+}
+@media (max-width: 47.99rem) {
+  .inventory-action-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Stock cost page: each lower card keeps its own height, so opening an action never resizes
+   the Cost changes card beside it. */
+.content-grid.valuation-workspace {
+  align-items: start;
+}
+/* Beside the actions, the Cost changes card scrolls with them until it reaches the top, then
+   stays put while the actions card carries on. */
+@media (min-width: 48rem) {
+  .valuation-workspace > .table-card {
+    position: sticky;
+    top: var(--space-4);
+    max-height: calc(100vh - 2 * var(--space-4));
+    overflow-y: auto;
+  }
+}
+.inventory-action-highlight {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-subtle));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* The three figures and the warning share one row on tablet and desktop. */
+@media (min-width: 48rem) {
+  .valuation-summary.has-warning {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr);
+    align-items: stretch;
+  }
+}
+.valuation-summary > .callout {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin-bottom: 0;
+  border-radius: var(--radius-lg, 1rem);
+}
+
+/* Record a delivery: grouped, two-column form */
+.action-form {
+  display: grid;
+  gap: var(--space-4);
+}
+.action-form > .muted-small {
+  margin: 0;
+}
+.action-form-section {
+  display: grid;
+  gap: var(--space-3);
+}
+.action-form-section > h4,
+.action-form-heading h4 {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+.action-form-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.action-form-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+.action-form-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.action-form-wide {
+  grid-column: 1 / -1;
+}
+.action-form-more {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.action-form-more > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--space-4);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+.action-form-more > summary::-webkit-details-marker {
+  display: none;
+}
+.action-form-more > summary small {
+  flex: 1;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.action-form-more[open] > summary .inventory-action-chevron {
+  transform: rotate(45deg);
+}
+.action-form-more[open] > summary {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.action-form-more > .action-form-grid {
+  padding: var(--space-4);
+}
+.action-form-actions {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  justify-content: flex-end;
+}
+@media (max-width: 47.99rem) {
+  .action-form-grid,
+  .action-form-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .action-form-actions .button {
+    width: 100%;
+  }
+}
+.action-form .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.action-form-note {
+  margin: 0;
+  align-self: end;
+  padding-bottom: 0.5rem;
+}
+.action-form select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%236b7280' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 1.5 6 6l4.5-4.5'/%3E%3C/svg%3E");
+  background-position: calc(100% - 1rem) 50%;
+  background-size: 0.75rem 0.5rem;
+}
+.inventory-action-group-label {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+@media (max-width: 47.99rem) {
+  .action-form-note {
+    padding-bottom: 0;
+  }
+}
+
+/* The open action stands out from the collapsed ones. */
+.inventory-action-disclosure[open] {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-default));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 4px 14px -6px rgb(0 0 0 / 0.16);
+}
+.inventory-action-disclosure[open]:hover {
+  background: var(--bg-surface);
+}
+.inventory-action-disclosure[open] > summary {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface));
+  border-radius: calc(var(--radius-md, 0.75rem) - 1px) calc(var(--radius-md, 0.75rem) - 1px) 0 0;
+}
+.inventory-action-disclosure[open] > summary .inventory-action-chevron {
+  border-color: var(--accent);
+}
+
+@media (min-width: 48rem) {
+  .valuation-overview .data-table thead th:nth-child(2),
+  .valuation-overview .data-table tbody td:nth-child(2),
+  .valuation-overview .data-table thead th:nth-child(4),
+  .valuation-overview .data-table tbody td:nth-child(4),
+  .valuation-overview .data-table thead th:nth-child(5),
+  .valuation-overview .data-table tbody td:nth-child(5) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
 }

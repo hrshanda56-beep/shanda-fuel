@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
-import { formatBusinessDate } from '../../../design-system/formatters';
+import { formatBusinessDate, formatLitres } from '../../../design-system/formatters';
 import {
   Button,
   Card,
@@ -259,8 +259,16 @@ function StockSignalBadge({
   red,
 }: Readonly<{ variance: string | null; tolerance: string | null; red: string | null }>) {
   const signal = classifyStockVariance(variance, tolerance, red);
-  // No allowed difference is set, so there is nothing to say; stay quiet rather than show a label nobody can act on.
-  if (signal === 'unjudged') return null;
+  if (signal === 'unjudged') {
+    // No allowed difference is set, so we cannot judge it, but a real gap should still be seen.
+    if (variance === null || Number(variance) === 0) return null;
+    const below = variance.startsWith('-');
+    return (
+      <StatusBadge tone="neutral">
+        {formatLitres(below ? variance.slice(1) : variance)} {below ? 'under' : 'over'} books
+      </StatusBadge>
+    );
+  }
   if (signal === 'ok') return <StatusBadge tone="positive">Matches books</StatusBadge>;
   if (signal === 'watch') return <StatusBadge tone="warning">Small difference</StatusBadge>;
   return <StatusBadge tone="critical">Check this tank</StatusBadge>;

@@ -1,29 +1,18 @@
 import type { ManagementReport } from './contracts';
 import { exact } from './domain';
-import {
-  approvedFuelBenefit,
-  buildFinancialPosition,
-  recognizedOperatingExpenseTotal,
-} from './statements';
+import { formatTileMoney } from './format';
+import { approvedFuelBenefit, recognizedOperatingExpenseTotal } from './statements';
 import { operatingProfit } from './operating-profit';
 
 export type FinanceTile = Readonly<{
-  id:
-    | 'grossProfit'
-    | 'operatingProfit'
-    | 'stockValue'
-    | 'cashAtStations'
-    | 'cashBanked'
-    | 'posAwaiting'
-    | 'debtors'
-    | 'creditors'
-    | 'netPosition'
-    | 'expensesAwaitingApproval';
+  id: 'profit' | 'stockValue' | 'creditors' | 'expensesAwaitingApproval';
   label: string;
   /** Exact money text, or null when the figure is not available (never zero). */
   value: string | null;
   /** Plain words explaining an unavailable figure. */
   unavailableReason?: string;
+  /** Extra context for a known figure, kept behind the "?" on the card. */
+  detail?: string;
   /** Extra count shown beside the amount, such as expenses waiting. */
   count?: number;
   /** The page that explains the figure. */
@@ -38,8 +27,6 @@ export type FinanceTile = Readonly<{
 /** The finance tiles for the dashboard, each from a figure the report already carries. */
 export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
   const own = report.ownerPosition;
-  const position = buildFinancialPosition(report);
-  const customersKnown = report.customers.availability === 'AVAILABLE';
   // Same arithmetic as the profit statement's "Net operating result", so the tile ties to it.
   const operating = operatingProfit(
     report.grossMargin,
@@ -55,21 +42,18 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
       ? 'No sales yet.'
       : 'Some sales have no fuel cost yet.'
     : undefined;
-  return [
+  const tiles: FinanceTile[] = [
     {
-      id: 'grossProfit',
+      id: 'profit',
       basis: 'period',
-      label: 'Gross profit',
-      value: report.grossMargin,
-      unavailableReason: profitReason,
-      href: '/profitability?view=daily',
-    },
-    {
-      id: 'operatingProfit',
-      basis: 'period',
-      label: 'Operating profit',
+      label: 'Profit',
       value: operating,
       unavailableReason: profitReason,
+      // Operating profit is the headline; gross is the figure before expenses and fixed costs.
+      detail:
+        report.grossMargin === null
+          ? undefined
+          : `Operating profit. Gross profit, before expenses and fixed costs, is ${formatTileMoney(report.grossMargin)}.`,
       href: '/profitability?view=daily',
     },
     {
@@ -86,57 +70,10 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
         own && own.stockValue === null ? '/inventory/valuation' : '/profitability?view=position',
     },
     {
-      id: 'cashAtStations',
-      basis: 'as-at',
-      label: 'Cash at stations',
-      value:
-        report.cash.custody?.atStation ??
-        report.cash.atStation ??
-        report.cash.collectedButNotBanked,
-      href: '/profitability?view=position',
-    },
-    {
-      id: 'cashBanked',
-      basis: 'period',
-      label: 'Cash banked',
-      value: report.cash.banked,
-      href: '/profitability?view=position',
-    },
-    {
-      id: 'posAwaiting',
-      basis: 'as-at',
-      label: 'Card and mobile payments awaiting settlement',
-      value: report.providers.unmatchedEvidenceAmount,
-      href: '/profitability?view=position',
-    },
-    {
-      id: 'debtors',
-      basis: 'as-at',
-      label: 'Owed by customers',
-      value: report.customers.receivableBalance,
-      unavailableReason: customersKnown
-        ? undefined
-        : 'Choose all stations to see customer balances.',
-      href: '/profitability?view=position',
-    },
-    {
       id: 'creditors',
       basis: 'as-at',
       label: 'Owed to suppliers',
       value: report.suppliers.outstandingBalance,
-      href: '/profitability?view=position',
-    },
-    {
-      id: 'netPosition',
-      basis: 'as-at',
-      label: 'Net position',
-      value: position.net,
-      unavailableReason:
-        position.net === null
-          ? customersKnown
-            ? 'Not every figure is known yet.'
-            : 'Choose all stations to see the net position.'
-          : undefined,
       href: '/profitability?view=position',
     },
     {
@@ -149,4 +86,8 @@ export function buildFinanceTiles(report: ManagementReport): FinanceTile[] {
       href: '/expenses',
     },
   ];
+  // Nothing waiting means nothing to act on, so the tile only appears when something is.
+  return own?.expensesAwaitingApproval.count === 0
+    ? tiles.filter((tile) => tile.id !== 'expensesAwaitingApproval')
+    : tiles;
 }

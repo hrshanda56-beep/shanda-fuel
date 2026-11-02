@@ -60,6 +60,7 @@ export function InfoTip({
     if (!visible) return;
     const close = () => {
       setHover(false);
+      setFocus(false);
       setPinned(false);
     };
     const onDown = (event: PointerEvent) => {

@@ -1,16 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Icon, type IconName } from '@/design-system/icons';
-import { AccessDeniedState } from '@/design-system/primitives';
+import { AccessDeniedState, Button, StatusBadge } from '@/design-system/primitives';
 import { PageContainer } from '@/design-system/layout';
+import { CardEmpty, CardRow, CardRows, CardTiles, SectionCard } from '@/design-system/section-card';
 
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
 import { StaffPanel } from './staff-panel';
 import { AuditPanel } from '../../audit/ui/audit-panel';
-import { GuidedSetupPanel } from '../../setup/ui/guided-setup-panel';
+import { StationSetupGuide } from '../../setup/ui/guided-setup-panel';
 import { AlertSettingsPanel } from '../../setup/ui/alert-settings-panel';
 import { PaymentsPanel } from '../../setup/ui/payments-panel';
 import { ReadinessPanel } from '../../setup/ui/readiness-panel';
@@ -20,7 +21,6 @@ import styles from './settings-workspace.module.css';
 type Tab =
   | 'organisation'
   | 'stations'
-  | 'setup'
   | 'readiness'
   | 'payments'
   | 'staff'
@@ -31,13 +31,12 @@ type Tab =
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
   { value: 'stations', label: 'Stations', icon: 'fuel' },
-  { value: 'setup', label: 'Station setup', icon: 'settings' },
   { value: 'readiness', label: 'Readiness', icon: 'check-circle' },
-  { value: 'payments', label: 'Payments', icon: 'receipt' },
+  { value: 'payments', label: 'Payments', icon: 'card' },
   { value: 'staff', label: 'Staff', icon: 'users' },
-  { value: 'alerts', label: 'Reminders', icon: 'check-circle' },
-  { value: 'activity', label: 'Activity log', icon: 'receipt' },
-  { value: 'account', label: 'Account', icon: 'users' },
+  { value: 'alerts', label: 'Reminders', icon: 'bell' },
+  { value: 'activity', label: 'Activity log', icon: 'clock' },
+  { value: 'account', label: 'Account', icon: 'lock' },
 ];
 
 const ROLE_LABELS: Readonly<Record<string, string>> = {
@@ -56,73 +55,37 @@ function initialsOf(name: string): string {
   return (first + last).toUpperCase();
 }
 
-function Fields({ items }: { items: ReadonlyArray<{ label: string; value: ReactNode }> }) {
-  return (
-    <dl className={styles.fields}>
-      {items.map((item) => (
-        <div key={item.label}>
-          <dt>{item.label}</dt>
-          <dd>{item.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-/** A titled block inside the settings panel: heading, optional intro, then its fields. */
-function Section({
-  headingId,
-  title,
-  intro,
-  children,
-}: {
-  headingId: string;
-  title: string;
-  intro?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className={styles.section} aria-labelledby={headingId}>
-      <div className={styles.sectionHead}>
-        <h3 id={headingId} className={styles.sectionTitle}>
-          {title}
-        </h3>
-        {intro ? <p className={styles.note}>{intro}</p> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function AccountPanel({ view }: { view: SettingsView }) {
   const email = view.account.email ?? 'No email provided';
   return (
     <>
-      <Section headingId="account-profile" title="Profile">
+      <SectionCard
+        id="account-profile"
+        title="Profile"
+        note="Your name and email come from your sign-in account and are read-only here."
+      >
         <div className={styles.profileRow}>
           <span className={styles.avatar} aria-hidden="true">
             {initialsOf(view.account.name)}
           </span>
-          <p className={styles.note}>
-            Your name and email come from your sign-in account and are read-only here.
-          </p>
+          <dl className={styles.profileFacts}>
+            <div>
+              <dt>Name</dt>
+              <dd>{view.account.name}</dd>
+            </div>
+            <div>
+              <dt>Email</dt>
+              <dd>{email}</dd>
+            </div>
+          </dl>
         </div>
-        <Fields
-          items={[
-            { label: 'Name', value: view.account.name },
-            { label: 'Email', value: email },
-          ]}
-        />
-      </Section>
-      <Section
-        headingId="account-session"
+      </SectionCard>
+      <SectionCard
+        id="account-session"
         title="Session"
-        intro="Sign out of Shanda Fuel on this device."
-      >
-        <div className={styles.signOutRow}>
-          <SignOutButton />
-        </div>
-      </Section>
+        note="Sign out of Shanda Fuel on this device."
+        action={<SignOutButton />}
+      />
     </>
   );
 }
@@ -192,38 +155,66 @@ export function SettingsStations({
   context,
   tenantId,
   canManage = false,
+  onSetup,
 }: {
   context: SettingsView['context'];
   tenantId?: string;
   canManage?: boolean;
+  /** Opens the guided setup for one station. Left out when the person cannot set stations up. */
+  onSetup?: (stationId: string) => void;
 }) {
   const stations = context.selectedStation ? [context.selectedStation] : (context.stations ?? []);
+  const canEdit = Boolean(canManage && tenantId);
   return (
-    <Section headingId="stations" title={context.selectedStation ? 'Station details' : 'Stations'}>
-      {canManage && tenantId ? (
-        <AddStation tenantId={tenantId} companies={context.legalEntities} />
-      ) : null}
+    <SectionCard
+      id="stations"
+      title={context.selectedStation ? 'Station details' : 'Stations'}
+      note={
+        canEdit && context.legalEntities.length === 0
+          ? 'Add a company under Organisation before adding a station.'
+          : undefined
+      }
+      action={
+        canEdit ? <AddStation tenantId={tenantId!} companies={context.legalEntities} /> : undefined
+      }
+    >
       {stations.length ? (
-        stations.map((station) => (
-          <section key={station.id}>
-            <h3>{station.name}</h3>
-            <Fields
-              items={[
-                { label: 'Code', value: station.code },
-                { label: 'Time zone', value: station.timezone },
-                {
-                  label: 'Status',
-                  value: station.status === 'ONBOARDING' ? 'Setting up' : 'Live',
-                },
-              ]}
-            />
-            {canManage && tenantId ? <EditStation tenantId={tenantId} station={station} /> : null}
-          </section>
-        ))
+        <CardRows label="Stations">
+          {stations.map((station) => {
+            const settingUp = station.status === 'ONBOARDING';
+            return (
+              <CardRow
+                key={station.id}
+                title={station.name}
+                badge={
+                  <StatusBadge tone={settingUp ? 'pending' : 'positive'}>
+                    {settingUp ? 'Setting up' : 'Live'}
+                  </StatusBadge>
+                }
+                detail={`${station.code} · ${station.timezone}`}
+                aside={
+                  <>
+                    {onSetup ? (
+                      <Button
+                        variant={settingUp ? 'primary' : 'secondary'}
+                        size="sm"
+                        aria-label={`Station setup for ${station.name}`}
+                        onClick={() => onSetup(station.id)}
+                      >
+                        Station setup
+                      </Button>
+                    ) : null}
+                    {canEdit ? <EditStation tenantId={tenantId!} station={station} /> : null}
+                  </>
+                }
+              />
+            );
+          })}
+        </CardRows>
       ) : (
-        <p className={styles.note}>No stations are available to your account in this selection.</p>
+        <CardEmpty>No stations are available to your account in this selection.</CardEmpty>
       )}
-    </Section>
+    </SectionCard>
   );
 }
 
@@ -236,53 +227,76 @@ function StationStaffList({
   staff: NonNullable<SettingsView['stationView']>['staff'];
 }) {
   return (
-    <Section headingId="station-staff" title={`Staff at ${stationName}`}>
+    <SectionCard
+      id="station-staff"
+      title={`Staff at ${stationName}`}
+      note="This list is read only. A manager changes who works here."
+    >
       {staff.length > 0 ? (
-        <ul
-          className={styles.staffList}
-          style={{ listStyle: 'none', margin: 0, padding: 0 }}
-          aria-label={`Staff at ${stationName}`}
-        >
+        <CardRows label={`Staff at ${stationName}`}>
           {staff.map((person) => (
-            <li key={`${person.name}-${person.role}`} className={styles.staffRow}>
-              <strong>{person.name}</strong>
-              <span>{ROLE_LABELS[person.role] ?? person.role}</span>
-            </li>
+            <CardRow
+              key={`${person.name}-${person.role}`}
+              title={person.name}
+              aside={
+                <span className={styles.roleLabel}>{ROLE_LABELS[person.role] ?? person.role}</span>
+              }
+            />
           ))}
-        </ul>
+        </CardRows>
       ) : (
-        <p className={styles.note}>Nobody is assigned to this station yet.</p>
+        <CardEmpty>Nobody is assigned to this station yet.</CardEmpty>
       )}
-      <p className={styles.note}>This list is read only. A manager changes who works here.</p>
-    </Section>
+    </SectionCard>
   );
 }
 
 export function SettingsWorkspace({
   view,
   initialTab,
+  initialSetupStation,
 }: {
   view: SettingsView;
   /** A section to open first, e.g. from a link on the readiness list. */
   initialTab?: string;
+  /** A station whose setup should open straight away, e.g. from the readiness list. */
+  initialSetupStation?: string;
 }) {
-  // Companies are part of the Organisation section, so an older link to them lands there.
+  // Station setup lives on the Stations section, so an older link to it lands there.
+  const requested = initialTab === 'setup' ? 'stations' : initialTab;
   const [tab, setTab] = useState<Tab>(
-    TABS.some((item) => item.value === initialTab) ? (initialTab as Tab) : 'organisation',
+    TABS.some((item) => item.value === requested) ? (requested as Tab) : 'organisation',
   );
+  const [setupStationId, setSetupStationId] = useState<string | null>(() =>
+    initialTab === 'setup' || initialSetupStation
+      ? (initialSetupStation ??
+        view.context.selectedStation?.id ??
+        view.context.stations?.[0]?.id ??
+        null)
+      : null,
+  );
+  const content = useRef<HTMLDivElement>(null);
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
+
+  // Opening or leaving a station's setup swaps the whole card, so focus moves to the new heading
+  // instead of being lost with the button that was pressed.
+  const [focusRequests, setFocusRequests] = useState(0);
+  const askForFocus = () => setFocusRequests((count) => count + 1);
+  useEffect(() => {
+    if (focusRequests === 0) return;
+    const heading = content.current?.querySelector<HTMLElement>('h2');
+    heading?.setAttribute('tabindex', '-1');
+    heading?.focus();
+  }, [focusRequests]);
 
   if (!organisation) {
     return (
       <PageContainer width="wide" className={`settings-page ${styles.page}`}>
         <div className={styles.layout}>
           <div className={styles.content}>
-            <header className={styles.contentHeader}>
-              <h2 className={styles.contentTitle}>Organisation</h2>
-            </header>
-            <Section headingId="organisation-unavailable" title="Not available">
+            <SectionCard id="organisation-unavailable" title="Organisation">
               <AccessDeniedState message="No organisation is available for this account." />
-            </Section>
+            </SectionCard>
             <AccountPanel view={view} />
           </div>
         </div>
@@ -302,7 +316,7 @@ export function SettingsWorkspace({
           ? Boolean(view.access?.canManageAlerts)
           : item.value === 'activity'
             ? Boolean(view.access?.canViewAudit)
-            : item.value === 'readiness' || item.value === 'setup'
+            : item.value === 'readiness'
               ? Boolean(view.access?.canViewReadiness)
               : item.value === 'payments'
                 ? Boolean(view.access?.canViewPayments)
@@ -311,11 +325,19 @@ export function SettingsWorkspace({
   const active = visibleTabs.find((item) => item.value === tab) ?? visibleTabs[0]!;
   const shown = active.value;
   const { selectedStation, legalEntities } = view.context;
+  const canSetUp = Boolean(view.access?.canViewReadiness);
+  const stations = selectedStation ? [selectedStation] : (view.context.stations ?? []);
+  const setupStation = canSetUp ? stations.find((item) => item.id === setupStationId) : undefined;
+
+  function choose(next: Tab) {
+    setSetupStationId(null);
+    setTab(next);
+  }
 
   return (
     <PageContainer width="wide" className={`settings-page ${styles.page}`}>
       <div className={styles.layout}>
-        <SettingsSectionMenu items={visibleTabs} active={active} onSelect={setTab} />
+        <SettingsSectionMenu items={visibleTabs} active={active} onSelect={choose} />
         <nav
           className={styles.subnav}
           aria-label="Settings sections"
@@ -336,8 +358,8 @@ export function SettingsWorkspace({
               key={item.value}
               type="button"
               className={styles.subnavItem}
-              aria-pressed={item.value === tab}
-              onClick={() => setTab(item.value)}
+              aria-pressed={item.value === shown}
+              onClick={() => choose(item.value)}
             >
               <Icon name={item.icon} className={styles.subnavIcon} />
               {item.label}
@@ -345,53 +367,91 @@ export function SettingsWorkspace({
           ))}
         </nav>
 
-        <div className={styles.content}>
-          <header className={styles.contentHeader}>
-            <h2 className={styles.contentTitle}>{active.label}</h2>
-            {(shown === 'organisation' && !view.access?.canManageCompanies) ||
-            (shown === 'stations' && !view.access?.canManageStations) ? (
-              <p className={styles.note}>These details are read-only on this screen.</p>
-            ) : null}
-          </header>
-
+        <div className={styles.content} ref={content}>
           {shown === 'organisation' ? (
-            <Section headingId="organisation" title="Organisation details">
-              <Fields items={[{ label: 'Name', value: organisation.name }]} />
-            </Section>
+            <>
+              <SectionCard
+                id="organisation"
+                title="Organisation"
+                note={
+                  view.access?.canManageCompanies
+                    ? undefined
+                    : 'These details are read-only on this screen.'
+                }
+              >
+                <CardTiles items={[{ label: 'Name', value: organisation.name }]} />
+              </SectionCard>
+              <SectionCard
+                id="companies"
+                title="Companies"
+                action={
+                  view.access?.canManageCompanies ? <AddCompany tenantId={organisation.id} /> : null
+                }
+              >
+                {legalEntities.length > 0 ? (
+                  <CardRows label="Companies">
+                    {legalEntities.map((legalEntity) => (
+                      <CardRow
+                        key={legalEntity.id}
+                        title={legalEntity.name}
+                        aside={
+                          view.access?.canManageCompanies ? (
+                            <EditCompany tenantId={organisation.id} company={legalEntity} />
+                          ) : null
+                        }
+                      />
+                    ))}
+                  </CardRows>
+                ) : (
+                  <CardEmpty>No companies are available to you.</CardEmpty>
+                )}
+              </SectionCard>
+            </>
           ) : null}
 
-          {shown === 'organisation' ? (
-            <Section headingId="companies" title="Companies">
-              {view.access?.canManageCompanies ? <AddCompany tenantId={organisation.id} /> : null}
-              {legalEntities.length > 0 ? (
-                <Fields
-                  items={legalEntities.map((legalEntity, index) => ({
-                    label: legalEntities.length > 1 ? `Company ${index + 1}` : 'Company',
-                    value: view.access?.canManageCompanies ? (
-                      <>
-                        {legalEntity.name}{' '}
-                        <EditCompany tenantId={organisation.id} company={legalEntity} />
-                      </>
-                    ) : (
-                      legalEntity.name
-                    ),
-                  }))}
-                />
-              ) : (
-                <p className={styles.note}>No companies are available to you.</p>
-              )}
-            </Section>
+          {shown === 'stations' && setupStation ? (
+            <SectionCard
+              id="station-setup"
+              title={`Station setup: ${setupStation.name}`}
+              note="Work through these steps from top to bottom. You can stop at any time and come back; what you have saved stays saved."
+              action={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setSetupStationId(null);
+                    askForFocus();
+                  }}
+                >
+                  <Icon name="chevron-right" className={styles.backIcon} />
+                  Back to stations
+                </Button>
+              }
+            >
+              <StationSetupGuide
+                key={setupStation.id}
+                tenantId={organisation.id}
+                stationId={setupStation.id}
+                stationName={setupStation.name}
+              />
+            </SectionCard>
           ) : null}
 
-          {shown === 'stations' ? (
+          {shown === 'stations' && !setupStation ? (
             <SettingsStations
               context={view.context}
               tenantId={organisation.id}
               canManage={Boolean(view.access?.canManageStations)}
+              onSetup={
+                canSetUp
+                  ? (stationId) => {
+                      setSetupStationId(stationId);
+                      askForFocus();
+                    }
+                  : undefined
+              }
             />
           ) : null}
-
-          {shown === 'setup' && view.access?.canViewReadiness ? <GuidedSetupPanel /> : null}
 
           {shown === 'readiness' && view.access?.canViewReadiness ? <ReadinessPanel /> : null}
 
@@ -402,11 +462,13 @@ export function SettingsWorkspace({
           ) : null}
 
           {shown === 'staff' && !stationView && view.staff?.canManage ? (
-            <StaffPanel
-              tenantId={organisation.id}
-              overview={view.staff}
-              selectedStationId={selectedStation?.id}
-            />
+            <SectionCard id="staff" title="Staff">
+              <StaffPanel
+                tenantId={organisation.id}
+                overview={view.staff}
+                selectedStationId={selectedStation?.id}
+              />
+            </SectionCard>
           ) : null}
 
           {shown === 'alerts' && view.access?.canManageAlerts ? (
