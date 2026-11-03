@@ -371,6 +371,13 @@ format, `db:check`, typecheck green):
   (24 hours, tied to the saved record version, cleared once the server save succeeds) and offers
   them back after a crash. The copy is kept per person (membership), station and shift. Not
   browser-tested; the storage rules are unit-tested.
+- Offline drafts, every screen (2026-11-03, uncommitted): `PageDraftKeeper` (`src/platform/drafts/page-draft-keeper.tsx`,
+  mounted in `WorkContextProvider`, `src/modules/context/client-context.tsx`) keeps unsaved typing on any page, per signed-in person (Clerk user id), station
+  and page. It is offered back with Restore/Discard, never applied silently; it expires after 24 hours; it is cleared
+  when a save succeeds (the form that was saved is dropped, other half-typed fields stay). Passwords, one-time
+  codes, card and file fields are never kept. The deliveries and reconciliation screens keep their own drafts and are
+  skipped. The storage rules are unit-tested; the restore into live React forms is NOT browser-tested yet. No UI-locked
+  file was touched by this work.
 - Offline drafts, stage 2 (narrow): if a daily-report save fails because there is no connection, the
   exact commands, idempotency keys and running record version are queued on the device
   (`src/platform/drafts/outbox.ts`, per person, 7 days, 20 entries) and sent again when the browser
