@@ -1,5 +1,20 @@
 # Shanda Fuel — Current Status
 
+## Production database state — 2026-11-03
+
+Read from the production database by the project owner (read-only query of
+`drizzle.__drizzle_migrations`): 87 migrations applied, last `0101_staff_access_replace`. The owner
+then applied `0102_staff_remove` with the reviewed direct path; production now shows **88 applied,
+last marker `1793200102000` (`0102_staff_remove`)**, equal to the journal at `main` `0fe82387`
+(PR #213). Nothing is pending. Earlier notes in this file that say 0098 to 0102 (or 0087 to 0097) are
+not applied to production are superseded by this entry. Production web deployment of `0fe82387`
+succeeded on 2026-11-02 (GitHub deployment record). Restore point: Neon branch
+`pre-0084-0102-2026-11-03`. A full read-only check afterwards found all 88 recorded
+hashes equal to the files at `0fe82387`, `app_runtime` owning nothing in schema `app`, and row
+security enabled and forced on every ordinary table in `app`. Not yet done: the authenticated smoke
+test as the owner on `https://fuel.shandahr.com`. Details:
+`docs/runbooks/v1-migration-and-release.md`, section 7.
+
 ## Manual QA issue list — 2026-11-02 (branch `codex/qa-issue-list-20261102`, PR #213)
 
 Fixed from the owner's manual QA report: real PDF and styled Excel report downloads (DEC-052),
