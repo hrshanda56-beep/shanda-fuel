@@ -1,6 +1,7 @@
 'use client';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { ContextResolution } from './contracts';
+import { PageDraftKeeper } from '../../platform/drafts/page-draft-keeper';
 import { createContextReader } from './context-reader';
 
 const ContextSnapshot = createContext<ContextResolution | undefined>(undefined);
@@ -18,7 +19,10 @@ export function WorkContextProvider({
   const read = useMemo(() => createContextReader(resolution), [resolution]);
   return (
     <ContextSnapshot.Provider value={resolution}>
-      <ContextRead.Provider value={read}>{children}</ContextRead.Provider>
+      <ContextRead.Provider value={read}>
+        <PageDraftKeeper />
+        {children}
+      </ContextRead.Provider>
     </ContextSnapshot.Provider>
   );
 }
