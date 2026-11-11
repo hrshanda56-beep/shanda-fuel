@@ -132,9 +132,9 @@ export const staffInvitations = appSchema.table(
     check(
       'staff_invitations_scope_ck',
       sql`(
-        (${table.scopeType} = 'TENANT' and ${table.legalEntityId} is null and ${table.assignedRole} in ('OWNER', 'ADMINISTRATOR'))
-        or (${table.scopeType} = 'LEGAL_ENTITY' and ${table.legalEntityId} is not null and ${table.assignedRole} = 'FINANCE')
-        or (${table.scopeType} = 'STATION' and ${table.legalEntityId} is not null and ${table.assignedRole} in ('FINANCE', 'SUPERVISOR', 'ATTENDANT'))
+        (${table.scopeType} = 'TENANT' and ${table.legalEntityId} is null and ${table.assignedRole} in ('OWNER', 'ADMINISTRATOR', 'AUDITOR'))
+        or (${table.scopeType} = 'LEGAL_ENTITY' and ${table.legalEntityId} is not null and ${table.assignedRole} in ('FINANCE'))
+        or (${table.scopeType} = 'STATION' and ${table.legalEntityId} is not null and ${table.assignedRole} in ('FINANCE', 'SUPERVISOR', 'ATTENDANT', 'AREA_MANAGER', 'CASH_COLLECTOR'))
       )`,
     ),
     check('staff_invitations_expiry_ck', sql`${table.expiresAt} > ${table.createdAt}`),

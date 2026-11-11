@@ -9,6 +9,7 @@ import { Modal } from '@/design-system/modal';
 import { useToast } from '@/design-system/feedback-provider';
 
 import type { RoleCode } from '@/modules/authorization';
+import { defaultScopeForRole, scopeChoicesForRole } from '@/modules/staff/role-scopes';
 import type { SettingsView } from '../contracts';
 import styles from './settings-workspace.module.css';
 import { matchesStaffScope } from './staff-filter';
@@ -42,11 +43,7 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 
 function defaultScope(role: Role) {
-  return role === 'OWNER' || role === 'ADMINISTRATOR' || role === 'AUDITOR'
-    ? 'TENANT'
-    : role === 'FINANCE'
-      ? 'LEGAL_ENTITY'
-      : 'STATION';
+  return defaultScopeForRole(role);
 }
 
 const COMMAND_SUCCESS_MESSAGES: Record<string, string> = {
@@ -170,7 +167,7 @@ function EditAccessModal({
               ))}
           </select>
         </label>
-        {role === 'FINANCE' ? (
+        {scopeChoicesForRole(role).length > 1 ? (
           <label>
             <span>Scope</span>
             <select
@@ -940,7 +937,7 @@ export function StaffPanel({
                 ))}
             </select>
           </label>
-          {role !== 'OWNER' && role !== 'ADMINISTRATOR' ? (
+          {scopeChoicesForRole(role).length > 1 ? (
             <label>
               <span>Scope</span>
               <select
@@ -951,7 +948,9 @@ export function StaffPanel({
                   setStationIds([]);
                 }}
               >
-                {role === 'FINANCE' ? <option value="LEGAL_ENTITY">Legal entity</option> : null}
+                {scopeChoicesForRole(role).includes('LEGAL_ENTITY') ? (
+                  <option value="LEGAL_ENTITY">Legal entity</option>
+                ) : null}
                 <option value="STATION">Selected stations</option>
               </select>
             </label>
