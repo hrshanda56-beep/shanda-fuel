@@ -617,6 +617,13 @@
       "when": 1793200102000,
       "tag": "0102_staff_remove",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1793200103000,
+      "tag": "0103_staff_invitation_roles",
+      "breakpoints": true
     }
   ]
 }
