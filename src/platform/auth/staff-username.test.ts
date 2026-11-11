@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
-import { clerkIdentifierForSignIn, clerkUsernameForStaffNumber } from './staff-username';
+import {
+  clerkIdentifierForSignIn,
+  clerkUsernameForEmailInvitee,
+  clerkUsernameForStaffNumber,
+} from './staff-username';
+
+describe('clerkUsernameForEmailInvitee', () => {
+  it('makes a hidden, Clerk-valid username with a letter and no staff-number shape', () => {
+    const username = clerkUsernameForEmailInvitee();
+    expect(username).toMatch(/^em_[0-9a-f]{24}$/);
+    expect(username).not.toMatch(/^\d+$/);
+  });
+
+  it('is different every time', () => {
+    const names = new Set(Array.from({ length: 50 }, () => clerkUsernameForEmailInvitee()));
+    expect(names.size).toBe(50);
+  });
+
+  it('is never changed by the sign-in mapping', () => {
+    const username = clerkUsernameForEmailInvitee();
+    expect(clerkIdentifierForSignIn(username)).toBe(username);
+  });
+});
 
 describe('clerkUsernameForStaffNumber', () => {
   it('prefixes an all-digit staff number so Clerk accepts it', () => {

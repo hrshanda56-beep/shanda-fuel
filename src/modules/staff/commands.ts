@@ -41,7 +41,10 @@ import {
 } from './domain';
 import type { StaffInvitationScope } from './contracts';
 import { buildInvitationEmail } from './invitation-email';
-import { clerkUsernameForStaffNumber } from '../../platform/auth/staff-username';
+import {
+  clerkUsernameForEmailInvitee,
+  clerkUsernameForStaffNumber,
+} from '../../platform/auth/staff-username';
 
 type StaffTransaction = Parameters<Parameters<ReturnType<typeof getDatabase>['transaction']>[0]>[0];
 
@@ -1080,6 +1083,7 @@ export async function signUpFromInvitation(body: unknown, deps: StaffCommandDepe
           'Sign in with the invited account or request a new invitation',
         );
       created = await createIdentity({
+        username: clerkUsernameForEmailInvitee(),
         email: invitation.invited_email,
         password: input.password,
         firstName: invitation.invited_name,

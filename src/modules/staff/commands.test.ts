@@ -156,6 +156,10 @@ describe('Clerk staff deactivation revocation contract', () => {
     expect(createClerkIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ email: 'invited@example.test' }),
     );
+    // Clerk is set up to require a username, so an email invitee gets a hidden generated one.
+    expect(createClerkIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ username: expect.stringMatching(/^em_[0-9a-f]{24}$/) }),
+    );
     expect(execute).toHaveBeenCalledTimes(3);
   });
 
