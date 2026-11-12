@@ -8,6 +8,7 @@ import {
   dashboardScopeFromCurrentContext,
   operationsAttention,
   shiftSummary,
+  withScope,
   type TodayOperations,
 } from './today-overview-model';
 
@@ -94,5 +95,33 @@ describe('server-provided dashboard scope', () => {
 
   it('does not invent a scope when the server has no current context', () => {
     expect(dashboardScopeFromCurrentContext(null)).toBeUndefined();
+  });
+});
+
+describe('withScope', () => {
+  const scope = { tenantId: 't1', legalEntityId: 'e1', stationId: 's1' };
+
+  it('adds the scope with & when the link already has a query', () => {
+    const url = new URL(withScope('/profitability?view=position', scope), 'http://x');
+    expect(withScope('/profitability?view=position', scope).match(/\?/g)).toHaveLength(1);
+    expect(url.pathname).toBe('/profitability');
+    expect(url.searchParams.get('view')).toBe('position');
+    expect(url.searchParams.get('tenantId')).toBe('t1');
+    expect(url.searchParams.get('legalEntityId')).toBe('e1');
+    expect(url.searchParams.get('stationId')).toBe('s1');
+    expect(url.searchParams.has('allStations')).toBe(false);
+  });
+
+  it('adds the scope with ? when the link has no query', () => {
+    expect(withScope('/expenses', scope)).toBe(
+      '/expenses?tenantId=t1&legalEntityId=e1&stationId=s1',
+    );
+  });
+
+  it('asks for all stations when no station is chosen', () => {
+    const url = new URL(withScope('/profitability?view=daily', { tenantId: 't1' }), 'http://x');
+    expect(url.searchParams.get('view')).toBe('daily');
+    expect(url.searchParams.get('allStations')).toBe('true');
+    expect(url.searchParams.has('stationId')).toBe(false);
   });
 });

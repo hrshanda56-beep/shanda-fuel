@@ -21,6 +21,7 @@ import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-s
 import { getServerShellAccess } from '@/design-system/navigation-server';
 
 import { TodayOverview } from './_overview/today-overview';
+import { loadDashboardWithWork } from './_overview/dashboard-load';
 import { resolveDashboardPeriod, type ResolvedDashboardPeriod } from './_overview/dashboard-period';
 import {
   dashboardScopeFromCurrentContext,
@@ -173,14 +174,17 @@ async function DashboardContent({
     );
   // The chart keeps its own 30-day window; everything else follows the chosen period.
   const chartWindow = chartBuckets('30D', businessToday());
-  const data = await getDashboardFromRequest(request, {
-    ...scope,
-    fromDate: period.fromDate,
-    toDate: period.toDate,
-    chartFromDate: chartWindow.fromDate,
-    chartToDate: chartWindow.toDate,
+  const { data, work } = await loadDashboardWithWork({
+    dashboard: () =>
+      getDashboardFromRequest(request, {
+        ...scope,
+        fromDate: period.fromDate,
+        toDate: period.toDate,
+        chartFromDate: chartWindow.fromDate,
+        chartToDate: chartWindow.toDate,
+      }),
+    work: () => loadWorkItems(request, scope, available),
   });
-  const work = await loadWorkItems(request, scope, available);
   return (
     <TodayOverview
       key={`${scope.tenantId}|${scope.stationId ?? ''}|${period.period}|${period.fromDate}|${period.toDate}`}

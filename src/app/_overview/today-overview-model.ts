@@ -7,6 +7,21 @@ import type { CurrentContext } from '@/modules/context/contracts';
 
 export type DashboardScope = { tenantId: string; legalEntityId?: string; stationId?: string };
 
+/**
+ * Carry the chosen organisation and station on a link. The link may already have a query
+ * (`/profitability?view=position`), so the scope is merged into it rather than appended.
+ * No station chosen means "all stations".
+ */
+export function withScope(href: string, scope: Partial<DashboardScope>): string {
+  const [path = '', existing = ''] = href.split('?');
+  const params = new URLSearchParams(existing);
+  if (scope.tenantId) params.set('tenantId', scope.tenantId);
+  if (scope.legalEntityId) params.set('legalEntityId', scope.legalEntityId);
+  if (scope.stationId) params.set('stationId', scope.stationId);
+  else params.set('allStations', 'true');
+  return `${path}?${params}`;
+}
+
 /** Convert only the server-verified current scope into dashboard input. */
 export function dashboardScopeFromCurrentContext(
   current: CurrentContext | null,

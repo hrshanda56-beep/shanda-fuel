@@ -52,6 +52,7 @@ import {
   CLOSE_STATUS_PRESENTATION,
   countSuspendedCustomers,
   shiftSummary,
+  withScope,
   type AttentionRow,
   type TodayOperations,
 } from './today-overview-model';
@@ -306,14 +307,7 @@ export function TodayOverview({
       finance.status === 'ready'
         ? finance.data.map((tile) => ({
             ...tile,
-            href: (() => {
-              const params = new URLSearchParams();
-              if (tenantId) params.set('tenantId', tenantId);
-              if (legalEntityId) params.set('legalEntityId', legalEntityId);
-              if (stationId) params.set('stationId', stationId);
-              else params.set('allStations', 'true');
-              return `${tile.href}?${params}`;
-            })(),
+            href: withScope(tile.href, { tenantId, legalEntityId, stationId }),
           }))
         : [],
     [finance, tenantId, legalEntityId, stationId],
