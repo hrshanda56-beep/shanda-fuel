@@ -1022,7 +1022,7 @@ async function readDaily(
   filters: ManagementReportQuery,
 ): Promise<{ rows: readonly DailyOperationsRow[]; expectedBusinessDays: number }> {
   const base = approvedReconciliations(filters);
-  const rows = await transaction.execute<{
+  const rowsPromise = transaction.execute<{
     report_date: string;
     station_id: string;
     station_code: string;
@@ -1174,7 +1174,7 @@ async function readDaily(
     ${filters.stationIds.length > 0 ? sql`where k.station_id in (${idList(filters.stationIds)})` : sql``}
     order by k.report_date, st.code
   `);
-  const paymentsByDate = await transaction.execute<{
+  const paymentsPromise = transaction.execute<{
     business_date: string;
     station_id: string;
     method: string;
@@ -1189,7 +1189,7 @@ async function readDaily(
     group by a.business_date, a.station_id, p.method
     order by a.business_date, a.station_id, p.method
   `);
-  const expected = await transaction.execute<{ expected_business_days: number }>(sql`
+  const expectedPromise = transaction.execute<{ expected_business_days: number }>(sql`
     with station_start as (
       select s.id,
         greatest(
@@ -1209,6 +1209,11 @@ async function readDaily(
     select coalesce(sum(greatest(0, (to_date - from_date) + 1)), 0)::int as expected_business_days
     from station_start
   `);
+  const [rows, paymentsByDate, expected] = await Promise.all([
+    rowsPromise,
+    paymentsPromise,
+    expectedPromise,
+  ]);
   return {
     expectedBusinessDays: Number(expected[0]?.expected_business_days ?? 0),
     rows: rows.map((row) => ({
@@ -1501,7 +1506,8 @@ async function readMissingReportDays(
   transaction: ReportingTransaction,
   filters: ManagementReportQuery,
 ): Promise<readonly MissingReportDay[]> {
-  const stationRows = await transaction.execute<{
+  // None of the three reads needs another's answer, so they go out together.
+  const stationRowsPromise = transaction.execute<{
     station_id: string;
     go_live: string;
     today: string;
@@ -1521,8 +1527,7 @@ async function readMissingReportDays(
       and s.status in ('ACTIVE', 'ONBOARDING')
       ${stationClause('s', filters.stationIds, 'id')}
   `);
-  if (stationRows.length === 0) return [];
-  const submitted = await transaction.execute<{
+  const submittedPromise = transaction.execute<{
     station_id: string;
     business_date: string;
     shift_template: string;
@@ -1537,9 +1542,15 @@ async function readMissingReportDays(
       and r.state in ('SUBMITTED', 'APPROVED', 'POSTED', 'LOCKED')
       ${stationClause('r', filters.stationIds)}
   `);
-  const grace = await transaction.execute<{ report_grace_days: number }>(sql`
+  const gracePromise = transaction.execute<{ report_grace_days: number }>(sql`
     select report_grace_days from app.alert_settings where tenant_id = ${filters.tenantId}
   `);
+  const [stationRows, submitted, grace] = await Promise.all([
+    stationRowsPromise,
+    submittedPromise,
+    gracePromise,
+  ]);
+  if (stationRows.length === 0) return [];
   const today = stationRows.map((row) => row.today).sort()[0]!;
   return findMissingReportDays({
     stations: stationRows.map((row) => ({
@@ -1583,6 +1594,11 @@ export async function getDailyOperationsFromRequest(
         await selectedStations(transaction, filters),
         'report.view',
       );
+    // Independent reads on one connection go out together instead of one round trip each.
+    const [daily, missingReportDays] = await Promise.all([
+      readDaily(transaction, filters),
+      readMissingReportDays(transaction, filters),
+    ]);
     return {
       report: 'DAILY_OPERATIONS' as const,
       state: 'POSTED' as const,
@@ -1593,8 +1609,8 @@ export async function getDailyOperationsFromRequest(
         toDate: filters.toDate,
       },
       dateBasis,
-      ...(await readDaily(transaction, filters)),
-      missingReportDays: await readMissingReportDays(transaction, filters),
+      ...daily,
+      missingReportDays,
     };
   });
 }

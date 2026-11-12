@@ -15,10 +15,14 @@ export function preparedDrizzleClient<T extends Client>(client: T): T {
         return (...args: unknown[]) => {
           const parameters = Array.isArray(args[1]) ? args[1] : [];
           const options = (Array.isArray(args[1]) ? args[2] : args[1]) ?? {};
+          // Drizzle passes { prepare: false } on every unnamed query, so the caller's value cannot
+          // win or nothing would ever be prepared. A prepared statement skips the describe round
+          // trip on repeat runs and lets concurrent queries share one connection's pipeline.
+          // Parameterless queries are left exactly as sent.
           return Reflect.apply(value, target, [
             args[0],
             parameters,
-            { prepare: true, ...(options as object) },
+            parameters.length > 0 ? { ...(options as object), prepare: true } : options,
           ]);
         };
       if ((key === 'begin' || key === 'savepoint') && typeof value === 'function') {
