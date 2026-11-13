@@ -164,6 +164,7 @@ answer. **Status:** PROPOSED. Each is small, reversible, and easy to change; con
   device (24 hours, tied to the saved record version, cleared after a successful save) and offered
   back, never applied silently. They are per station and shift, not per person, so on a shared
   device the next person could be offered them.
+  Update 2026-11-03: other screens now use a page-level keeper that is also per signed-in person (see CURRENT_STATUS).
 
 ## DEC-044 — Deliver the client's full v1 on the Clerk-only integration branch
 
