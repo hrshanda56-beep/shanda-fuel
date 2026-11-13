@@ -62,7 +62,8 @@ export function PortfolioStationRow({
     const tone =
       state && ['RETURNED', 'REJECTED', 'BLOCKED', 'EXCEPTION'].includes(state)
         ? 'warning'
-        : state && ['SUBMITTED', 'PENDING_APPROVAL', 'READY_FOR_REVIEW'].includes(state)
+        : state &&
+            ['SUBMITTED', 'PENDING_APPROVAL', 'READY_FOR_REVIEW', 'READY_TO_CLOSE'].includes(state)
           ? 'pending'
           : state && ['CLOSED', 'APPROVED', 'POSTED', 'LOCKED'].includes(state)
             ? 'locked'
