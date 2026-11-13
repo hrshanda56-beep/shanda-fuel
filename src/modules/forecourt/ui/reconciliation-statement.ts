@@ -4,14 +4,47 @@ import { sumDecimals } from '../../cash/ui/cash-visuals';
 export type ReconciliationDetail = Readonly<{
   state: string;
   readings: ReadonlyArray<{ id: string; litresSold: string; salesValue: string }>;
-  payments: ReadonlyArray<{ id: string; method: string; amount: string }>;
-  expenses: ReadonlyArray<{ id: string; category: string; amount: string; paymentMethod: string }>;
-  cash: { countedCash: string; netExpectedCash: string; cashVariance: string } | null;
+  payments: ReadonlyArray<{
+    id: string;
+    method: string;
+    amount: string;
+    reference?: string | null;
+    note?: string | null;
+    beneficiaryName?: string | null;
+  }>;
+  expenses: ReadonlyArray<{
+    id: string;
+    category: string;
+    amount: string;
+    paymentMethod: string;
+    description?: string;
+    personPaid?: string | null;
+    reference?: string | null;
+  }>;
+  cash: {
+    countedCash: string;
+    netExpectedCash: string;
+    cashVariance: string;
+    expectedPhysicalCash?: string;
+    cashPaidExpenses?: string;
+  } | null;
+  /** The written reasons for a variance, one per category. */
+  explanations?: ReadonlyArray<{ category: string; explanation: string }>;
+  approvalNote?: string | null;
+  tanks?: ReadonlyArray<{
+    tankId: string;
+    productName: string;
+    toleranceLitres?: string | null;
+    expectedLitres?: string | null;
+  }>;
+  dips?: ReadonlyArray<{ tankId: string; physicalLitres: string }>;
+  deliveries?: ReadonlyArray<{ deliveryNoteNumber: string; actualQuantityLitres: string }>;
   totals: {
     expectedSales: string;
     accountedSales: string;
     salesVariance: string;
     cashVariance: string | null;
+    stockVariance?: Record<string, string>;
   };
 }>;
 

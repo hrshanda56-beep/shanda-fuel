@@ -735,18 +735,24 @@ function SnapshotTiles({
   asAt: string;
 }) {
   const { cash, stockVariance } = snapshot;
+  const cashTone = varianceTone(cash.difference);
+  // Nothing collected at all means the cash is waiting, not missing. Once some has been collected, a
+  // shortfall is a real difference (a partial collection, or a count below the sales) and stays red.
+  const cashWaiting = cashTone === 'short' && varianceTone(cash.collected) === 'none';
   return (
     <>
       <MetricCard
         label="Expected cash"
         value={formatTileMoney(cash.expected)}
         meta={
-          varianceTone(cash.difference) === 'none'
+          cashTone === 'none'
             ? 'Matches'
-            : `${signedMoney(cash.difference)} difference`
+            : cashWaiting
+              ? 'Not collected yet'
+              : `${signedMoney(cash.difference)} difference`
         }
-        info={`Cash expected ${periodPhrase}: ${formatTileMoney(cash.expected)}. Collected so far: ${formatTileMoney(cash.collected)}.`}
-        tone={varianceTone(cash.difference) === 'short' ? 'critical' : 'default'}
+        info={`Cash expected ${periodPhrase}: ${formatTileMoney(cash.expected)}. Collected so far: ${formatTileMoney(cash.collected)}. Cash is counted as collected once someone records the collection on the Cash page.`}
+        tone={cashTone === 'short' && !cashWaiting ? 'critical' : 'default'}
         href={reportsHref}
       />
       <MetricCard

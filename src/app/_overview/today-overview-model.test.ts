@@ -35,6 +35,7 @@ describe('today overview model', () => {
     ['BLOCKED', 'Bindura is blocked'],
     ['EXCEPTION', 'Bindura closed with an exception'],
     ['READY_FOR_REVIEW', 'Bindura is ready for review'],
+    ['READY_TO_CLOSE', 'Bindura is ready to close'],
   ] as const)('raises %s as an attention row linking to daily operations', (close, title) => {
     expect(operationsAttention(withStatus(close), '/operations/daily')).toMatchObject({
       title,

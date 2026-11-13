@@ -4128,6 +4128,16 @@ h3,
   --notch-w: 8.5rem;
 }
 
+/* The Reconciliations link is a longer word than Back or Next, so its gap is cut wider and the button never touches the card. */
+.entry-card-wrap[data-link] {
+  --notch-w: 11.5rem;
+}
+
+.entry-card-wrap[data-link] .entry-footer .button {
+  min-width: 0;
+  padding-inline: var(--space-5);
+}
+
 .entry-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -6863,7 +6873,7 @@ h3,
 .dd-hint {
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-regular, 400);
+  font-weight: 400;
 }
 .dd-empty {
   color: var(--text-tertiary);
@@ -7006,7 +7016,7 @@ h3,
   .dd-table tbody th::before {
     content: attr(data-label);
     color: var(--text-secondary);
-    font-weight: var(--font-weight-regular, 400);
+    font-weight: 400;
   }
   .dd-table tfoot th {
     grid-template-columns: 1fr;
@@ -7213,7 +7223,7 @@ h3,
 
 .shell-header .shell-header-controls .global-search > span {
   color: var(--text-secondary);
-  font-weight: var(--font-weight-regular, 400);
+  font-weight: 400;
 }
 
 .shell-header .shell-header-controls .global-search kbd {
@@ -8307,13 +8317,106 @@ h3,
  */
 .tank-list {
   display: grid;
-  gap: var(--space-8);
+  gap: var(--space-4);
 }
 
+/* Each tank is one quiet tile: a hairline edge and a barely-there tint lift it off the page. */
 .tank-row {
   container-type: inline-size;
   display: grid;
   gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.tank-row:focus-within {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-sm);
+}
+
+.tank-row .pump-row-head h3 {
+  letter-spacing: -0.01em;
+}
+
+/* The pump rule that starts a new line at the third figure is for pumps; a tank keeps its figures on one. */
+.tank-row-readings .pump-readout:nth-child(3) {
+  grid-column: auto;
+}
+
+/* The result is coloured words, not a badge: the colour says how the dip compares. */
+.tank-result {
+  font-weight: var(--font-weight-medium);
+}
+
+.tank-result[data-tone='positive'] {
+  color: var(--tone-positive-text);
+}
+
+.tank-result[data-tone='warning'] {
+  color: var(--tone-warning-text);
+}
+
+.tank-result[data-tone='critical'] {
+  color: var(--tone-critical-text);
+}
+
+/* A saved dip is confirmed in the tile it belongs to, in words, with a brief highlight. */
+.tank-row-confirm {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--tone-neutral-text);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+
+.tank-row-confirm[data-tone='positive'] {
+  color: var(--tone-positive-text);
+}
+
+.tank-row-confirm[data-tone='warning'] {
+  color: var(--tone-warning-text);
+}
+
+.tank-row-confirm[data-tone='critical'] {
+  color: var(--tone-critical-text);
+}
+
+.tank-row[data-saved] {
+  animation: tank-saved 1.6s ease-out;
+}
+
+@keyframes tank-saved {
+  0% {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-muted);
+  }
+
+  100% {
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-xs);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tank-row[data-saved] {
+    animation: none;
+  }
+}
+
+/* What the books expect is the figure to compare a dip against, so it reads as one. */
+.tank-row-entry .pump-readout-value {
+  color: var(--text-primary);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
 }
 
 .tank-row-readings {
@@ -8328,8 +8431,11 @@ h3,
   white-space: normal;
 }
 
+/* What the books expect, then the field for a new dip: one row, on the same columns as the figures above. */
 .tank-row-entry {
-  max-width: 26rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
 }
 
 @container (min-width: 30rem) {
@@ -8338,14 +8444,30 @@ h3,
     align-items: start;
     gap: var(--space-4);
   }
+
+  .tank-row-entry {
+    grid-template-columns: minmax(9rem, 1fr) minmax(0, 1.5fr);
+    align-items: start;
+    gap: var(--space-6);
+  }
+}
+
+/* Dip, difference and result sit on one line as soon as the tile is wide enough for the result's words. */
+@container (min-width: 38rem) {
+  .tank-row-readings {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
+    gap: var(--space-6);
+  }
 }
 
 @container (min-width: 44rem) {
-  .tank-row-readings {
-    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(6rem, 0.8fr) minmax(
-        12rem,
-        1.6fr
-      );
+  .tank-row-readings[data-with-expected] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .tank-row-entry {
+    grid-template-columns: minmax(9rem, 1fr) minmax(12rem, 1.2fr) minmax(0, 1.8fr);
+    gap: var(--space-8);
   }
 }
 
@@ -8647,4 +8769,96 @@ h3,
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* The full breakdown inside an opened reconciliation: every figure and every written explanation. */
+.recon-breakdown {
+  display: grid;
+  gap: var(--space-5) var(--space-6);
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+@media (min-width: 64rem) {
+  .recon-breakdown {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recon-breakdown .recon-break-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.recon-breakdown h4 {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.recon-break-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.recon-break-row[data-strong] {
+  font-weight: var(--font-weight-semibold);
+}
+
+.recon-break-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.recon-break-label small {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+
+.recon-break-value {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.recon-break-value[data-tone='critical'] {
+  color: var(--tone-critical-text);
+}
+
+.recon-break-none {
+  margin: 0;
+  padding: var(--space-2) 0;
+  color: var(--text-secondary);
+}
+
+.recon-break-note {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  overflow-wrap: anywhere;
+}
+
+/* The missing-cost notice stacks its text above the buttons that fix it. */
+.state.state-warning:has(> .button-row) {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.state.state-warning > .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }

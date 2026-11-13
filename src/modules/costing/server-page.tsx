@@ -70,9 +70,15 @@ export function ValuationPage({
               initialData={result.data}
             />
           );
+        const returnTo = typeof search.returnTo === 'string' ? search.returnTo : '';
+        // Only a path inside this app, so the link can never lead somewhere else.
+        const returnHref = /^\/operations\/[A-Za-z0-9/_?&=%.-]*$/.test(returnTo)
+          ? returnTo
+          : undefined;
         if (tankId && productId)
           return (
             <ValuationStreamDetail
+              returnHref={returnHref}
               key={key}
               context={result.context}
               contextHref={result.contextHref}

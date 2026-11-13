@@ -182,6 +182,21 @@ export function InventoryOperationalActions({
             />
           </ActionDisclosure>
         ) : null}
+        {sourceMovementRequiringCost?.movementType === 'OPENING_BALANCE' ? (
+          <ActionDisclosure
+            title="Add the opening cost"
+            hint="The starting stock needs a cost before approval."
+            highlight
+          >
+            <OpeningCostForm
+              context={context}
+              tankId={tankId}
+              litres={sourceMovementRequiringCost.quantityLitres}
+              enabled={canRecordReceiptCost}
+              onRefresh={onRefresh}
+            />
+          </ActionDisclosure>
+        ) : null}
         <ActionDisclosure title="Record a dip reading" hint="What the tank actually holds.">
           <TankDipForm context={context} tankId={tankId} onRefresh={onRefresh} />
         </ActionDisclosure>
@@ -574,6 +589,92 @@ function AdjustmentForm({
       <div className="form-actions action-form-actions">
         <Button type="submit" loading={saving}>
           Post adjustment
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** The starting litres are already recorded; this adds only what each litre cost. */
+function OpeningCostForm({
+  context,
+  tankId,
+  litres,
+  enabled,
+  onRefresh,
+}: Readonly<{
+  context: InventoryContext;
+  tankId: string;
+  litres: string;
+  enabled: boolean;
+  onRefresh: () => void;
+}>) {
+  const key = useRef<string | null>(null);
+  const [unitCost, setUnitCost] = useState('');
+  const [error, setError] = useState<CommandFailure | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    key.current ??= crypto.randomUUID();
+    try {
+      await postInventoryCommand(
+        context,
+        {
+          commandType: 'RecordOpeningInventoryCost',
+          tankId,
+          unitCost: unitCost.trim(),
+          currency: 'USD',
+        },
+        key.current,
+      );
+      key.current = null;
+      setUnitCost('');
+      setSuccess('The cost is saved.');
+      onRefresh();
+    } catch (caught) {
+      setError(caught as CommandFailure);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!enabled) {
+    return (
+      <p className="context-required">
+        Your role cannot add costs. Ask the station manager or owner to add the cost of the{' '}
+        {formatLitres(litres)} in the tank.
+      </p>
+    );
+  }
+
+  return (
+    <form className="action-form" onSubmit={submit}>
+      <p className="muted-small">
+        What did each litre of the {formatLitres(litres)} cost? Never enter zero for a missing cost.
+      </p>
+      <div className="action-form-grid">
+        <Field id="opening-only-unit-cost" label="Cost per litre (USD)" required>
+          <input
+            id="opening-only-unit-cost"
+            value={unitCost}
+            onChange={(event) => setUnitCost(event.target.value)}
+            inputMode="decimal"
+            pattern="[0-9]*[.]?[0-9]*"
+            title="Enter a number, for example 1.76"
+            required
+            placeholder="1.760"
+          />
+        </Field>
+      </div>
+      <CommandFeedback error={error} success={success} />
+      <div className="form-actions action-form-actions">
+        <Button type="submit" loading={saving}>
+          Save cost
         </Button>
       </div>
     </form>

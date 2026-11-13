@@ -20,6 +20,60 @@ export function liveLitresSold(opening: string, closing: string): string | null 
   return sumDecimals([close, `-${open}`]);
 }
 
+/**
+ * Sales value as the closing reading is typed: litres sold times the price per litre, in exact
+ * decimals (no floating point). Null until both are plain numbers or when litres are negative; the
+ * saved figure comes from the server and replaces this after a save.
+ */
+export function liveSalesValue(
+  litres: string | null | undefined,
+  unitPrice: string | null | undefined,
+): string | null {
+  const l = litres?.trim() ?? '';
+  const p = unitPrice?.trim() ?? '';
+  if (!DECIMAL_TEXT.test(l) || !DECIMAL_TEXT.test(p)) return null;
+  const [li, lf = ''] = l.split('.');
+  const [pi, pf = ''] = p.split('.');
+  const scale = lf.length + pf.length;
+  const digits = (BigInt(li + lf) * BigInt(pi + pf)).toString().padStart(scale + 1, '0');
+  return scale === 0 ? digits : `${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
+}
+
+export type LiveSalesFigures = Readonly<{
+  expected: string;
+  accounted: string;
+  difference: string;
+}>;
+
+/**
+ * The "This shift" sales totals as the person types. Expected sales start from the saved total and
+ * move by however much each pump's live value differs from what was saved for it (so pumps with
+ * more than one price period stay right); accounted for is the payments typed so far.
+ */
+export function liveSalesFigures(
+  savedExpected: string,
+  readings: ReadonlyArray<{
+    openingReading: string;
+    closingReading: string;
+    unitPrice?: string | null;
+    salesValue?: string | null;
+  }>,
+  payments: ReadonlyArray<{ amount: string }>,
+): LiveSalesFigures {
+  const moves = readings.flatMap((reading) => {
+    const litres = liveLitresSold(reading.openingReading, reading.closingReading);
+    if (litres === null || litres.startsWith('-')) return [];
+    const value = liveSalesValue(litres, reading.unitPrice);
+    if (value === null) return [];
+    return [value, `-${reading.salesValue?.trim() || '0'}`];
+  });
+  const expected = sumDecimals([savedExpected, ...moves]);
+  const accounted = sumDecimals(
+    payments.map((item) => item.amount.trim()).filter((value) => DECIMAL_TEXT.test(value)),
+  );
+  return { expected, accounted, difference: sumDecimals([accounted, `-${expected}`]) };
+}
+
 export type LiveCashFigures = Readonly<{
   expected: string;
   paidOut: string;
@@ -103,7 +157,9 @@ export function dailyOperationsStatusLabel(state: DailyOperationsState): string 
 /** Where a person can go to put a problem right: a step of this workspace, or another page. */
 export type DailyOperationsFix =
   | Readonly<{ kind: 'link'; label: string; href: string }>
-  | Readonly<{ kind: 'step'; label: string; step: number }>;
+  | Readonly<{ kind: 'step'; label: string; step: number }>
+  /** Closes the shift on this page, so the person need not go anywhere else. */
+  | Readonly<{ kind: 'close-shift'; label: string }>;
 
 export type DailyOperationsProblem = Readonly<{ message: string; fix?: DailyOperationsFix }>;
 
@@ -159,7 +215,8 @@ export function dailyOperationsProblem(
   if (/no matching sealed meter-segment evidence/i.test(text)) {
     return {
       message:
-        'This shift has not been closed yet, so there is nothing to approve. Ask the supervisor to press Close Shift on the shift, then approve again.',
+        'This shift has not been closed yet, so there is nothing to approve. Press Close Shift to close it, then approve again.',
+      fix: { kind: 'close-shift', label: 'Close Shift' },
     };
   }
   if (/sealed meter segment does not match/i.test(text)) {

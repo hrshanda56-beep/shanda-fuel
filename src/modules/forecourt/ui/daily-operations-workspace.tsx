@@ -58,6 +58,8 @@ import {
   isEditableDailyOperationsState,
   liveCashFigures,
   liveLitresSold,
+  liveSalesValue,
+  liveSalesFigures,
   stepTitle,
   type DailyOperationsFix,
 } from './daily-operations-state';
@@ -292,7 +294,10 @@ function SectionHeading({
   detail,
   headingId,
   asTip = false,
+  action,
 }: {
+  /** A button shown at the right end of the heading row. */
+  action?: React.ReactNode;
   title: string;
   detail?: string;
   headingId: string;
@@ -301,12 +306,23 @@ function SectionHeading({
 }) {
   return (
     <>
-      <span className="heading-with-tip">
-        <h2 id={headingId} className="profit-title">
-          {title}
-        </h2>
-        {detail && asTip ? <InfoTip>{detail}</InfoTip> : null}
-      </span>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span className="heading-with-tip">
+          <h2 id={headingId} className="profit-title">
+            {title}
+          </h2>
+          {detail && asTip ? <InfoTip>{detail}</InfoTip> : null}
+        </span>
+        {action}
+      </div>
       {detail && !asTip ? <p className="panel-detail">{detail}</p> : null}
     </>
   );
@@ -382,6 +398,8 @@ export function DailyOperationsWorkspace({
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [correctingOpening, setCorrectingOpening] = useState(false);
+  /** Pumps whose closing the person has typed into; the rest only show the opening as a hint. */
+  const [closingTouched, setClosingTouched] = useState<Set<string>>(() => new Set());
   const [correctionReason, setCorrectionReason] = useState('');
   const [dirty, setDirty] = useState(
     () =>
@@ -411,6 +429,7 @@ export function DailyOperationsWorkspace({
       window.history.replaceState(window.history.state, '', url);
   }, [step]);
   const [returnReason, setReturnReason] = useState('');
+  const [returning, setReturning] = useState(false);
   const [stepUpRetry, setStepUpRetry] = useState<{
     values: Record<string, unknown>;
     savedVersion?: number;
@@ -466,51 +485,56 @@ export function DailyOperationsWorkspace({
     [context.shiftId],
   );
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(undefined);
-    setConflict(false);
-    try {
-      const operationResponse = await fetch(
-        `/api/forecourt/operations/daily?${contextQuery.toString()}`,
-        {
-          cache: 'no-store',
-        },
-      );
-      const operationBody = await operationResponse.json();
-      if (!operationResponse.ok) throw errorFromResponse(operationResponse.status, operationBody);
-      const nextOperation = operationBody as OperationsContext;
-      setOperation(nextOperation);
+  const load = useCallback(
+    async (options?: { quiet?: boolean }) => {
+      // A quiet reload refreshes the figures in place, so the step and the scroll position stay put.
+      if (!options?.quiet) setLoading(true);
+      setError(undefined);
+      setConflict(false);
+      try {
+        const operationResponse = await fetch(
+          `/api/forecourt/operations/daily?${contextQuery.toString()}`,
+          {
+            cache: 'no-store',
+          },
+        );
+        const operationBody = await operationResponse.json();
+        if (!operationResponse.ok) throw errorFromResponse(operationResponse.status, operationBody);
+        const nextOperation = operationBody as OperationsContext;
+        setOperation(nextOperation);
 
-      if (!activeReconciliationId) {
-        setRecord(null);
-        syncDraft(null, nextOperation);
-        return;
-      }
+        if (!activeReconciliationId) {
+          setRecord(null);
+          syncDraft(null, nextOperation);
+          return;
+        }
 
-      const recordResponse = await fetch(
-        `/api/forecourt/reconciliations/${activeReconciliationId}?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
-        { cache: 'no-store' },
-      );
-      if (recordResponse.status === 404) {
-        setRecord(null);
-        syncDraft(null, nextOperation);
-        return;
+        const recordResponse = await fetch(
+          `/api/forecourt/reconciliations/${activeReconciliationId}?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
+          { cache: 'no-store' },
+        );
+        if (recordResponse.status === 404) {
+          setRecord(null);
+          syncDraft(null, nextOperation);
+          return;
+        }
+        const recordBody = await recordResponse.json();
+        if (!recordResponse.ok) throw errorFromResponse(recordResponse.status, recordBody);
+        const nextRecord = recordBody as RecordData;
+        setRecord(nextRecord);
+        syncDraft(nextRecord, nextOperation);
+      } catch (cause) {
+        const message =
+          cause instanceof Error ? cause.message : 'The operations workspace could not be loaded.';
+        setError(message);
+        setErrorFix(errorFixFor(message, cause));
+      } finally {
+        setLoading(false);
       }
-      const recordBody = await recordResponse.json();
-      if (!recordResponse.ok) throw errorFromResponse(recordResponse.status, recordBody);
-      const nextRecord = recordBody as RecordData;
-      setRecord(nextRecord);
-      syncDraft(nextRecord, nextOperation);
-    } catch (cause) {
-      const message =
-        cause instanceof Error ? cause.message : 'The operations workspace could not be loaded.';
-      setError(message);
-      setErrorFix(errorFixFor(message, cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [activeReconciliationId, context.stationId, context.tenantId, contextQuery, syncDraft]);
+    },
+    [activeReconciliationId, context.stationId, context.tenantId, contextQuery, syncDraft],
+  );
+  const reloadQuietly = useCallback(() => load({ quiet: true }), [load]);
 
   useEffect(() => {
     if (initialData && activeReconciliationId === context.reconciliationId) return;
@@ -986,6 +1010,7 @@ export function DailyOperationsWorkspace({
     return () => window.removeEventListener('online', onOnline);
   }, [loading, outboxKey, refreshQueued, sendQueued]);
   const savedForLater = useRef(false);
+  const [unsavedDips, setUnsavedDips] = useState<string[]>([]);
 
   async function goToStep(next: number) {
     if (
@@ -995,6 +1020,12 @@ export function DailyOperationsWorkspace({
       readings.some((reading) => !reading.closingReading.trim())
     ) {
       setError('Enter the closing reading for every pump before you continue.');
+      return;
+    }
+    if (step === STEPS.indexOf('Tank dips') && next > step && editable && unsavedDips.length > 0) {
+      setError(
+        `Save the ${unsavedDips.join(' and ')} dip before you continue. Press Save dip beside it.`,
+      );
       return;
     }
     if (dirty && editable) {
@@ -1008,8 +1039,83 @@ export function DailyOperationsWorkspace({
   // The way to put the shown problem right: a link to the page that fixes it, or a jump to the
   // step of this workspace where it can be corrected.
   const errorAction = errorFix && errorFix.message === error ? errorFix.fix : undefined;
+  async function closeShiftNow() {
+    const agreed = await confirm({
+      title: 'Close this shift?',
+      consequence:
+        'The pump readings become the official meter records for the shift, and the shift is finished. This cannot be undone from here.',
+      confirmLabel: 'Close Shift',
+      tone: 'warning',
+    });
+    if (!agreed) return;
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: context.businessDayId,
+        shiftId: context.shiftId,
+      });
+      const overviewResponse = await fetch(`/api/forecourt/operations/overview?${params}`, {
+        cache: 'no-store',
+      });
+      if (!overviewResponse.ok)
+        throw new Error('The shift could not be found. Refresh and try again.');
+      const overview = (await overviewResponse.json()) as {
+        shifts: Array<{ id: string; state: string; version: number }>;
+      };
+      const shift = overview.shifts.find((candidate) => candidate.id === context.shiftId);
+      if (!shift) throw new Error('The shift could not be found. Refresh and try again.');
+      const base = {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: context.businessDayId,
+        shiftId: context.shiftId,
+      };
+      const send = async (commandType: string, expectedVersion: number) => {
+        const response = await fetch('/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'idempotency-key': `close-shift-${commandType}-${context.shiftId}-${crypto.randomUUID()}`,
+          },
+          body: JSON.stringify({ commandType, ...base, expectedVersion }),
+        });
+        if (!response.ok) {
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: string;
+            message?: string;
+          };
+          throw new Error(
+            dailyOperationsProblem(response.status, body.error, body.message).message,
+          );
+        }
+      };
+      if (shift.state === 'OPEN') {
+        await send('CloseMeters', shift.version);
+        await send('CompleteShift', shift.version + 1);
+      } else if (shift.state === 'METER_CLOSED') {
+        await send('CompleteShift', shift.version);
+      }
+      setError(undefined);
+      setErrorFix(undefined);
+      toast.success('Shift closed. You can approve now.');
+      await load();
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'The shift could not be closed.';
+      setError(message);
+      setErrorFix(undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const errorFixButton = errorAction ? (
-    errorAction.kind === 'link' ? (
+    errorAction.kind === 'close-shift' ? (
+      <Button onClick={() => void closeShiftNow()} loading={busy}>
+        {errorAction.label}
+      </Button>
+    ) : errorAction.kind === 'link' ? (
       <Link className="button button-primary" href={errorAction.href}>
         {errorAction.label}
       </Link>
@@ -1043,6 +1149,9 @@ export function DailyOperationsWorkspace({
   const editable = isEditableDailyOperationsState(record?.state);
   const visitingAttendants = operation?.otherAttendants ?? [];
   const liveCash = liveCashFigures(payments, expenses, cashCounted);
+  const liveSales = record
+    ? liveSalesFigures(record.totals.expectedSales, readings, payments)
+    : null;
   const state = record?.state ?? 'NOT_STARTED';
   const requiresSalesExplanation = record ? !isZero(record.totals.salesVariance) : false;
   const requiresCashExplanation = record ? !isZero(record.totals.cashVariance) : false;
@@ -1305,6 +1414,9 @@ export function DailyOperationsWorkspace({
       <div
         className="entry-card-wrap"
         data-actions={(step > 0 ? 1 : 0) + (step < STEPS.length - 1 ? 1 : 0)}
+        data-link={
+          state === 'SUBMITTED' && step === STEPS.length - 1 && !mayApprove ? '' : undefined
+        }
       >
         <div className="entry-body card panel profit-panel">
           <div className="entry-rail">
@@ -1313,24 +1425,28 @@ export function DailyOperationsWorkspace({
                 <h2 id="entry-side-title" className="profit-title">
                   This shift
                 </h2>
-                <InfoTip>Totals so far. They refresh each time you press Next.</InfoTip>
+                <InfoTip>Totals so far. They update as you type.</InfoTip>
               </span>
               <dl className="profit-rows" aria-label="Totals so far">
                 <div className="profit-row">
                   <dt>Expected sales</dt>
-                  <dd>{formatMoney(record.totals.expectedSales)}</dd>
+                  <dd>{formatMoney(liveSales?.expected ?? record.totals.expectedSales)}</dd>
                 </div>
                 <div className="profit-row">
                   <dt>Accounted for</dt>
-                  <dd>{formatMoney(record.totals.accountedSales)}</dd>
+                  <dd>{formatMoney(liveSales?.accounted ?? record.totals.accountedSales)}</dd>
                 </div>
                 <div
                   className="profit-row"
                   data-strong
-                  data-tone={isZero(record.totals.salesVariance) ? undefined : 'warning'}
+                  data-tone={
+                    isZero(liveSales?.difference ?? record.totals.salesVariance)
+                      ? undefined
+                      : 'warning'
+                  }
                 >
                   <dt>Sales difference</dt>
-                  <dd>{formatMoney(record.totals.salesVariance)}</dd>
+                  <dd>{formatMoney(liveSales?.difference ?? record.totals.salesVariance)}</dd>
                 </div>
                 {record.totals.cashVariance !== null ? (
                   <div
@@ -1462,6 +1578,13 @@ export function DailyOperationsWorkspace({
                   title="Pump readings"
                   headingId="operations-meters-title"
                   detail="Enter the closing reading for every pump. The opening readings were recorded when the shift opened."
+                  action={
+                    editable && record?.canCorrectOpening && !correctingOpening ? (
+                      <Button variant="secondary" onClick={() => setCorrectingOpening(true)}>
+                        Correction
+                      </Button>
+                    ) : null
+                  }
                 />
                 {readings.length === 0 ? (
                   <EmptyState
@@ -1496,11 +1619,7 @@ export function DailyOperationsWorkspace({
                             Cancel correction
                           </Button>
                         </div>
-                      ) : (
-                        <Button variant="secondary" onClick={() => setCorrectingOpening(true)}>
-                          Correct an opening reading
-                        </Button>
-                      )
+                      ) : null
                     ) : null}
                     {[...readings]
                       .sort((a, b) => {
@@ -1524,6 +1643,10 @@ export function DailyOperationsWorkspace({
                         const litresShown = belowOpening
                           ? null
                           : (liveLitres ?? reading.litresSold);
+                        const liveValue = belowOpening
+                          ? null
+                          : liveSalesValue(litresShown, reading.unitPrice);
+                        const valueShown = liveValue ?? reading.salesValue;
                         const soldText = litresShown ? formatLitres(litresShown) : null;
                         const sold = soldText?.endsWith(' L')
                           ? { value: soldText.slice(0, -2), unit: 'L' }
@@ -1580,9 +1703,19 @@ export function DailyOperationsWorkspace({
                                 <NumericInput
                                   id={`closing-${reading.rowKey}`}
                                   label="Closing"
-                                  value={reading.closingReading}
+                                  value={
+                                    !closingTouched.has(reading.rowKey) &&
+                                    reading.closingReading.trim() !== '' &&
+                                    Number(reading.closingReading) ===
+                                      Number(reading.openingReading)
+                                      ? ''
+                                      : reading.closingReading
+                                  }
                                   onChange={(event) => {
                                     setDirty(true);
+                                    setClosingTouched((current) =>
+                                      new Set(current).add(reading.rowKey),
+                                    );
                                     setReadings((current) =>
                                       current.map((item) =>
                                         item.rowKey === reading.rowKey
@@ -1612,7 +1745,7 @@ export function DailyOperationsWorkspace({
                               />
                               <PumpReadout
                                 label="Sales value"
-                                value={reading.salesValue ? formatMoney(reading.salesValue) : '—'}
+                                value={valueShown ? formatMoney(valueShown) : '—'}
                                 result
                               />
                             </div>
@@ -2070,31 +2203,15 @@ export function DailyOperationsWorkspace({
                   asTip={role === 'MANAGEMENT'}
                   title="Tank dips and deliveries"
                   headingId="operations-inventory-title"
-                  detail="Dip every tank. The last shift of the day cannot be submitted until each tank has a reading. A green result matches the books, yellow needs an explanation, red is urgent."
+                  action={
+                    <Link
+                      className="button button-secondary"
+                      href={`/inventory/deliveries?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+                    >
+                      Record a delivery
+                    </Link>
+                  }
                 />
-                <p className="muted-small">
-                  Fuel delivered during this shift?{' '}
-                  <Link
-                    href={`/inventory/deliveries?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
-                  >
-                    Record a delivery
-                  </Link>
-                  .
-                </p>
-                <div className="context-grid">
-                  <div>
-                    <span className="metric-label">Deliveries</span>
-                    <strong>{record.deliveries.length}</strong>
-                  </div>
-                  <div>
-                    <span className="metric-label">Tank dips</span>
-                    <strong>{record.dips.length}</strong>
-                  </div>
-                  <div>
-                    <span className="metric-label">Stock differences</span>
-                    <strong>{Object.keys(record.totals.stockVariance).length}</strong>
-                  </div>
-                </div>
                 <DailyTankDips
                   tenantId={context.tenantId}
                   stationId={context.stationId}
@@ -2102,7 +2219,8 @@ export function DailyOperationsWorkspace({
                   reconciliationId={activeReconciliationId ?? ''}
                   record={record}
                   editable={editable}
-                  onChanged={load}
+                  onChanged={reloadQuietly}
+                  onUnsavedChange={setUnsavedDips}
                 />
                 {record.deliveries.length ? (
                   <section className="tank-deliveries" aria-label="Deliveries this shift">
@@ -2203,11 +2321,35 @@ export function DailyOperationsWorkspace({
                   </p>
                 ) : null}
                 {inReview && record?.unvaluedFuels?.length ? (
-                  <p className="state state-warning" role="status">
-                    <strong>Fuel cost missing:</strong> We do not know what the{' '}
-                    {record.unvaluedFuels.join(' and ')} cost. This day cannot be approved until the
-                    cost is entered under Inventory, then Valuation.
-                  </p>
+                  <div className="state state-warning" role="status">
+                    <p>
+                      <strong>Fuel cost missing:</strong> We do not know what the{' '}
+                      {record.unvaluedFuels.join(' and ')} cost. Enter it, save, and you will come
+                      straight back here to approve this day.
+                    </p>
+                    <div className="button-row">
+                      {(record.unvaluedStreams ?? []).map((stream) => (
+                        <Button
+                          key={`${stream.tankId}-${stream.productId}`}
+                          variant="secondary"
+                          onClick={() => {
+                            const params = new URLSearchParams({
+                              tenantId: context.tenantId,
+                              stationId: context.stationId,
+                              returnTo: `${window.location.pathname}${window.location.search}`,
+                            });
+                            const target = new URL(
+                              `/inventory/valuation/streams/${stream.tankId}/${stream.productId}?${params}`,
+                              window.location.origin,
+                            );
+                            window.location.assign(target.toString());
+                          }}
+                        >
+                          Enter {stream.name} cost
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
                 {approvalWaitsForSomeoneElse ? (
                   <p className="state state-warning" role="status">
@@ -2237,7 +2379,7 @@ export function DailyOperationsWorkspace({
                     </Field>
                   ) : null
                 ) : null}
-                {mayReturn ? (
+                {mayReturn && returning ? (
                   <Field
                     id="management-return-reason"
                     label="Return reason"
@@ -2247,6 +2389,7 @@ export function DailyOperationsWorkspace({
                     <textarea
                       id="management-return-reason"
                       rows={3}
+                      autoFocus
                       value={returnReason}
                       onChange={(event) => setReturnReason(event.target.value)}
                     />
@@ -2272,25 +2415,40 @@ export function DailyOperationsWorkspace({
                   ) : null}
                   {mayReturn || mayApprove ? (
                     <>
-                      {mayReturn ? (
-                        <Button
-                          variant="danger"
-                          onClick={() => {
-                            const reason = returnReason.trim();
-                            if (!reason) {
-                              setError(
-                                'Enter a return reason before sending this reconciliation back.',
-                              );
-                              return;
-                            }
-                            void transition('ReturnProductionReconciliation', { reason });
-                          }}
-                          disabled={busy || !returnReason.trim()}
-                        >
+                      {mayReturn && !returning ? (
+                        <Button variant="danger" onClick={() => setReturning(true)} disabled={busy}>
                           Return for correction
                         </Button>
                       ) : null}
-                      {mayApprove ? (
+                      {mayReturn && returning ? (
+                        <>
+                          <Button
+                            variant="danger"
+                            onClick={() => {
+                              const reason = returnReason.trim();
+                              if (!reason) {
+                                setError('Enter a return reason before sending this back.');
+                                return;
+                              }
+                              void transition('ReturnProductionReconciliation', { reason });
+                            }}
+                            disabled={busy || !returnReason.trim()}
+                          >
+                            Send back for correction
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setReturning(false);
+                              setReturnReason('');
+                            }}
+                            disabled={busy}
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      ) : null}
+                      {mayApprove && !returning ? (
                         <Button
                           variant="primary"
                           onClick={() =>
@@ -2331,7 +2489,7 @@ export function DailyOperationsWorkspace({
         </div>
         {/* Back and Next sit outside the card, in the gap cut from its bottom-right corner. */}
         <footer className="entry-footer">
-          {step > 0 ? (
+          {step > 0 && !(state === 'SUBMITTED' && step === STEPS.length - 1 && !mayApprove) ? (
             <Button variant="secondary" onClick={() => void goToStep(step - 1)} disabled={busy}>
               Back
             </Button>
@@ -2340,6 +2498,14 @@ export function DailyOperationsWorkspace({
             <Button variant="primary" onClick={() => void goToStep(step + 1)} loading={busy}>
               Next
             </Button>
+          ) : null}
+          {state === 'SUBMITTED' && step === STEPS.length - 1 && !mayApprove ? (
+            <Link
+              className="button button-primary"
+              href={`/operations/reconciliations?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+            >
+              Reconciliations
+            </Link>
           ) : null}
         </footer>
       </div>

@@ -804,9 +804,27 @@ export function CashWorkspace({
           ? 'Nothing to do yet. Cash shows up here once a shift report is approved.'
           : 'All caught up. Nothing needs doing right now.';
 
+  // Approved shift cash nobody has collected yet. It is not in any bucket below until someone records
+  // the collection, so say so here instead of leaving every figure at zero.
+  const awaitingCollection = summary?.cashPosition?.cashToCollect ?? '0';
+  const hasAwaitingCollection = !!summary && isPositive(awaitingCollection);
+
   return (
     <div className="content-grid cash-workspace">
-      {idleNote ? (
+      {hasAwaitingCollection && summary ? (
+        <div className="content-span cash-next" role="status">
+          <p>
+            <strong>{plain(awaitingCollection)}</strong> from approved shift reports is waiting to
+            be collected. It shows in the figures below once you record the collection.
+          </p>
+          {canCollect ? (
+            <Button variant="primary" onClick={() => openSheet('record')}>
+              Collect cash
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {idleNote && !hasAwaitingCollection ? (
         <div className="content-span cash-next" role="status">
           <p>{idleNote}</p>
         </div>
@@ -1305,7 +1323,11 @@ export function CashWorkspace({
                     {summary.collections.length === 0 ? (
                       <EmptyState
                         title="No collections yet"
-                        message="Cash from approved shift reports shows here."
+                        message={
+                          hasAwaitingCollection
+                            ? 'Approved cash is waiting to be collected. Collect it to see it here.'
+                            : 'Cash from approved shift reports shows here once it is collected.'
+                        }
                       />
                     ) : (
                       <>
