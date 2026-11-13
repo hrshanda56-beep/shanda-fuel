@@ -8,6 +8,8 @@ import {
   mapDailyOperationsError,
   liveLitresSold,
   liveCashFigures,
+  liveSalesValue,
+  liveSalesFigures,
   stepTitle,
 } from './daily-operations-state';
 
@@ -276,5 +278,32 @@ describe('daily operations link fix from message text', () => {
     );
     expect(dailyOperationsLinkFix('Closing meter reading cannot be below opening')).toBeUndefined();
     expect(dailyOperationsLinkFix(undefined)).toBeUndefined();
+  });
+});
+
+describe('liveSalesValue', () => {
+  it('multiplies litres by price exactly', () => {
+    expect(liveSalesValue('11000', '2.02')).toBe('22220.00');
+    expect(liveSalesValue('0.375', '2.0200')).toBe('0.7575000');
+    expect(liveSalesValue('0', '2.02')).toBe('0.00');
+  });
+  it('waits for numbers and rejects negative litres', () => {
+    expect(liveSalesValue(null, '2.02')).toBeNull();
+    expect(liveSalesValue('10', undefined)).toBeNull();
+    expect(liveSalesValue('-5', '2.02')).toBeNull();
+  });
+});
+
+describe('liveSalesFigures', () => {
+  it('moves expected sales with the typed closings and sums typed payments', () => {
+    const figures = liveSalesFigures(
+      '0.00',
+      [
+        { openingReading: '79000', closingReading: '90000', unitPrice: '2.02', salesValue: '0' },
+        { openingReading: '70000', closingReading: '70000', unitPrice: '2.02' },
+      ],
+      [{ amount: '100.00' }, { amount: '' }],
+    );
+    expect(figures).toEqual({ expected: '22220.00', accounted: '100.00', difference: '-22120.00' });
   });
 });

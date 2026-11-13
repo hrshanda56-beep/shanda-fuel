@@ -12,6 +12,8 @@ export type RecordData = {
   requiresApproverNote?: boolean;
   /** Fuels sold in this report whose stock has no known cost, so profit for the day is incomplete. */
   unvaluedFuels?: string[];
+  /** The tank and fuel behind each missing cost, so the cost can be entered from the screen. */
+  unvaluedStreams?: Array<{ name: string; tankId: string; productId: string }>;
   approvalNote: string | null;
   business_date: string;
   /** Customer accounts that may be charged at this station, with what they may still spend. */

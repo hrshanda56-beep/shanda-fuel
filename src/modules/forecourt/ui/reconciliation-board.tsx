@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import { Icon } from '../../../design-system/icons';
-import { formatStatusLabel } from '../../../design-system/formatters';
+import { formatLitres, formatStatusLabel } from '../../../design-system/formatters';
 import { LoadingState, type StatusTone } from '../../../design-system/primitives';
 import { CashDonut, sumDecimals, type DonutSlice } from '../../cash/ui/cash-visuals';
 import { formatTileMoney } from '../../reporting/format';
@@ -201,6 +201,193 @@ function LedgerRow({
 }
 
 const nonZero = (value: string | null) => value !== null && Number(value) !== 0;
+
+const ACRONYMS: Record<string, string> = { POS: 'POS', ECOCASH: 'EcoCash', EFT: 'EFT' };
+const methodName = (value: string) =>
+  ACRONYMS[value.trim().toUpperCase()] ?? formatStatusLabel(value);
+
+const signed = (value: string) => `${Number(value) > 0 ? '+' : ''}${money(value)}`;
+
+function BreakdownRow({
+  label,
+  detail,
+  value,
+  strong,
+  tone,
+}: {
+  label: string;
+  detail?: string | null;
+  value: string;
+  strong?: boolean;
+  tone?: 'critical';
+}) {
+  return (
+    <div className="recon-break-row" data-strong={strong || undefined}>
+      <span className="recon-break-label">
+        {label}
+        {detail ? <small>{detail}</small> : null}
+      </span>
+      <span className="recon-break-value" data-tone={tone}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/** Every figure and every explanation for one day's sheet, in the order it was filled in. */
+function Breakdown({ detail }: { detail: ReconciliationDetail }) {
+  const approvalNote = detail.approvalNote;
+  const litres = sumDecimals(detail.readings.map((reading) => reading.litresSold));
+  const expenseTotal = sumDecimals(detail.expenses.map((expense) => expense.amount));
+  const paymentTotal = sumDecimals(detail.payments.map((payment) => payment.amount));
+  const join = (...parts: Array<string | null | undefined>) =>
+    parts.filter((part) => part && part.trim()).join(' · ') || null;
+  const cash = detail.cash;
+  const tanks = (detail.tanks ?? []).flatMap((tank) => {
+    const dip = detail.dips?.find((entry) => entry.tankId === tank.tankId);
+    const variance = detail.totals.stockVariance?.[tank.tankId];
+    return dip ? [{ tank, dip, variance }] : [];
+  });
+  const explanations = (detail.explanations ?? []).filter((entry) => entry.explanation.trim());
+  return (
+    <div className="recon-breakdown">
+      <section>
+        <h4>Sales</h4>
+        <BreakdownRow
+          label="Expected sales"
+          detail={`${detail.readings.length} ${detail.readings.length === 1 ? 'nozzle' : 'nozzles'}, ${formatLitres(litres)} sold`}
+          value={money(detail.totals.expectedSales)}
+          strong
+        />
+      </section>
+
+      <section>
+        <h4>How it was paid</h4>
+        {detail.payments.length === 0 ? (
+          <p className="recon-break-none">No payments were entered.</p>
+        ) : (
+          detail.payments.map((payment) => (
+            <BreakdownRow
+              key={payment.id}
+              label={methodName(payment.method)}
+              detail={join(payment.beneficiaryName, payment.reference, payment.note)}
+              value={money(payment.amount)}
+            />
+          ))
+        )}
+        <BreakdownRow label="Total paid" value={money(paymentTotal)} strong />
+      </section>
+
+      <section>
+        <h4>Expenses</h4>
+        {detail.expenses.length === 0 ? (
+          <p className="recon-break-none">No expenses were entered.</p>
+        ) : (
+          detail.expenses.map((expense) => (
+            <BreakdownRow
+              key={expense.id}
+              label={expense.description || formatStatusLabel(expense.category)}
+              detail={join(
+                expense.description ? formatStatusLabel(expense.category) : null,
+                `Paid by ${methodName(expense.paymentMethod)}`,
+                expense.personPaid,
+                expense.reference,
+              )}
+              value={money(expense.amount)}
+            />
+          ))
+        )}
+        <BreakdownRow label="Total expenses" value={money(expenseTotal)} strong />
+      </section>
+
+      <section>
+        <h4>Result for the sales</h4>
+        <BreakdownRow label="Accounted for" value={money(detail.totals.accountedSales)} />
+        <BreakdownRow
+          label="Difference from expected sales"
+          value={signed(detail.totals.salesVariance)}
+          strong
+          tone={nonZero(detail.totals.salesVariance) ? 'critical' : undefined}
+        />
+      </section>
+
+      <section>
+        <h4>Cash</h4>
+        {cash ? (
+          <>
+            {cash.expectedPhysicalCash !== undefined ? (
+              <BreakdownRow
+                label="Cash that should have come in"
+                value={money(cash.expectedPhysicalCash)}
+              />
+            ) : null}
+            {cash.cashPaidExpenses !== undefined ? (
+              <BreakdownRow
+                label="Less cash paid out as expenses"
+                value={money(cash.cashPaidExpenses)}
+              />
+            ) : null}
+            <BreakdownRow label="Cash expected in the till" value={money(cash.netExpectedCash)} />
+            <BreakdownRow label="Cash counted" value={money(cash.countedCash)} />
+            <BreakdownRow
+              label="Difference in cash"
+              value={signed(detail.totals.cashVariance ?? cash.cashVariance)}
+              strong
+              tone={
+                nonZero(detail.totals.cashVariance ?? cash.cashVariance) ? 'critical' : undefined
+              }
+            />
+          </>
+        ) : (
+          <p className="recon-break-none">Cash has not been counted yet.</p>
+        )}
+      </section>
+
+      {tanks.length > 0 || (detail.deliveries?.length ?? 0) > 0 ? (
+        <section>
+          <h4>Tanks and deliveries</h4>
+          {tanks.map(({ tank, dip, variance }) => (
+            <BreakdownRow
+              key={tank.tankId}
+              label={tank.productName}
+              detail={
+                variance === undefined
+                  ? 'Dipped, nothing to compare with'
+                  : `${Number(variance) > 0 ? '+' : ''}${formatLitres(variance)} from what was expected`
+              }
+              value={formatLitres(dip.physicalLitres)}
+            />
+          ))}
+          {(detail.deliveries ?? []).map((delivery) => (
+            <BreakdownRow
+              key={delivery.deliveryNoteNumber}
+              label={`Delivery ${delivery.deliveryNoteNumber}`}
+              value={formatLitres(delivery.actualQuantityLitres)}
+            />
+          ))}
+        </section>
+      ) : null}
+
+      {explanations.length > 0 || approvalNote ? (
+        <section className="recon-break-wide">
+          <h4>Explanations</h4>
+          {explanations.map((entry) => (
+            <p key={entry.category} className="recon-break-note">
+              <strong>{formatStatusLabel(entry.category)}</strong>
+              {entry.explanation}
+            </p>
+          ))}
+          {approvalNote ? (
+            <p className="recon-break-note">
+              <strong>Approver’s note</strong>
+              {approvalNote}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+    </div>
+  );
+}
 
 function StatementShiftBlock({
   section,
@@ -751,27 +938,8 @@ export function ReconciliationBoard({
                           <dt>Last updated</dt>
                           <dd>{formatTimestamp(item.updatedAt, timezone)}</dd>
                         </div>
-                        {detail?.cash ? (
-                          <>
-                            <div>
-                              <dt>Expected cash</dt>
-                              <dd>{money(detail.cash.netExpectedCash)}</dd>
-                            </div>
-                            <div>
-                              <dt>Counted cash</dt>
-                              <dd>{money(detail.cash.countedCash)}</dd>
-                            </div>
-                          </>
-                        ) : null}
-                        {detail && detail.payments.length > 0 ? (
-                          <div>
-                            <dt>Payments declared</dt>
-                            <dd>
-                              {money(sumDecimals(detail.payments.map((payment) => payment.amount)))}
-                            </dd>
-                          </div>
-                        ) : null}
                       </dl>
+                      {detail ? <Breakdown detail={detail} /> : null}
                     </div>
                   ) : null}
                 </div>

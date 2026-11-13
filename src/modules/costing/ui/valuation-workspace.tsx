@@ -579,12 +579,15 @@ export function ValuationStreamDetail({
   initialData,
   tankId,
   productId,
+  returnHref,
 }: {
   context: InventoryContext;
   contextHref: string;
   initialData?: ValuationResponse;
   tankId: string;
   productId: string;
+  /** Where the person came from, when they were sent here to finish something. */
+  returnHref?: string;
 }) {
   const [data, setData] = useState<ValuationResponse | null>(initialData ?? null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
@@ -650,6 +653,11 @@ export function ValuationStreamDetail({
         description={`Last cost update ${date(stream.lastValuationOrCostEventAt)}`}
         actions={
           <>
+            {returnHref ? (
+              <Link className="button button-quiet" href={returnHref}>
+                Back to the reconciliation
+              </Link>
+            ) : null}
             <Link className="button button-quiet" href={contextHref}>
               Back to stock value
             </Link>
@@ -673,12 +681,21 @@ export function ValuationStreamDetail({
           value={money(stream.weightedAverageCost, '/L')}
           meta={<Status status={stream.valuationStatus} />}
         />
+        {returnHref && !unvalued ? (
+          <div className="callout callout-success" role="status">
+            <strong>The cost is saved</strong>
+            <p>This fuel now has a cost. You can go back and carry on where you left off.</p>
+            <Link className="button button-primary" href={returnHref}>
+              Back to the reconciliation
+            </Link>
+          </div>
+        ) : null}
         {unvalued ? (
           <div className="callout callout-warning" role="status">
             <strong>This stock has no cost yet</strong>
             <p>
               {source
-                ? `Add the cost of the ${source.movementType.toLowerCase()} of ${formatLitres(source.quantityLitres)} on ${date(source.effectiveAt)}.`
+                ? `Add the cost of the ${source.movementType.toLowerCase().replace(/_/g, ' ')} of ${formatLitres(source.quantityLitres)} on ${date(source.effectiveAt)}.`
                 : 'Add the missing cost so sale costs can be worked out.'}
             </p>
           </div>
