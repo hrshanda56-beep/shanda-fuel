@@ -145,7 +145,7 @@
     "src/design-system/context-selector.tsx": "db0cd1aa8bc5b775993d26f60aaab61c88da3399994fc08a4352dcb3c7f24fab",
     "src/design-system/dialogs.tsx": "9cb4cf029cf7a9492b4675b3b100acaaf61eff3fee979133e90dc52080d8eef8",
     "src/design-system/dropdown.tsx": "817aabf207fe77494f3e15ed8c4284c0b27486fcd5074dfbfc619acfed246a3c",
-    "src/design-system/entry/clerk-login-form.tsx": "48e7f011f0eb49414838f2e731e2a23ec2057ec328ec311dfcb83a9b7a355b34",
+    "src/design-system/entry/clerk-login-form.tsx": "9b87888141bab0311bb20cfd175eeff918d5f6359c92b414d05af30f2efc38b1",
     "src/design-system/entry/entry-logic.ts": "36e893a0c6f48dc0faf1324286ca657321839d33e90cb0ff9294899893478a18",
     "src/design-system/entry/entry-shell.tsx": "9eb3cb93b4b6cbf5d97cb5a576204ce1662acd211913e72598a25364e16b29bc",
     "src/design-system/entry/invitation.ts": "e1b21c7069c083df8d0c9d102e45f3168c4f505b09117729d91c84ebacd86c1f",
