@@ -15,7 +15,7 @@ three questions asked in the working session).
   sales are recorded against them; a different fuel means a new tank or nozzle. A shift schedule on an
   already-activated station with start times stays refused by the existing rule.
 - **Prices.** A supervisor holds `price.change.request` (migration 0090), so they can start a change for
-  their own station and, as before, prepare it and take the meter readings. Approving and activating
+  their own station (an area manager, which holds the supervisor's permissions, can do the same over its stations) and, as before, prepare it and take the meter readings. Approving and activating
   remain with the owner/administrator, and DEC-049 (the requester may not approve unless nobody else
   could) is unchanged. Prices in use link to the existing Change a price screen (DEC-050).
 - **Supervisors on the setup screen.** The supervisor card adds, moves or removes people only through the
