@@ -30,8 +30,14 @@ const authority = z.object({ tenantId: uuid, stationId: uuid });
 
 export const SETUP_COMMAND_TYPES = [
   'CreateProduct',
+  'RenameProduct',
+  'SetProductStatus',
+  'DeleteProduct',
   'CreatePump',
   'CreateNozzle',
+  'CreateCashLocation',
+  'UpdatePump',
+  'UpdateNozzle',
   'DraftPriceChange',
   'UpdateSupplier',
   'SetResponsibleSupervisor',
@@ -51,6 +57,13 @@ const createProductPayload = authority.extend({
   code: z.string().trim().min(1).max(32),
   name: z.string().trim().min(1).max(120),
 });
+const productRef = authority.extend({ productId: uuid });
+const renameProductPayload = productRef.extend({ name: z.string().trim().min(1).max(120) });
+const setProductStatusPayload = productRef.extend({ status: z.enum(['ACTIVE', 'INACTIVE']) });
+const createCashLocationPayload = authority.extend({
+  name: z.string().trim().min(1).max(80),
+  locationType: z.enum(['STATION_TILL', 'STATION_SAFE']),
+});
 const createPumpPayload = authority.extend({
   number: z.string().trim().min(1).max(16),
   name: z.string().trim().max(80).nullish(),
@@ -60,6 +73,15 @@ const createNozzlePayload = authority.extend({
   number: z.string().trim().min(1).max(16),
   productId: uuid,
   meterSerialNumber: z.string().trim().min(1).max(80),
+});
+const updatePumpPayload = authority.extend({
+  pumpId: uuid,
+  number: z.string().trim().min(1).max(16),
+  name: z.string().trim().max(80).nullish(),
+});
+const updateNozzlePayload = authority.extend({
+  nozzleId: uuid,
+  number: z.string().trim().min(1).max(16),
 });
 const draftPricePayload = authority.extend({
   productId: uuid,
@@ -165,6 +187,198 @@ export function createProductCommand(
         throw error;
       }
       return { productId, code: payload.code, name: payload.name };
+    },
+  });
+}
+
+function isForeignKeyViolation(error: unknown): boolean {
+  const code = (error as { code?: string })?.code;
+  const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
+  return code === '23503' || causeCode === '23503';
+}
+
+/** Fuels are shared by every station of the company, so a rename shows everywhere. */
+export function renameProductCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof renameProductPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.RenameProduct',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_RENAMED',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ name: string }>(sql`
+          select name from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        return rows[0] ? { name: rows[0].name } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      const updated = await transaction.execute<{ id: string }>(sql`
+        update app.products set name = ${payload.name}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        returning id
+      `);
+      if (updated.length !== 1) throw new AppError('NOT_FOUND', 'The fuel was not found');
+      return { productId: payload.productId, name: payload.name };
+    },
+  });
+}
+
+/**
+ * Hides a fuel from setup and new entries (INACTIVE) or brings it back. A fuel that still has an
+ * active tank or nozzle cannot be hidden, so nothing that is in use disappears from under a shift.
+ */
+export function setProductStatusCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setProductStatusPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetProductStatus',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_STATUS_CHANGED',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ status: string }>(sql`
+          select status from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        return rows[0] ? { status: rows[0].status } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      if (payload.status === 'INACTIVE') {
+        const inUse = await transaction.execute<{ id: string }>(sql`
+          select id from app.tanks
+          where tenant_id = ${context.tenantId} and product_id = ${payload.productId}
+            and status = 'ACTIVE'
+          union all
+          select id from app.nozzles
+          where tenant_id = ${context.tenantId} and product_id = ${payload.productId}
+            and status = 'ACTIVE'
+          limit 1
+        `);
+        if (inUse.length > 0) {
+          throw new AppError(
+            'CONFLICT',
+            'This fuel still has tanks or nozzles in use. Retire those first.',
+          );
+        }
+      }
+      const updated = await transaction.execute<{ id: string }>(sql`
+        update app.products set status = ${payload.status}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        returning id
+      `);
+      if (updated.length !== 1) throw new AppError('NOT_FOUND', 'The fuel was not found');
+      return { productId: payload.productId, status: payload.status };
+    },
+  });
+}
+
+/**
+ * Removes a fuel that was never used. Anything that refers to it (a tank, a nozzle, a price, a
+ * delivery, a sale) blocks the removal, because those records must keep their fuel.
+ */
+export function deleteProductCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof productRef>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.DeleteProduct',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_DELETED',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ code: string; name: string }>(sql`
+          select code, name from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        return rows[0] ? { code: rows[0].code, name: rows[0].name } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      let deleted: { id: string }[];
+      try {
+        deleted = await transaction.execute<{ id: string }>(sql`
+          delete from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+          returning id
+        `);
+      } catch (error) {
+        if (isForeignKeyViolation(error)) {
+          throw new AppError(
+            'CONFLICT',
+            'This fuel is already in use, so it cannot be deleted. Hide it instead.',
+          );
+        }
+        throw error;
+      }
+      if (deleted.length !== 1) throw new AppError('NOT_FOUND', 'The fuel was not found');
+      return { productId: payload.productId };
+    },
+  });
+}
+
+export function createCashLocationCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof createCashLocationPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.CreateCashLocation',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.CASH_LOCATION_CREATED',
+      subjectType: 'CashLocation',
+      subjectId: (result) => (result as { locationId: string }).locationId,
+    },
+    execute: async (transaction) => {
+      const locationId = randomUUID();
+      const base =
+        payload.name
+          .toUpperCase()
+          .replace(/[^A-Z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 24) || 'CASH';
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const code = attempt === 0 ? base : `${base}-${attempt + 1}`;
+        const existing = await transaction.execute<{ id: string }>(sql`
+          select id from app.cash_locations
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and code = ${code}
+        `);
+        if (existing[0]) continue;
+        await transaction.execute(sql`
+          insert into app.cash_locations (id, tenant_id, station_id, code, name, location_type, currency, status, version)
+          values (${locationId}, ${context.tenantId}, ${context.stationId}, ${code}, ${payload.name},
+                  ${payload.locationType}, 'USD', 'ACTIVE', 0)
+        `);
+        return { locationId, code, name: payload.name };
+      }
+      throw new AppError('CONFLICT', 'A cash place with this name already exists');
     },
   });
 }
@@ -277,6 +491,107 @@ export function createNozzleCommand(
 }
 
 /**
+ * Renames a pump (its number and optional name). The pump's nozzles, meters and past readings are
+ * untouched; they follow the pump by id.
+ */
+export function updatePumpCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof updatePumpPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.UpdatePump',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PUMP_UPDATED',
+      subjectType: 'Pump',
+      subjectId: payload.pumpId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ number: string; name: string | null }>(sql`
+          select number, name from app.pumps
+          where tenant_id = ${context.tenantId} and id = ${payload.pumpId}
+        `);
+        return rows[0] ? { number: rows[0].number, name: rows[0].name } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      let updated: { id: string }[];
+      try {
+        updated = await transaction.execute<{ id: string }>(sql`
+          update app.pumps set number = ${payload.number}, name = ${payload.name ?? null}
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${payload.pumpId} and status = 'ACTIVE'
+          returning id
+        `);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new AppError('CONFLICT', 'A pump with this number already exists at the station');
+        }
+        throw error;
+      }
+      if (updated.length !== 1) {
+        throw new AppError('NOT_FOUND', 'The pump was not found at this station');
+      }
+      return { pumpId: payload.pumpId, number: payload.number };
+    },
+  });
+}
+
+/**
+ * Renumbers a nozzle. The fuel it sells and its meter are not editable here: sales and readings
+ * are recorded against them, so a different fuel or meter is a new nozzle (or a meter
+ * replacement through the existing meter commands).
+ */
+export function updateNozzleCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof updateNozzlePayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.UpdateNozzle',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.NOZZLE_UPDATED',
+      subjectType: 'Nozzle',
+      subjectId: payload.nozzleId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ number: string }>(sql`
+          select number from app.nozzles
+          where tenant_id = ${context.tenantId} and id = ${payload.nozzleId}
+        `);
+        return rows[0] ? { number: rows[0].number } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      let updated: { id: string }[];
+      try {
+        updated = await transaction.execute<{ id: string }>(sql`
+          update app.nozzles set number = ${payload.number}
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${payload.nozzleId} and status = 'ACTIVE'
+          returning id
+        `);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new AppError('CONFLICT', 'This pump already has a nozzle with this number');
+        }
+        throw error;
+      }
+      if (updated.length !== 1) {
+        throw new AppError('NOT_FOUND', 'The nozzle was not found at this station');
+      }
+      return { nozzleId: payload.nozzleId, number: payload.number };
+    },
+  });
+}
+
+/**
  * Creates the DRAFT selling price that the existing RequestPriceChange ->
  * ApprovePriceChange -> PreparePriceActivation -> ActivatePriceChange flow then
  * moves forward. It never makes a price effective by itself.
@@ -329,6 +644,25 @@ export async function createProductFromRequest(request: Request, input: unknown)
   const payload = createProductPayload.parse(input);
   return createProductCommand(await contextFor(request, payload), payload, keyOf(request));
 }
+export async function renameProductFromRequest(request: Request, input: unknown) {
+  const payload = renameProductPayload.parse(input);
+  return renameProductCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function setProductStatusFromRequest(request: Request, input: unknown) {
+  const payload = setProductStatusPayload.parse(input);
+  return setProductStatusCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function deleteProductFromRequest(request: Request, input: unknown) {
+  const payload = productRef.parse(input);
+  return deleteProductCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function createCashLocationFromRequest(request: Request, input: unknown) {
+  const payload = createCashLocationPayload.parse(input);
+  return createCashLocationCommand(await contextFor(request, payload), payload, keyOf(request));
+}
 export async function createPumpFromRequest(request: Request, input: unknown) {
   const payload = createPumpPayload.parse(input);
   return createPumpCommand(await contextFor(request, payload), payload, keyOf(request));
@@ -337,6 +671,16 @@ export async function createNozzleFromRequest(request: Request, input: unknown) 
   const payload = createNozzlePayload.parse(input);
   return createNozzleCommand(await contextFor(request, payload), payload, keyOf(request));
 }
+export async function updatePumpFromRequest(request: Request, input: unknown) {
+  const payload = updatePumpPayload.parse(input);
+  return updatePumpCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function updateNozzleFromRequest(request: Request, input: unknown) {
+  const payload = updateNozzlePayload.parse(input);
+  return updateNozzleCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
 export async function draftPriceChangeFromRequest(request: Request, input: unknown) {
   const payload = draftPricePayload.parse(input);
   return draftPriceChangeCommand(await contextFor(request, payload), payload, keyOf(request));

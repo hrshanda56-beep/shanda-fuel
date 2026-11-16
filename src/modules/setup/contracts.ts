@@ -6,6 +6,7 @@ export type SetupTank = Readonly<{
   capacityLitres: string;
   reorderLevelLitres: string | null;
   acceptableVarianceLitres: string | null;
+  varianceRedLitres: string | null;
   status: string;
 }>;
 export type SetupPump = Readonly<{

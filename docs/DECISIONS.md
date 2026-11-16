@@ -1,5 +1,28 @@
 # Shanda Fuel — Decision Log
 
+## DEC-052 — Setup items can be changed after they are entered; a supervisor can start a price change
+
+Date: 2026-11-13. **Status:** ACCEPTED, on the explicit instruction of the project lead (answers to
+three questions asked in the working session).
+
+- **Changing setup (Settings > Stations).** Fuel tanks (name, size, reorder level, yellow and red limits),
+  pumps (number, name), nozzles (number) and shifts (name, start time and end time; an end before the start means the next day) can be changed from the
+  guided setup after they were first entered. Who: the people who may add them today — owner and
+  administrator (`station.manage`, `inventory.tank.manage`, `shift.template.manage`). Supervisors do not
+  change the station layout. Each change needs the fresh identity check and writes an audit event
+  (`INVENTORY.TANK_UPDATED`, `SETUP.PUMP_UPDATED`, `SETUP.NOZZLE_UPDATED`; shifts keep their existing audit).
+- **Not changeable:** the fuel in a tank or on a nozzle, and a nozzle's meter. Past dips, deliveries and
+  sales are recorded against them; a different fuel means a new tank or nozzle. A shift schedule on an
+  already-activated station with start times stays refused by the existing rule.
+- **Prices.** A supervisor holds `price.change.request` (migration 0090), so they can start a change for
+  their own station and, as before, prepare it and take the meter readings. Approving and activating
+  remain with the owner/administrator, and DEC-049 (the requester may not approve unless nobody else
+  could) is unchanged. Prices in use link to the existing Change a price screen (DEC-050).
+- **Supervisors on the setup screen.** The supervisor card adds, moves or removes people only through the
+  existing Staff commands (same permission and fresh identity check). The person in charge of a station
+  cannot be moved or removed until someone else is chosen. Removing a person from their only station is
+  done by deactivating them in Staff.
+
 ## DEC-051 — A delivery needs a purchase order or a reason
 
 Date: 2026-10-26. **Status:** ACCEPTED, on the explicit instruction of the project lead (reason

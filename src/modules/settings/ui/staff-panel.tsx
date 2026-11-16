@@ -83,7 +83,7 @@ function initials(name: string) {
 }
 
 /** Change one active person's role and stations. The server re-checks everything. */
-function EditAccessModal({
+export function EditAccessModal({
   member,
   overview,
   verify,

@@ -15,6 +15,7 @@ export {
   updateDeliveryFromRequest,
   createTankFromRequest,
   setTankVarianceLimitsFromRequest,
+  updateTankFromRequest,
   confirmDeliveryFromRequest,
   correctDeliverySupplierFromRequest,
   deactivateTankFromRequest,

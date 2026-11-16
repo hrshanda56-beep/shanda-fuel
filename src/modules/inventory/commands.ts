@@ -75,6 +75,19 @@ const setTankVarianceLimitsPayload = authorityPayload.extend({
   varianceRedLitres: decimalText.nullable(),
 });
 
+/**
+ * Change a tank's label, size and warning limits after it was first entered. The fuel is not
+ * editable: past dips and deliveries are recorded against it, so a different fuel means a new tank.
+ */
+const updateTankPayload = authorityPayload.extend({
+  tankId: uuid,
+  code: z.string().trim().min(1).max(32),
+  capacityLitres: decimalText,
+  reorderLevelLitres: decimalText.nullable(),
+  acceptableVarianceLitres: decimalText.nullable(),
+  varianceRedLitres: decimalText.nullable(),
+});
+
 const deactivateTankPayload = authorityPayload.extend({
   tankId: uuid,
   status: z.enum(['INACTIVE', 'RETIRED']),
@@ -380,6 +393,102 @@ export async function createTankFromRequest(request: Request, input: unknown) {
     execute: async (transaction) => {
       const result = await insertTank(transaction, context, payload);
       return result;
+    },
+  });
+}
+
+export async function updateTankFromRequest(request: Request, input: unknown) {
+  const payload = updateTankPayload.parse(input);
+  const capacity = litres(payload.capacityLitres);
+  if (!capacity.value.gt(0)) {
+    throw new AppError('VALIDATION_FAILED', 'Tank capacity must be positive');
+  }
+  if (payload.reorderLevelLitres) {
+    const reorder = litres(payload.reorderLevelLitres);
+    if (reorder.value.isNegative() || reorder.value.gt(capacity.value)) {
+      throw new AppError('VALIDATION_FAILED', 'Reorder level must be between zero and capacity');
+    }
+  }
+  assertVarianceLimits(payload.acceptableVarianceLitres, payload.varianceRedLitres);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'UpdateTank',
+    permissionCode: 'inventory.tank.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.TANK_UPDATED',
+      subjectType: 'Tank',
+      subjectId: payload.tankId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{
+          code: string;
+          capacity: string;
+          reorder: string | null;
+          acceptable: string | null;
+          red: string | null;
+        }>(sql`
+          select code, capacity_litres::text as capacity, reorder_level_litres::text as reorder,
+            acceptable_variance_litres::text as acceptable, variance_red_litres::text as red
+          from app.tanks where tenant_id = ${context.tenantId} and id = ${payload.tankId}
+        `);
+        return rows[0]
+          ? {
+              code: rows[0].code,
+              capacityLitres: rows[0].capacity,
+              reorderLevelLitres: rows[0].reorder,
+              acceptableVarianceLitres: rows[0].acceptable,
+              varianceRedLitres: rows[0].red,
+            }
+          : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      const tank = await loadTankForUpdate(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: payload.tankId,
+      });
+      if (tank.status === 'RETIRED') {
+        throw new AppError('CONFLICT', 'A retired tank cannot be changed');
+      }
+      try {
+        await transaction
+          .update(tanks)
+          .set({
+            code: payload.code,
+            capacityLitres: capacity.toString(),
+            reorderLevelLitres: payload.reorderLevelLitres
+              ? litres(payload.reorderLevelLitres).toString()
+              : null,
+            acceptableVarianceLitres: payload.acceptableVarianceLitres
+              ? litres(payload.acceptableVarianceLitres).toString()
+              : null,
+            varianceRedLitres: payload.varianceRedLitres
+              ? litres(payload.varianceRedLitres).toString()
+              : null,
+            updatedBy: context.authority.membership.membershipId,
+            version: tank.version + 1,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(tanks.tenantId, context.tenantId),
+              eq(tanks.stationId, context.stationId),
+              eq(tanks.id, tank.id),
+            ),
+          );
+      } catch (error) {
+        const code = (error as { code?: string })?.code;
+        const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
+        if (code === '23505' || causeCode === '23505') {
+          throw new AppError('CONFLICT', 'A tank with this name already exists at the station');
+        }
+        throw error;
+      }
+      return { tankId: tank.id, code: payload.code };
     },
   });
 }

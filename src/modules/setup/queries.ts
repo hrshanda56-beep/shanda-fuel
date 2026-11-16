@@ -67,10 +67,11 @@ export async function getSetupOverview(args: {
           capacity_litres: string;
           reorder_level_litres: string | null;
           acceptable_variance_litres: string | null;
+          variance_red_litres: string | null;
           status: string;
         }>(sql`
           select id, code, product_id, capacity_litres::text, reorder_level_litres::text,
-            acceptable_variance_litres::text, status
+            acceptable_variance_litres::text, variance_red_litres::text, status
           from app.tanks where tenant_id = ${tenantId} and station_id = ${stationId}
           order by code`)
       : null;
@@ -175,6 +176,7 @@ export async function getSetupOverview(args: {
           capacityLitres: r.capacity_litres,
           reorderLevelLitres: r.reorder_level_litres,
           acceptableVarianceLitres: r.acceptable_variance_litres,
+          varianceRedLitres: r.variance_red_litres,
           status: r.status,
         })) ?? null,
       pumps:

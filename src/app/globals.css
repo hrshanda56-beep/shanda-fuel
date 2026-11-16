@@ -4125,7 +4125,7 @@ h3,
 
 /* The first and last steps have one button, so the gap is cut for one and leaves no empty place. */
 .entry-card-wrap[data-actions='1'] {
-  --notch-w: 8.5rem;
+  --notch-w: calc(var(--notch-btn-w) + var(--notch-pad));
 }
 
 /* The Reconciliations link is a longer word than Back or Next, so its gap is cut wider and the button never touches the card. */
@@ -4224,7 +4224,7 @@ h3,
     bottom: 0;
     width: var(--notch-w);
     height: var(--notch-h);
-    align-items: center;
+    align-items: flex-end;
     padding: 0;
     border: 0;
     background: none;
@@ -8861,4 +8861,75 @@ h3,
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
+}
+
+/*
+ * A card whose bottom-right corner is cut away for its buttons (BottomNotchCard). The cut is the
+ * same one the shift screens make. --notch-w is the buttons plus a little air; narrow screens keep
+ * a whole card and the buttons follow below it.
+ */
+.notch-wrap {
+  /* Every gap between the card's edge and the buttons is --notch-pad; the cut is sized from the
+     buttons themselves so the spacing is the same whatever the label. */
+  --notch-pad: var(--space-3);
+  --notch-btn-w: 5.5rem;
+  --notch-btn-h: 2.5rem;
+  --notch-r: 1.25rem;
+  --notch-w: calc(2 * var(--notch-btn-w) + var(--notch-pad) * 2);
+  --notch-h: calc(var(--notch-btn-h) + var(--notch-pad));
+  position: relative;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.notch-wrap[data-actions='1'] {
+  --notch-w: calc(var(--notch-btn-w) + var(--notch-pad));
+}
+
+.notch-surface {
+  min-width: 0;
+}
+
+.notch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--notch-pad);
+}
+
+.notch-actions > * {
+  min-width: var(--notch-btn-w);
+  min-height: var(--notch-btn-h);
+}
+
+@media (min-width: 48rem) {
+  .notch-wrap[data-notched] > .notch-surface {
+    padding-bottom: var(--notch-h);
+    clip-path: shape(
+      from var(--radius-lg) 0,
+      hline to calc(100% - var(--radius-lg)),
+      arc to 100% var(--radius-lg) of var(--radius-lg) cw,
+      vline to calc(100% - var(--notch-h) - var(--notch-r)),
+      arc to calc(100% - var(--notch-r)) calc(100% - var(--notch-h)) of var(--notch-r) cw,
+      hline to calc(100% - var(--notch-w) + var(--notch-r)),
+      arc to calc(100% - var(--notch-w)) calc(100% - var(--notch-h) + var(--notch-r)) of
+        var(--notch-r) ccw,
+      vline to calc(100% - var(--notch-r)),
+      arc to calc(100% - var(--notch-w) - var(--notch-r)) 100% of var(--notch-r) cw,
+      hline to var(--radius-lg),
+      arc to 0 calc(100% - var(--radius-lg)) of var(--radius-lg) cw,
+      vline to var(--radius-lg),
+      arc to var(--radius-lg) 0 of var(--radius-lg) cw,
+      close
+    );
+  }
+
+  .notch-wrap[data-notched] > .notch-actions {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: var(--notch-w);
+    height: var(--notch-h);
+    align-items: flex-end;
+  }
 }

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ConfigurationSetupOverview } from './contracts';
 import {
+  buildFuelCards,
   buildGuidedSteps,
   describeDuration,
+  endTimeFrom,
+  minutesBetween,
   firstOpenStep,
   friendlySetupError,
   hoursToMinutes,
@@ -85,6 +88,7 @@ describe('buildGuidedSteps', () => {
       capacityLitres: '10000',
       reorderLevelLitres: null,
       acceptableVarianceLitres: null,
+      varianceRedLitres: null,
       status: 'ACTIVE',
     };
     const open = byId(buildGuidedSteps({ ...base, products: [diesel], tanks: [tank] }), 'tanks');
@@ -155,6 +159,64 @@ describe('buildGuidedSteps', () => {
   });
 });
 
+describe('buildFuelCards', () => {
+  const petrol = { id: 'p2', code: 'PETROL', name: 'Petrol', status: 'ACTIVE' };
+  const tank = (productId: string, tolerance: string | null) => ({
+    id: `k-${productId}`,
+    code: 'T',
+    productId,
+    capacityLitres: '1000',
+    reorderLevelLitres: null,
+    acceptableVarianceLitres: tolerance,
+    varianceRedLitres: null,
+    status: 'ACTIVE',
+  });
+  const nozzle = (productId: string) => ({
+    id: `n-${productId}`,
+    pumpId: 'u1',
+    number: '1',
+    productId,
+    status: 'ACTIVE',
+    meterSerialNumber: 'SN',
+  });
+  const price = (productId: string) => ({
+    id: `x-${productId}`,
+    productId,
+    unitPrice: '1.5',
+    currency: 'USD',
+    state: 'ACTIVE',
+    effectiveFrom: '2026-10-21T00:00:00Z',
+    version: 1,
+  });
+
+  it('judges each fuel on its own', () => {
+    const cards = buildFuelCards({
+      ...base,
+      products: [diesel, petrol],
+      prices: [price('p1')],
+      tanks: [tank('p1', '50'), tank('p2', null)],
+      nozzles: [nozzle('p1')],
+    });
+    expect(cards.map((c) => [c.name, c.status])).toEqual([
+      ['Diesel', 'done'],
+      ['Petrol', 'todo'],
+    ]);
+    expect(cards[0]!.summary).toBe('Price in use, 1 tank, 1 nozzle.');
+    expect(cards[1]!.summary).toBe('Needs a price, an acceptable difference on 1 tank, a nozzle.');
+  });
+
+  it('says when a price is waiting for approval', () => {
+    const cards = buildFuelCards({
+      ...base,
+      products: [diesel],
+      prices: [{ ...price('p1'), state: 'DRAFT' }],
+      tanks: [tank('p1', '50')],
+      nozzles: [nozzle('p1')],
+    });
+    expect(cards[0]!.summary).toBe('Needs price approval.');
+  });
+});
+
 describe('suggestCode', () => {
   it('builds a short code from the name and keeps it unique', () => {
     expect(suggestCode('Unleaded 95', [])).toBe('UNLEADED95');
@@ -186,6 +248,22 @@ describe('number entry', () => {
     expect(describeDuration(480)).toBe('8 hours');
     expect(describeDuration(510)).toBe('8 hours 30 minutes');
     expect(describeDuration(60)).toBe('1 hour');
+  });
+});
+
+describe('shift times', () => {
+  it('works out how long a shift runs from its start and end', () => {
+    expect(minutesBetween('06:00', '18:00')).toBe(720);
+    expect(minutesBetween('18:00', '06:00')).toBe(720);
+    expect(minutesBetween('22:00', '02:30')).toBe(270);
+    expect(minutesBetween('06:00', '06:00')).toBeNull();
+    expect(minutesBetween('', '06:00')).toBeNull();
+  });
+
+  it('shows where a shift ends', () => {
+    expect(endTimeFrom('06:00:00', 720)).toBe('18:00');
+    expect(endTimeFrom('18:00', 720)).toBe('06:00');
+    expect(endTimeFrom('', 60)).toBe('');
   });
 });
 
