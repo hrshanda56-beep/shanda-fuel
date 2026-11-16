@@ -79,18 +79,17 @@ async function mockApi(page: Page, products: Product[] = []) {
 }
 
 test.describe('Guided station setup', () => {
-  test('walks an owner from an empty station through the first steps in plain language', async ({
+  test('walks an owner from an empty station to adding the first fuel in plain language', async ({
     page,
   }) => {
     const { commands } = await mockApi(page);
     await page.goto('/dev-preview/setup-guide');
 
-    await expect(page.getByText('0 of 6 steps done for Main Station')).toBeVisible();
-    // Steps that need fuel types are closed with a plain reason, not an error.
-    await expect(page.getByRole('button', { name: /^Selling prices/ })).toBeDisabled();
-    await expect(page.getByText('Add at least one fuel type first.').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Fuel Types' })).toBeVisible();
+    await expect(page.getByText('No fuel types yet. Add the first one to begin.')).toBeVisible();
 
-    // The first step is open and asks only for a name.
+    // Adding a fuel asks only for a name, in a small dialog.
+    await page.getByRole('button', { name: 'Add a fuel type' }).click();
     const form = page.getByRole('form', { name: 'Add a fuel type' });
     await form.getByRole('button', { name: 'Add fuel type' }).click();
     await expect(page.getByText('Enter the name of the fuel, for example Diesel.')).toBeVisible();
@@ -103,24 +102,32 @@ test.describe('Guided station setup', () => {
     expect(commands).toHaveLength(0);
   });
 
-  test('opens the price step by itself once a fuel type exists', async ({ page }) => {
+  test('shows each fuel as its own card, opened on the part still to do', async ({ page }) => {
     await mockApi(page, [{ id: 'p1', code: 'UNLEADED95', name: 'Unleaded 95', status: 'ACTIVE' }]);
     await page.goto('/dev-preview/setup-guide');
-    await expect(page.getByText('1 of 6 steps done for Main Station')).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Selling prices/ })).toBeEnabled();
-    // The first step still to do opens on its own.
+    // The card's name starts with its status; the menu and delete buttons do not carry the summary.
+    const card = page.getByRole('button', { name: /Unleaded 95.*Needs a price/ });
+    await expect(card).toBeVisible();
+    // The first card still to do opens on its own, on the price.
+    await expect(card).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeVisible();
+    await card.click();
+    await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeHidden();
   });
 
   test('lets the owner choose the supervisor in charge', async ({ page }) => {
     const { commands } = await mockApi(page);
     await page.goto('/dev-preview/setup-guide');
     await page.getByRole('button', { name: /Supervisor in charge/ }).click();
-    const form = page.getByRole('form', { name: 'Choose the supervisor in charge' });
-    await form.getByRole('button', { name: 'Save' }).click();
+    // Save sits in the card's corner, outside the form, and submits it.
+    const save = page.getByRole('button', { name: 'Save', exact: true });
+    await save.click();
     await expect(page.getByText('Choose who is in charge of this station.')).toBeVisible();
-    await form.getByLabel('Tendai Moyo').check();
-    await form.getByRole('button', { name: 'Save' }).click();
+    await page
+      .getByRole('form', { name: 'Choose the supervisor in charge' })
+      .getByLabel('Tendai Moyo')
+      .check();
+    await save.click();
     await expect(page.getByText('Confirm it is you').first()).toBeVisible();
     expect(commands).toHaveLength(0);
   });
@@ -130,7 +137,7 @@ test.describe('Guided station setup', () => {
       await mockApi(page);
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/dev-preview/setup-guide');
-      await expect(page.getByText('0 of 6 steps done for Main Station')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Fuel Types' })).toBeVisible();
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );

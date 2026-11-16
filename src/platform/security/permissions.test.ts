@@ -234,6 +234,10 @@ describe('permission authorization', () => {
   it('lets Finance send a reconciliation back but not a supervisor or attendant', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).toContain('reconciliation.return');
     expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('reconciliation.return');
+    // DEC-052: a supervisor starts a price change; approving and activating stay with others.
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).toContain('price.change.request');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('price.change.approve');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('price.change.activate');
     expect(DEFAULT_ROLE_PERMISSIONS.ATTENDANT).not.toContain('reconciliation.return');
   });
 

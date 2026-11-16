@@ -2,13 +2,19 @@ import { NextResponse } from 'next/server';
 import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   assertSetupCommandType,
+  createCashLocationFromRequest,
   createNozzleFromRequest,
   createProductFromRequest,
+  deleteProductFromRequest,
+  renameProductFromRequest,
+  setProductStatusFromRequest,
   createPumpFromRequest,
   draftPriceChangeFromRequest,
   recordBankBalanceFromRequest,
   setAlertSettingsFromRequest,
   setResponsibleSupervisorFromRequest,
+  updateNozzleFromRequest,
+  updatePumpFromRequest,
   updateSupplierFromRequest,
 } from '../../../../modules/setup';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
@@ -28,11 +34,29 @@ export const POST = withRequestObservability(
         case 'CreateProduct':
           result = await createProductFromRequest(request, body);
           break;
+        case 'RenameProduct':
+          result = await renameProductFromRequest(request, body);
+          break;
+        case 'SetProductStatus':
+          result = await setProductStatusFromRequest(request, body);
+          break;
+        case 'DeleteProduct':
+          result = await deleteProductFromRequest(request, body);
+          break;
+        case 'CreateCashLocation':
+          result = await createCashLocationFromRequest(request, body);
+          break;
         case 'CreatePump':
           result = await createPumpFromRequest(request, body);
           break;
         case 'CreateNozzle':
           result = await createNozzleFromRequest(request, body);
+          break;
+        case 'UpdatePump':
+          result = await updatePumpFromRequest(request, body);
+          break;
+        case 'UpdateNozzle':
+          result = await updateNozzleFromRequest(request, body);
           break;
         case 'DraftPriceChange':
           result = await draftPriceChangeFromRequest(request, body);

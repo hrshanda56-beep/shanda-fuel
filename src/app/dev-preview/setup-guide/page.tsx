@@ -15,6 +15,8 @@ export default function SetupGuidePreview() {
     <main>
       <PageContainer width="wide">
         <h1>Set up your station</h1>
+        {/* Stands in for the settings card's title, so the headings below it run in order. */}
+        <h2>Station setup</h2>
         <GuidedSetupPanel />
       </PageContainer>
     </main>

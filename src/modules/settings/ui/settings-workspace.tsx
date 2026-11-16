@@ -330,12 +330,25 @@ export function SettingsWorkspace({
   const setupStation = canSetUp ? stations.find((item) => item.id === setupStationId) : undefined;
 
   // The section lives in the address, so a refresh or a shared link returns to it.
+  function chooseSetup(id: string | null) {
+    setSetupStationId(id);
+    try {
+      const url = new URL(window.location.href);
+      if (id) url.searchParams.set('setup', id);
+      else url.searchParams.delete('setup');
+      window.history.replaceState(window.history.state, '', url);
+    } catch {
+      // The setup still opens without a shareable link.
+    }
+  }
+
   function choose(next: Tab) {
     setSetupStationId(null);
     setTab(next);
     try {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', next);
+      url.searchParams.delete('setup');
       window.history.replaceState(window.history.state, '', url);
     } catch {
       // The section still works without a shareable link.
@@ -418,29 +431,17 @@ export function SettingsWorkspace({
           ) : null}
 
           {shown === 'stations' && setupStation ? (
-            <SectionCard
-              id="station-setup"
-              title={`Station setup: ${setupStation.name}`}
-              note="Work through these steps from top to bottom. You can stop at any time and come back; what you have saved stays saved."
-              action={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setSetupStationId(null);
-                    askForFocus();
-                  }}
-                >
-                  <Icon name="chevron-right" className={styles.backIcon} />
-                  Back to stations
-                </Button>
-              }
-            >
+            <SectionCard id="station-setup" title={`Station setup: ${setupStation.name}`}>
               <StationSetupGuide
                 key={setupStation.id}
                 tenantId={organisation.id}
                 stationId={setupStation.id}
                 stationName={setupStation.name}
+                staff={view.staff?.canManage ? view.staff : undefined}
+                onOpenStaff={() => {
+                  choose('staff');
+                  askForFocus();
+                }}
               />
             </SectionCard>
           ) : null}
@@ -453,7 +454,7 @@ export function SettingsWorkspace({
               onSetup={
                 canSetUp
                   ? (stationId) => {
-                      setSetupStationId(stationId);
+                      chooseSetup(stationId);
                       askForFocus();
                     }
                   : undefined

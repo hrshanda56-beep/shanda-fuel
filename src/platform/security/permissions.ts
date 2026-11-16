@@ -434,6 +434,7 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'meter.replace',
     'price.view',
     'price.change.boundary',
+    'price.change.request',
     'price.change.prepare',
     'reconciliation.view',
     'reconciliation.submit',
