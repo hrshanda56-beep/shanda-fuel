@@ -102,14 +102,17 @@ test.describe('Guided station setup', () => {
     expect(commands).toHaveLength(0);
   });
 
-  test('shows each fuel as its own card and opens its price step', async ({ page }) => {
+  test('shows each fuel as its own card, opened on the part still to do', async ({ page }) => {
     await mockApi(page, [{ id: 'p1', code: 'UNLEADED95', name: 'Unleaded 95', status: 'ACTIVE' }]);
     await page.goto('/dev-preview/setup-guide');
     // The card's name starts with its status; the menu and delete buttons do not carry the summary.
     const card = page.getByRole('button', { name: /Unleaded 95.*Needs a price/ });
     await expect(card).toBeVisible();
-    await card.click();
+    // The first card still to do opens on its own, on the price.
+    await expect(card).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeVisible();
+    await card.click();
+    await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeHidden();
   });
 
   test('lets the owner choose the supervisor in charge', async ({ page }) => {
