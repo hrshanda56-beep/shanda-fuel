@@ -485,12 +485,7 @@ const rolePermissions: Record<RoleCode, readonly PermissionCode[]> = {
   AUDITOR: PERMISSION_CODES.filter(
     (code) => code === 'tenant.context.select' || /\.view(\.|$)/.test(code),
   ),
-  // Starting a price change was given to the supervisor alone (migration 0105, DEC-052); an area
-  // manager keeps what it had until that is decided for the role.
-  AREA_MANAGER: [
-    ...originalRolePermissions.SUPERVISOR.filter((code) => code !== 'price.change.request'),
-    'report.finance.view',
-  ],
+  AREA_MANAGER: [...originalRolePermissions.SUPERVISOR, 'report.finance.view'],
   CASH_COLLECTOR: [
     'tenant.context.select',
     'station.view',
