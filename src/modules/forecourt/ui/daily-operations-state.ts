@@ -189,12 +189,27 @@ export function dailyOperationsProblem(
     canMarkNotOperated?: boolean;
     /** The server's error details, such as `{ reason: 'METER_NOT_SET_UP' }`. */
     details?: Record<string, unknown>;
+    /** The station being closed, so the link opens that station's setup straight away. */
+    stationId?: string;
   }>,
 ): DailyOperationsProblem {
-  if (context?.details?.reason === 'METER_NOT_SET_UP') {
+  // Matched by the server's reason when it was sent, and by the wording when only the message is
+  // known, so every screen that shows this block offers the same way out.
+  if (
+    context?.details?.reason === 'METER_NOT_SET_UP' ||
+    /not set up as working for this shift/i.test(message ?? '')
+  ) {
+    const detailStation = context?.details?.stationId;
+    const stationId =
+      context?.stationId ?? (typeof detailStation === 'string' ? detailStation : undefined);
     return {
       message: message ?? 'A pump is not set up for this shift.',
-      fix: link('Check the pump setup', '/settings?tab=stations'),
+      fix: link(
+        'Set the meter start date',
+        stationId
+          ? `/settings?tab=stations&setup=${encodeURIComponent(stationId)}&focus=meter-start`
+          : '/settings?tab=stations',
+      ),
     };
   }
   const a12Message = mapA12OperatorError(code, message);
@@ -361,8 +376,9 @@ export function dailyOperationsProblem(
 /** The page that puts a problem right, for screens that only have the message text. */
 export function dailyOperationsLinkFix(
   message: string | undefined,
+  stationId?: string,
 ): Extract<DailyOperationsFix, { kind: 'link' }> | undefined {
-  const fix = dailyOperationsProblem(0, undefined, message).fix;
+  const fix = dailyOperationsProblem(0, undefined, message, { stationId }).fix;
   return fix?.kind === 'link' ? fix : undefined;
 }
 

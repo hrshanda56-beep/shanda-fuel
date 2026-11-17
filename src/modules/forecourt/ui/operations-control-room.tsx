@@ -359,7 +359,7 @@ export function OperationsControlRoom({
   }
 
   function fixLinkFor(message: string) {
-    const fix = dailyOperationsLinkFix(message);
+    const fix = dailyOperationsLinkFix(message, context.stationId);
     return fix ? (
       <Link className="button button-primary" href={fix.href}>
         {fix.label}
