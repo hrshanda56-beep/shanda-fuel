@@ -1,3 +1,9 @@
+import {
+  asQuantityUnit,
+  combineQuantityUnits,
+  type CombinedUnit,
+  type QuantityUnit,
+} from '@/design-system/formatters';
 import { exact, ratioPercentage, subtractExact, sumExact } from '../../reporting/domain';
 import { formatTileMoney } from '../../reporting/format';
 import type { ManagementReport } from '../../reporting/contracts';
@@ -20,6 +26,8 @@ export type StationProfit = Readonly<{
   stationId: string;
   name: string;
   sales: string | null;
+  /** The unit of `litres`; MIXED when the station sold litre and kilogram fuels. */
+  unit: CombinedUnit;
   litres: string;
   fuelCost: string | null;
   expenses: string;
@@ -32,6 +40,7 @@ export type StationProfit = Readonly<{
 export type FuelSales = Readonly<{
   productId: string;
   name: string;
+  unit: QuantityUnit;
   litres: string;
   sales: string;
   pricePerLitre: string | null;
@@ -46,6 +55,7 @@ export type ProfitView = Readonly<{
   grossProfit: string | null;
   expenses: string;
   profit: string | null;
+  unit: CombinedUnit;
   litres: string;
   perLitre: string | null;
   marginPercent: string | null;
@@ -63,13 +73,14 @@ export function moneyOrUnavailable(value: string | null | undefined): string {
   return text === '—' ? NOT_AVAILABLE : text;
 }
 
-/** Money per litre to three places, e.g. "USD 0.125 per litre". */
-export function formatPerLitre(value: string | null | undefined): string {
+/** Money per litre (or per kilogram) to three places, e.g. "USD 0.125 per litre". */
+export function formatPerLitre(value: string | null | undefined, unit?: CombinedUnit): string {
+  if (unit === 'MIXED') return NOT_AVAILABLE;
   if (value === null || value === undefined || !/^-?\d+(?:\.\d+)?$/.test(value.trim())) {
     return NOT_AVAILABLE;
   }
   const fixed = exact(value.trim()).value.toDecimalPlaces(3).toFixed(3);
-  return `USD ${fixed} per litre`;
+  return `USD ${fixed} per ${unit === 'KILOGRAMS' ? 'kilogram' : 'litre'}`;
 }
 
 export function formatPercent(value: string | null | undefined): string {
@@ -121,6 +132,7 @@ export function buildProfitView(report: ManagementReport): ProfitView {
     approvedFuelBenefit(report),
   );
   const litres = sumExact(revenueSales.map((sale) => sale.quantityLitres));
+  const unit = combineQuantityUnits(revenueSales.map((sale) => sale.productUnit));
 
   const headline =
     state === 'no-sales'
@@ -156,6 +168,7 @@ export function buildProfitView(report: ManagementReport): ProfitView {
       const cost = costByStation.get(stationId) ?? [];
       const stationSales = rev.length > 0 ? sumExact(rev.map((r) => r.recognizedRevenue)) : null;
       const stationLitres = sumExact(rev.map((r) => r.quantityLitres));
+      const stationUnit = combineQuantityUnits(rev.map((r) => r.productUnit));
       const unvalued = cost.filter(
         (c) => c.valuationStatus !== 'VALUED' || c.restatedCogs === null,
       ).length;
@@ -174,12 +187,13 @@ export function buildProfitView(report: ManagementReport): ProfitView {
         stationId,
         name,
         sales: stationSales,
+        unit: stationUnit,
         litres: stationLitres,
         fuelCost: stationCost,
         expenses: stationExpenses,
         grossProfit: gross,
         profit: gross !== null ? subtractExact(gross, stationExpenses) : null,
-        perLitre: perLitre(gross, stationLitres),
+        perLitre: stationUnit === 'MIXED' ? null : perLitre(gross, stationLitres),
         note:
           rev.length === 0
             ? 'No fuel sales in this period'
@@ -199,6 +213,7 @@ export function buildProfitView(report: ManagementReport): ProfitView {
       return {
         productId,
         name: rows[0]?.productName ?? 'Fuel',
+        unit: asQuantityUnit(rows[0]?.unit),
         litres: fuelLitres,
         sales: fuelSales,
         pricePerLitre: perLitre(fuelSales, fuelLitres),
@@ -215,8 +230,9 @@ export function buildProfitView(report: ManagementReport): ProfitView {
     grossProfit,
     expenses,
     profit,
+    unit,
     litres,
-    perLitre: perLitre(grossProfit, litres),
+    perLitre: unit === 'MIXED' ? null : perLitre(grossProfit, litres),
     marginPercent:
       grossProfit !== null && sales !== null ? ratioPercentage(grossProfit, sales) : null,
     salesCount,

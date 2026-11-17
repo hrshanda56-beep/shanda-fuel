@@ -31,6 +31,7 @@ const authority = z.object({ tenantId: uuid, stationId: uuid });
 export const SETUP_COMMAND_TYPES = [
   'CreateProduct',
   'RenameProduct',
+  'SetProductUnit',
   'SetProductStatus',
   'DeleteProduct',
   'CreatePump',
@@ -56,9 +57,11 @@ export function assertSetupCommandType(value: unknown): SetupCommandType {
 const createProductPayload = authority.extend({
   code: z.string().trim().min(1).max(32),
   name: z.string().trim().min(1).max(120),
+  unit: z.enum(['LITRES', 'KILOGRAMS']).default('LITRES'),
 });
 const productRef = authority.extend({ productId: uuid });
 const renameProductPayload = productRef.extend({ name: z.string().trim().min(1).max(120) });
+const setProductUnitPayload = productRef.extend({ unit: z.enum(['LITRES', 'KILOGRAMS']) });
 const setProductStatusPayload = productRef.extend({ status: z.enum(['ACTIVE', 'INACTIVE']) });
 const createCashLocationPayload = authority.extend({
   name: z.string().trim().min(1).max(80),
@@ -177,8 +180,8 @@ export function createProductCommand(
       const productId = randomUUID();
       try {
         await transaction.execute(sql`
-          insert into app.products (id, tenant_id, code, name, status)
-          values (${productId}, ${context.tenantId}, ${payload.code}, ${payload.name}, 'ACTIVE')
+          insert into app.products (id, tenant_id, code, name, unit, status)
+          values (${productId}, ${context.tenantId}, ${payload.code}, ${payload.name}, ${payload.unit}, 'ACTIVE')
         `);
       } catch (error) {
         if (isUniqueViolation(error)) {
@@ -186,7 +189,7 @@ export function createProductCommand(
         }
         throw error;
       }
-      return { productId, code: payload.code, name: payload.name };
+      return { productId, code: payload.code, name: payload.name, unit: payload.unit };
     },
   });
 }
@@ -195,6 +198,85 @@ function isForeignKeyViolation(error: unknown): boolean {
   const code = (error as { code?: string })?.code;
   const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
   return code === '23503' || causeCode === '23503';
+}
+
+/**
+ * Changes how a fuel is measured. Quantities already recorded would silently change meaning
+ * (500 litres would become 500 kilograms), so this is allowed only while the fuel has no deliveries,
+ * meter readings, stock movements, tank dips, opening balances, purchase orders, supplier bills,
+ * cost records, customer fuel balances or selling prices.
+ */
+export function setProductUnitCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setProductUnitPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetProductUnit',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_UNIT_CHANGED',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ unit: string }>(sql`
+          select unit from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        return rows[0] ? { unit: rows[0].unit } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      // Lock the fuel first: a delivery or meter reading being saved at the same moment needs a share
+      // lock on this row, so it waits for this change and then sees the new unit.
+      await transaction.execute(sql`
+        select id from app.products
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        for update
+      `);
+      const used = await transaction.execute<{ used: boolean }>(sql`
+        select (
+          exists (select 1 from app.fuel_deliveries where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.meter_segments where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.inventory_movements where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.reconciliation_meter_readings where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.opening_balance_lines where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.purchase_order_lines where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.supplier_document_lines where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.inventory_cost_events where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.customer_fuel_authorizations where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.customer_ledger_entries where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.sale_recognition_movements where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.selling_prices where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (
+            select 1 from app.tank_dips d join app.tanks t on t.id = d.tank_id and t.tenant_id = d.tenant_id
+            where d.tenant_id = ${context.tenantId} and t.product_id = ${payload.productId}
+          )
+        ) as used
+      `);
+      const current = await transaction.execute<{ unit: string }>(sql`
+        select unit from app.products
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+      `);
+      if (!current[0]) throw new AppError('NOT_FOUND', 'The fuel was not found');
+      if (current[0].unit === payload.unit)
+        return { productId: payload.productId, unit: payload.unit };
+      if (used[0]?.used) {
+        throw new AppError(
+          'CONFLICT',
+          'This fuel already has deliveries or sales recorded in its current unit, so the unit can no longer be changed.',
+        );
+      }
+      await transaction.execute(sql`
+        update app.products set unit = ${payload.unit}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+      `);
+      return { productId: payload.productId, unit: payload.unit };
+    },
+  });
 }
 
 /** Fuels are shared by every station of the company, so a rename shows everywhere. */
@@ -454,6 +536,9 @@ export function createNozzleCommand(
       const nozzleId = randomUUID();
       const meterId = randomUUID();
       const installationId = randomUUID();
+      let recordedAt = '';
+      let countedFrom = '';
+      let wasBackdated = false;
       try {
         await transaction.execute(sql`
           insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id, status)
@@ -464,12 +549,35 @@ export function createNozzleCommand(
           insert into app.meters (id, tenant_id, serial_number, status)
           values (${meterId}, ${context.tenantId}, ${payload.meterSerialNumber}, 'ACTIVE')
         `);
-        await transaction.execute(sql`
-          insert into app.meter_installations
-            (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
-          values (${installationId}, ${context.tenantId}, ${context.stationId}, ${nozzleId},
-            ${meterId}, now(), ${context.authority.membership.membershipId})
+        // A nozzle added while a shift is open is counted from the start of the earliest open
+        // shift, so that shift can still be closed with a reading for it. created_at keeps the
+        // true time; effective_from holds the backdated time; the reason says why.
+        const openShifts = await transaction.execute<{ opened_at: Date | string }>(sql`
+          select opened_at from app.shifts
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and state = 'OPEN' and opened_at is not null
+          order by opened_at asc limit 1
         `);
+        const backdatedTo = openShifts[0]?.opened_at
+          ? new Date(openShifts[0].opened_at).toISOString()
+          : null;
+        const reason = backdatedTo
+          ? `Added while a shift was open; counted from the start of that shift (${backdatedTo}).`
+          : null;
+        const inserted = await transaction.execute<{
+          effective_from: Date | string;
+          created_at: Date | string;
+        }>(sql`
+          insert into app.meter_installations
+            (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by, replacement_reason)
+          values (${installationId}, ${context.tenantId}, ${context.stationId}, ${nozzleId},
+            ${meterId}, coalesce(${backdatedTo}::timestamptz, now()),
+            ${context.authority.membership.membershipId}, ${reason})
+          returning effective_from, created_at
+        `);
+        recordedAt = new Date(inserted[0]!.created_at).toISOString();
+        countedFrom = new Date(inserted[0]!.effective_from).toISOString();
+        wasBackdated = backdatedTo !== null;
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw new AppError(
@@ -485,6 +593,9 @@ export function createNozzleCommand(
         installationId,
         pumpId: payload.pumpId,
         number: payload.number,
+        recordedAt,
+        countedFrom,
+        wasBackdated,
       };
     },
   });
@@ -643,6 +754,10 @@ export function draftPriceChangeCommand(
 export async function createProductFromRequest(request: Request, input: unknown) {
   const payload = createProductPayload.parse(input);
   return createProductCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+export async function setProductUnitFromRequest(request: Request, input: unknown) {
+  const payload = setProductUnitPayload.parse(input);
+  return setProductUnitCommand(await contextFor(request, payload), payload, keyOf(request));
 }
 export async function renameProductFromRequest(request: Request, input: unknown) {
   const payload = renameProductPayload.parse(input);

@@ -84,7 +84,7 @@ export async function getDailyReportFromRequest(
         `),
         transaction.execute<DailyReportInput['readings'][number]>(sql`
           select p.number as "pumpNumber", n.number as "nozzleNumber",
-                 r.product_id as "productId", pr.name as "productName",
+                 r.product_id as "productId", pr.name as "productName", pr.unit as "fuelUnit",
                  r.opening_reading::text as "openingReading", r.closing_reading::text as "closingReading",
                  r.litres_sold::text as "litresSold", r.unit_price::text as "unitPrice",
                  r.sales_value::text as "salesValue"
@@ -105,7 +105,8 @@ export async function getDailyReportFromRequest(
         transaction.execute<
           Omit<DailyReportInput['dips'][number], 'measuredAt'> & { measuredAt: Date | string }
         >(sql`
-          select t.code as "tankCode", pr.name as "productName", d.measured_at as "measuredAt",
+          select t.code as "tankCode", pr.name as "productName", pr.unit as "fuelUnit",
+                 d.measured_at as "measuredAt",
                  d.raw_measurement::text as "rawMeasurement", d.measurement_unit as "measurementUnit",
                  d.physical_litres::text as "physicalLitres"
           from app.reconciliation_dip_refs r
@@ -140,11 +141,12 @@ export async function getDailyReportFromRequest(
         `),
         transaction.execute<{
           productName: string;
+          unit: string;
           litres: string;
           sales: string;
           shifts: number | string;
         }>(sql`
-          select pr.name as "productName", sum(r.litres_sold)::text as litres,
+          select pr.name as "productName", pr.unit as unit, sum(r.litres_sold)::text as litres,
                  sum(r.sales_value)::text as sales, count(distinct c.id) as shifts
           from app.reconciliations c
           join app.station_business_days d
@@ -158,7 +160,7 @@ export async function getDailyReportFromRequest(
               countedStates.map((state) => sql`${state}`),
               sql`, `,
             )}))
-          group by pr.name
+          group by pr.name, pr.unit
           order by pr.name
         `),
         transaction.execute<{ total: string | null }>(sql`
@@ -193,8 +195,9 @@ export async function getDailyReportFromRequest(
       drops,
       monthToDate: {
         fromDate: monthStart,
-        products: mtdProducts.map(({ productName, litres, sales }) => ({
+        products: mtdProducts.map(({ productName, unit, litres, sales }) => ({
           productName,
+          unit: unit === 'KILOGRAMS' ? ('KILOGRAMS' as const) : ('LITRES' as const),
           litres,
           sales,
         })),

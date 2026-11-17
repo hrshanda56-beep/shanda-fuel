@@ -23,7 +23,8 @@ const note = { margin: 0, color: 'var(--text-secondary)' } as const;
 const amount = (value: string): string => formatDecimal(plainAmount(value));
 
 const money = (value: string) => `USD ${amount(value)}`;
-const litres = (value: string) => `${amount(value)} L`;
+const litres = (value: string, unit?: 'LITRES' | 'KILOGRAMS') =>
+  `${amount(value)} ${unit === 'KILOGRAMS' ? 'kg' : 'L'}`;
 
 function timeOf(value: string | null, timezone: string): string | null {
   if (!value) return null;
@@ -35,8 +36,8 @@ function timeOf(value: string | null, timezone: string): string | null {
 
 function dipLabel(dip: DailyReportDipReading): string {
   return dip.measurement !== null
-    ? `${dip.measurement} ${dip.unit ?? ''} · ${litres(dip.litres)}`
-    : litres(dip.litres);
+    ? `${dip.measurement} ${dip.unit ?? ''} · ${litres(dip.litres, dip.fuelUnit)}`
+    : litres(dip.litres, dip.fuelUnit);
 }
 
 const isShort = (value: string) => value.trim().startsWith('-');
@@ -96,7 +97,7 @@ export function DailyReportView({ report }: { report: DailyReport }) {
           {report.products.map((product) => (
             <div key={product.productName}>
               <dt>{product.productName} sold</dt>
-              <dd>{litres(product.totalLitres)}</dd>
+              <dd>{litres(product.totalLitres, product.fuelUnit)}</dd>
             </div>
           ))}
           {report.cash ? (
@@ -121,7 +122,8 @@ export function DailyReportView({ report }: { report: DailyReport }) {
           <section key={product.productName} style={block}>
             <h3 style={heading}>{product.productName} sales</h3>
             <p style={note}>
-              Price {product.prices.map((price) => money(price)).join(' / ')} per litre
+              Price {product.prices.map((price) => money(price)).join(' / ')} per{' '}
+              {product.fuelUnit === 'KILOGRAMS' ? 'kilogram' : 'litre'}
             </p>
             <table className="recon-summary" aria-label={`${product.productName} pumps`}>
               <thead>
@@ -129,7 +131,9 @@ export function DailyReportView({ report }: { report: DailyReport }) {
                   <th scope="col">Pump</th>
                   <th scope="col">Opening</th>
                   <th scope="col">Closing</th>
-                  <th scope="col">Litres sold</th>
+                  <th scope="col">
+                    {product.fuelUnit === 'KILOGRAMS' ? 'Kilograms sold' : 'Litres sold'}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -138,7 +142,7 @@ export function DailyReportView({ report }: { report: DailyReport }) {
                     <th scope="row">{pump.label}</th>
                     <td data-label="Opening">{amount(pump.opening)}</td>
                     <td data-label="Closing">{amount(pump.closing)}</td>
-                    <td data-label="Litres sold">{litres(pump.litres)}</td>
+                    <td data-label="Quantity sold">{litres(pump.litres, product.fuelUnit)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -148,7 +152,9 @@ export function DailyReportView({ report }: { report: DailyReport }) {
                   <td colSpan={2} data-label="Sales value">
                     {money(product.salesValue)}
                   </td>
-                  <td data-label="Litres sold">{litres(product.totalLitres)}</td>
+                  <td data-label="Quantity sold">
+                    {litres(product.totalLitres, product.fuelUnit)}
+                  </td>
                 </tr>
               </tfoot>
             </table>
@@ -288,7 +294,7 @@ export function DailyReportView({ report }: { report: DailyReport }) {
             <thead>
               <tr>
                 <th scope="col">Fuel</th>
-                <th scope="col">Litres sold</th>
+                <th scope="col">Quantity sold</th>
                 <th scope="col">Sales</th>
               </tr>
             </thead>
@@ -296,7 +302,7 @@ export function DailyReportView({ report }: { report: DailyReport }) {
               {month.products.map((row) => (
                 <tr key={row.productName}>
                   <th scope="row">{row.productName}</th>
-                  <td data-label="Litres sold">{litres(row.litres)}</td>
+                  <td data-label="Quantity sold">{litres(row.litres, row.unit)}</td>
                   <td data-label="Sales">{money(row.sales)}</td>
                 </tr>
               ))}

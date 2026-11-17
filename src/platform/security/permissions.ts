@@ -353,7 +353,6 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'reconciliation.post',
     'approval.view',
     'approval.act',
-    'business_day.lock',
     'exception.view',
     'exception.manage',
     'inventory.view',

@@ -25,7 +25,7 @@ import {
 import { Modal } from '@/design-system/modal';
 import { Icon } from '@/design-system/icons';
 import { InfoTip } from '@/design-system/info-tip';
-import { formatBusinessDate } from '@/design-system/formatters';
+import { formatBusinessDate, quantityUnitShort } from '@/design-system/formatters';
 import { formatTileMoney } from '@/modules/reporting/format';
 import {
   EXPENSE_PAYMENT_METHODS,
@@ -113,6 +113,7 @@ type InvoiceDelivery = {
   businessDate: string;
   receivedLitres: string;
   noteLitres: string;
+  unit?: 'LITRES' | 'KILOGRAMS';
 };
 type InvoiceChoices = {
   products: { id: string; name: string }[];
@@ -1390,7 +1391,7 @@ export function SupplierDetailWorkspace({
                       <Field
                         id={`document-line-${index}-delivery`}
                         label="Delivery"
-                        hint="Optional. Tie the fuel to the delivery it was for, so its litres received set the cost per litre."
+                        hint="Optional. Tie the fuel to the delivery it was for, so the quantity received sets the cost per litre or kilogram."
                         optional
                       >
                         <select
@@ -1412,7 +1413,8 @@ export function SupplierDetailWorkspace({
                             .map((delivery) => (
                               <option key={delivery.id} value={delivery.id}>
                                 {delivery.deliveryNoteNumber} · {delivery.businessDate} ·{' '}
-                                {delivery.receivedLitres} L received
+                                {delivery.receivedLitres} {quantityUnitShort(delivery.unit)}{' '}
+                                received
                               </option>
                             ))}
                         </select>
@@ -1480,13 +1482,18 @@ export function SupplierDetailWorkspace({
                     id: delivery.id,
                     deliveryNoteNumber: delivery.deliveryNoteNumber,
                     receivedLitres: delivery.receivedLitres,
+                    unit: delivery.unit,
                   })),
                 ).map((cost) => (
                   <p key={cost.deliveryId} className="muted-small" role="status">
                     Landed cost for delivery {cost.deliveryNoteNumber}: ({cost.purchaseCost} fuel +{' '}
-                    {cost.directCosts} transport and other costs) ÷ {cost.receivedLitres} L actually
-                    received = <strong>{cost.perLitre} a litre</strong>. After posting, record it on
-                    the delivery with Record receipt cost so stock and cost of sales use it.
+                    {cost.directCosts} transport and other costs) ÷ {cost.receivedLitres}{' '}
+                    {quantityUnitShort(cost.unit)} actually received ={' '}
+                    <strong>
+                      {cost.perLitre} a {cost.unit === 'KILOGRAMS' ? 'kilogram' : 'litre'}
+                    </strong>
+                    . After posting, record it on the delivery with Record receipt cost so stock and
+                    cost of sales use it.
                   </p>
                 ))}
               </fieldset>

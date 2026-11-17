@@ -6,6 +6,7 @@ export {
   createProductFromRequest,
   deleteProductFromRequest,
   renameProductFromRequest,
+  setProductUnitFromRequest,
   setProductStatusFromRequest,
   createPumpFromRequest,
   draftPriceChangeFromRequest,

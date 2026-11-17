@@ -5,6 +5,8 @@ export type TankRow = {
   productId: string;
   productCode: string;
   productName: string;
+  /** What the fuel is measured in; litres when absent. */
+  unit?: 'LITRES' | 'KILOGRAMS';
   capacityLitres: string;
   reorderLevelLitres: string | null;
   acceptableVarianceLitres?: string | null;

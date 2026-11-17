@@ -72,7 +72,10 @@ function OrderFormBody({ tenantId, stationId, reference, order, onClose, onSaved
     if (expected && expected < orderDate) {
       return setError('The expected delivery date cannot be before the order date.');
     }
-    const checked = checkOrderLines(lines);
+    const checked = checkOrderLines(
+      lines,
+      (productId) => products.find((p) => p.id === productId)?.unit,
+    );
     if (!checked.ok) return setError(checked.message);
     if (editing && !reason.trim()) return setError('Say briefly why you are changing this order.');
 
@@ -214,7 +217,14 @@ function OrderFormBody({ tenantId, stationId, reference, order, onClose, onSaved
                   options={products.map((p) => ({ value: p.id, label: p.name }))}
                 />
               </Field>
-              <Field id={`po-litres-${index}`} label="Litres">
+              <Field
+                id={`po-litres-${index}`}
+                label={
+                  products.find((p) => p.id === line.productId)?.unit === 'KILOGRAMS'
+                    ? 'Kilograms'
+                    : 'Litres'
+                }
+              >
                 <input
                   id={`po-litres-${index}`}
                   inputMode="decimal"
@@ -224,7 +234,15 @@ function OrderFormBody({ tenantId, stationId, reference, order, onClose, onSaved
                   onChange={(event) => updateLine(index, { litres: event.target.value })}
                 />
               </Field>
-              <Field id={`po-price-${index}`} label="Agreed price per litre" optional>
+              <Field
+                id={`po-price-${index}`}
+                label={`Agreed price per ${
+                  products.find((p) => p.id === line.productId)?.unit === 'KILOGRAMS'
+                    ? 'kilogram'
+                    : 'litre'
+                }`}
+                optional
+              >
                 <input
                   id={`po-price-${index}`}
                   inputMode="decimal"

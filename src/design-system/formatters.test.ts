@@ -101,3 +101,15 @@ describe('presentation formatters', () => {
     expect(formatStatusLabel('PENDING_APPROVAL')).toBe('Pending Approval');
   });
 });
+
+describe('formatQuantity', () => {
+  it('writes litres as L and kilograms as kg, with litres as the default', async () => {
+    const { formatQuantity, quantityUnitShort } = await import('./formatters');
+    expect(formatQuantity('1250')).toBe('1,250 L');
+    expect(formatQuantity('1250', 'LITRES')).toBe('1,250 L');
+    expect(formatQuantity('480.5', 'KILOGRAMS')).toBe('480.5 kg');
+    expect(formatQuantity('abc', 'KILOGRAMS')).toBe('—');
+    expect(quantityUnitShort('KILOGRAMS')).toBe('kg');
+    expect(quantityUnitShort(undefined)).toBe('L');
+  });
+});

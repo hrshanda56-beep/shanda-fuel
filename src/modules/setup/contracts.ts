@@ -1,4 +1,11 @@
-export type SetupProduct = Readonly<{ id: string; code: string; name: string; status: string }>;
+export type FuelUnit = 'LITRES' | 'KILOGRAMS';
+export type SetupProduct = Readonly<{
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  unit: FuelUnit;
+}>;
 export type SetupTank = Readonly<{
   id: string;
   code: string;

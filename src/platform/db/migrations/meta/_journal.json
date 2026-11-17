@@ -631,6 +631,20 @@
       "when": 1793200105000,
       "tag": "0105_supervisor_price_request",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1793200106000,
+      "tag": "0106_product_unit",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1793200107000,
+      "tag": "0107_finance_no_day_lock",
+      "breakpoints": true
     }
   ]
 }

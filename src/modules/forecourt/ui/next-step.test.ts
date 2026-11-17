@@ -101,6 +101,57 @@ describe('nextStep', () => {
     expect((result.action as { confirm?: string }).confirm).toContain('Close this shift?');
   });
 
+  it('also offers closing the last shift and the day together, with a reason when nothing is approved', () => {
+    const result = step({
+      shifts: [shift('OPEN')],
+      reconciliations: [{ id: 'r1', shiftId: 'sh', state: 'SUBMITTED' }],
+    });
+    expect(result.alternative).toMatchObject({
+      label: 'Close shift and end the day',
+      commandType: 'CompleteShift',
+      before: { commandType: 'CloseMeters' },
+      after: {
+        commandType: 'CloseBusinessDay',
+        values: { businessDayId: 'd', expectedVersion: 2 },
+      },
+      askReason: { field: 'reasonWithoutReconciliation' },
+    });
+    expect(result.alternative?.confirm).toContain('Close this shift and end the business day?');
+  });
+
+  it('asks for no reason when figures are already approved', () => {
+    const result = step({
+      shifts: [shift('OPEN')],
+      reconciliations: [{ id: 'r1', shiftId: 'sh', state: 'APPROVED' }],
+    });
+    expect(result.alternative).toBeDefined();
+    expect(result.alternative?.askReason).toBeUndefined();
+  });
+
+  it('does not offer ending the day while another shift is unfinished or the person may not close the day', () => {
+    const submitted = [{ id: 'r1', shiftId: 'sh', state: 'SUBMITTED' }];
+    expect(
+      step({ shifts: [shift('OPEN'), shift('PLANNED', 'other')], reconciliations: submitted })
+        .alternative,
+    ).toBeUndefined();
+    expect(
+      step({
+        shifts: [shift('OPEN')],
+        reconciliations: submitted,
+        actions: { ...base.actions, CloseBusinessDay: { canExecute: false } },
+      }).alternative,
+    ).toBeUndefined();
+  });
+
+  it('does not offer ending the day while a scheduled shift is still to come', () => {
+    const result = step({
+      shifts: [shift('OPEN')],
+      reconciliations: [{ id: 'r1', shiftId: 'sh', state: 'SUBMITTED' }],
+      shiftTemplates: [{ id: 'night', name: 'Night', startTime: '18:00', durationMinutes: 480 }],
+    });
+    expect(result.alternative).toBeUndefined();
+  });
+
   it('offers only the meters step under the Close Shift label when the person may not complete the shift', () => {
     const result = step({
       shifts: [shift('OPEN')],

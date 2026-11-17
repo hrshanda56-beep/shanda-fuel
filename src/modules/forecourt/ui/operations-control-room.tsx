@@ -525,6 +525,10 @@ export function OperationsControlRoom({
 
   const day = overview.selectedBusinessDay;
   const usedTemplates = new Set(overview.shifts.map((shift) => shift.shiftTemplateId));
+  // The main card already offers Close Shift; the list only repeats it when several shifts need closing.
+  const closableCount = overview.shifts.filter(
+    (shift) => shift.state === 'OPEN' || shift.state === 'METER_CLOSED',
+  ).length;
   const unusedTemplates = (overview.shiftTemplates ?? []).filter(
     (template) => !usedTemplates.has(template.id),
   );
@@ -592,9 +596,8 @@ export function OperationsControlRoom({
                   )}
                   {day && day.state === 'OPEN' && day.date < overview.currentBusinessDate ? (
                     <p className="panel-detail" role="status">
-                      This day is still open. It started on {formatBusinessDate(day.date)} and today
-                      is {formatBusinessDate(overview.currentBusinessDate)}. Close its shifts and
-                      the day so the figures are complete.
+                      ⚠ This day started on {formatBusinessDate(day.date)} and is still open. Close
+                      it below.
                     </p>
                   ) : null}
                   {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
@@ -641,16 +644,20 @@ export function OperationsControlRoom({
                       Lock business day
                     </Button>
                   ) : null}
-                  {day?.state === 'CLOSED' && overview.lockBlockedReason ? (
-                    <p className="semantic-note" role="status" data-testid="lock-blocked-reason">
-                      <strong>Not ready to lock.</strong> {overview.lockBlockedReason}
-                    </p>
-                  ) : null}
-                  {day?.state === 'CLOSED' ? (
-                    <InfoTip>
-                      <strong>Locking is permanent.</strong> After it, a change needs a recorded
-                      correction.
-                    </InfoTip>
+                  {day?.state === 'CLOSED' && lockBusinessDay.permissionGranted ? (
+                    <div className="ops-hero-lock-note">
+                      {overview.lockBlockedReason ? (
+                        <p role="status" data-testid="lock-blocked-reason">
+                          <strong>Not ready to lock.</strong> {overview.lockBlockedReason}
+                        </p>
+                      ) : (
+                        <p>Locking is permanent.</p>
+                      )}
+                      <InfoTip>
+                        <strong>Locking is permanent.</strong> After it, a change needs a recorded
+                        correction.
+                      </InfoTip>
+                    </div>
                   ) : null}
                 </div>
               ) : null}
@@ -834,7 +841,9 @@ export function OperationsControlRoom({
                                 Start shift
                               </Button>
                             ) : null}
-                            {shift.state === 'OPEN' && overview.actions.CloseMeters.canExecute ? (
+                            {shift.state === 'OPEN' &&
+                            overview.actions.CloseMeters.canExecute &&
+                            closableCount > 1 ? (
                               <Button
                                 variant="secondary"
                                 disabled={busy}
@@ -852,7 +861,8 @@ export function OperationsControlRoom({
                               </Button>
                             ) : null}
                             {shift.state === 'METER_CLOSED' &&
-                            overview.actions.CompleteShift.canExecute ? (
+                            overview.actions.CompleteShift.canExecute &&
+                            closableCount > 1 ? (
                               <Button
                                 variant="secondary"
                                 disabled={busy}

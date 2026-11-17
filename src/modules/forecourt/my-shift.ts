@@ -129,11 +129,12 @@ async function loadMyShift(
     pumpNumber: string;
     nozzleNumber: string;
     productName: string;
+    unit: string;
     meterInstallationId: string | null;
     previousReading: string | null;
   }>(sql`
     select n.id as "nozzleId", p.number as "pumpNumber", n.number as "nozzleNumber",
-           product.name as "productName", installation.id as "meterInstallationId",
+           product.name as "productName", product.unit as "unit", installation.id as "meterInstallationId",
            previous.reading_value as "previousReading"
     from app.nozzles n
     join app.pumps p
@@ -204,6 +205,7 @@ async function loadMyShift(
     pumpNumber: row.pumpNumber,
     nozzleNumber: row.nozzleNumber,
     productName: row.productName,
+    unit: row.unit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES',
     previousReading: row.previousReading === null ? null : String(row.previousReading),
     opening: boundaryFor(row.nozzleId, 'SHIFT_OPEN'),
     closing: boundaryFor(row.nozzleId, 'SHIFT_CLOSE'),

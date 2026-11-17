@@ -283,7 +283,13 @@ async function loadOperationsOverview(
       }
     }
   } else {
-    selectedDay = days.find((day) => day.date === currentBusinessDate) ?? days[0] ?? null;
+    // Today's day if it exists. Otherwise the latest day, but only while it is still being worked on:
+    // once it is finished the screen must offer to start today, not show yesterday as "closed".
+    const latest = days[0] ?? null;
+    const latestIsFinished =
+      latest !== null && ['CLOSED', 'LOCKED', 'EXCEPTIONALLY_CLOSED'].includes(latest.state);
+    selectedDay =
+      days.find((day) => day.date === currentBusinessDate) ?? (latestIsFinished ? null : latest);
   }
 
   if (!selectedDay) {
@@ -306,7 +312,15 @@ async function loadOperationsOverview(
       currentBusinessDate,
       currentBusinessDayId: null,
       status: { close: 'NOT_STARTED' as const, approval: 'NO_REVISION' as const },
-      businessDays: [],
+      businessDays: days.map((day) => ({
+        id: day.id,
+        date: day.date,
+        state: day.state,
+        version: Number(day.version),
+        openedAt: iso(day.openedAt),
+        closedAt: iso(day.closedAt),
+        updatedAt: iso(day.updatedAt),
+      })),
       shifts: [],
       reconciliations: [],
       visibility: {

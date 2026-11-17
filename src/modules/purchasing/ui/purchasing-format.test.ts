@@ -71,7 +71,7 @@ describe('invoice check wording', () => {
 describe('settings wording and validation', () => {
   it('describes allowances and VAT', () => {
     expect(litresAllowanceSentence(null, null)).toBe('No difference allowed');
-    expect(litresAllowanceSentence('50.000', '0.5000')).toBe('Up to 50 L or 0.5%');
+    expect(litresAllowanceSentence('50.000', '0.5000')).toBe('Up to 50 L/kg or 0.5%');
     expect(amountAllowanceSentence('10.0000')).toBe('Up to USD 10');
     expect(vatModeText('NONE', null)).toBe('No VAT on supplier invoices');
     expect(vatModeText('EXCLUSIVE', '15')).toBe('Prices exclude VAT, 15% added on top');

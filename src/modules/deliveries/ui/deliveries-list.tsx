@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Notice } from '@/design-system/feedback';
 import { useToast } from '@/design-system/feedback-provider';
 import { Checkbox } from '@/design-system/forms';
-import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
+import { formatBusinessDate, formatQuantity } from '@/design-system/formatters';
 import { Modal } from '@/design-system/modal';
 import { Button, Card, StatusBadge } from '@/design-system/primitives';
 import { Pagination, usePagination } from '@/design-system/pagination';
@@ -132,9 +132,11 @@ export function DeliveriesList({
                           </span>
                         </th>
                         <td data-label="Fuel">{delivery.productName}</td>
-                        <td data-label="On the note">{formatLitres(delivery.noteLitres)}</td>
+                        <td data-label="On the note">
+                          {formatQuantity(delivery.noteLitres, delivery.unit)}
+                        </td>
                         <td data-label="Received">
-                          {formatLitres(delivery.receivedLitres)}
+                          {formatQuantity(delivery.receivedLitres, delivery.unit)}
                           {delivery.receipt === 'FULL' ? null : (
                             <span className="table-secondary">
                               {delivery.receipt === 'PARTIAL'

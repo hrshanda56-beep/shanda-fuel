@@ -42,16 +42,20 @@ import {
   friendlyPriceError,
   friendlySetupError,
   endTimeFrom,
+  FUEL_CATALOGUE,
   hoursToMinutes,
   minutesBetween,
   parsePositiveDecimal,
   planPriceAdvance,
   progress,
   suggestCode,
+  unitLabel,
+  type FuelUnitChoice,
   type GuidedStepId,
 } from '../guided-setup';
 import { EditAccessModal } from '@/modules/settings/ui/staff-panel';
 import type { StaffOverview } from '@/modules/staff/contracts';
+import { planNozzleRenumbering } from '../nozzle-renumber';
 import styles from './setup.module.css';
 import { StepUpDialog } from './step-up-dialog';
 import { useSetupOverview } from './use-setup-overview';
@@ -185,6 +189,20 @@ const text = (data: FormData, name: string) => String(data.get(name) ?? '').trim
 function activeProducts(data: ConfigurationSetupOverview) {
   return (data.products ?? []).filter((p) => p.status === 'ACTIVE');
 }
+/** The word for a quantity of one fuel: "litres", "kilograms", or both when the fuel is not chosen yet. */
+function quantityWord(data: ConfigurationSetupOverview, productId?: string): string {
+  const unit = data.products?.find((p) => p.id === productId)?.unit;
+  return unit === 'KILOGRAMS' ? 'kilograms' : unit === 'LITRES' ? 'litres' : 'litres or kilograms';
+}
+
+/** The matching word for a price: "litre", "kilogram", or both when the fuel is not chosen yet. */
+function priceWord(data: ConfigurationSetupOverview, productId?: string): string {
+  const unit = data.products?.find((p) => p.id === productId)?.unit;
+  return unit === 'KILOGRAMS' ? 'kilogram' : unit === 'LITRES' ? 'litre' : 'litre or kilogram';
+}
+
+const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 function productOptions(data: ConfigurationSetupOverview) {
   return activeProducts(data).map((p) => ({ value: p.id, label: p.name }));
 }
@@ -271,11 +289,32 @@ function FuelStep({
   // Held in state, not read from the form, so it is cleared even if the screen was redrawn while
   // the identity check was open.
   const [fuelName, setFuelName] = useState('');
+  // The fuel picked from the list ('' = none yet, OTHER = typed by hand) and how it is measured.
+  const [fuelChoice, setFuelChoice] = useState('');
+  const [fuelUnit, setFuelUnit] = useState<FuelUnitChoice>('LITRES');
+
+  function chooseFuel(choice: string) {
+    setFuelChoice(choice);
+    const known = FUEL_CATALOGUE.find((fuel) => fuel.name === choice);
+    if (known) {
+      setFuelName(known.name);
+      setFuelUnit(known.unit);
+    } else {
+      setFuelName('');
+    }
+    setErrors({});
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = fuelName.trim();
-    const next = { name: name ? undefined : 'Enter the name of the fuel, for example Diesel.' };
+    const next = {
+      name: name
+        ? undefined
+        : fuelChoice === 'OTHER'
+          ? 'Enter the name of the fuel.'
+          : 'Choose the fuel from the list.',
+    };
     setErrors(next);
     if (hasErrors(next)) return;
     const code = suggestCode(
@@ -290,11 +329,14 @@ function FuelStep({
           stationId: ctx.stationId,
           code,
           name,
+          unit: fuelUnit,
         },
         `${name} was added.`,
       );
       if (saved) {
         setFuelName('');
+        setFuelChoice('');
+        setFuelUnit('LITRES');
         onClose();
       }
     });
@@ -309,16 +351,51 @@ function FuelStep({
       dismissible={!busy}
     >
       <form className={styles.form} onSubmit={submit} noValidate aria-label="Add a fuel type">
-        <Field id="fuel-name" label="Fuel name" error={errors.name} required>
-          <input
-            id="fuel-name"
-            name="name"
-            value={fuelName}
-            onChange={(event) => setFuelName(event.target.value)}
-            autoComplete="off"
-            maxLength={120}
-            placeholder="Diesel"
-          />
+        <Field
+          id="fuel-choice"
+          label="Fuel type"
+          error={fuelChoice === 'OTHER' ? undefined : errors.name}
+          required
+        >
+          <select
+            id="fuel-choice"
+            value={fuelChoice}
+            onChange={(event) => chooseFuel(event.target.value)}
+          >
+            <option value="">Choose a fuel…</option>
+            {FUEL_CATALOGUE.map((fuel) => (
+              <option key={fuel.name} value={fuel.name}>
+                {fuel.name}
+              </option>
+            ))}
+            <option value="OTHER">Other (type the name)</option>
+          </select>
+        </Field>
+        {fuelChoice === 'OTHER' ? (
+          <Field id="fuel-name" label="Fuel name" error={errors.name} required>
+            <input
+              id="fuel-name"
+              name="name"
+              value={fuelName}
+              onChange={(event) => setFuelName(event.target.value)}
+              autoComplete="off"
+              maxLength={120}
+              placeholder="Jet A1"
+            />
+          </Field>
+        ) : null}
+        <Field id="fuel-unit" label="Measured in">
+          <select
+            id="fuel-unit"
+            value={fuelUnit}
+            onChange={(event) => setFuelUnit(event.target.value as FuelUnitChoice)}
+          >
+            {(['LITRES', 'KILOGRAMS'] as const).map((unit) => (
+              <option key={unit} value={unit}>
+                {unitLabel(unit)}
+              </option>
+            ))}
+          </select>
         </Field>
         <div className={styles.formActions}>
           <Button variant="secondary" type="button" onClick={onClose} disabled={busy}>
@@ -420,7 +497,9 @@ function PriceStep({ ctx, productId: onlyProductId }: { ctx: FormContext; produc
     const price = parsePositiveDecimal(text(data, 'price'), 6);
     const next = {
       product: productId ? undefined : 'Choose the fuel.',
-      price: price ? undefined : 'Enter the price per litre, for example 1.65.',
+      price: price
+        ? undefined
+        : `Enter the price per ${priceWord(ctx.data, productId)}, for example 1.65.`,
     };
     setErrors(next);
     if (hasErrors(next) || !price) return;
@@ -451,7 +530,10 @@ function PriceStep({ ctx, productId: onlyProductId }: { ctx: FormContext; produc
                 <div className={styles.priceText}>
                   <span className={styles.priceAmount}>
                     {formatMoney(p.unitPrice)}
-                    <span className={styles.priceUnit}> per litre</span>
+                    <span className={styles.priceUnit}>
+                      {' '}
+                      per {priceWord(ctx.data, p.productId)}
+                    </span>
                   </span>
                   <span className={styles.priceState} data-state={p.state}>
                     {describePriceState(p.state)}
@@ -481,7 +563,7 @@ function PriceStep({ ctx, productId: onlyProductId }: { ctx: FormContext; produc
             const { label } = planPriceAdvance(p.state, ctx.data.capabilities);
             return (
               <li key={p.id}>
-                {`${onlyProductId ? '' : `${nameOf(p.productId)}: `}${formatMoney(p.unitPrice)} per litre (${describePriceState(p.state)})`}
+                {`${onlyProductId ? '' : `${nameOf(p.productId)}: `}${formatMoney(p.unitPrice)} per ${priceWord(ctx.data, p.productId)} (${describePriceState(p.state)})`}
                 {p.state === 'ACTIVE' && ctx.data.capabilities.priceRequest ? (
                   <>
                     {' '}
@@ -524,7 +606,7 @@ function PriceStep({ ctx, productId: onlyProductId }: { ctx: FormContext; produc
           )}
           <Field
             id={`${idp}price-amount`}
-            label="Price per litre (USD)"
+            label={`Price per ${priceWord(ctx.data, onlyProductId)} (USD)`}
             hint="A manager approves the price before it is used on sales."
             error={errors.price}
             required
@@ -552,7 +634,7 @@ function PriceStep({ ctx, productId: onlyProductId }: { ctx: FormContext; produc
 type EditorProps<T> = { ctx: FormContext; close: () => void } & T;
 
 /** Reads and checks the tank size and limit fields shared by the add and change forms. */
-function readTankFields(data: FormData) {
+function readTankFields(data: FormData, word: string) {
   const capacity = parsePositiveDecimal(text(data, 'capacity'), 3);
   const reorderText = text(data, 'reorder');
   const reorder = reorderText ? parsePositiveDecimal(reorderText, 3) : null;
@@ -561,18 +643,18 @@ function readTankFields(data: FormData) {
   const redText = text(data, 'red');
   const red = redText ? parsePositiveDecimal(redText, 3) : null;
   const errors: Errors = {
-    capacity: capacity ? undefined : 'Enter how many litres the tank holds.',
+    capacity: capacity ? undefined : `Enter how many ${word} the tank holds.`,
     reorder:
       reorderText && !reorder
-        ? 'Enter a number of litres, or leave this empty.'
+        ? `Enter a number of ${word}, or leave this empty.`
         : reorder && capacity && Number(reorder) > Number(capacity)
           ? 'This cannot be more than the tank holds.'
           : undefined,
     difference:
-      differenceText && !difference ? 'Enter a number of litres, or leave this empty.' : undefined,
+      differenceText && !difference ? `Enter a number of ${word}, or leave this empty.` : undefined,
     red:
       redText && !red
-        ? 'Enter a number of litres, or leave this empty.'
+        ? `Enter a number of ${word}, or leave this empty.`
         : red && !difference
           ? 'Set the yellow limit first.'
           : red && difference && Number(red) < Number(difference)
@@ -585,12 +667,13 @@ function readTankFields(data: FormData) {
 function TankEditor({ ctx, tank, close }: EditorProps<{ tank: SetupTank }>) {
   const { save, busy, outcome } = useSaver('/api/inventory/commands', ctx.refresh, ctx.onDenied);
   const [errors, setErrors] = useState<Errors>({});
+  const word = quantityWord(ctx.data, tank.productId);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const name = text(data, 'name');
-    const fields = readTankFields(data);
+    const fields = readTankFields(data, word);
     const next = { ...fields.errors, name: name ? undefined : 'Give the tank a name.' };
     setErrors(next);
     if (hasErrors(next) || !fields.capacity) return;
@@ -635,7 +718,7 @@ function TankEditor({ ctx, tank, close }: EditorProps<{ tank: SetupTank }>) {
       </Field>
       <Field
         id={`tank-${tank.id}-capacity`}
-        label="Litres the tank holds"
+        label={`${capitalise(word)} the tank holds`}
         error={errors.capacity}
         required
       >
@@ -649,7 +732,7 @@ function TankEditor({ ctx, tank, close }: EditorProps<{ tank: SetupTank }>) {
       </Field>
       <Field
         id={`tank-${tank.id}-reorder`}
-        label="Order more fuel when it falls to (litres)"
+        label={`Order more fuel when it falls to (${word})`}
         error={errors.reorder}
         optional
       >
@@ -663,7 +746,7 @@ function TankEditor({ ctx, tank, close }: EditorProps<{ tank: SetupTank }>) {
       </Field>
       <Field
         id={`tank-${tank.id}-difference`}
-        label="Yellow limit (litres)"
+        label={`Yellow limit (${word})`}
         hint="A stock difference above this must be explained."
         error={errors.difference}
         optional
@@ -678,7 +761,7 @@ function TankEditor({ ctx, tank, close }: EditorProps<{ tank: SetupTank }>) {
       </Field>
       <Field
         id={`tank-${tank.id}-red`}
-        label="Red limit (litres)"
+        label={`Red limit (${word})`}
         hint="A stock difference above this is urgent."
         error={errors.red}
         optional
@@ -739,9 +822,8 @@ function PumpEditor({
         );
         if (!saved) return;
       }
-      for (const n of nozzleNumbers) {
-        const before = nozzles.find((x) => x.id === n.id);
-        if (!before || before.number === n.number) continue;
+      // Ordered so a swap (1 and 2) or a rotation never has two nozzles on one number at once.
+      for (const n of planNozzleRenumbering(nozzles, nozzleNumbers)) {
         const saved = await save(
           { commandType: 'UpdateNozzle', ...base, nozzleId: n.id, number: n.number },
           `Nozzle ${n.number} was changed.`,
@@ -907,6 +989,8 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
   );
   const idp = onlyProductId ? `${onlyProductId}-` : '';
   const [adding, setAdding] = useState(false);
+  const [addProductId, setAddProductId] = useState('');
+  const word = quantityWord(ctx.data, onlyProductId ?? (addProductId || undefined));
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -924,16 +1008,16 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
     const next = {
       name: name ? undefined : 'Give the tank a name, for example Tank 1.',
       product: productId ? undefined : 'Choose the fuel in this tank.',
-      capacity: capacity ? undefined : 'Enter how many litres the tank holds.',
+      capacity: capacity ? undefined : `Enter how many ${word} the tank holds.`,
       reorder:
-        reorderText && !reorder ? 'Enter a number of litres, or leave this empty.' : undefined,
+        reorderText && !reorder ? `Enter a number of ${word}, or leave this empty.` : undefined,
       difference:
         differenceText && !difference
-          ? 'Enter a number of litres, or leave this empty.'
+          ? `Enter a number of ${word}, or leave this empty.`
           : undefined,
       red:
         redText && !red
-          ? 'Enter a number of litres, or leave this empty.'
+          ? `Enter a number of ${word}, or leave this empty.`
           : red && !difference
             ? 'Set the yellow limit first.'
             : red && difference && Number(red) < Number(difference)
@@ -989,7 +1073,7 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
         items={tanks.map((t, position) => ({
           id: t.id,
           title: t.code,
-          detail: `${onlyProductId ? '' : `${nameOf(t.productId)}, `}holds ${t.capacityLitres} litres`,
+          detail: `${onlyProductId ? '' : `${nameOf(t.productId)}, `}holds ${t.capacityLitres} ${quantityWord(ctx.data, t.productId)}`,
           badge: position + 1,
         }))}
         renderEditor={
@@ -1027,12 +1111,13 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
                   defaultValue=""
                   placeholder="Choose the fuel"
                   options={productOptions(ctx.data)}
+                  onChange={(event) => setAddProductId(event.target.value)}
                 />
               </Field>
             )}
             <Field
               id={`${idp}tank-capacity`}
-              label="Litres the tank holds"
+              label={`${capitalise(word)} the tank holds`}
               error={errors.capacity}
               required
             >
@@ -1051,7 +1136,7 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
               <summary>Stock warnings (optional)</summary>
               <Field
                 id={`${idp}tank-difference`}
-                label="Yellow: explain above (litres)"
+                label={`Yellow: explain above (${word})`}
                 hint="How far the dip reading may be from the book stock before the difference must be explained."
                 error={errors.difference}
                 optional
@@ -1065,7 +1150,7 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
               </Field>
               <Field
                 id={`${idp}tank-red`}
-                label="Red: urgent above (litres)"
+                label={`Red: urgent above (${word})`}
                 hint="A difference above this is urgent. Leave it empty to use twice the yellow limit."
                 error={errors.red}
                 optional
@@ -1074,7 +1159,7 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
               </Field>
               <Field
                 id={`${idp}tank-reorder`}
-                label="Warn me when stock falls to (litres)"
+                label={`Warn me when stock falls to (${word})`}
                 hint="Used for low-stock reminders."
                 error={errors.reorder}
                 optional
@@ -2084,6 +2169,11 @@ function GuideSteps({
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
   const [renameText, setRenameText] = useState('');
   const [renameError, setRenameError] = useState<string>();
+  const [changingUnit, setChangingUnit] = useState<{
+    id: string;
+    name: string;
+    unit: FuelUnitChoice;
+  } | null>(null);
   const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
   const confirmedUntil = useRef(0);
   const fuelActions = useSaver('/api/setup/commands', refresh, () => {
@@ -2134,12 +2224,25 @@ function GuideSteps({
     );
   }
 
+  function submitUnit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!changingUnit) return;
+    runFuelCommand(
+      { commandType: 'SetProductUnit', productId: changingUnit.id, unit: changingUnit.unit },
+      `${changingUnit.name} is now measured in ${changingUnit.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'}.`,
+      () => setChangingUnit(null),
+    );
+  }
+
   function chooseFuelAction(productId: string, name: string, action: string) {
     if (action === 'open') setOpen(open === `fuel:${productId}` ? null : `fuel:${productId}`);
     else if (action === 'rename') {
       setRenameText(name);
       setRenameError(undefined);
       setRenaming({ id: productId, name });
+    } else if (action === 'unit') {
+      const product = (data.products ?? []).find((p) => p.id === productId);
+      setChangingUnit({ id: productId, name, unit: product?.unit ?? 'LITRES' });
     } else if (action === 'hide') {
       runFuelCommand(
         { commandType: 'SetProductStatus', productId, status: 'INACTIVE' },
@@ -2217,6 +2320,7 @@ function GuideSteps({
             options={[
               { value: 'open', label: expanded ? 'Close details' : 'Open details' },
               { value: 'rename', label: 'Rename fuel' },
+              { value: 'unit', label: 'Change unit' },
               { value: 'hide', label: 'Hide fuel' },
             ]}
             onChoose={(action) => chooseFuelAction(section.key.slice(5), section.title, action)}
@@ -2414,6 +2518,49 @@ function GuideSteps({
             </Button>
             <Button type="submit" loading={fuelActions.busy}>
               Save name
+            </Button>
+          </div>
+        </form>
+      </Modal>
+      <Modal
+        open={changingUnit !== null}
+        onClose={() => !fuelActions.busy && setChangingUnit(null)}
+        title={`How is ${changingUnit?.name ?? 'this fuel'} measured?`}
+        size="sm"
+        dismissible={!fuelActions.busy}
+      >
+        <form className={styles.form} onSubmit={submitUnit} noValidate aria-label="Change unit">
+          <Field id="change-unit" label="Measured in">
+            <select
+              id="change-unit"
+              value={changingUnit?.unit ?? 'LITRES'}
+              onChange={(event) =>
+                setChangingUnit((current) =>
+                  current ? { ...current, unit: event.target.value as FuelUnitChoice } : current,
+                )
+              }
+            >
+              {(['LITRES', 'KILOGRAMS'] as const).map((unit) => (
+                <option key={unit} value={unit}>
+                  {unitLabel(unit)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <p className={styles.note}>
+            This can only be changed before the fuel has deliveries or sales recorded.
+          </p>
+          <div className={styles.formActions}>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => setChangingUnit(null)}
+              disabled={fuelActions.busy}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" loading={fuelActions.busy}>
+              Save unit
             </Button>
           </div>
         </form>

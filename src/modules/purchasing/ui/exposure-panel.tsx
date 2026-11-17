@@ -103,13 +103,19 @@ export function ExposurePanel({
             <div className={styles.headline}>
               <p className="profit-hero">{moneyText(data.totals.unbilledValue)}</p>
               <p className={styles.muted}>
-                {litresText(data.totals.unbilledLitres)} across {pendingDeliveries}{' '}
-                {pendingDeliveries === 1 ? 'delivery' : 'deliveries'}, as of {dateText(data.asOf)}.
+                {data.totals.unit === 'MIXED'
+                  ? 'Litres and kilograms'
+                  : litresText(data.totals.unbilledLitres, data.totals.unit)}{' '}
+                across {pendingDeliveries} {pendingDeliveries === 1 ? 'delivery' : 'deliveries'}, as
+                of {dateText(data.asOf)}.
               </p>
               {new Decimal(data.totals.unpricedUnbilledLitres).gt(0) ? (
                 <p className={styles.muted}>
-                  Not counted above: {litresText(data.totals.unpricedUnbilledLitres)} that arrived
-                  without a recorded cost, so we cannot put a price on it yet.
+                  Not counted above:{' '}
+                  {data.totals.unit === 'MIXED'
+                    ? 'Some fuel'
+                    : litresText(data.totals.unpricedUnbilledLitres, data.totals.unit)}{' '}
+                  that arrived without a recorded cost, so we cannot put a price on it yet.
                 </p>
               ) : null}
             </div>
@@ -178,7 +184,9 @@ export function ExposurePanel({
                             className={`${styles.numeric} ${styles.cell}`}
                             data-label="Not invoiced"
                           >
-                            {litresText(supplier.unbilledLitres)}
+                            {supplier.unit === 'MIXED'
+                              ? 'Mixed units'
+                              : litresText(supplier.unbilledLitres, supplier.unit)}
                           </span>
                           <span
                             className={`${styles.numeric} ${styles.cell}`}
@@ -211,8 +219,12 @@ export function ExposurePanel({
                                     <span>
                                       <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                                     </span>
-                                    <span>Received {litresText(delivery.acceptedLitres)}</span>
-                                    <span>Invoiced {litresText(delivery.netBilledLitres)}</span>
+                                    <span>
+                                      Received {litresText(delivery.acceptedLitres, delivery.unit)}
+                                    </span>
+                                    <span>
+                                      Invoiced {litresText(delivery.netBilledLitres, delivery.unit)}
+                                    </span>
                                     <span>
                                       {delivery.unbilledValue
                                         ? `About ${moneyText(delivery.unbilledValue)}`

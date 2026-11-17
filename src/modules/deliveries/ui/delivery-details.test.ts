@@ -11,7 +11,9 @@ const detail: DeliveryDetail = {
   stationTimezone: 'Africa/Harare',
   waterTestRequired: true,
   canConfirm: true,
-  tanks: [{ id: 'tk1', code: 'T1', productId: 'p1', productName: 'Diesel' }],
+  tanks: [
+    { id: 'tk1', code: 'T1', productId: 'p1', productName: 'Diesel', unit: 'LITRES' as const },
+  ],
   delivery: {
     id: 'd1',
     deliveryNoteNumber: 'DN-001',
@@ -19,6 +21,7 @@ const detail: DeliveryDetail = {
     businessDate: '2026-10-20',
     productId: 'p1',
     productName: 'Diesel',
+    unit: 'LITRES' as const,
     supplierName: 'Puma Energy',
     transporter: null,
     driver: 'T. Moyo',
@@ -157,6 +160,7 @@ describe('delivery detail screens', () => {
           deliveredAt: '2026-10-20T08:00:00.000Z',
           businessDate: '2026-10-20',
           productName: 'Diesel',
+          unit: 'LITRES' as const,
           supplierName: null,
           status: 'DRAFT',
           noteLitres: '10000',

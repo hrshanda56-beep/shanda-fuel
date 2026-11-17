@@ -88,15 +88,16 @@ test.describe('Guided station setup', () => {
     await expect(page.getByRole('heading', { name: 'Fuel Types' })).toBeVisible();
     await expect(page.getByText('No fuel types yet. Add the first one to begin.')).toBeVisible();
 
-    // Adding a fuel asks only for a name, in a small dialog.
+    // Adding a fuel asks for the fuel type and its unit, in a small dialog.
     await page.getByRole('button', { name: 'Add a fuel type' }).click();
     const form = page.getByRole('form', { name: 'Add a fuel type' });
     await form.getByRole('button', { name: 'Add fuel type' }).click();
-    await expect(page.getByText('Enter the name of the fuel, for example Diesel.')).toBeVisible();
+    await expect(page.getByText('Choose the fuel from the list.')).toBeVisible();
     expect(commands).toHaveLength(0);
 
     // Every setup save asks for the identity check first; nothing is sent until it is confirmed.
-    await form.getByLabel('Fuel name').fill('Unleaded 95');
+    await form.getByLabel('Fuel type').selectOption('LP Gas');
+    await expect(form.getByLabel('Measured in')).toHaveValue('KILOGRAMS');
     await form.getByRole('button', { name: 'Add fuel type' }).click();
     await expect(page.getByText('Confirm it is you').first()).toBeVisible();
     expect(commands).toHaveLength(0);

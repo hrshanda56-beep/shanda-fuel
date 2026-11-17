@@ -26,12 +26,18 @@ function roleAllows(
 
 const scopeInput = z.object({ tenantId: z.string().uuid(), stationId: z.string().uuid() });
 
+function unitOf(value: string): 'LITRES' | 'KILOGRAMS' {
+  return value === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES';
+}
+
 export type DeliveryListItem = Readonly<{
   id: string;
   deliveryNoteNumber: string;
   deliveredAt: string;
   businessDate: string;
   productName: string;
+  /** Litres or kilograms, as set for the fuel. */
+  unit: 'LITRES' | 'KILOGRAMS';
   supplierName: string | null;
   status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
   noteLitres: string;
@@ -49,6 +55,8 @@ export type DeliveryTank = Readonly<{
   code: string;
   productId: string;
   productName: string;
+  /** Litres or kilograms, as set for the fuel. */
+  unit: 'LITRES' | 'KILOGRAMS';
 }>;
 
 export type DeliveryList = Readonly<{
@@ -84,6 +92,7 @@ export async function queryDeliveryList(input: {
         delivered_at: Date | string;
         business_date: string;
         product_name: string;
+        unit: string;
         supplier_name: string | null;
         status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
         note_litres: string;
@@ -94,7 +103,7 @@ export async function queryDeliveryList(input: {
         driver_confirmed: boolean | null;
       }>(sql`
         select d.id, d.delivery_note_number, d.delivered_at, d.business_date,
-          p.name as product_name, s.legal_name as supplier_name, d.status,
+          p.name as product_name, p.unit as unit, s.legal_name as supplier_name, d.status,
           d.note_quantity_litres::text as note_litres,
           d.actual_quantity_litres::text as received_litres,
           d.shortage_excess_litres::text as shortage_excess_litres,
@@ -120,8 +129,9 @@ export async function queryDeliveryList(input: {
         code: string;
         product_id: string;
         product_name: string;
+        unit: string;
       }>(sql`
-        select t.id, t.code, t.product_id, p.name as product_name
+        select t.id, t.code, t.product_id, p.name as product_name, p.unit as unit
         from app.tanks t
         join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
         where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}
@@ -138,6 +148,7 @@ export async function queryDeliveryList(input: {
           code: row.code,
           productId: row.product_id,
           productName: row.product_name,
+          unit: unitOf(row.unit),
         })),
         deliveries: rows.map((row) => ({
           id: row.id,
@@ -145,6 +156,7 @@ export async function queryDeliveryList(input: {
           deliveredAt: new Date(row.delivered_at).toISOString(),
           businessDate: row.business_date,
           productName: row.product_name,
+          unit: unitOf(row.unit),
           supplierName: row.supplier_name,
           status: row.status,
           noteLitres: row.note_litres,
@@ -174,6 +186,7 @@ export type DeliveryDetail = Readonly<{
     businessDate: string;
     productId: string;
     productName: string;
+    unit: 'LITRES' | 'KILOGRAMS';
     supplierName: string | null;
     transporter: string | null;
     driver: string | null;
@@ -236,6 +249,7 @@ export async function queryDeliveryDetail(input: {
         business_date: string;
         product_id: string;
         product_name: string;
+        unit: string;
         supplier_name: string | null;
         transporter: string | null;
         driver: string | null;
@@ -250,7 +264,7 @@ export async function queryDeliveryDetail(input: {
         shortage_excess_litres: string;
       }>(sql`
         select d.id, d.delivery_note_number, d.delivered_at, d.business_date, d.product_id,
-          p.name as product_name, s.legal_name as supplier_name, d.transporter, d.driver,
+          p.name as product_name, p.unit as unit, s.legal_name as supplier_name, d.transporter, d.driver,
           d.truck_registration, d.status, d.no_po_reason, d.no_po_note, d.supplier_id,
           (select po.order_number
             from app.purchase_order_delivery_links l
@@ -281,8 +295,9 @@ export async function queryDeliveryDetail(input: {
         code: string;
         product_id: string;
         product_name: string;
+        unit: string;
       }>(sql`
-        select t.id, t.code, t.product_id, p.name as product_name
+        select t.id, t.code, t.product_id, p.name as product_name, p.unit as unit
         from app.tanks t
         join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
         where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}
@@ -353,6 +368,7 @@ export async function queryDeliveryDetail(input: {
           code: row.code,
           productId: row.product_id,
           productName: row.product_name,
+          unit: unitOf(row.unit),
         })),
         delivery: {
           id: delivery.id,
@@ -361,6 +377,7 @@ export async function queryDeliveryDetail(input: {
           businessDate: delivery.business_date,
           productId: delivery.product_id,
           productName: delivery.product_name,
+          unit: unitOf(delivery.unit),
           supplierName: delivery.supplier_name,
           transporter: delivery.transporter,
           driver: delivery.driver,

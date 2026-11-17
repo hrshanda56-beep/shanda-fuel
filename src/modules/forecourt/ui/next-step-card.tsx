@@ -25,6 +25,9 @@ const DONE_MESSAGE: Record<string, string> = {
   CloseBusinessDay: 'Business day closed.',
 };
 
+/** The steps shown: closing the day is part of closing the shift, so it is not a step of its own. */
+const SHOWN_STEPS = TRAIL.slice(0, 3);
+
 type Props = Readonly<{
   tenantId: string;
   stationId: string;
@@ -46,6 +49,9 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  // The action that is waiting for the person to say why, and what they have typed so far.
+  const [askingReason, setAskingReason] = useState<StepAction | null>(null);
+  const [reason, setReason] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -81,8 +87,22 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
     (action.commandType === 'CompleteShift' || action.commandType === 'CloseMeters');
   const figuresLink = trail[1]?.kind === 'link' ? trail[1] : null;
 
-  async function run(action: StepAction | null) {
+  async function run(action: StepAction | null, givenReason?: string) {
     if (!action || action.kind !== 'command') return;
+    let extra: Record<string, unknown> = {};
+    if (action.askReason) {
+      // The reason is asked on the card itself, never in a browser pop-up.
+      if (givenReason === undefined) {
+        setError(undefined);
+        setAskingReason(action);
+        return;
+      }
+      if (givenReason.trim().length < 5) {
+        setError('Please write at least 5 letters saying why. The day was not closed.');
+        return;
+      }
+      extra = { [action.askReason.field]: givenReason.trim() };
+    }
     if (action.confirm) {
       // The first sentence is the question; anything after it says what will happen.
       const [question = action.confirm, ...rest] = action.confirm.split(/(?<=\?)\s+/);
@@ -94,16 +114,16 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
       });
       if (!agreed) return;
     }
-    let extra: Record<string, unknown> = {};
-    if (action.askReason) {
-      const reason = (window.prompt(action.askReason.question) ?? '').trim();
-      if (reason.length < 5) {
-        setError('Closing now needs a reason of at least 5 characters. The day was not closed.');
-        return;
-      }
-      extra = { [action.askReason.field]: reason };
-    }
-    await send(action.commandType, action.values, action.subjectId, extra, action.before);
+    setAskingReason(null);
+    setReason('');
+    await send(
+      action.commandType,
+      action.values,
+      action.subjectId,
+      extra,
+      action.before,
+      action.after,
+    );
   }
 
   async function post(
@@ -135,6 +155,7 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
     subjectId: string,
     extra: Record<string, unknown> = {},
     before?: PrecedingCommand,
+    after?: PrecedingCommand,
   ) {
     setBusy(true);
     setError(undefined);
@@ -143,7 +164,8 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
       // Opening the day comes first; if the shift then fails, the day stays open and the
       // refreshed card offers the shift on its own.
       if (before) await post(before.commandType, before.values, before.subjectId);
-      await post(commandType, values, subjectId, extra);
+      await post(commandType, values, subjectId, after ? {} : extra);
+      if (after) await post(after.commandType, after.values, after.subjectId, extra);
       if (commandType === 'StartShift') {
         // A shift that has just started needs its opening readings, which the page asks for first.
         const params = new URLSearchParams({
@@ -155,7 +177,7 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
         router.push(`/operations/daily?${params.toString()}`);
         return;
       }
-      setNotice(DONE_MESSAGE[commandType]);
+      setNotice(after ? DONE_MESSAGE[after.commandType] : DONE_MESSAGE[commandType]);
       await load();
       onChanged?.();
     } catch (caught) {
@@ -175,7 +197,7 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
       {embedded ? (
         step.stage === null ? null : (
           <p className="next-step-count">
-            Step {step.stage + 1} of {TRAIL.length}
+            Step {Math.min(step.stage, SHOWN_STEPS.length - 1) + 1} of {SHOWN_STEPS.length}
           </p>
         )
       ) : (
@@ -203,7 +225,25 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
           {action.label}
         </a>
       ) : null}
-      {action?.kind === 'command' ? (
+      {askingReason?.kind === 'command' && askingReason.askReason ? (
+        <div className="field">
+          <label htmlFor="next-step-reason">{askingReason.askReason.question}</label>
+          <textarea
+            id="next-step-reason"
+            rows={3}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <Button
+            variant="primary"
+            className="next-step-action"
+            onClick={() => void run(askingReason, reason)}
+            loading={busy}
+          >
+            {askingReason.label}
+          </Button>
+        </div>
+      ) : action?.kind === 'command' ? (
         <Button
           variant="primary"
           className="next-step-action"
@@ -213,19 +253,27 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
           {action.label}
         </Button>
       ) : null}
+      {!askingReason && step.alternative ? (
+        <Button
+          variant="secondary"
+          className="next-step-action"
+          onClick={() => void run(step.alternative ?? null)}
+          disabled={busy}
+        >
+          {step.alternative.label}
+        </Button>
+      ) : null}
       <ol
         className="next-step-trail"
         aria-label="Quick actions for the day"
         hidden={embedded || undefined}
       >
-        {TRAIL.map((label, index) => {
+        {SHOWN_STEPS.map((label, index) => {
+          const stage = step.stage === null ? null : Math.min(step.stage, SHOWN_STEPS.length - 1);
           const state =
-            step.stage === null || index < step.stage
-              ? 'done'
-              : index === step.stage
-                ? 'current'
-                : undefined;
-          const item = trail[index] ?? null;
+            stage === null || index < stage ? 'done' : index === stage ? 'current' : undefined;
+          // Closing the shift and closing the day are one step for the person.
+          const item = trail[index] ?? (index === SHOWN_STEPS.length - 1 ? trail[3] : null) ?? null;
           const content = (
             <>
               <span aria-hidden="true">{state === 'done' ? '✓' : index + 1}</span>

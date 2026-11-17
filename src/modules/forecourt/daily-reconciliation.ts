@@ -214,7 +214,7 @@ function calculateTankGaps(
     const gap = dip.closingLitres.subtract(expected).quantize(DECIMAL_POLICIES.litres);
     gaps[dip.tankId] = gap.toString();
     if (!gap.value.isZero()) {
-      issues.push(issue('TANK_GAP', `Tank ${dip.tankId} has a ${gap.toString()} L stock gap`));
+      issues.push(issue('TANK_GAP', `Tank ${dip.tankId} has a stock gap of ${gap.toString()}`));
     }
   }
   return { gaps, issues };
