@@ -77,6 +77,8 @@ export type ReportDateBasis = {
 
 export type ReportMoney = string;
 export type ReportLitres = string;
+/** The unit a quantity is measured in; MIXED on a total of fuels measured differently. */
+export type ReportUnit = 'LITRES' | 'KILOGRAMS' | 'MIXED';
 export type ReportExpenseClassification = 'OPERATING' | 'FIXED_COST' | 'DIRECT_INVENTORY_COST';
 
 export type ReportStation = Readonly<{
@@ -99,6 +101,7 @@ export type SalesBreakdownRow = Readonly<{
   productCode: string;
   productName: string;
   litres: ReportLitres;
+  unit?: 'LITRES' | 'KILOGRAMS';
   salesValue: ReportMoney;
   averageRealizedPrice: ReportMoney | null;
   variance: ReportMoney;
@@ -191,6 +194,7 @@ export type CustomerCreditActivityRow = Readonly<{
   accountType: string;
   drawnAmount: ReportMoney;
   drawnLitres: ReportLitres;
+  unit?: ReportUnit;
   authorizationCount: number;
 }>;
 
@@ -203,6 +207,7 @@ export type CustomerExposure = Readonly<{
   prepaidValueBalance: ReportMoney | null;
   reservedAmount: ReportMoney | null;
   reservedLitres: ReportLitres | null;
+  reservedUnit?: ReportUnit;
   rows: readonly {
     customerId: string;
     accountReference: string;
@@ -211,10 +216,12 @@ export type CustomerExposure = Readonly<{
     prepaidValueBalance: ReportMoney;
     reservedAmount: ReportMoney;
     reservedLitres: ReportLitres;
+    reservedUnit?: ReportUnit;
   }[];
 }>;
 
 export type InventoryPosition = Readonly<{
+  unit?: ReportUnit;
   expectedLitres: ReportLitres;
   physicalLitres: ReportLitres | null;
   varianceLitres: ReportLitres | null;
@@ -227,6 +234,7 @@ export type InventoryPosition = Readonly<{
     productId: string;
     productCode: string;
     productName: string;
+    unit?: 'LITRES' | 'KILOGRAMS';
     capacityLitres: ReportLitres;
     reorderLevelLitres: ReportLitres | null;
     acceptableVarianceLitres: ReportLitres | null;
@@ -266,6 +274,7 @@ export type OwnerPosition = Readonly<{
   stockByStation?: readonly Readonly<{
     stationName: string;
     productName: string;
+    unit?: 'LITRES' | 'KILOGRAMS';
     litres: ReportLitres;
     value: ReportMoney | null;
   }>[];
@@ -294,6 +303,7 @@ export type ManagementReport = Readonly<{
   stations: readonly ReportStation[];
   sales: Readonly<{
     litresSold: ReportLitres;
+    unit?: ReportUnit;
     salesValue: ReportMoney;
     approvedReconciliationCount: number;
     salesVariance: ReportMoney;
@@ -344,6 +354,8 @@ export type DailyOperationsRow = Readonly<{
   stationId: string;
   stationCode: string;
   litresSold: ReportLitres;
+  /** The unit of the fuel sold that day; MIXED when litres and kilograms were both sold. */
+  unit?: ReportUnit;
   salesValue: ReportMoney;
   paymentBreakdown: readonly SalesPaymentRow[];
   cashDeclared: ReportMoney;

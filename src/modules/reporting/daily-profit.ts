@@ -9,6 +9,7 @@ export function dailyProfitFromReport(report: ManagementReport): DailyProfitSumm
       productId: sale.productId,
       productCode: sale.productCode,
       productName: sale.productName,
+      productUnit: sale.productUnit,
       recognizedRevenue: sale.recognizedRevenue,
       quantityLitres: sale.quantityLitres,
     })),

@@ -1,3 +1,8 @@
+import {
+  asQuantityUnit,
+  combineQuantityUnits,
+  type QuantityUnit,
+} from '../../design-system/formatters';
 import 'server-only';
 
 import Decimal from 'decimal.js';
@@ -45,6 +50,7 @@ type DeliveryRow = {
   supplier_code: string | null;
   supplier_name: string | null;
   product_id: string;
+  unit?: string;
   delivery_note_number: string;
   business_date: string;
   note_quantity_litres: string;
@@ -90,7 +96,9 @@ async function loadScope(
         : sql`and d.supplier_id = ${input.supplierId}`;
   const deliveries = await transaction.execute<DeliveryRow>(sql`
     select d.id, d.station_id, st.code as station_code, d.supplier_id, s.code as supplier_code,
-           s.legal_name as supplier_name, d.product_id, d.delivery_note_number, d.business_date,
+           s.legal_name as supplier_name, d.product_id,
+           (select pu.unit from app.products pu where pu.tenant_id = d.tenant_id and pu.id = d.product_id) as unit,
+           d.delivery_note_number, d.business_date,
            d.note_quantity_litres::text, d.actual_quantity_litres::text,
            d.unit_landed_cost::text, d.total_landed_cost::text,
            ${purchaseOrderPriceColumns}
@@ -189,6 +197,7 @@ export async function readSupplierExposure(
         legalName: string | null;
         supplierUnassigned: boolean;
         deliveries: Record<string, unknown>[];
+        units: QuantityUnit[];
         unbilledLitres: Decimal;
         unbilledValue: Decimal;
         unpricedUnbilledLitres: Decimal;
@@ -238,6 +247,7 @@ export async function readSupplierExposure(
             legalName: delivery.supplier_name,
             supplierUnassigned: delivery.supplier_id === null,
             deliveries: [] as Record<string, unknown>[],
+            units: [] as QuantityUnit[],
             unbilledLitres: new Decimal(0),
             unbilledValue: new Decimal(0),
             unpricedUnbilledLitres: new Decimal(0),
@@ -249,6 +259,9 @@ export async function readSupplierExposure(
           groups.set(key, created);
           return created;
         })();
+      const unit = asQuantityUnit(delivery.unit);
+      const word = unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
+      group.units.push(unit);
       group.counts[state] += 1;
       group.unbilledLitres = group.unbilledLitres.add(unbilled);
       if (unbilledValue !== null) group.unbilledValue = group.unbilledValue.add(unbilledValue);
@@ -260,6 +273,7 @@ export async function readSupplierExposure(
         deliveryNoteNumber: delivery.delivery_note_number,
         businessDate: delivery.business_date,
         state,
+        unit,
         acceptedLitres: new Decimal(accepted).toFixed(3),
         invoicedLitres: covered.toFixed(3),
         creditedLitres: credited.toFixed(3),
@@ -284,9 +298,9 @@ export async function readSupplierExposure(
           invoicedAmount: ref.invoiced_amount,
         })),
         note: net.creditExceedsInvoiced
-          ? `Credit notes cover ${net.unappliedCreditLitres} more litres than the invoices bill. The billed figure is held at zero; review the credit note with the supplier.`
+          ? `Credit notes cover ${net.unappliedCreditLitres} more ${word} than the invoices bill. The billed figure is held at zero; review the credit note with the supplier.`
           : state === 'OVER_BILLED'
-            ? 'Invoices bill more litres than were received. Review this with the supplier; the delivery quantity is never changed by an invoice.'
+            ? `Invoices bill more ${word} than were received. Review this with the supplier; the delivery quantity is never changed by an invoice.`
             : state === 'UNBILLED' && !priced
               ? 'Received but not yet invoiced, and no receipt cost is recorded, so the value is unpriced (not zero).'
               : null,
@@ -299,6 +313,7 @@ export async function readSupplierExposure(
         code: group.code,
         legalName: group.supplierUnassigned ? 'Supplier unassigned' : group.legalName,
         supplierUnassigned: group.supplierUnassigned,
+        unit: combineQuantityUnits(group.units),
         unbilledLitres: group.unbilledLitres.toFixed(3),
         unbilledValue: group.unbilledValue.toFixed(4),
         unpricedUnbilledLitres: group.unpricedUnbilledLitres.toFixed(3),
@@ -312,6 +327,7 @@ export async function readSupplierExposure(
       currency: 'USD' as const,
       suppliers,
       totals: {
+        unit: combineQuantityUnits(suppliers.map((group) => group.unit)),
         unbilledLitres: sum((group) => group.unbilledLitres, 3),
         unbilledValue: sum((group) => group.unbilledValue, 4),
         unpricedUnbilledLitres: sum((group) => group.unpricedUnbilledLitres, 3),
@@ -400,6 +416,7 @@ export async function getSupplierVarianceFromRequest(
         legal_entity_id: context.legalEntityId,
         po_unit_price: delivery.po_unit_price,
         po_number: delivery.po_number,
+        unit: delivery.unit,
       };
       const refs: PostedRef[] = invoiceRefs.map((ref) => ({
         id: ref.ref_id,
@@ -466,6 +483,7 @@ export async function getSupplierVarianceFromRequest(
             invoicedNetAmount: null,
             referenceUnitCost: null,
             deliveryLabel: delivery.delivery_note_number,
+            unit: asQuantityUnit(delivery.unit),
             policy,
           }).findings.filter((finding) => finding.code === 'OVER_RECEIPT'),
         );
@@ -482,6 +500,7 @@ export async function getSupplierVarianceFromRequest(
         businessDate: delivery.business_date,
         supplierId: delivery.supplier_id,
         supplierUnassigned: delivery.supplier_id === null,
+        unit: asQuantityUnit(delivery.unit),
         noteLitres: new Decimal(delivery.note_quantity_litres).toFixed(3),
         acceptedLitres: new Decimal(delivery.actual_quantity_litres).toFixed(3),
         receivedVsNoteLitres: new Decimal(delivery.actual_quantity_litres)

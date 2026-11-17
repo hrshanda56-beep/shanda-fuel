@@ -81,17 +81,18 @@ export async function loadStaffBenefitMonth(
     transaction.execute<{
       product_id: string;
       product_name: string;
+      unit: string;
       litres: string;
       sold_value: string;
     }>(sql`
-      select a.product_id, p.name as product_name,
+      select a.product_id, p.name as product_name, p.unit as unit,
              sum(a.used_litres)::text as litres, sum(a.used_amount)::text as sold_value
       from app.customer_fuel_authorizations a
       join app.products p on p.tenant_id = a.tenant_id and p.id = a.product_id
       where a.tenant_id = ${input.tenantId} and a.account_id = ${input.accountId}
         and a.station_id = ${input.stationId} and a.used_litres > 0
         and to_char(a.requested_at at time zone ${row.timezone}, 'YYYY-MM') = ${month}
-      group by a.product_id, p.name
+      group by a.product_id, p.name, p.unit
       order by p.name
     `),
     transaction.execute<{ product_id: string; litres: string; cogs: string }>(sql`
@@ -131,6 +132,7 @@ export async function loadStaffBenefitMonth(
       fuel.map((entry) => ({
         productId: entry.product_id,
         productName: entry.product_name,
+        unit: entry.unit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES',
         litres: entry.litres,
         soldValue: entry.sold_value,
       })),

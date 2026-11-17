@@ -134,6 +134,6 @@ describe('opening cost per litre (PostgreSQL)', () => {
     );
     expect(noLitres.status).toBe(409);
     const body = (await noLitres.json()) as { message: string };
-    expect(body.message).toContain('opening litres');
+    expect(body.message).toContain('opening quantity');
   });
 });

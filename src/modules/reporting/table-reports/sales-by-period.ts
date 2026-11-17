@@ -9,7 +9,7 @@ export const SALES_BY_PERIOD_REPORT: TableReportDefinition = {
   slug: 'sales-by-period',
   title: 'Sales by Day, Week and Month',
   description:
-    'Approved litres and sales for each fuel, station and day, with the week and month each day falls in.',
+    'Approved quantities and sales for each fuel, station and day, with the week and month each day falls in.',
   category: 'sales',
   scope: 'station',
   emptyMessage: 'No approved sales were recorded for these dates and stations.',
@@ -20,7 +20,8 @@ export const SALES_BY_PERIOD_REPORT: TableReportDefinition = {
     { key: 'month', label: 'Month', kind: 'text' },
     { key: 'station', label: 'Station', kind: 'text' },
     { key: 'product', label: 'Fuel', kind: 'text' },
-    { key: 'litres', label: 'Litres sold', kind: 'number' },
+    { key: 'unit', label: 'Measured in', kind: 'text' },
+    { key: 'litres', label: 'Quantity sold', kind: 'number' },
     { key: 'sales', label: 'Sales (USD)', kind: 'number' },
   ],
 };

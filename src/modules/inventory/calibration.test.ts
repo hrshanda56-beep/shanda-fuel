@@ -50,11 +50,11 @@ describe('normaliseCalibrationChart', () => {
     ).toThrow(/more than once/);
     expect(() =>
       normaliseCalibrationChart([chart[0]!, chart[1]!, { measurement: '150', litres: '9000' }]),
-    ).toThrow(/cannot hold fewer litres/);
+    ).toThrow(/cannot hold a smaller quantity/);
   });
 
   it('rejects a chart bigger than the tank', () => {
-    expect(() => normaliseCalibrationChart(chart, '25000')).toThrow(/more litres than the tank/);
+    expect(() => normaliseCalibrationChart(chart, '25000')).toThrow(/more than the tank/);
     expect(normaliseCalibrationChart(chart, '30000')).toHaveLength(3);
   });
 

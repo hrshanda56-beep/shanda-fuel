@@ -57,6 +57,8 @@ export type CanonicalSaleRevenue = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  /** What the fuel is measured in; litres when absent. */
+  productUnit?: 'LITRES' | 'KILOGRAMS';
   reconciliationId: string;
   revisionId: string;
   meterSegmentId: string;
@@ -90,6 +92,8 @@ export type FuelProfitRow = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  /** What the fuel is measured in; `litres` holds that quantity. */
+  unit?: 'LITRES' | 'KILOGRAMS';
   litres: string;
   revenue: string;
   cost: string | null;

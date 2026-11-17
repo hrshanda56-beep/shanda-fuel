@@ -49,9 +49,7 @@ import {
 } from '../costing';
 
 const uuid = z.string().uuid();
-const decimalText = z
-  .string()
-  .regex(/^-?(?:\d+)(?:\.\d{1,3})?$/, 'A decimal litre value is required');
+const decimalText = z.string().regex(/^-?(?:\d+)(?:\.\d{1,3})?$/, 'A decimal quantity is required');
 const instant = z.string().datetime({ offset: true });
 
 const authorityPayload = z.object({ tenantId: uuid, stationId: uuid });
@@ -118,7 +116,7 @@ const calibrationPayload = authorityPayload.extend({
     .array(
       z.object({
         measurement: z.string().regex(/^\d+(?:\.\d{1,3})?$/, 'A reading is required'),
-        litres: z.string().regex(/^\d+(?:\.\d{1,3})?$/, 'Litres are required'),
+        litres: z.string().regex(/^\d+(?:\.\d{1,3})?$/, 'The quantity is required'),
       }),
     )
     .min(2)
@@ -659,8 +657,8 @@ async function dipLitres(
     throw new AppError(
       'VALIDATION_FAILED',
       payload.rawMeasurement
-        ? 'This tank has no calibration chart for that unit yet. Add the chart, or enter the litres.'
-        : 'Enter the litres in the tank',
+        ? 'This tank has no calibration chart for that unit yet. Add the chart, or enter the quantity.'
+        : 'Enter the quantity in the tank',
     );
   }
   return litres(payload.physicalLitres).toString();
@@ -1170,7 +1168,7 @@ export async function updateDeliveryFromRequest(request: Request, input: unknown
       ) {
         throw new AppError(
           'CONFLICT',
-          'A cost is already recorded for this delivery, so the litres received cannot be changed.',
+          'A cost is already recorded for this delivery, so the quantity received cannot be changed.',
         );
       }
       validateDeliveryAllocations(payload.actualQuantityLitres, [payload.actualQuantityLitres]);
@@ -1330,7 +1328,7 @@ export async function confirmDeliveryFromRequest(request: Request, input: unknow
       if (!litres(allocated).value.eq(litres(delivery.actualQuantityLitres).value))
         throw new AppError(
           'CONFLICT',
-          'All received delivery litres must be allocated before confirmation',
+          'The whole quantity received must be allocated before confirmation',
         );
       const affectedStreams = new Map<
         string,
@@ -1654,7 +1652,7 @@ export async function recordOpeningInventoryCostFromRequest(request: Request, in
       if (value.unitCost && (value.amount || value.inventoryValue)) {
         ctx.addIssue({
           code: 'custom',
-          message: 'Give either the cost per litre or the total value, not both',
+          message: 'Give either the cost per unit or the total value, not both',
         });
       }
       if (value.amount && value.inventoryValue && value.amount !== value.inventoryValue) {
@@ -1686,7 +1684,10 @@ export async function recordOpeningInventoryCostFromRequest(request: Request, in
         `);
         const opening = rows[0];
         if (!opening) {
-          throw new AppError('CONFLICT', 'Record the opening litres for this tank before its cost');
+          throw new AppError(
+            'CONFLICT',
+            'Record the opening quantity for this tank before its cost',
+          );
         }
         amount = new ExactDecimal(opening.quantity)
           .multiply(new ExactDecimal(payload.unitCost!))
@@ -1710,7 +1711,7 @@ export async function recordReceiptCostFromRequest(request: Request, input: unkn
   if ((payload.amount === undefined) === (payload.costBuildUp === undefined)) {
     throw new AppError(
       'VALIDATION_FAILED',
-      'Give either the cost of this share or the costs to spread over the litres received, not both',
+      'Give either the cost of this share or the costs to spread over the quantity received, not both',
     );
   }
   const context = await contextFor(request, payload);

@@ -36,6 +36,8 @@ export const products = appSchema.table(
     code: text('code').notNull(),
     name: text('name').notNull(),
     status: text('status').notNull().default('ACTIVE'),
+    /** How this fuel is measured: LITRES (petrol, diesel) or KILOGRAMS (gas). */
+    unit: text('unit').notNull().default('LITRES'),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
     updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
   },

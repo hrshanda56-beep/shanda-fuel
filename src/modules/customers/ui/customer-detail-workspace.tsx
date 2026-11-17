@@ -11,7 +11,7 @@ import {
   type ContextSelection,
 } from '@/modules/context';
 import { Notice } from '@/design-system/feedback';
-import { formatLitres, formatMoney, formatStatusLabel } from '@/design-system/formatters';
+import { formatMoney, formatQuantity, formatStatusLabel } from '@/design-system/formatters';
 import { Icon } from '@/design-system/icons';
 import { PageHeader, MetricCard } from '@/design-system/layout';
 import { formatTileMoney } from '@/modules/reporting/format';
@@ -82,7 +82,7 @@ function accountTypeLabel(type: CustomerAccount['accountType']): string {
     case 'PREPAID_VALUE':
       return 'Prepaid value account';
     case 'PREPAID_LITRES':
-      return 'Prepaid litres account';
+      return 'Prepaid fuel account';
   }
 }
 
@@ -118,7 +118,7 @@ function transactionLabel(transaction: CustomerTransaction): string {
 
 function transactionValue(transaction: CustomerTransaction): string {
   if (transaction.amount !== null) return money(transaction.amount, transaction.currency);
-  if (transaction.litres !== null) return formatLitres(transaction.litres);
+  if (transaction.litres !== null) return formatQuantity(transaction.litres, transaction.unit);
   return '—';
 }
 
@@ -191,17 +191,17 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
       {account.productBalances.length === 0 ? (
         <EmptyState
           title="No prepaid fuel yet"
-          message="Litres will show here once a top-up has been recorded."
+          message="Quantities will show here once a top-up has been recorded."
         />
       ) : (
-        <TableScrollRegion label="Prepaid litres by fuel">
+        <TableScrollRegion label="Prepaid fuel quantities">
           <table className="responsive-table">
-            <caption className="visually-hidden">Prepaid litres by fuel</caption>
+            <caption className="visually-hidden">Prepaid fuel quantities</caption>
             <thead>
               <tr>
                 <th scope="col">Fuel</th>
-                <th scope="col">Litres paid for</th>
-                <th scope="col">Litres left to use</th>
+                <th scope="col">Paid for</th>
+                <th scope="col">Left to use</th>
               </tr>
             </thead>
             <tbody>
@@ -212,11 +212,11 @@ function AccountPosition({ account }: { account: CustomerAccount }) {
                     <br />
                     <small>{product.productCode}</small>
                   </th>
-                  <td data-label="Litres paid for" className="numeric">
-                    {formatLitres(product.balanceLitres)}
+                  <td data-label="Paid for" className="numeric">
+                    {formatQuantity(product.balanceLitres, product.unit)}
                   </td>
-                  <td data-label="Litres left to use" className="numeric">
-                    {formatLitres(product.availableLitres)}
+                  <td data-label="Left to use" className="numeric">
+                    {formatQuantity(product.availableLitres, product.unit)}
                   </td>
                 </tr>
               ))}

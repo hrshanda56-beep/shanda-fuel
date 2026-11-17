@@ -176,6 +176,23 @@ export function buildGuidedSteps(data: Data): readonly GuidedStep[] {
   return [fuel, priceStep, tankStep, pumpStep, shiftStep, supervisorStep];
 }
 
+export type FuelUnitChoice = 'LITRES' | 'KILOGRAMS';
+
+/** The fuels a station usually sells, each with the unit it is normally measured in. */
+export const FUEL_CATALOGUE: readonly Readonly<{ name: string; unit: FuelUnitChoice }>[] = [
+  { name: 'Petrol (Unleaded)', unit: 'LITRES' },
+  { name: 'Diesel 50', unit: 'LITRES' },
+  { name: 'Diesel 500', unit: 'LITRES' },
+  { name: 'Blend', unit: 'LITRES' },
+  { name: 'Paraffin', unit: 'LITRES' },
+  { name: 'LP Gas', unit: 'KILOGRAMS' },
+];
+
+/** How a unit reads to a person: "litres" or "kilograms (kg)". */
+export function unitLabel(unit: FuelUnitChoice): string {
+  return unit === 'KILOGRAMS' ? 'Kilograms (kg)' : 'Litres';
+}
+
 export type FuelCardStatus = Readonly<{
   productId: string;
   name: string;
@@ -216,7 +233,7 @@ export function buildFuelCards(data: Data): readonly FuelCardStatus[] {
         status: needed.length === 0 ? ('done' as const) : ('todo' as const),
         summary:
           needed.length === 0
-            ? `Price in use, ${count(ownTanks.length, 'tank')}, ${count(ownNozzles.length, 'nozzle')}.`
+            ? `Price in use, ${count(ownTanks.length, 'tank')}, ${count(ownNozzles.length, 'nozzle')}. Sold in ${product.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'}.`
             : `Needs ${needed.join(', ')}.`,
       };
     });

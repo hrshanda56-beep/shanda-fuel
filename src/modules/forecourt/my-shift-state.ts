@@ -20,6 +20,8 @@ export type MyShiftMeter = {
   pumpNumber: string;
   nozzleNumber: string;
   productName: string;
+  /** How the meter counts: litres for petrol and diesel, kilograms for gas. */
+  unit?: 'LITRES' | 'KILOGRAMS';
   /** Last sealed reading before this shift; the opening reading must match it. */
   previousReading: string | null;
   opening: MyShiftBoundary | null;

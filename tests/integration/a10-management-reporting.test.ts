@@ -1288,7 +1288,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
       );
       const csv = await response.text();
       expect(csv.split('\r\n')[0]).toBe(
-        'business_date,station_code,product_code,product_name,litres_sold,sales_value,average_realized_price,variance',
+        'business_date,station_code,product_code,product_name,litres_sold,unit,sales_value,average_realized_price,variance',
       );
       expect(await eventCount()).toBe(before + 1);
     });
@@ -1510,7 +1510,7 @@ describe('A10 management reporting PostgreSQL read model', () => {
         'attachment; filename="delivery-variance_2026-09-01_to_2026-09-30.csv"',
       );
       const deliveryCsv = (await delivery.text()).split('\r\n');
-      expect(deliveryCsv[0]).toContain('Short (−) / over (+) (L)');
+      expect(deliveryCsv[0]).toContain('Short (−) / over (+)');
       expect(
         deliveryCsv.some((line) => line.includes('A10-DELIVERY') && line.includes('20.000')),
       ).toBe(true);

@@ -1,9 +1,25 @@
 import { sumDecimals } from '../../cash/ui/cash-visuals';
 
 /** What the existing read-only reconciliation endpoint returns, trimmed to what the statement shows. */
+/** The one unit every nozzle of a sheet sells in, or undefined when litres and kilograms are mixed. */
+function singleUnit(detail: ReconciliationDetail): 'LITRES' | 'KILOGRAMS' | undefined {
+  const units = new Set(
+    detail.readings.map(
+      (reading) =>
+        detail.tanks?.find((tank) => tank.productId === reading.productId)?.unit ?? 'LITRES',
+    ),
+  );
+  return units.size === 1 ? [...units][0] : undefined;
+}
+
 export type ReconciliationDetail = Readonly<{
   state: string;
-  readings: ReadonlyArray<{ id: string; litresSold: string; salesValue: string }>;
+  readings: ReadonlyArray<{
+    id: string;
+    productId?: string;
+    litresSold: string;
+    salesValue: string;
+  }>;
   payments: ReadonlyArray<{
     id: string;
     method: string;
@@ -33,12 +49,18 @@ export type ReconciliationDetail = Readonly<{
   approvalNote?: string | null;
   tanks?: ReadonlyArray<{
     tankId: string;
+    productId?: string;
     productName: string;
+    unit?: 'LITRES' | 'KILOGRAMS';
     toleranceLitres?: string | null;
     expectedLitres?: string | null;
   }>;
   dips?: ReadonlyArray<{ tankId: string; physicalLitres: string }>;
-  deliveries?: ReadonlyArray<{ deliveryNoteNumber: string; actualQuantityLitres: string }>;
+  deliveries?: ReadonlyArray<{
+    deliveryNoteNumber: string;
+    productId?: string;
+    actualQuantityLitres: string;
+  }>;
   totals: {
     expectedSales: string;
     accountedSales: string;
@@ -64,6 +86,8 @@ export type StatementSection = Readonly<{
   /** Meter readings, so the sales line can say how many nozzles it covers. */
   nozzles: number;
   litres: string;
+  /** Litres or kilograms; undefined when the sheet mixes both, so no total is shown. */
+  quantityUnit?: 'LITRES' | 'KILOGRAMS';
   expectedSales: string;
   paymentLines: readonly StatementLine[];
   expenseLines: readonly StatementLine[];
@@ -122,6 +146,7 @@ export function buildStatement(
       state: shift.state,
       nozzles: detail.readings.length,
       litres: sumDecimals(detail.readings.map((reading) => reading.litresSold)),
+      quantityUnit: singleUnit(detail),
       expectedSales: detail.totals.expectedSales,
       paymentLines: groupLines(
         detail.payments.map((payment) => ({ key: payment.method, amount: payment.amount })),

@@ -564,7 +564,11 @@ function CaptureForm({
     return (
       <div className="my-shift-form" role="group" aria-label={`Opening reading for ${view.label}`}>
         <InfoTip>
-          The last shift left {view.label} at <strong>{previous} L</strong>. Look at the meter.
+          The last shift left {view.label} at{' '}
+          <strong>
+            {previous} {view.meter.unit === 'KILOGRAMS' ? 'kg' : 'L'}
+          </strong>
+          . Look at the meter.
         </InfoTip>
         {error ? (
           <p className="field-error" role="alert">
@@ -630,7 +634,7 @@ function CaptureForm({
           setError(undefined);
         }}
         error={error}
-        unit="L"
+        unit={view.meter.unit === 'KILOGRAMS' ? 'kg' : 'L'}
         autoComplete="off"
         required
         disabled={pending}

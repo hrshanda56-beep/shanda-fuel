@@ -8,7 +8,14 @@ import type { ManagementReport } from './contracts';
 import { addExact, exact, ratioPercentage, subtractExact, sumExact } from './domain';
 import { operatingProfit } from './operating-profit';
 
-export type StatementUnit = 'money' | 'litres';
+export type StatementUnit = 'money' | 'litres' | 'kilograms' | 'mixed';
+
+/** The statement unit that matches how a group of fuels is measured. */
+export function statementQuantityUnit(
+  unit: 'LITRES' | 'KILOGRAMS' | 'MIXED' | undefined,
+): StatementUnit {
+  return unit === 'KILOGRAMS' ? 'kilograms' : unit === 'MIXED' ? 'mixed' : 'litres';
+}
 
 export type StatementLine = Readonly<{
   label: string;
@@ -273,17 +280,18 @@ export function buildSalesByPayment(
 
 export function buildStockStatement(report: ManagementReport): Statement {
   const { inventory } = report;
+  const unit = statementQuantityUnit(inventory.unit);
   return {
     groups: [
       {
         heading: 'Stock',
         lines: [
-          { label: 'Expected stock', value: inventory.expectedLitres, unit: 'litres' },
-          { label: 'Measured stock', value: inventory.physicalLitres, unit: 'litres' },
+          { label: 'Expected stock', value: inventory.expectedLitres, unit },
+          { label: 'Measured stock', value: inventory.physicalLitres, unit },
           {
             label: 'Variance',
             value: inventory.varianceLitres,
-            unit: 'litres',
+            unit,
             kind: 'total',
           },
         ],
@@ -291,7 +299,16 @@ export function buildStockStatement(report: ManagementReport): Statement {
       {
         heading: 'Deliveries received',
         lines: [
-          { label: 'Litres delivered', value: inventory.deliveryLitres, unit: 'litres' },
+          {
+            label:
+              unit === 'litres'
+                ? 'Litres delivered'
+                : unit === 'kilograms'
+                  ? 'Kilograms delivered'
+                  : 'Quantity delivered',
+            value: inventory.deliveryLitres,
+            unit,
+          },
           { label: 'Landed cost', value: inventory.deliveryValue },
         ],
       },
@@ -606,7 +623,7 @@ export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
       id: 'stock',
       label: 'Stock on Hand',
       value: report.inventory.expectedLitres,
-      unit: 'litres',
+      unit: statementQuantityUnit(report.inventory.unit),
       slug: 'inventory',
     },
     {

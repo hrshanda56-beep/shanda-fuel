@@ -1,3 +1,4 @@
+import { asQuantityUnit } from '../../design-system/formatters';
 import { AppError } from '../../platform/errors';
 import { resolveCustomerReadContext } from './read-context';
 import { z } from 'zod';
@@ -44,6 +45,8 @@ export type CustomerProductBalance = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  /** What the fuel is measured in. */
+  unit: 'LITRES' | 'KILOGRAMS';
   balanceLitres: string;
   availableLitres: string;
 }>;
@@ -85,6 +88,7 @@ export type CustomerTransactionSummary = Readonly<{
   productId: string | null;
   productCode: string | null;
   productName: string | null;
+  unit?: 'LITRES' | 'KILOGRAMS';
   note: string | null;
 }>;
 
@@ -116,7 +120,9 @@ export type CustomerAccountsResponse = Readonly<{
   /** What the signed-in person may do across customers, so the page can offer "Add customer" even when there are none. */
   capabilities: CustomerCapabilities;
   /** Active fuels a prepaid-litres top-up can be for; only filled for a single-customer read. */
-  fuelProducts: ReadonlyArray<Readonly<{ id: string; code: string; name: string }>>;
+  fuelProducts: ReadonlyArray<
+    Readonly<{ id: string; code: string; name: string; unit?: 'LITRES' | 'KILOGRAMS' }>
+  >;
 }>;
 
 const customerAccountsQuerySchema = z.object({
@@ -152,6 +158,7 @@ type CustomerProductBalanceRow = {
   product_id: string;
   product_code: string;
   product_name: string;
+  product_unit?: string;
   balance_litres: string;
   reserved_litres: string;
 };
@@ -175,6 +182,7 @@ type CustomerTransactionRow = {
   product_id: string | null;
   product_code: string | null;
   product_name: string | null;
+  product_unit?: string | null;
   note: string | null;
 };
 
@@ -219,6 +227,7 @@ function accountSummaryFromRow(
       productId: product.product_id,
       productCode: product.product_code,
       productName: product.product_name,
+      unit: asQuantityUnit(product.product_unit),
       balanceLitres: product.balance_litres,
       availableLitres: subtractExact(product.balance_litres, product.reserved_litres),
     }));
@@ -269,6 +278,7 @@ function transactionFromRow(row: CustomerTransactionRow): CustomerTransactionSum
     productId: row.product_id,
     productCode: row.product_code,
     productName: row.product_name,
+    unit: asQuantityUnit(row.product_unit),
     note: row.note,
   };
 }
@@ -396,6 +406,7 @@ export async function getCustomerAccountsFromRequest(
             e.product_id,
             p.code as product_code,
             p.name as product_name,
+            p.unit as product_unit,
             sum(case when e.direction = 'INCREASE' then e.quantity_litres else -e.quantity_litres end)::text as balance_litres,
             coalesce(r.reserved_litres, '0') as reserved_litres
           from app.customer_ledger_entries e
@@ -406,7 +417,7 @@ export async function getCustomerAccountsFromRequest(
           where e.tenant_id = ${context.tenantId}
             and e.account_type = 'PREPAID_LITRES'
             and e.account_id in (select account_id from account_rows where account_id is not null)
-          group by e.account_id, e.product_id, p.code, p.name, r.reserved_litres
+          group by e.account_id, e.product_id, p.code, p.name, p.unit, r.reserved_litres
           order by e.account_id, p.code, e.product_id`;
     const stationRowsQuery = sql`
           select account_id, station_id
@@ -431,6 +442,7 @@ export async function getCustomerAccountsFromRequest(
             e.product_id,
             p.code as product_code,
             p.name as product_name,
+            p.unit as product_unit,
             e.note
           from app.customer_ledger_entries e
           join app.customer_accounts a
@@ -540,8 +552,13 @@ export async function getCustomerAccountsFromRequest(
 
     const fuelProducts = query.customerId
       ? [
-          ...(await transaction.execute<{ id: string; code: string; name: string }>(sql`
-            select id, code, name
+          ...(await transaction.execute<{
+            id: string;
+            code: string;
+            name: string;
+            unit: 'LITRES' | 'KILOGRAMS';
+          }>(sql`
+            select id, code, name, unit
             from app.products
             where tenant_id = ${context.tenantId} and status = 'ACTIVE'
             order by code`)),

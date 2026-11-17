@@ -64,6 +64,10 @@ export function buildFuelProfitRows(
         productId,
         productCode: firstRevenue?.productCode ?? firstCost?.productCode ?? 'UNKNOWN',
         productName: firstRevenue?.productName ?? firstCost?.productName ?? 'Unknown fuel',
+        unit:
+          (group.revenue[0]?.productUnit ?? 'LITRES') === 'KILOGRAMS'
+            ? ('KILOGRAMS' as const)
+            : ('LITRES' as const),
         litres,
         revenue,
         cost,

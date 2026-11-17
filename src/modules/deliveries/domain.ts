@@ -74,7 +74,7 @@ function requireLitres(value: string, label: string): void {
   try {
     parsed = litres(value);
   } catch {
-    throw new AppError('VALIDATION_FAILED', `${label} must be a number of litres`);
+    throw new AppError('VALIDATION_FAILED', `${label} must be a number`);
   }
   if (parsed.value.isNegative()) {
     throw new AppError('VALIDATION_FAILED', `${label} cannot be negative`);
@@ -138,8 +138,8 @@ export function checkCompartments(input: {
         `${label} must carry the same fuel as the delivery. Record a different fuel as its own delivery.`,
       );
     }
-    requireLitres(compartment.noteLitres, `${label}: litres on the note`);
-    requireLitres(compartment.receivedLitres, `${label}: litres received`);
+    requireLitres(compartment.noteLitres, `${label}: quantity on the note`);
+    requireLitres(compartment.receivedLitres, `${label}: quantity received`);
     if (compartment.seals.length > MAX_SEALS_PER_COMPARTMENT) {
       throw new AppError(
         'VALIDATION_FAILED',
@@ -188,13 +188,13 @@ export function checkCompartments(input: {
   if (!totalNote.value.eq(litres(input.deliveryNoteLitres).value)) {
     throw new AppError(
       'VALIDATION_FAILED',
-      `The compartments add up to ${totalNote.toString()} litres on the note, but the delivery note says ${litres(input.deliveryNoteLitres).toString()} litres. Check each compartment.`,
+      `The compartments add up to ${totalNote.toString()} on the note, but the delivery note says ${litres(input.deliveryNoteLitres).toString()}. Check each compartment.`,
     );
   }
   if (!totalReceived.value.eq(litres(input.deliveryReceivedLitres).value)) {
     throw new AppError(
       'VALIDATION_FAILED',
-      `The compartments add up to ${totalReceived.toString()} litres received, but the delivery says ${litres(input.deliveryReceivedLitres).toString()} litres received. Check each compartment.`,
+      `The compartments add up to ${totalReceived.toString()} received, but the delivery says ${litres(input.deliveryReceivedLitres).toString()} received. Check each compartment.`,
     );
   }
   return {

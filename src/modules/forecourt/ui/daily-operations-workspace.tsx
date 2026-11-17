@@ -45,7 +45,8 @@ import {
   formatBusinessDate,
   formatDateTimeInTimeZone,
   formatDecimal,
-  formatLitres,
+  formatQuantity,
+  quantityUnitShort,
   formatMoney,
   formatStatusLabel,
   formatTimeInTimeZone,
@@ -1682,9 +1683,13 @@ export function DailyOperationsWorkspace({
                           ? null
                           : liveSalesValue(litresShown, reading.unitPrice);
                         const valueShown = liveValue ?? reading.salesValue;
-                        const soldText = litresShown ? formatLitres(litresShown) : null;
-                        const sold = soldText?.endsWith(' L')
-                          ? { value: soldText.slice(0, -2), unit: 'L' }
+                        const fuelUnit = record.tanks.find(
+                          (tank) => tank.productId === reading.productId,
+                        )?.unit;
+                        const unitText = quantityUnitShort(fuelUnit);
+                        const soldText = litresShown ? formatQuantity(litresShown, fuelUnit) : null;
+                        const sold = soldText?.endsWith(` ${unitText}`)
+                          ? { value: soldText.slice(0, -(unitText.length + 1)), unit: unitText }
                           : { value: soldText ?? '—', unit: undefined };
                         return (
                           <article className="pump-row" key={reading.rowKey}>
@@ -1725,13 +1730,13 @@ export function DailyOperationsWorkspace({
                                       ),
                                     );
                                   }}
-                                  unit="L"
+                                  unit={unitText}
                                 />
                               ) : (
                                 <PumpReadout
                                   label="Opening"
                                   value={formatDecimal(reading.openingReading)}
-                                  unit="L"
+                                  unit={unitText}
                                 />
                               )}
                               {editable ? (
@@ -1759,17 +1764,17 @@ export function DailyOperationsWorkspace({
                                       ),
                                     );
                                   }}
-                                  unit="L"
+                                  unit={unitText}
                                 />
                               ) : (
                                 <PumpReadout
                                   label="Closing"
                                   value={formatDecimal(reading.closingReading)}
-                                  unit="L"
+                                  unit={unitText}
                                 />
                               )}
                               <PumpReadout
-                                label="Litres sold"
+                                label={fuelUnit === 'KILOGRAMS' ? 'Kilograms sold' : 'Litres sold'}
                                 value={sold.value}
                                 unit={sold.unit}
                                 result
@@ -2264,7 +2269,10 @@ export function DailyOperationsWorkspace({
                       <PumpReadout
                         key={delivery.deliveryId}
                         label={`Delivery note ${delivery.deliveryNoteNumber}`}
-                        value={formatLitres(delivery.actualQuantityLitres)}
+                        value={formatQuantity(
+                          delivery.actualQuantityLitres,
+                          record.tanks.find((tank) => tank.productId === delivery.productId)?.unit,
+                        )}
                       />
                     ))}
                   </section>

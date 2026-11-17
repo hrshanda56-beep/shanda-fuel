@@ -12,6 +12,8 @@ import {
   parsePositiveDecimal,
   progress,
   suggestCode,
+  FUEL_CATALOGUE,
+  unitLabel,
 } from './guided-setup';
 
 type Data = Omit<ConfigurationSetupOverview, 'blockers'>;
@@ -41,7 +43,13 @@ const base: Data = {
   responsibleSupervisorMembershipId: null,
 };
 
-const diesel = { id: 'p1', code: 'DIESEL', name: 'Diesel', status: 'ACTIVE' };
+const diesel = {
+  id: 'p1',
+  code: 'DIESEL',
+  name: 'Diesel',
+  status: 'ACTIVE',
+  unit: 'LITRES' as const,
+};
 const byId = (steps: ReturnType<typeof buildGuidedSteps>, id: string) =>
   steps.find((s) => s.id === id)!;
 
@@ -160,7 +168,13 @@ describe('buildGuidedSteps', () => {
 });
 
 describe('buildFuelCards', () => {
-  const petrol = { id: 'p2', code: 'PETROL', name: 'Petrol', status: 'ACTIVE' };
+  const petrol = {
+    id: 'p2',
+    code: 'PETROL',
+    name: 'Petrol',
+    status: 'ACTIVE',
+    unit: 'LITRES' as const,
+  };
   const tank = (productId: string, tolerance: string | null) => ({
     id: `k-${productId}`,
     code: 'T',
@@ -201,7 +215,7 @@ describe('buildFuelCards', () => {
       ['Diesel', 'done'],
       ['Petrol', 'todo'],
     ]);
-    expect(cards[0]!.summary).toBe('Price in use, 1 tank, 1 nozzle.');
+    expect(cards[0]!.summary).toBe('Price in use, 1 tank, 1 nozzle. Sold in litres.');
     expect(cards[1]!.summary).toBe('Needs a price, an acceptable difference on 1 tank, a nozzle.');
   });
 
@@ -276,5 +290,21 @@ describe('friendlySetupError', () => {
     expect(friendlySetupError(500, 'stack trace')).toBe(
       'Something went wrong on our side. Nothing was saved. Try again.',
     );
+  });
+});
+
+describe('fuel catalogue', () => {
+  it('measures gas in kilograms and the liquid fuels in litres', () => {
+    const unitOf = (name: string) => FUEL_CATALOGUE.find((fuel) => fuel.name === name)?.unit;
+    expect(unitOf('LP Gas')).toBe('KILOGRAMS');
+    expect(unitOf('Petrol (Unleaded)')).toBe('LITRES');
+    expect(unitOf('Diesel 50')).toBe('LITRES');
+  });
+
+  it('has no repeated fuel names and a readable label for each unit', () => {
+    const names = FUEL_CATALOGUE.map((fuel) => fuel.name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(unitLabel('KILOGRAMS')).toBe('Kilograms (kg)');
+    expect(unitLabel('LITRES')).toBe('Litres');
   });
 });

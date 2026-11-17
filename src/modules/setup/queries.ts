@@ -55,8 +55,14 @@ export async function getSetupOverview(args: {
 
   return withTenantTransaction(context.authority.transaction, async (tx) => {
     const products = view.stationView
-      ? await tx.execute<{ id: string; code: string; name: string; status: string }>(sql`
-          select id, code, name, status from app.products
+      ? await tx.execute<{
+          id: string;
+          code: string;
+          name: string;
+          status: string;
+          unit: string;
+        }>(sql`
+          select id, code, name, status, unit from app.products
           where tenant_id = ${tenantId} order by code`)
       : null;
     const tanks = view.inventory
@@ -167,7 +173,13 @@ export async function getSetupOverview(args: {
       stationStatus: station[0]?.status ?? 'UNKNOWN',
       capabilities,
       products:
-        products?.map((r) => ({ id: r.id, code: r.code, name: r.name, status: r.status })) ?? null,
+        products?.map((r) => ({
+          id: r.id,
+          code: r.code,
+          name: r.name,
+          status: r.status,
+          unit: r.unit === 'KILOGRAMS' ? ('KILOGRAMS' as const) : ('LITRES' as const),
+        })) ?? null,
       tanks:
         tanks?.map((r) => ({
           id: r.id,

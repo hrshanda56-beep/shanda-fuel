@@ -93,6 +93,7 @@ type LineRow = {
   product_id: string;
   product_code: string;
   product_name: string;
+  product_unit: string;
   ordered_litres: string;
   agreed_unit_price: string | null;
   status: string;
@@ -106,7 +107,7 @@ async function linesWithReceipt(
 ) {
   const lines = await transaction.execute<LineRow>(sql`
     select l.id, l.purchase_order_id, l.line_number, l.product_id, pr.code as product_code,
-      pr.name as product_name, l.ordered_litres::text as ordered_litres,
+      pr.name as product_name, pr.unit as product_unit, l.ordered_litres::text as ordered_litres,
       l.agreed_unit_price::text as agreed_unit_price, l.status,
       l.short_closed_litres::text as short_closed_litres
     from app.purchase_order_lines l
@@ -128,6 +129,7 @@ async function linesWithReceipt(
       productId: line.product_id,
       productCode: line.product_code,
       productName: line.product_name,
+      productUnit: line.product_unit === 'KILOGRAMS' ? ('KILOGRAMS' as const) : ('LITRES' as const),
       orderedLitres: line.ordered_litres,
       agreedUnitPrice: line.agreed_unit_price,
       status: line.status,
@@ -303,19 +305,27 @@ export async function getPurchaseOrderReferenceFromRequest(
       select id, code, legal_name from app.suppliers
       where tenant_id = ${context.tenantId} and status = 'ACTIVE' order by code
     `);
-    const products = await transaction.execute<{ id: string; code: string; name: string }>(sql`
-      select id, code, name from app.products
+    const products = await transaction.execute<{
+      id: string;
+      code: string;
+      name: string;
+      unit: string;
+    }>(sql`
+      select id, code, name, unit from app.products
       where tenant_id = ${context.tenantId} and status = 'ACTIVE' order by code
     `);
     const deliveries = await transaction.execute<{
       id: string;
       delivery_note_number: string;
       product_id: string;
+      unit: string;
       status: string;
       actual_quantity_litres: string;
       business_date: string;
     }>(sql`
-      select d.id, d.delivery_note_number, d.product_id, d.status,
+      select d.id, d.delivery_note_number, d.product_id,
+        (select pu.unit from app.products pu where pu.tenant_id = d.tenant_id and pu.id = d.product_id) as unit,
+        d.status,
         d.actual_quantity_litres::text as actual_quantity_litres, d.business_date
       from app.fuel_deliveries d
       where d.tenant_id = ${context.tenantId} and d.station_id = ${context.stationId}
@@ -334,11 +344,17 @@ export async function getPurchaseOrderReferenceFromRequest(
         code: row.code,
         legalName: row.legal_name,
       })),
-      products: [...products].map((row) => ({ id: row.id, code: row.code, name: row.name })),
+      products: [...products].map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        unit: row.unit === 'KILOGRAMS' ? ('KILOGRAMS' as const) : ('LITRES' as const),
+      })),
       linkableDeliveries: [...deliveries].map((row) => ({
         id: row.id,
         deliveryNoteNumber: row.delivery_note_number,
         productId: row.product_id,
+        unit: row.unit === 'KILOGRAMS' ? ('KILOGRAMS' as const) : ('LITRES' as const),
         status: row.status,
         actualQuantityLitres: row.actual_quantity_litres,
         businessDate: row.business_date,
