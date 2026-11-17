@@ -34,7 +34,9 @@ for (const entry of exceptions) {
 const today = new Date().toISOString().slice(0, 10);
 const activeException = exceptions.length === 1 && today <= ALLOWED.expires;
 if (exceptions.length === 1 && !activeException) {
-  console.error(`The ${ALLOWED.advisoryId} exception expired on ${ALLOWED.expires}; remove it or review it again.`);
+  console.error(
+    `The ${ALLOWED.advisoryId} exception expired on ${ALLOWED.expires}; remove it or review it again.`,
+  );
 }
 
 const audit = spawnSync('pnpm', ['audit', '--audit-level=high', '--json'], {
