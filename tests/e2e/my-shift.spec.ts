@@ -131,7 +131,7 @@ test.describe('My Shift states', () => {
       }),
     );
     await page.goto('/my-shift');
-    await expect(page.getByText('✓ Completed')).toBeVisible();
+    await expect(page.getByText('✓', { exact: true })).toBeVisible();
     await expect(page.getByText('Not yet due')).toBeVisible();
     await expect(page.getByRole('button', { name: /record/i })).toHaveCount(0);
   });
