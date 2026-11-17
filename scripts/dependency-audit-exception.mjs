@@ -11,11 +11,32 @@ function fail(message) {
   process.exit(1);
 }
 
-// No exception is currently active. The only one ever recorded (braces, GHSA-vfj7-8cjw-p6xm) expired
-// on 2026-11-03 and the advisory is no longer reported. Adding an exception again is a reviewed
-// change to this script, not just to the JSON file.
-if (!Array.isArray(exceptions) || exceptions.length !== 0) {
-  fail('no advisory exception is permitted');
+// Exactly one exception is permitted: picomatch, GHSA-fc5q-39xc-vjpf (no patched release exists).
+// Record: docs/security/exceptions/GHSA-fc5q-39xc-vjpf.md. It lapses on its expiry date, after which
+// the audit fails again. Adding or widening an exception is a reviewed change to this script.
+const ALLOWED = {
+  advisoryId: 'GHSA-fc5q-39xc-vjpf',
+  packageName: 'picomatch',
+  severity: 'high',
+  expires: '2026-12-17',
+};
+
+if (!Array.isArray(exceptions) || exceptions.length > 1) {
+  fail('at most one advisory exception is permitted');
+}
+for (const entry of exceptions) {
+  for (const key of ['advisoryId', 'packageName', 'severity', 'expires']) {
+    if (entry[key] !== ALLOWED[key]) {
+      fail(`exception ${key} must be ${ALLOWED[key]}`);
+    }
+  }
+}
+const today = new Date().toISOString().slice(0, 10);
+const activeException = exceptions.length === 1 && today <= ALLOWED.expires;
+if (exceptions.length === 1 && !activeException) {
+  console.error(
+    `The ${ALLOWED.advisoryId} exception expired on ${ALLOWED.expires}; remove it or review it again.`,
+  );
 }
 
 const audit = spawnSync('pnpm', ['audit', '--audit-level=high', '--json'], {
@@ -39,7 +60,14 @@ try {
 }
 
 const advisories = Object.values(report.advisories ?? {});
-const blocking = advisories.filter((advisory) => ['high', 'critical'].includes(advisory.severity));
+const isExcepted = (advisory) =>
+  activeException &&
+  (advisory.github_advisory_id ?? advisory.id) === ALLOWED.advisoryId &&
+  advisory.module_name === ALLOWED.packageName &&
+  advisory.severity === ALLOWED.severity;
+const blocking = advisories.filter(
+  (advisory) => ['high', 'critical'].includes(advisory.severity) && !isExcepted(advisory),
+);
 
 if (blocking.length > 0) {
   console.error('High/critical dependency advisories remain:');
@@ -49,4 +77,8 @@ if (blocking.length > 0) {
   process.exit(1);
 }
 
-console.log('Dependency audit: no high or critical advisories.');
+console.log(
+  activeException
+    ? `Dependency audit: no high or critical advisories other than the excepted ${ALLOWED.advisoryId} (expires ${ALLOWED.expires}).`
+    : 'Dependency audit: no high or critical advisories.',
+);
