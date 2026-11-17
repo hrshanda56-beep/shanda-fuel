@@ -2,7 +2,11 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, type ReactNode } from 'react';
-import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
+import {
+  formatBusinessDate,
+  formatCombinedQuantity,
+  formatQuantity,
+} from '@/design-system/formatters';
 import { Pagination, usePagination } from '@/design-system/pagination';
 import { InfoTip } from '@/design-system/info-tip';
 import { Card, EmptyState, ErrorState, StatusBadge } from '@/design-system/primitives';
@@ -95,6 +99,13 @@ export function DailyProfitWorkspace({
   const hasActivity = summary !== null && summary.days.length > 0;
   const dayPage = usePagination(summary?.days ?? []);
   const missingCost = summary?.fuels.some((fuel) => fuel.grossProfit === null) ?? false;
+  const combinedUnit = summary?.combined.unit;
+  const profitPerLabel =
+    combinedUnit === 'KILOGRAMS'
+      ? 'Profit per kilogram'
+      : combinedUnit === 'MIXED'
+        ? 'Profit per unit'
+        : 'Profit per litre';
   const period = report
     ? `${formatBusinessDate(report.filters.fromDate)} to ${formatBusinessDate(report.filters.toDate)}`
     : null;
@@ -184,17 +195,19 @@ export function DailyProfitWorkspace({
                     <thead>
                       <tr>
                         <th scope="col">Fuel</th>
-                        <th scope="col">Litres sold</th>
+                        <th scope="col">Quantity sold</th>
                         <th scope="col">Fuel sold</th>
                         <th scope="col">Profit before expenses</th>
-                        <th scope="col">Profit per litre</th>
+                        <th scope="col">{profitPerLabel}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {summary.fuels.map((fuel) => (
                         <tr key={fuel.productId}>
                           <th scope="row">{fuel.productName}</th>
-                          <td data-label="Litres sold">{formatLitres(fuel.litres)}</td>
+                          <td data-label="Quantity sold">
+                            {formatQuantity(fuel.litres, fuel.unit)}
+                          </td>
                           <td data-label="Fuel sold">{moneyOrUnavailable(fuel.sales)}</td>
                           <td
                             data-label="Profit before expenses"
@@ -202,26 +215,31 @@ export function DailyProfitWorkspace({
                           >
                             {moneyOrUnavailable(fuel.grossProfit)}
                           </td>
-                          <td data-label="Profit per litre">
-                            {formatPerLitre(fuel.grossProfitPerLitre).replace(' per litre', '')}
+                          <td data-label={profitPerLabel}>
+                            {formatPerLitre(fuel.grossProfitPerLitre, fuel.unit).replace(
+                              / per (litre|kilogram)$/,
+                              '',
+                            )}
                           </td>
                         </tr>
                       ))}
                       {summary.fuels.length > 1 ? (
                         <tr>
                           <th scope="row">Both fuels</th>
-                          <td data-label="Litres sold">{formatLitres(summary.combined.litres)}</td>
+                          <td data-label="Quantity sold">
+                            {formatCombinedQuantity(summary.combined.litres, summary.combined.unit)}
+                          </td>
                           <td data-label="Fuel sold">
                             {moneyOrUnavailable(summary.combined.sales)}
                           </td>
                           <td data-label="Profit before expenses">
                             {moneyOrUnavailable(summary.combined.grossProfit)}
                           </td>
-                          <td data-label="Profit per litre">
-                            {formatPerLitre(summary.combined.grossProfitPerLitre).replace(
-                              ' per litre',
-                              '',
-                            )}
+                          <td data-label={profitPerLabel}>
+                            {formatPerLitre(
+                              summary.combined.grossProfitPerLitre,
+                              summary.combined.unit,
+                            ).replace(/ per (litre|kilogram)$/, '')}
                           </td>
                         </tr>
                       ) : null}

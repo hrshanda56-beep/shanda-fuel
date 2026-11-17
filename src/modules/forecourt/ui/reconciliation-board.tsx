@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import { Icon } from '../../../design-system/icons';
-import { formatLitres, formatStatusLabel } from '../../../design-system/formatters';
+import { formatQuantity, formatStatusLabel } from '../../../design-system/formatters';
 import { LoadingState, type StatusTone } from '../../../design-system/primitives';
 import { CashDonut, sumDecimals, type DonutSlice } from '../../cash/ui/cash-visuals';
 import { formatTileMoney } from '../../reporting/format';
@@ -237,6 +237,13 @@ function BreakdownRow({
 /** Every figure and every explanation for one day's sheet, in the order it was filled in. */
 function Breakdown({ detail }: { detail: ReconciliationDetail }) {
   const approvalNote = detail.approvalNote;
+  const unitOf = (productId?: string) =>
+    (detail.tanks ?? []).find((tank) => tank.productId === productId)?.unit;
+  const soldUnits = new Set(
+    detail.readings.map((reading) => unitOf(reading.productId) ?? 'LITRES'),
+  );
+  // Litres and kilograms cannot be added together, so a mixed day lists only the nozzle count.
+  const soldUnit = soldUnits.size === 1 ? [...soldUnits][0] : undefined;
   const litres = sumDecimals(detail.readings.map((reading) => reading.litresSold));
   const expenseTotal = sumDecimals(detail.expenses.map((expense) => expense.amount));
   const paymentTotal = sumDecimals(detail.payments.map((payment) => payment.amount));
@@ -255,7 +262,7 @@ function Breakdown({ detail }: { detail: ReconciliationDetail }) {
         <h4>Sales</h4>
         <BreakdownRow
           label="Expected sales"
-          detail={`${detail.readings.length} ${detail.readings.length === 1 ? 'nozzle' : 'nozzles'}, ${formatLitres(litres)} sold`}
+          detail={`${detail.readings.length} ${detail.readings.length === 1 ? 'nozzle' : 'nozzles'}, ${soldUnit ? `${formatQuantity(litres, soldUnit)} sold` : 'sold in more than one unit'}`}
           value={money(detail.totals.expectedSales)}
           strong
         />
@@ -353,16 +360,16 @@ function Breakdown({ detail }: { detail: ReconciliationDetail }) {
               detail={
                 variance === undefined
                   ? 'Dipped, nothing to compare with'
-                  : `${Number(variance) > 0 ? '+' : ''}${formatLitres(variance)} from what was expected`
+                  : `${Number(variance) > 0 ? '+' : ''}${formatQuantity(variance, tank.unit)} from what was expected`
               }
-              value={formatLitres(dip.physicalLitres)}
+              value={formatQuantity(dip.physicalLitres, tank.unit)}
             />
           ))}
           {(detail.deliveries ?? []).map((delivery) => (
             <BreakdownRow
               key={delivery.deliveryNoteNumber}
               label={`Delivery ${delivery.deliveryNoteNumber}`}
-              value={formatLitres(delivery.actualQuantityLitres)}
+              value={formatQuantity(delivery.actualQuantityLitres, unitOf(delivery.productId))}
             />
           ))}
         </section>
@@ -411,7 +418,7 @@ function StatementShiftBlock({
       <table>
         <tbody>
           <LedgerRow
-            label={`Expected sales · ${section.nozzles} ${section.nozzles === 1 ? 'nozzle' : 'nozzles'}, ${section.litres} L`}
+            label={`Expected sales · ${section.nozzles} ${section.nozzles === 1 ? 'nozzle' : 'nozzles'}${section.quantityUnit ? `, ${section.litres} ${section.quantityUnit === 'KILOGRAMS' ? 'kg' : 'L'}` : ''}`}
             value={section.expectedSales}
             strong
           />

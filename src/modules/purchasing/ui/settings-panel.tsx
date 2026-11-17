@@ -122,11 +122,11 @@ export function SettingsPanel({
             <dl className={styles.settingsList}>
               {[
                 [
-                  'Invoice litres vs litres received',
+                  'Invoice quantity vs quantity received',
                   litresAllowanceSentence(r.quantityToleranceLitres, r.quantityTolerancePercent),
                 ],
                 [
-                  'Litres received vs delivery note',
+                  'Quantity received vs delivery note',
                   litresAllowanceSentence(
                     r.overReceiptToleranceLitres,
                     r.overReceiptTolerancePercent,
@@ -358,9 +358,13 @@ function PolicyDialog({
     event.preventDefault();
     setError(null);
     const fields: Array<[keyof FormState, string, number]> = [
-      ['quantityToleranceLitres', 'Allowed litres difference on the invoice', 3],
-      ['quantityTolerancePercent', 'Allowed percentage difference on the invoice litres', 4],
-      ['overReceiptToleranceLitres', 'Allowed extra litres compared with the delivery note', 3],
+      ['quantityToleranceLitres', 'Allowed quantity difference on the invoice (litres or kg)', 3],
+      ['quantityTolerancePercent', 'Allowed percentage difference on the invoice quantity', 4],
+      [
+        'overReceiptToleranceLitres',
+        'Allowed extra quantity compared with the delivery note (litres or kg)',
+        3,
+      ],
       ['overReceiptTolerancePercent', 'Allowed extra percentage compared with the note', 4],
       ['priceTolerancePercent', 'Allowed price difference', 4],
       ['amountTolerance', 'Allowed invoice total difference', 4],
@@ -449,7 +453,7 @@ function PolicyDialog({
               <div className={styles.pair}>
                 <Field
                   id="pp-qty-l"
-                  label="Litres on the invoice vs litres received (litres)"
+                  label="Quantity on the invoice vs quantity received (litres or kg)"
                   optional
                 >
                   <input
@@ -469,7 +473,7 @@ function PolicyDialog({
                 </Field>
                 <Field
                   id="pp-over-l"
-                  label="Extra litres received vs delivery note (litres)"
+                  label="Extra quantity received vs delivery note (litres or kg)"
                   optional
                 >
                   <input
@@ -558,7 +562,7 @@ function PolicyDialog({
                   companyView.quantityToleranceLitres,
                   companyView.quantityTolerancePercent,
                 ).toLowerCase()}{' '}
-                on invoice litres,{' '}
+                on invoice quantity,{' '}
                 {percentAllowanceSentence(companyView.priceTolerancePercent).toLowerCase()} on
                 price.
               </p>

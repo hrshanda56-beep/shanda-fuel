@@ -45,7 +45,7 @@ describe('csvCell', () => {
 describe('buildReportCsv', () => {
   it('exports an empty report as the heading row alone', () => {
     expect(buildReportCsv('sales', report())).toBe(
-      'business_date,station_code,product_code,product_name,litres_sold,sales_value,average_realized_price,variance\r\n',
+      'business_date,station_code,product_code,product_name,litres_sold,unit,sales_value,average_realized_price,variance\r\n',
     );
   });
 
@@ -70,7 +70,7 @@ describe('buildReportCsv', () => {
       }),
     );
     expect(csv.split('\r\n')[1]).toBe(
-      '2026-10-02,BIN,ULP,"Unleaded, 95",1234.5670,1245.5000,,-0.0100',
+      '2026-10-02,BIN,ULP,"Unleaded, 95",1234.5670,LITRES,1245.5000,,-0.0100',
     );
   });
 
@@ -158,7 +158,7 @@ describe('buildReportCsv', () => {
       }),
     );
     expect(inventory.split('\r\n')[1]).toBe(
-      'BIN,T1,ULP,Unleaded,100.000,,,0.000,0.0000,2026-10-31',
+      'BIN,T1,ULP,Unleaded,LITRES,100.000,,,0.000,0.0000,2026-10-31',
     );
   });
 
@@ -193,9 +193,9 @@ describe('buildReportCsv', () => {
       }),
     );
     const [header, supplier, drawn] = csv.split('\r\n');
-    expect(header?.split(',')).toHaveLength(15);
-    expect(supplier).toBe('SUPPLIER,S1,Fuel Co,,5.0000,0.0000,1.0000,4.0000,,,,,,,');
-    expect(drawn).toBe('CUSTOMER_CREDIT_DRAWN,CREDIT,,BIN,,,,,,,,,20.0000,10.000,2');
+    expect(header?.split(',')).toHaveLength(16);
+    expect(supplier).toBe('SUPPLIER,S1,Fuel Co,,,5.0000,0.0000,1.0000,4.0000,,,,,,,');
+    expect(drawn).toBe('CUSTOMER_CREDIT_DRAWN,CREDIT,,BIN,LITRES,,,,,,,,,20.0000,10.000,2');
   });
 
   it('rejects an unknown report', () => {

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
-import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
+import { formatBusinessDate, formatQuantity } from '@/design-system/formatters';
 import { InfoTip } from '@/design-system/info-tip';
 import {
   AccessDeniedState,
@@ -125,7 +125,13 @@ function StationTable({ view }: { view: ProfitView }) {
             <th scope="col">Cost of fuel</th>
             <th scope="col">Expenses</th>
             <th scope="col">Profit</th>
-            <th scope="col">Profit per litre</th>
+            <th scope="col">
+              {view.unit === 'KILOGRAMS'
+                ? 'Profit per kilogram'
+                : view.unit === 'LITRES'
+                  ? 'Profit per litre'
+                  : 'Profit per litre or kilogram'}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -141,7 +147,9 @@ function StationTable({ view }: { view: ProfitView }) {
               <td data-label="Profit" data-negative={isNegative(station.profit) || undefined}>
                 {moneyOrUnavailable(station.profit)}
               </td>
-              <td data-label="Profit per litre">{formatPerLitre(station.perLitre)}</td>
+              <td data-label="Profit per unit sold">
+                {formatPerLitre(station.perLitre, station.unit)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -167,7 +175,7 @@ function FuelTable({ view, links }: { view: ProfitView; links: ReactNode }) {
           <thead>
             <tr>
               <th scope="col">Fuel</th>
-              <th scope="col">Litres sold</th>
+              <th scope="col">Quantity sold</th>
               <th scope="col">Fuel sold</th>
               <th scope="col">Average price</th>
             </tr>
@@ -176,12 +184,15 @@ function FuelTable({ view, links }: { view: ProfitView; links: ReactNode }) {
             {view.fuels.map((fuel) => (
               <tr key={fuel.productId}>
                 <th scope="row">{fuel.name}</th>
-                <td data-label="Litres sold">{formatLitres(fuel.litres)}</td>
+                <td data-label="Quantity sold">{formatQuantity(fuel.litres, fuel.unit)}</td>
                 <td data-label="Fuel sold">{moneyOrUnavailable(fuel.sales)}</td>
                 <td data-label="Average price">
                   {fuel.pricePerLitre === null
                     ? 'Not available'
-                    : formatPerLitre(fuel.pricePerLitre).replace(' per litre', '')}
+                    : formatPerLitre(fuel.pricePerLitre, fuel.unit).replace(
+                        / per (litre|kilogram)$/,
+                        '',
+                      )}
                 </td>
               </tr>
             ))}

@@ -187,8 +187,16 @@ export function dailyOperationsProblem(
     /** The shift's state, and whether the person may mark it not operated (the server only allows a shift that has not started). */
     shiftState?: string;
     canMarkNotOperated?: boolean;
+    /** The server's error details, such as `{ reason: 'METER_NOT_SET_UP' }`. */
+    details?: Record<string, unknown>;
   }>,
 ): DailyOperationsProblem {
+  if (context?.details?.reason === 'METER_NOT_SET_UP') {
+    return {
+      message: message ?? 'A pump is not set up for this shift.',
+      fix: link('Check the pump setup', '/settings?tab=stations'),
+    };
+  }
   const a12Message = mapA12OperatorError(code, message);
   if (a12Message)
     return { message: a12Message, fix: link('Open inventory valuation', '/inventory/valuation') };
@@ -364,4 +372,25 @@ export function mapDailyOperationsError(
   message: string | undefined,
 ): string {
   return dailyOperationsProblem(status, code, message).message;
+}
+
+/** The part of the overview that says whether a closed day can be locked right now. */
+export type LockCheckOverview = Readonly<{
+  lockBlockedReason?: string | null;
+  actions: Readonly<{ LockBusinessDay: Readonly<{ permissionGranted: boolean }> }>;
+  selectedBusinessDay?: Readonly<{ id: string; state: string; version: number }>;
+}>;
+
+/**
+ * The day to lock straight after an approval, or null. The day must be closed, nothing may block
+ * the lock, and the person must be allowed to lock (only the owner and the administrator are).
+ */
+export function dayReadyToLock(
+  overview: LockCheckOverview,
+): { id: string; version: number } | null {
+  const day = overview.selectedBusinessDay;
+  if (!day || day.state !== 'CLOSED') return null;
+  if (overview.lockBlockedReason) return null;
+  if (!overview.actions.LockBusinessDay.permissionGranted) return null;
+  return { id: day.id, version: day.version };
 }

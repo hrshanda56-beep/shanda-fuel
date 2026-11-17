@@ -41,6 +41,8 @@ export const products = appSchema.table(
     kind: text('kind'),
     blendPercent: smallint('blend_percent'),
     displayOrder: integer('display_order'),
+    /** How this fuel is measured: LITRES (petrol, diesel) or KILOGRAMS (gas). */
+    unit: text('unit').notNull().default('LITRES'),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
     updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
   },

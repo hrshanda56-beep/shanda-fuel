@@ -85,7 +85,14 @@ describe('setProductKindPayload', () => {
 
 describe('toSetupProduct', () => {
   it('returns the kind and blend percentage per product, null for legacy rows', () => {
-    const row = { id: 'a', code: 'D', name: 'Diesel 50', status: 'ACTIVE', display_order: null };
+    const row = {
+      id: 'a',
+      code: 'D',
+      name: 'Diesel 50',
+      status: 'ACTIVE',
+      display_order: null,
+      unit: 'LITRES',
+    };
     expect(toSetupProduct({ ...row, kind: null, blend_percent: null })).toMatchObject({
       name: 'Diesel 50',
       kind: null,

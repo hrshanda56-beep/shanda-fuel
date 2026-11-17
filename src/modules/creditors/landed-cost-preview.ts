@@ -13,12 +13,15 @@ export type PreviewDelivery = {
   deliveryNoteNumber: string;
   /** Litres actually received, not the litres on the delivery note. */
   receivedLitres: string;
+  /** LITRES or KILOGRAMS; litres when not given. */
+  unit?: 'LITRES' | 'KILOGRAMS';
 };
 
 export type LandedCostPreview = {
   deliveryId: string;
   deliveryNoteNumber: string;
   receivedLitres: string;
+  unit: 'LITRES' | 'KILOGRAMS';
   purchaseCost: string;
   directCosts: string;
   totalCost: string;
@@ -72,6 +75,7 @@ export function previewLandedCost(
       deliveryId,
       deliveryNoteNumber: delivery.deliveryNoteNumber,
       receivedLitres: delivery.receivedLitres,
+      unit: delivery.unit ?? 'LITRES',
       purchaseCost: purchase.toFixed(4),
       directCosts: direct.toFixed(4),
       totalCost: total.toFixed(4),

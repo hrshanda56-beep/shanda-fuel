@@ -230,10 +230,12 @@ export function RecordDelivery({
     setNoPoNote(next.note);
     setPoError(null);
   }, []);
-  const difference = shortageOrExcess(noteLitres, receivedLitres);
+  const difference = shortageOrExcess(noteLitres, receivedLitres, tank?.unit);
+  const unitWord = tank?.unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
+  const UnitWord = tank?.unit === 'KILOGRAMS' ? 'Kilograms' : 'Litres';
   const sumProblem = useMemo(
-    () => compartmentSumProblem(compartments, noteLitres, receivedLitres),
-    [compartments, noteLitres, receivedLitres],
+    () => compartmentSumProblem(compartments, noteLitres, receivedLitres, tank?.unit),
+    [compartments, noteLitres, receivedLitres, tank?.unit],
   );
 
   // The draft is offered back, never applied silently, and goes once the delivery is recorded.
@@ -780,7 +782,7 @@ export function RecordDelivery({
           </section>
 
           <section className="rd-group" aria-labelledby="rd-h-litres">
-            <h3 id="rd-h-litres">Litres</h3>
+            <h3 id="rd-h-litres">{UnitWord}</h3>
             <div className="rd-grid">
               <Field id="rd-note-litres" label="On the delivery note" required>
                 <input
@@ -869,7 +871,7 @@ export function RecordDelivery({
                   .join(' and ')}
               >
                 <div className="rd-grid">
-                  <Field id="rd-dip-before" label="Before the delivery (litres)" optional>
+                  <Field id="rd-dip-before" label={`Before the delivery (${unitWord})`} optional>
                     <input
                       id="rd-dip-before"
                       inputMode="decimal"
@@ -877,7 +879,7 @@ export function RecordDelivery({
                       onChange={(event) => setDipBefore(event.target.value)}
                     />
                   </Field>
-                  <Field id="rd-dip-after" label="After the delivery (litres)" optional>
+                  <Field id="rd-dip-after" label={`After the delivery (${unitWord})`} optional>
                     <input
                       id="rd-dip-after"
                       inputMode="decimal"
@@ -893,7 +895,7 @@ export function RecordDelivery({
               title="Truck compartments and seals"
               note={
                 sumProblem
-                  ? 'Check the litres'
+                  ? `Check the ${unitWord}`
                   : compartments.length > 0
                     ? `${compartments.length} added`
                     : ''

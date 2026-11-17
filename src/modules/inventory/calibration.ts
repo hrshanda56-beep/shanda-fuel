@@ -31,11 +31,11 @@ export function normaliseCalibrationChart(
   }
   const parsed = points.map((point) => ({
     measurement: decimal(point.measurement, 'Dipstick reading'),
-    litres: decimal(point.litres, 'Litres'),
+    litres: decimal(point.litres, 'Quantity'),
   }));
   for (const row of parsed) {
     if (row.measurement.value.isNegative() || row.litres.value.isNegative()) {
-      throw new AppError('VALIDATION_FAILED', 'Readings and litres cannot be negative');
+      throw new AppError('VALIDATION_FAILED', 'Readings and quantities cannot be negative');
     }
   }
   parsed.sort((a, b) => a.measurement.value.cmp(b.measurement.value));
@@ -51,7 +51,7 @@ export function normaliseCalibrationChart(
     if (row.litres.value.lt(before.litres.value)) {
       throw new AppError(
         'VALIDATION_FAILED',
-        `At ${row.measurement.toString()} the tank cannot hold fewer litres than at ${before.measurement.toString()}`,
+        `At ${row.measurement.toString()} the tank cannot hold a smaller quantity than at ${before.measurement.toString()}`,
       );
     }
   }
@@ -61,7 +61,7 @@ export function normaliseCalibrationChart(
     if (largest.gt(capacity)) {
       throw new AppError(
         'VALIDATION_FAILED',
-        'The chart holds more litres than the tank capacity. Check the litres column.',
+        'The chart holds more than the tank capacity. Check the quantity column.',
       );
     }
   }
@@ -118,7 +118,7 @@ export function parseCalibrationText(text: string): CalibrationPoint[] {
     if (numbers.length !== 2 || !numbers.every((value) => /^\d+(?:\.\d+)?$/.test(value))) {
       throw new AppError(
         'VALIDATION_FAILED',
-        `Line ${index + 1} should have a reading and litres, for example 112.5, 18400`,
+        `Line ${index + 1} should have a reading and a quantity, for example 112.5, 18400`,
       );
     }
     rows.push({ measurement: numbers[0]!, litres: numbers[1]! });

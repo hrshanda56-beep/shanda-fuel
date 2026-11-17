@@ -6,6 +6,12 @@
  * recognition date is one day of fixed cost.
  */
 import {
+  asQuantityUnit,
+  combineQuantityUnits,
+  type CombinedUnit,
+  type QuantityUnit,
+} from '../../design-system/formatters';
+import {
   averageRealizedPrice,
   exact,
   formatLitres,
@@ -22,6 +28,7 @@ export type DailyProfitSale = Readonly<{
   productName: string;
   productKind?: string | null;
   productDisplayOrder?: number | null;
+  productUnit?: QuantityUnit;
   recognizedRevenue: string;
   quantityLitres: string;
 }>;
@@ -59,6 +66,8 @@ export type FuelProfitLine = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  /** What this fuel is measured in. */
+  unit: QuantityUnit;
   litres: string;
   sales: string;
   /** Null when any sale of this fuel has no cost yet. */
@@ -69,6 +78,8 @@ export type FuelProfitLine = Readonly<{
 }>;
 
 export type CombinedProfitLine = Readonly<{
+  /** The unit of `litres`; MIXED when litre and kilogram fuels are added together. */
+  unit: CombinedUnit;
   litres: string;
   sales: string;
   costOfFuelSold: string | null;
@@ -107,6 +118,7 @@ type Fuel = Readonly<{
   productName: string;
   productKind?: string | null;
   productDisplayOrder?: number | null;
+  unit: QuantityUnit;
 }>;
 
 function fuelLine(
@@ -139,6 +151,7 @@ function combine(
   expenses: readonly DailyProfitExpense[],
   fuelBenefit: string,
 ): CombinedProfitLine {
+  const unit = combineQuantityUnits(fuels.map((fuel) => fuel.unit));
   const litres = formatLitres(sumExact(fuels.map((fuel) => fuel.litres)));
   const sales = formatMoney(sumExact(fuels.map((fuel) => fuel.sales)));
   const known = fuels.every((fuel) => fuel.grossProfit !== null);
@@ -151,11 +164,14 @@ function combine(
     sumExact(expenses.filter((e) => e.classification === 'FIXED_COST').map((e) => e.amount)),
   );
   return {
+    unit,
     litres,
     sales,
     costOfFuelSold: cost,
     grossProfit: gross,
-    grossProfitPerLitre: gross === null ? null : averageRealizedPrice(litres, gross),
+    // A figure per litre across litre and kilogram fuels would mean nothing.
+    grossProfitPerLitre:
+      gross === null || unit === 'MIXED' ? null : averageRealizedPrice(litres, gross),
     expenses: operating,
     fixedCosts: fixed,
     fuelBenefit,
@@ -180,6 +196,7 @@ function groupFuels(
       productName: sale.productName,
       productKind: sale.productKind,
       productDisplayOrder: sale.productDisplayOrder,
+      unit: asQuantityUnit(sale.productUnit),
     });
   }
   for (const cost of costs) {
@@ -190,6 +207,7 @@ function groupFuels(
         productName: cost.productName ?? 'Unknown fuel',
         productKind: cost.productKind,
         productDisplayOrder: cost.productDisplayOrder,
+        unit: 'LITRES',
       });
     }
   }

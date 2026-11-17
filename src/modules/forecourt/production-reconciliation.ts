@@ -1680,7 +1680,7 @@ export async function getProductionReconciliationFromRequest(
         ),
       ]);
     const tanks = await transaction.execute<RecordData['tanks'][number]>(sql`
-      select t.id as "tankId", t.code, t.product_id as "productId", p.name as "productName",
+      select t.id as "tankId", t.code, t.product_id as "productId", p.name as "productName", p.unit as "unit",
         t.capacity_litres::text as "capacityLitres",
         t.acceptable_variance_litres::text as "toleranceLitres",
         t.variance_red_litres::text as "redLitres",

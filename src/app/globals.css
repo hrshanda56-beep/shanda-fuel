@@ -3309,9 +3309,25 @@ h3,
   min-width: 0;
 }
 
+.ops-hero-lock-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--tone-warning-fg);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--tone-warning-fg) 8%, var(--bg-surface));
+  font-size: var(--font-size-sm);
+}
+
+.ops-hero-lock-note p {
+  flex: 1;
+  margin: 0;
+}
+
 .ops-hero-times {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
   gap: var(--space-3);
   margin: 0;
 }
@@ -4587,7 +4603,7 @@ h3,
 
 .next-step-trail {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
   margin: var(--space-3) 0 0;
   padding: var(--space-3) 0 0;
@@ -8328,8 +8344,8 @@ h3,
 .tank-row {
   container-type: inline-size;
   display: grid;
-  gap: var(--space-4);
-  padding: var(--space-5) var(--space-6);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--bg-subtle);
@@ -8344,8 +8360,20 @@ h3,
   box-shadow: var(--shadow-sm);
 }
 
+.tank-row .pump-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+}
+
 .tank-row .pump-row-head h3 {
   letter-spacing: -0.01em;
+}
+
+.tank-row .pump-row-meta {
+  margin: 0;
 }
 
 /* The pump rule that starts a new line at the third figure is for pumps; a tank keeps its figures on one. */
@@ -8416,11 +8444,8 @@ h3,
 }
 
 /* What the books expect is the figure to compare a dip against, so it reads as one. */
-.tank-row-entry .pump-readout-value {
-  color: var(--text-primary);
-  font-size: var(--font-size-xl);
+.tank-row-readings .pump-readout:first-child .pump-readout-value {
   font-weight: var(--font-weight-semibold);
-  letter-spacing: -0.01em;
 }
 
 .tank-row-readings {
@@ -8435,43 +8460,26 @@ h3,
   white-space: normal;
 }
 
-/* What the books expect, then the field for a new dip: one row, on the same columns as the figures above. */
+/* The field for a new dip has a row to itself, under the figures it will replace. */
 .tank-row-entry {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-3);
+  max-width: 32rem;
 }
 
+/* Expected, dip, difference and result read left to right as one comparison. */
 @container (min-width: 30rem) {
   .tank-row-readings {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
     gap: var(--space-4);
   }
-
-  .tank-row-entry {
-    grid-template-columns: minmax(9rem, 1fr) minmax(0, 1.5fr);
-    align-items: start;
-    gap: var(--space-6);
-  }
 }
 
-/* Dip, difference and result sit on one line as soon as the tile is wide enough for the result's words. */
-@container (min-width: 38rem) {
+@container (min-width: 34rem) {
   .tank-row-readings {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
-    gap: var(--space-6);
-  }
-}
-
-@container (min-width: 44rem) {
-  .tank-row-readings[data-with-expected] {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .tank-row-entry {
-    grid-template-columns: minmax(9rem, 1fr) minmax(12rem, 1.2fr) minmax(0, 1.8fr);
-    gap: var(--space-8);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.7fr);
+    gap: var(--space-4);
   }
 }
 

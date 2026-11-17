@@ -40,7 +40,9 @@ describe('computeSetupBlockers', () => {
   it('blocks a nozzle product without an ACTIVE price, not a pending one', () => {
     const data = {
       ...empty,
-      products: [{ id: 'p1', code: 'DSL', name: 'Diesel', status: 'ACTIVE' }],
+      products: [
+        { id: 'p1', code: 'DSL', name: 'Diesel', status: 'ACTIVE', unit: 'LITRES' as const },
+      ],
       nozzles: [
         {
           id: 'n1',

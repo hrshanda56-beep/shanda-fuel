@@ -65,8 +65,9 @@ export async function getSetupOverview(args: {
           kind: string | null;
           blend_percent: number | null;
           display_order: number | null;
+          unit: string;
         }>(sql`
-          select p.id, p.code, p.name, p.status, p.kind, p.blend_percent, p.display_order
+          select p.id, p.code, p.name, p.status, p.unit, p.kind, p.blend_percent, p.display_order
           from app.products p
           where p.tenant_id = ${tenantId} order by ${productOrderSql('p')}, p.code`)
       : null;

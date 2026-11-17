@@ -239,7 +239,7 @@ describe('delivery detail PostgreSQL persistence', () => {
     payload.compartments[1]!.receivedLitres = '4000';
     await expect(
       recordDeliveryCompartmentsCommand(contextFor('A'), payload, `dd-compartments-bad-${run}`),
-    ).rejects.toThrow(/litres received/);
+    ).rejects.toThrow(/received/);
   });
 
   it('records a water test and a driver confirmation, and lets the driver confirm later', async () => {

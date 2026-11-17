@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useMemo, type ReactNode } from 'react';
 import { InfoTip } from '@/design-system/info-tip';
 import { Card, EmptyState, ErrorState, StatusBadge } from '@/design-system/primitives';
-import { formatLitres } from '@/design-system/formatters';
+import { formatQuantity } from '@/design-system/formatters';
 import { moneyOrUnavailable } from '@/modules/profitability/ui/profit-model';
 import type { ManagementReport } from '@/modules/reporting/contracts';
 import {
@@ -186,7 +186,7 @@ export function FinancialPositionWorkspace({
               <tr>
                 <th scope="col">Station</th>
                 <th scope="col">Fuel</th>
-                <th scope="col">Litres</th>
+                <th scope="col">Quantity</th>
                 <th scope="col">Value at cost</th>
               </tr>
             </thead>
@@ -195,7 +195,7 @@ export function FinancialPositionWorkspace({
                 <tr key={`${row.stationName}-${row.productName}`}>
                   <th scope="row">{row.stationName}</th>
                   <td data-label="Fuel">{row.productName}</td>
-                  <td data-label="Litres">{formatLitres(row.litres)}</td>
+                  <td data-label="Quantity">{formatQuantity(row.litres, row.unit)}</td>
                   <td data-label="Value at cost">{moneyOrUnavailable(row.value)}</td>
                 </tr>
               ))}

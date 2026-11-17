@@ -333,6 +333,8 @@ export type DeliveryFacts = {
   actual_quantity_litres: string;
   unit_landed_cost: string | null;
   legal_entity_id: string;
+  /** What the fuel is measured in. */
+  unit?: string;
   /** Agreed price of the linked purchase-order line (ACTIVE link), when there is one. */
   po_unit_price?: string | null;
   po_number?: string | null;
@@ -355,7 +357,9 @@ export const purchaseOrderPriceColumns = sql`(
 
 const deliveryColumns = sql`d.id, d.station_id, d.status, d.supplier_id, d.product_id,
   d.delivery_note_number, d.note_quantity_litres::text, d.actual_quantity_litres::text,
-  d.unit_landed_cost::text, s.legal_entity_id, ${purchaseOrderPriceColumns}`;
+  d.unit_landed_cost::text, s.legal_entity_id,
+  (select pu.unit from app.products pu where pu.tenant_id = d.tenant_id and pu.id = d.product_id) as unit,
+  ${purchaseOrderPriceColumns}`;
 
 /** Deliveries locked in id order: the fixed lock order shared by posting and correction. */
 export async function lockDeliveries(
@@ -712,6 +716,7 @@ export function evaluateDocumentVariance(input: {
         purchaseOrderUnitPrice: delivery.po_unit_price ?? null,
         purchaseOrderNumber: delivery.po_number ?? null,
         deliveryLabel: delivery.delivery_note_number,
+        unit: delivery.unit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES',
         policy: input.policy,
       }),
     });

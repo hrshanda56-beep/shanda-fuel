@@ -21,7 +21,12 @@ import {
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { parseCalibrationText } from '../calibration';
 import { NO_PO_REASONS } from '../../deliveries/purchase-order-choice';
-import { formatLitres } from '@/design-system/formatters';
+import { formatQuantity, type QuantityUnit } from '@/design-system/formatters';
+
+/** "litres" or "kilograms", for the words around a quantity. */
+function unitWord(unit: QuantityUnit | undefined): string {
+  return unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
+}
 import { InfoTip } from '@/design-system/info-tip';
 
 export type InventoryContext = Readonly<{
@@ -49,6 +54,8 @@ type InventoryOperationalActionsProps = Readonly<{
   context: InventoryContext;
   tankId: string;
   productId: string;
+  /** What the fuel is measured in; litres when absent. */
+  unit?: QuantityUnit;
   sourceMovementRequiringCost?: MissingCostSource | null;
   canRecordReceiptCost: boolean;
   onRefresh: () => void;
@@ -156,6 +163,7 @@ export function InventoryOperationalActions({
   context,
   tankId,
   productId,
+  unit: fuelUnit,
   sourceMovementRequiringCost,
   canRecordReceiptCost,
   onRefresh,
@@ -178,6 +186,7 @@ export function InventoryOperationalActions({
             <ReceiptCostForm
               context={context}
               source={sourceMovementRequiringCost}
+              fuelUnit={fuelUnit}
               enabled={canRecordReceiptCost}
               onRefresh={onRefresh}
             />
@@ -193,13 +202,19 @@ export function InventoryOperationalActions({
               context={context}
               tankId={tankId}
               litres={sourceMovementRequiringCost.quantityLitres}
+              fuelUnit={fuelUnit}
               enabled={canRecordReceiptCost}
               onRefresh={onRefresh}
             />
           </ActionDisclosure>
         ) : null}
         <ActionDisclosure title="Record a dip reading" hint="What the tank actually holds.">
-          <TankDipForm context={context} tankId={tankId} onRefresh={onRefresh} />
+          <TankDipForm
+            context={context}
+            tankId={tankId}
+            fuelUnit={fuelUnit}
+            onRefresh={onRefresh}
+          />
         </ActionDisclosure>
         <ActionDisclosure title="Record a delivery" hint="Fuel received into this tank.">
           <p className="muted-small">
@@ -220,20 +235,39 @@ export function InventoryOperationalActions({
             context={context}
             tankId={tankId}
             productId={productId}
+            fuelUnit={fuelUnit}
             onRefresh={onRefresh}
           />
         </ActionDisclosure>
         <ActionDisclosure title="Correct stock" hint="Fix a difference in the book figure.">
-          <AdjustmentForm context={context} tankId={tankId} onRefresh={onRefresh} />
+          <AdjustmentForm
+            context={context}
+            tankId={tankId}
+            fuelUnit={fuelUnit}
+            onRefresh={onRefresh}
+          />
         </ActionDisclosure>
       </div>
       <h4 className="inventory-action-group-label">Setup</h4>
       <div className="inventory-action-grid">
         <ActionDisclosure title="Set starting stock" hint="The first quantity for this tank.">
-          <OpeningInventoryForm context={context} tankId={tankId} onRefresh={onRefresh} />
+          <OpeningInventoryForm
+            context={context}
+            tankId={tankId}
+            fuelUnit={fuelUnit}
+            onRefresh={onRefresh}
+          />
         </ActionDisclosure>
-        <ActionDisclosure title="Dipstick chart" hint="Turns dipstick readings into litres.">
-          <TankCalibrationForm context={context} tankId={tankId} onRefresh={onRefresh} />
+        <ActionDisclosure
+          title="Dipstick chart"
+          hint={`Turns dipstick readings into ${unitWord(fuelUnit)}.`}
+        >
+          <TankCalibrationForm
+            context={context}
+            tankId={tankId}
+            fuelUnit={fuelUnit}
+            onRefresh={onRefresh}
+          />
         </ActionDisclosure>
       </div>
     </Card>
@@ -243,8 +277,14 @@ export function InventoryOperationalActions({
 function TankDipForm({
   context,
   tankId,
+  fuelUnit,
   onRefresh,
-}: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
+}: Readonly<{
+  context: InventoryContext;
+  tankId: string;
+  fuelUnit?: QuantityUnit;
+  onRefresh: () => void;
+}>) {
   const maxNow = useNowLocal();
   const key = useRef<string | null>(null);
   const [mode, setMode] = useState<'litres' | 'dipstick'>('litres');
@@ -306,7 +346,7 @@ function TankDipForm({
           aria-pressed={mode === 'litres'}
           onClick={() => setMode('litres')}
         >
-          I know the litres
+          I know the {unitWord(fuelUnit)}
         </Button>
         <Button
           type="button"
@@ -319,7 +359,7 @@ function TankDipForm({
       </div>
       <div className="action-form-grid">
         {mode === 'litres' ? (
-          <Field id="dip-litres" label="Physical litres" required>
+          <Field id="dip-litres" label={`Physical ${unitWord(fuelUnit)}`} required>
             <input
               id="dip-litres"
               value={physicalLitres}
@@ -336,7 +376,7 @@ function TankDipForm({
             <Field
               id="dip-reading"
               label="Dipstick reading"
-              hint="The tank’s chart turns this into litres. Add the chart first under “Tank chart”."
+              hint={`The tank’s chart turns this into ${unitWord(fuelUnit)}. Add the chart first under “Tank chart”.`}
               required
             >
               <input
@@ -399,8 +439,14 @@ function TankDipForm({
 function TankCalibrationForm({
   context,
   tankId,
+  fuelUnit,
   onRefresh,
-}: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
+}: Readonly<{
+  context: InventoryContext;
+  tankId: string;
+  fuelUnit?: QuantityUnit;
+  onRefresh: () => void;
+}>) {
   const key = useRef<string | null>(null);
   const [unit, setUnit] = useState('cm');
   const [text, setText] = useState('');
@@ -453,13 +499,13 @@ function TankCalibrationForm({
           </select>
         </Field>
         <p className="muted-small action-form-note">
-          Reading, then litres. You can paste from a spreadsheet.
+          Reading, then {unitWord(fuelUnit)}. You can paste from a spreadsheet.
         </p>
         <div className="action-form-wide">
           <Field
             id="chart-rows"
             label="Chart rows"
-            hint="A new chart replaces the old one for new dips. Dips already recorded keep their litres."
+            hint={`A new chart replaces the old one for new dips. Dips already recorded keep their ${unitWord(fuelUnit)}.`}
             required
           >
             <textarea
@@ -486,8 +532,14 @@ function TankCalibrationForm({
 function AdjustmentForm({
   context,
   tankId,
+  fuelUnit,
   onRefresh,
-}: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
+}: Readonly<{
+  context: InventoryContext;
+  tankId: string;
+  fuelUnit?: QuantityUnit;
+  onRefresh: () => void;
+}>) {
   const maxNow = useNowLocal();
   const key = useRef<string | null>(null);
   const [movementType, setMovementType] = useState<'POSITIVE_ADJUSTMENT' | 'NEGATIVE_ADJUSTMENT'>(
@@ -551,7 +603,7 @@ function AdjustmentForm({
             <option value="NEGATIVE_ADJUSTMENT">Decrease book stock</option>
           </select>
         </Field>
-        <Field id="adjustment-litres" label="Quantity litres" required>
+        <Field id="adjustment-litres" label={`Quantity ${unitWord(fuelUnit)}`} required>
           <input
             id="adjustment-litres"
             value={quantityLitres}
@@ -601,12 +653,14 @@ function OpeningCostForm({
   context,
   tankId,
   litres,
+  fuelUnit,
   enabled,
   onRefresh,
 }: Readonly<{
   context: InventoryContext;
   tankId: string;
   litres: string;
+  fuelUnit?: QuantityUnit;
   enabled: boolean;
   onRefresh: () => void;
 }>) {
@@ -648,7 +702,7 @@ function OpeningCostForm({
     return (
       <p className="context-required">
         Your role cannot add costs. Ask the station manager or owner to add the cost of the{' '}
-        {formatLitres(litres)} in the tank.
+        {formatQuantity(litres, fuelUnit)} in the tank.
       </p>
     );
   }
@@ -656,10 +710,15 @@ function OpeningCostForm({
   return (
     <form className="action-form" onSubmit={submit}>
       <p className="muted-small">
-        What did each litre of the {formatLitres(litres)} cost? Never enter zero for a missing cost.
+        What did each {fuelUnit === 'KILOGRAMS' ? 'kilogram' : 'litre'} of the{' '}
+        {formatQuantity(litres, fuelUnit)} cost? Never enter zero for a missing cost.
       </p>
       <div className="action-form-grid">
-        <Field id="opening-only-unit-cost" label="Cost per litre (USD)" required>
+        <Field
+          id="opening-only-unit-cost"
+          label={`Cost per ${fuelUnit === 'KILOGRAMS' ? 'kilogram' : 'litre'} (USD)`}
+          required
+        >
           <input
             id="opening-only-unit-cost"
             value={unitCost}
@@ -685,8 +744,14 @@ function OpeningCostForm({
 function OpeningInventoryForm({
   context,
   tankId,
+  fuelUnit,
   onRefresh,
-}: Readonly<{ context: InventoryContext; tankId: string; onRefresh: () => void }>) {
+}: Readonly<{
+  context: InventoryContext;
+  tankId: string;
+  fuelUnit?: QuantityUnit;
+  onRefresh: () => void;
+}>) {
   const maxNow = useNowLocal();
   const quantityKey = useRef<string | null>(null);
   const costKey = useRef<string | null>(null);
@@ -751,13 +816,14 @@ function OpeningInventoryForm({
       <div className="action-form-heading">
         <h4>When you go live</h4>
         <InfoTip>
-          Enter what is in this tank when you go live, from the opening dip, and what each litre
+          Enter what is in this tank when you go live, from the opening dip, and what each{' '}
+          {fuelUnit === 'KILOGRAMS' ? 'kilogram' : 'litre'}
           cost. Book stock, the average cost and the stock value all start from these two figures.
           Do not enter an unknown cost as zero.
         </InfoTip>
       </div>
       <div className="action-form-grid">
-        <Field id="opening-litres" label="Opening dip (litres)" required>
+        <Field id="opening-litres" label={`Opening dip (${unitWord(fuelUnit)})`} required>
           <input
             id="opening-litres"
             value={quantityLitres}
@@ -769,7 +835,11 @@ function OpeningInventoryForm({
             placeholder="0.000"
           />
         </Field>
-        <Field id="opening-unit-cost" label="Opening cost per litre (USD)" required>
+        <Field
+          id="opening-unit-cost"
+          label={`Opening cost per ${fuelUnit === 'KILOGRAMS' ? 'kilogram' : 'litre'} (USD)`}
+          required
+        >
           <input
             id="opening-unit-cost"
             value={unitCost}
@@ -866,11 +936,13 @@ export function DeliveryForm({
   context,
   tankId,
   productId,
+  fuelUnit,
   onRefresh,
 }: Readonly<{
   context: InventoryContext;
   tankId: string;
   productId: string;
+  fuelUnit?: QuantityUnit;
   onRefresh: () => void;
 }>) {
   const maxNow = useNowLocal();
@@ -1072,10 +1144,10 @@ export function DeliveryForm({
         </section>
         <section className="action-form-section" aria-labelledby="action-form-litres">
           <div className="action-form-heading">
-            <h4 id="action-form-litres">Litres</h4>
+            <h4 id="action-form-litres">{fuelUnit === 'KILOGRAMS' ? 'Kilograms' : 'Litres'}</h4>
             <InfoTip>
-              Accepted litres are allocated to the validated tank. Supplier note quantity remains a
-              separate commercial comparison.
+              Accepted {unitWord(fuelUnit)} are allocated to the validated tank. Supplier note
+              quantity remains a separate commercial comparison.
             </InfoTip>
           </div>
           <div className="action-form-grid action-form-grid-3">
@@ -1220,11 +1292,13 @@ export function DeliveryForm({
 function ReceiptCostForm({
   context,
   source,
+  fuelUnit,
   enabled,
   onRefresh,
 }: Readonly<{
   context: InventoryContext;
   source: MissingCostSource;
+  fuelUnit?: QuantityUnit;
   enabled: boolean;
   onRefresh: () => void;
 }>) {
@@ -1283,7 +1357,7 @@ function ReceiptCostForm({
     return (
       <p className="context-required">
         Your role cannot add costs. Ask the station manager or owner to add the cost of the{' '}
-        {formatLitres(source.quantityLitres)} delivered.
+        {formatQuantity(source.quantityLitres, fuelUnit)} delivered.
       </p>
     );
   }
@@ -1291,8 +1365,8 @@ function ReceiptCostForm({
   return (
     <form className="action-form" onSubmit={submit}>
       <p className="muted-small">
-        Cost of the {formatLitres(source.quantityLitres)} delivered. Never enter zero for a missing
-        cost.
+        Cost of the {formatQuantity(source.quantityLitres, fuelUnit)} delivered. Never enter zero
+        for a missing cost.
       </p>
       <div role="group" aria-label="How do you want to enter the cost?" className="button-row">
         <Button
@@ -1331,7 +1405,7 @@ function ReceiptCostForm({
           <>
             <Field
               id="receipt-fuel-cost"
-              hint="Enter what the whole delivery cost. We divide the total by the litres that actually arrived, so a short delivery makes each litre cost more."
+              hint="Enter what the whole delivery cost. We divide the total by the {unitWord(fuelUnit)} that actually arrived, so a short delivery makes each {fuelUnit === 'KILOGRAMS' ? 'kilogram' : 'litre'} cost more."
               label="Cost of the fuel"
               required
             >

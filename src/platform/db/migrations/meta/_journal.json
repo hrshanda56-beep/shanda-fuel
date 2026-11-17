@@ -636,7 +636,21 @@
       "idx": 90,
       "version": "7",
       "when": 1793200106000,
-      "tag": "0106_product_kind_order",
+      "tag": "0106_product_unit",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1793200107000,
+      "tag": "0107_finance_no_day_lock",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1793200108000,
+      "tag": "0108_product_kind_order",
       "breakpoints": true
     }
   ]

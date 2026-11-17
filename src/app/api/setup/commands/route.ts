@@ -7,6 +7,7 @@ import {
   createProductFromRequest,
   deleteProductFromRequest,
   renameProductFromRequest,
+  setProductUnitFromRequest,
   setProductStatusFromRequest,
   createPumpFromRequest,
   draftPriceChangeFromRequest,
@@ -38,6 +39,9 @@ export const POST = withRequestObservability(
           break;
         case 'RenameProduct':
           result = await renameProductFromRequest(request, body);
+          break;
+        case 'SetProductUnit':
+          result = await setProductUnitFromRequest(request, body);
           break;
         case 'SetProductStatus':
           result = await setProductStatusFromRequest(request, body);

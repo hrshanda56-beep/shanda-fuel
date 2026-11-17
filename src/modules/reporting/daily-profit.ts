@@ -11,6 +11,7 @@ export function dailyProfitFromReport(report: ManagementReport): DailyProfitSumm
       productName: sale.productName,
       productKind: sale.productKind,
       productDisplayOrder: sale.productDisplayOrder,
+      productUnit: sale.productUnit,
       recognizedRevenue: sale.recognizedRevenue,
       quantityLitres: sale.quantityLitres,
     })),

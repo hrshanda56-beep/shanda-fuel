@@ -1,3 +1,4 @@
+export type FuelUnit = 'LITRES' | 'KILOGRAMS';
 export type SetupProduct = Readonly<{
   id: string;
   code: string;
@@ -7,6 +8,7 @@ export type SetupProduct = Readonly<{
   kind?: string | null;
   blendPercent?: number | null;
   displayOrder?: number | null;
+  unit: FuelUnit;
 }>;
 export type SetupTank = Readonly<{
   id: string;

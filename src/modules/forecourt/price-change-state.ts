@@ -45,6 +45,8 @@ export type PriceHistoryEntry = {
 export type PriceChangeProduct = {
   productId: string;
   name: string;
+  /** What the fuel is measured in; litres when absent. */
+  unit?: 'LITRES' | 'KILOGRAMS';
   currentPrice: string | null;
   change: PriceChange | null;
   history?: PriceHistoryEntry[];
@@ -130,10 +132,15 @@ export function whoCanHelp(blockedBy: keyof PriceChangeCapabilities): string {
 export type PriceCheck = { ok: true; value: string } | { ok: false; message: string };
 
 /** A price per litre with up to 6 decimals, greater than zero, and not what is already in use. */
-export function checkNewPrice(raw: string, currentPrice: string | null): PriceCheck {
+export function checkNewPrice(
+  raw: string,
+  currentPrice: string | null,
+  unit?: 'LITRES' | 'KILOGRAMS',
+): PriceCheck {
+  const per = unit === 'KILOGRAMS' ? 'kilogram' : 'litre';
   const value = raw.trim().replace(/,/g, '');
   if (value === '')
-    return { ok: false, message: 'Enter the new price per litre, for example 1.65.' };
+    return { ok: false, message: `Enter the new price per ${per}, for example 1.65.` };
   if (!/^\d+(?:\.\d{1,6})?$/.test(value) || /^0*(?:\.0*)?$/.test(value)) {
     return {
       ok: false,

@@ -184,6 +184,21 @@ export function buildGuidedSteps(data: Data): readonly GuidedStep[] {
   return [fuel, priceStep, tankStep, pumpStep, shiftStep, supervisorStep];
 }
 
+export type FuelUnitChoice = 'LITRES' | 'KILOGRAMS';
+
+/**
+ * The unit a fuel of this type is normally measured in: gas in kilograms, every other fuel in
+ * litres. Only the starting choice; the person can change it before saving.
+ */
+export function defaultUnitForKind(kind: string): FuelUnitChoice {
+  return kind === 'GAS' ? 'KILOGRAMS' : 'LITRES';
+}
+
+/** How a unit reads to a person: "litres" or "kilograms (kg)". */
+export function unitLabel(unit: FuelUnitChoice): string {
+  return unit === 'KILOGRAMS' ? 'Kilograms (kg)' : 'Litres';
+}
+
 export type FuelCardStatus = Readonly<{
   productId: string;
   name: string;
@@ -224,7 +239,7 @@ export function buildFuelCards(data: Data): readonly FuelCardStatus[] {
         status: needed.length === 0 ? ('done' as const) : ('todo' as const),
         summary:
           needed.length === 0
-            ? `Price in use, ${count(ownTanks.length, 'tank')}, ${count(ownNozzles.length, 'nozzle')}.`
+            ? `Price in use, ${count(ownTanks.length, 'tank')}, ${count(ownNozzles.length, 'nozzle')}. Sold in ${product.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'}.`
             : `Needs ${needed.join(', ')}.`,
       };
     });

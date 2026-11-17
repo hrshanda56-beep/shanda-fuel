@@ -169,6 +169,7 @@ type CardProps = {
 };
 
 function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
+  const per = product.unit === 'KILOGRAMS' ? 'kilogram' : 'litre';
   const { tenantId } = data;
   const stationId = data.station.id;
   const keys = useRef(new Map<string, string>());
@@ -267,7 +268,11 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const checked = checkNewPrice(String(formData.get('price') ?? ''), product.currentPrice);
+    const checked = checkNewPrice(
+      String(formData.get('price') ?? ''),
+      product.currentPrice,
+      product.unit,
+    );
     if (!checked.ok) {
       setPriceError(checked.message);
       return;
@@ -314,7 +319,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
           priceId: change.priceId,
           expectedVersion: change.version,
         });
-        return `${product.name} now sells at ${change.unitPrice} per litre.`;
+        return `${product.name} now sells at ${change.unitPrice} per ${per}.`;
       }),
     );
   }
@@ -390,7 +395,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
           priceId: change.priceId,
           expectedVersion: change.version,
         });
-        return `${product.name} now sells at ${change.unitPrice} per litre.`;
+        return `${product.name} now sells at ${change.unitPrice} per ${per}.`;
       }),
     );
   }
@@ -404,13 +409,17 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
         <p className={styles.muted}>
           {product.currentPrice === null
             ? 'No price in use yet'
-            : `In use now: ${product.currentPrice} per litre`}
+            : `In use now: ${product.currentPrice} per ${per}`}
         </p>
       </div>
 
       {!change ? (
         <form className={styles.form} onSubmit={submitPrice} noValidate>
-          <Field id={`price-${product.productId}`} label="New price per litre" error={priceError}>
+          <Field
+            id={`price-${product.productId}`}
+            label={`New price per ${per}`}
+            error={priceError}
+          >
             <input
               name="price"
               inputMode="decimal"
@@ -437,7 +446,9 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
       ) : (
         <div className={styles.form}>
           <p className={styles.actions}>
-            <strong>New price: {change.unitPrice} per litre</strong>
+            <strong>
+              New price: {change.unitPrice} per {per}
+            </strong>
             {change.plannedFrom ? (
               <span className={styles.muted}>
                 Planned for {stationDateTime(change.plannedFrom, data.station.timezone)}

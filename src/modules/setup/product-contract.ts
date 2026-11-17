@@ -45,6 +45,7 @@ export const createProductPayload = z
     stationId: z.string().uuid(),
     code: z.string().trim().min(1).max(32),
     name: z.string().trim().min(1).max(120),
+    unit: z.enum(['LITRES', 'KILOGRAMS']).default('LITRES'),
     kind: z.enum(PRODUCT_KINDS).nullish(),
     blendPercent: blendPercentField,
   })
@@ -72,12 +73,14 @@ export function toSetupProduct(row: {
   kind: string | null;
   blend_percent: number | null;
   display_order: number | null;
+  unit: string;
 }): SetupProduct {
   return {
     id: row.id,
     code: row.code,
     name: row.name,
     status: row.status,
+    unit: row.unit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES',
     kind: row.kind,
     blendPercent: row.blend_percent,
     displayOrder: row.display_order,

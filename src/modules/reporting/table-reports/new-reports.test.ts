@@ -152,6 +152,49 @@ describe('station daily report rows', () => {
     });
   });
 
+  it('shows each fuel in its own unit and lists fuels that are neither diesel nor petrol', () => {
+    const [row] = buildStationDailyRows({
+      stationNames,
+      sales: [
+        {
+          stationId: 's1',
+          businessDate: '2026-10-21',
+          ...diesel,
+          recognizedRevenue: '195.0000',
+          quantityLitres: '100.000',
+        },
+        {
+          stationId: 's1',
+          businessDate: '2026-10-21',
+          productId: 'u',
+          productCode: 'ULP',
+          productName: 'Unleaded Petrol',
+          recognizedRevenue: '90.0000',
+          quantityLitres: '60.000',
+          productUnit: 'KILOGRAMS',
+        },
+        {
+          stationId: 's1',
+          businessDate: '2026-10-21',
+          productId: 'g',
+          productCode: 'LPG',
+          productName: 'LPG',
+          recognizedRevenue: '40.0000',
+          quantityLitres: '25.000',
+          productUnit: 'KILOGRAMS',
+        },
+      ],
+      costs: [],
+      expenses: [],
+    });
+    expect(row).toMatchObject({
+      dieselUnit: 'Litres',
+      petrolLitres: '60.000',
+      petrolUnit: 'Kilograms',
+      otherFuels: 'LPG 25 kg',
+    });
+  });
+
   it('leaves cost and profit blank, not zero, when a sale has no cost yet', () => {
     const [row] = buildStationDailyRows({
       stationNames,

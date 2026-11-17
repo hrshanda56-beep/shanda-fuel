@@ -1,3 +1,8 @@
+import {
+  asQuantityUnit,
+  combineQuantityUnits,
+  quantityUnitLabel,
+} from '../../../design-system/formatters';
 import 'server-only';
 
 import { sql, type SQL } from 'drizzle-orm';
@@ -57,6 +62,7 @@ export const readSalesByAttendant: TableReportReader = async (transaction, filte
     sales: string | null;
     accounted: string | null;
     litres: string;
+    units: string[] | null;
   }>(sql`
     select st.name as station,
       coalesce((select json_agg(json_build_object('id', am.id, 'name', coalesce(am.name, 'Unknown')) order by am.name)
@@ -67,7 +73,11 @@ export const readSalesByAttendant: TableReportReader = async (transaction, filte
       rev.expected_sales::text as sales, rev.accounted_sales::text as accounted,
       coalesce((select sum(mr.litres_sold) from app.reconciliation_meter_readings mr
         where mr.tenant_id = r.tenant_id and mr.station_id = r.station_id
-          and mr.reconciliation_id = r.id), 0)::text as litres
+          and mr.reconciliation_id = r.id), 0)::text as litres,
+      (select array_agg(distinct pr.unit) from app.reconciliation_meter_readings mr
+        join app.products pr on pr.tenant_id = mr.tenant_id and pr.id = mr.product_id
+        where mr.tenant_id = r.tenant_id and mr.station_id = r.station_id
+          and mr.reconciliation_id = r.id) as units
     from app.reconciliations r
     join app.stations st on st.tenant_id = r.tenant_id and st.id = r.station_id
     join app.station_business_days bd
@@ -92,12 +102,14 @@ export const readSalesByAttendant: TableReportReader = async (transaction, filte
     sales: row.sales ?? '0',
     accounted: row.accounted ?? '0',
     litres: row.litres,
+    unit: combineQuantityUnits((row.units ?? []).map(asQuantityUnit)),
   }));
   return creditSalesToAttendants(shifts).map((row) => ({
     station: row.stationName,
     attendant: row.label,
     shifts: String(row.shifts),
     litres: row.litres,
+    unit: quantityUnitLabel(row.unit),
     sales: row.sales,
     accounted: row.accounted,
   }));

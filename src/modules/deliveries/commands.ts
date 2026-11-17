@@ -31,7 +31,7 @@ import { setNoPurchaseOrderReasonSchema } from './purchase-order-choice';
 const uuid = z.string().uuid();
 const litresText = z
   .string()
-  .regex(/^\d+(?:\.\d{1,3})?$/, 'Litres must be a number like 5000 or 5000.5');
+  .regex(/^\d+(?:\.\d{1,3})?$/, 'The quantity must be a number like 5000 or 5000.5');
 const instant = z.string().datetime({ offset: true });
 const authorityPayload = z.object({ tenantId: uuid, stationId: uuid, deliveryId: uuid });
 

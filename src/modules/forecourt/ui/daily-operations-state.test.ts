@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  dayReadyToLock,
   dailyOperationsStatusLabel,
   dailyOperationsStatusTone,
   isEditableDailyOperationsState,
@@ -352,5 +353,45 @@ describe('liveSalesFigures', () => {
       [{ amount: '100.00' }, { amount: '' }],
     );
     expect(figures).toEqual({ expected: '22220.00', accounted: '100.00', difference: '-22120.00' });
+  });
+});
+
+describe('a pump that is not set up for the shift', () => {
+  it('leads the person to the pump setup, whatever the wording', () => {
+    const problem = dailyOperationsProblem(
+      409,
+      'CONFLICT',
+      'This shift cannot be closed yet: the meter for pump A is not set up.',
+      { details: { reason: 'METER_NOT_SET_UP' } },
+    );
+    expect(problem.fix).toEqual({
+      kind: 'link',
+      label: 'Check the pump setup',
+      href: '/settings?tab=stations',
+    });
+  });
+});
+
+describe('dayReadyToLock', () => {
+  const ok = {
+    lockBlockedReason: null,
+    actions: { LockBusinessDay: { permissionGranted: true } },
+    selectedBusinessDay: { id: 'd1', state: 'CLOSED', version: 7 },
+  };
+  it('returns the day when it is closed, unblocked and the person may lock', () => {
+    expect(dayReadyToLock(ok)).toEqual({ id: 'd1', version: 7 });
+  });
+  it('returns null when the day is not closed, is blocked, or the person may not lock', () => {
+    expect(
+      dayReadyToLock({ ...ok, selectedBusinessDay: { id: 'd1', state: 'OPEN', version: 7 } }),
+    ).toBeNull();
+    expect(
+      dayReadyToLock({ ...ok, selectedBusinessDay: { id: 'd1', state: 'LOCKED', version: 7 } }),
+    ).toBeNull();
+    expect(dayReadyToLock({ ...ok, selectedBusinessDay: undefined })).toBeNull();
+    expect(dayReadyToLock({ ...ok, lockBlockedReason: 'A shift is still open.' })).toBeNull();
+    expect(
+      dayReadyToLock({ ...ok, actions: { LockBusinessDay: { permissionGranted: false } } }),
+    ).toBeNull();
   });
 });

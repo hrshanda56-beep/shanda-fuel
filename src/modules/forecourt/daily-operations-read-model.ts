@@ -57,6 +57,7 @@ export type RecordData = {
   deliveries: Array<{
     deliveryId: string;
     deliveryNoteNumber: string;
+    productId?: string;
     actualQuantityLitres: string;
   }>;
   dips: Array<{
@@ -72,6 +73,8 @@ export type RecordData = {
     code: string;
     productId: string;
     productName: string;
+    /** How this fuel is measured, so figures read "kg" for gas and "L" for petrol. */
+    unit?: 'LITRES' | 'KILOGRAMS';
     capacityLitres: string;
     toleranceLitres: string | null;
     /** The red limit; empty means twice the yellow one. */

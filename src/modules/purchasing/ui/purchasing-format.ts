@@ -1,3 +1,4 @@
+import { combineQuantityUnits } from '../../../design-system/formatters';
 import Decimal from 'decimal.js';
 import type { StatusTone } from '@/design-system/primitives';
 import { formatBusinessDate, formatDecimal } from '@/design-system/formatters';
@@ -66,21 +67,27 @@ export function orderMatchesFilter(state: string, filter: OrderFilter): boolean 
 }
 
 /** "12000.000" becomes "12,000 L"; "1250.500" keeps its real decimals. */
-export function litresText(value: string | null | undefined): string {
+export function litresText(
+  value: string | null | undefined,
+  unit?: 'LITRES' | 'KILOGRAMS',
+): string {
   if (value === null || value === undefined || !/^-?\d+(?:\.\d+)?$/.test(value.trim())) return '—';
   const trimmed = new Decimal(value.trim()).toFixed().replace(/(\.\d*?)0+$/, '$1');
-  return formatDecimal(trimmed.replace(/\.$/, ''), ' L');
+  return formatDecimal(trimmed.replace(/\.$/, ''), unit === 'KILOGRAMS' ? ' kg' : ' L');
 }
 
 /** A per-litre price, e.g. "USD 1.45 per litre". Keeps up to four decimals, at least two. */
-export function pricePerLitreText(value: string | null | undefined): string {
+export function pricePerLitreText(
+  value: string | null | undefined,
+  unit?: 'LITRES' | 'KILOGRAMS',
+): string {
   if (value === null || value === undefined || !/^-?\d+(?:\.\d+)?$/.test(value.trim())) {
     return 'No price set';
   }
   const decimal = new Decimal(value.trim());
   const rounded = decimal.toDecimalPlaces(4, Decimal.ROUND_HALF_UP);
   const places = Math.max(2, rounded.decimalPlaces());
-  return `USD ${formatDecimal(rounded.toFixed(places))} per litre`;
+  return `USD ${formatDecimal(rounded.toFixed(places))} per ${unit === 'KILOGRAMS' ? 'kilogram' : 'litre'}`;
 }
 
 export function moneyText(value: string | null | undefined): string {
@@ -92,7 +99,18 @@ export function dateText(value: string | null | undefined): string {
   return formatBusinessDate(value.slice(0, 10));
 }
 
-export type OrderLineLike = { orderedLitres: string; status: string };
+export type OrderLineLike = {
+  orderedLitres: string;
+  status: string;
+  productUnit?: 'LITRES' | 'KILOGRAMS';
+};
+
+/** The order's total quantity in the fuels' shared unit, or a note when the lines are measured differently. */
+export function orderTotalText(lines: readonly OrderLineLike[]): string {
+  const active = lines.filter((line) => line.status === 'ACTIVE');
+  const unit = combineQuantityUnits(active.map((line) => line.productUnit));
+  return unit === 'MIXED' ? 'Mixed units' : litresText(totalOrderedLitres(lines), unit);
+}
 
 /** Total litres across lines that are still part of the order. */
 export function totalOrderedLitres(lines: readonly OrderLineLike[]): string {
@@ -104,11 +122,16 @@ export function totalOrderedLitres(lines: readonly OrderLineLike[]): string {
 
 /** What the order is for, e.g. "Diesel 10,000 L, Petrol 5,000 L". */
 export function orderFuelSummary(
-  lines: readonly { productName: string; orderedLitres: string; status: string }[],
+  lines: readonly {
+    productName: string;
+    orderedLitres: string;
+    status: string;
+    productUnit?: 'LITRES' | 'KILOGRAMS';
+  }[],
 ): string {
   return lines
     .filter((line) => line.status === 'ACTIVE')
-    .map((line) => `${line.productName} ${litresText(line.orderedLitres)}`)
+    .map((line) => `${line.productName} ${litresText(line.orderedLitres, line.productUnit)}`)
     .join(', ');
 }
 
@@ -151,13 +174,18 @@ export function checkHeadline(row: { exceeded: boolean; invoicedLitres: string |
 }
 
 /** "0.070" litres difference as "70 L more" / "70 L less" / "no difference". */
-export function differenceText(value: string | null, unit: 'litres' | 'price'): string | null {
+export function differenceText(
+  value: string | null,
+  unit: 'litres' | 'price',
+  fuelUnit?: 'LITRES' | 'KILOGRAMS',
+): string | null {
   if (value === null) return null;
   const decimal = new Decimal(value);
   if (decimal.isZero()) return 'no difference';
   const direction = decimal.gt(0) ? 'more' : 'less';
-  if (unit === 'litres') return `${litresText(decimal.abs().toFixed())} ${direction}`;
-  return `${pricePerLitreText(decimal.abs().toFixed()).replace(' per litre', '')} ${direction} per litre`;
+  if (unit === 'litres') return `${litresText(decimal.abs().toFixed(), fuelUnit)} ${direction}`;
+  const per = fuelUnit === 'KILOGRAMS' ? 'kilogram' : 'litre';
+  return `${pricePerLitreText(decimal.abs().toFixed(), fuelUnit).replace(` per ${per}`, '')} ${direction} per ${per}`;
 }
 
 export const TOLERANCE_ACTION_OPTIONS = [
@@ -196,7 +224,8 @@ export function allowanceText(value: string | null, suffix: string): string | nu
 
 /** One sentence describing a quantity allowance given litres and/or percent. */
 export function litresAllowanceSentence(litres: string | null, percent: string | null): string {
-  const parts = [allowanceText(litres, ' L'), allowanceText(percent, '%')].filter(Boolean);
+  // One allowance applies to every fuel, so the figure is in each fuel's own unit.
+  const parts = [allowanceText(litres, ' L/kg'), allowanceText(percent, '%')].filter(Boolean);
   if (parts.length === 0) return 'No difference allowed';
   return `Up to ${parts.join(' or ')}`;
 }
@@ -245,7 +274,10 @@ export type OrderLineCheck =
   | { ok: false; message: string };
 
 /** Turns what was typed into exact strings the server accepts, or says what to fix. */
-export function checkOrderLines(lines: readonly OrderLineInput[]): OrderLineCheck {
+export function checkOrderLines(
+  lines: readonly OrderLineInput[],
+  unitOf?: (productId: string) => 'LITRES' | 'KILOGRAMS' | undefined,
+): OrderLineCheck {
   if (lines.length === 0) return { ok: false, message: 'Add at least one fuel line to the order.' };
   const result: {
     lineId?: string;
@@ -256,22 +288,28 @@ export function checkOrderLines(lines: readonly OrderLineInput[]): OrderLineChec
   for (const [index, line] of lines.entries()) {
     const label = lines.length > 1 ? `Line ${index + 1}: ` : '';
     if (!line.productId) return { ok: false, message: `${label}Choose the fuel.` };
+    const kg = unitOf?.(line.productId) === 'KILOGRAMS';
+    const word = kg ? 'kilograms' : 'litres';
+    const one = kg ? 'kilogram' : 'litre';
     const litres = line.litres.trim().replace(/,/g, '');
     if (!EXACT_NUMBER.test(litres) || new Decimal(litres).lte(0)) {
-      return { ok: false, message: `${label}Enter how many litres you are ordering, e.g. 10000.` };
+      return { ok: false, message: `${label}Enter how many ${word} you are ordering, e.g. 10000.` };
     }
     if ((litres.split('.')[1]?.length ?? 0) > 3) {
-      return { ok: false, message: `${label}Litres can have at most 3 decimal places.` };
+      return {
+        ok: false,
+        message: `${label}${kg ? 'Kilograms' : 'Litres'} can have at most 3 decimal places.`,
+      };
     }
     if (new Decimal(litres).gte('1000000000000')) {
-      return { ok: false, message: `${label}That is too many litres. Check the number.` };
+      return { ok: false, message: `${label}That is too many ${word}. Check the number.` };
     }
     const price = line.price.trim().replace(/,/g, '');
     if (price !== '' && EXACT_NUMBER.test(price) && new Decimal(price).gte('1000000000')) {
-      return { ok: false, message: `${label}That price per litre is too high. Check the number.` };
+      return { ok: false, message: `${label}That price per ${one} is too high. Check the number.` };
     }
     if (price !== '' && !EXACT_NUMBER.test(price)) {
-      return { ok: false, message: `${label}Enter the price per litre as a number, e.g. 1.45.` };
+      return { ok: false, message: `${label}Enter the price per ${one} as a number, e.g. 1.45.` };
     }
     if ((price.split('.')[1]?.length ?? 0) > 8) {
       return { ok: false, message: `${label}The price can have at most 8 decimal places.` };

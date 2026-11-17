@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Notice } from '@/design-system/feedback';
 import { Checkbox, Select } from '@/design-system/forms';
-import { formatLitres } from '@/design-system/formatters';
+import { formatQuantity, type QuantityUnit } from '@/design-system/formatters';
 import { useToast } from '@/design-system/feedback-provider';
 import { Modal } from '@/design-system/modal';
 import { Button, StatusBadge } from '@/design-system/primitives';
@@ -134,11 +134,15 @@ function sum(values: readonly string[]): string | null {
   return total.toString();
 }
 
-function varianceText(note: string, received: string): { label: string; tone: 'ok' | 'bad' } {
+function varianceText(
+  note: string,
+  received: string,
+  unit?: QuantityUnit,
+): { label: string; tone: 'ok' | 'bad' } {
   if (!LITRES.test(note) || !LITRES.test(received)) return { label: '', tone: 'ok' };
   const difference = new Decimal(received).minus(note);
   if (difference.isZero()) return { label: 'Matches the note', tone: 'ok' };
-  const amount = formatLitres(difference.abs().toString());
+  const amount = formatQuantity(difference.abs().toString(), unit);
   return difference.isNegative()
     ? { label: `Short by ${amount}`, tone: 'bad' }
     : { label: `Over by ${amount}`, tone: 'bad' };
@@ -287,7 +291,7 @@ export function DeliveryDetails({
   /** Checks everything that changed before sending, so nothing is half saved over a typing slip. */
   function problem(): string | null {
     if (compartmentsChanged && (!noteMatches || !receivedMatches)) {
-      return `The compartments must add up to ${formatLitres(delivery.noteLitres)} on the note and ${formatLitres(delivery.receivedLitres)} received. Check the litres in every compartment.`;
+      return `The compartments must add up to ${formatQuantity(delivery.noteLitres, delivery.unit)} on the note and ${formatQuantity(delivery.receivedLitres, delivery.unit)} received. Check the litres in every compartment.`;
     }
     if (waterChanged && water.result !== 'PASS' && water.result !== 'FAIL') {
       return 'Choose the water test result before saving.';
@@ -344,7 +348,7 @@ export function DeliveryDetails({
       confirmKey.current = crypto.randomUUID();
       setConfirmOpen(false);
       await reload();
-      const done = `Delivery ${delivery.deliveryNoteNumber} is confirmed. ${formatLitres(delivery.receivedLitres)} of ${delivery.productName} is now on the tank's books.`;
+      const done = `Delivery ${delivery.deliveryNoteNumber} is confirmed. ${formatQuantity(delivery.receivedLitres, delivery.unit)} of ${delivery.productName} is now on the tank's books.`;
       toast.success(done);
       setMessage({ tone: 'positive', text: done });
       // The banner sits above the sheet, so bring it into view if the person had scrolled down.
@@ -451,7 +455,7 @@ export function DeliveryDetails({
           : 'Not confirmed yet'}
     </StatusBadge>
   );
-  const difference = varianceText(delivery.noteLitres, delivery.receivedLitres);
+  const difference = varianceText(delivery.noteLitres, delivery.receivedLitres, delivery.unit);
   const stateLine = editing
     ? 'You are editing this delivery. Save your changes when you are done, or cancel to leave it as it was.'
     : canEdit
@@ -581,9 +585,11 @@ export function DeliveryDetails({
             <Line label="Transporter">{delivery.transporter ?? notRecorded}</Line>
             <Line label="Truck">{delivery.truckRegistration ?? notRecorded}</Line>
             <Line label="Driver">{delivery.driver ?? notRecorded}</Line>
-            <Line label="On the delivery note">{formatLitres(delivery.noteLitres)}</Line>
+            <Line label="On the delivery note">
+              {formatQuantity(delivery.noteLitres, delivery.unit)}
+            </Line>
             <Line label="Received" hint={difference.tone === 'bad' ? difference.label : undefined}>
-              {formatLitres(delivery.receivedLitres)}
+              {formatQuantity(delivery.receivedLitres, delivery.unit)}
             </Line>
             <Line label="Business day">
               {new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' }).format(
@@ -602,8 +608,9 @@ export function DeliveryDetails({
             {compartmentsBadge}
           </div>
           <InfoTip>
-            One line per truck compartment. Together they must match the litres on the note and the
-            litres received.
+            One line per truck compartment. Together they must match the{' '}
+            {delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'} on the note and the
+            {delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'} received.
           </InfoTip>
           <table className="dd-table">
             <thead>
@@ -617,7 +624,11 @@ export function DeliveryDetails({
             </thead>
             <tbody>
               {compartments.map((compartment, index) => {
-                const variance = varianceText(compartment.noteLitres, compartment.receivedLitres);
+                const variance = varianceText(
+                  compartment.noteLitres,
+                  compartment.receivedLitres,
+                  delivery.unit,
+                );
                 const hasValues =
                   compartment.noteLitres !== '' || compartment.receivedLitres !== '';
                 return (
@@ -642,7 +653,7 @@ export function DeliveryDetails({
                       {editable ? (
                         <span className="dd-input">
                           <input
-                            aria-label={`Compartment ${index + 1}, litres on the note`}
+                            aria-label={`Compartment ${index + 1}, ${delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'} on the note`}
                             inputMode="decimal"
                             value={compartment.noteLitres}
                             onChange={(event) =>
@@ -652,7 +663,7 @@ export function DeliveryDetails({
                           <span>L</span>
                         </span>
                       ) : hasValues ? (
-                        formatLitres(compartment.noteLitres)
+                        formatQuantity(compartment.noteLitres, delivery.unit)
                       ) : (
                         notRecorded
                       )}
@@ -661,7 +672,7 @@ export function DeliveryDetails({
                       {editable ? (
                         <span className="dd-input">
                           <input
-                            aria-label={`Compartment ${index + 1}, litres received`}
+                            aria-label={`Compartment ${index + 1}, ${delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'} received`}
                             inputMode="decimal"
                             value={compartment.receivedLitres}
                             onChange={(event) =>
@@ -671,7 +682,7 @@ export function DeliveryDetails({
                           <span>L</span>
                         </span>
                       ) : hasValues ? (
-                        formatLitres(compartment.receivedLitres)
+                        formatQuantity(compartment.receivedLitres, delivery.unit)
                       ) : (
                         notRecorded
                       )}
@@ -758,10 +769,10 @@ export function DeliveryDetails({
               <tr>
                 <th scope="row">Together</th>
                 <td data-label="On the note">
-                  {totalNote === null ? '—' : formatLitres(totalNote)}
+                  {totalNote === null ? '—' : formatQuantity(totalNote, delivery.unit)}
                 </td>
                 <td data-label="Received">
-                  {totalReceived === null ? '—' : formatLitres(totalReceived)}
+                  {totalReceived === null ? '—' : formatQuantity(totalReceived, delivery.unit)}
                 </td>
                 <td colSpan={2} data-label="Check">
                   {totalNote === null || totalReceived === null ? (
@@ -779,10 +790,10 @@ export function DeliveryDetails({
                       {[
                         noteMatches
                           ? null
-                          : `The note total should be ${formatLitres(delivery.noteLitres)}`,
+                          : `The note total should be ${formatQuantity(delivery.noteLitres, delivery.unit)}`,
                         receivedMatches
                           ? null
-                          : `The received total should be ${formatLitres(delivery.receivedLitres)}`,
+                          : `The received total should be ${formatQuantity(delivery.receivedLitres, delivery.unit)}`,
                       ]
                         .filter(Boolean)
                         .join('. ')}
@@ -997,7 +1008,7 @@ export function DeliveryDetails({
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         title="Confirm this delivery?"
-        description={`This puts ${formatLitres(delivery.receivedLitres)} of ${delivery.productName} on the tank's books and records you as the person who checked the delivery. The compartments and water test can no longer be changed afterwards.`}
+        description={`This puts ${formatQuantity(delivery.receivedLitres, delivery.unit)} of ${delivery.productName} on the tank's books and records you as the person who checked the delivery. The compartments and water test can no longer be changed afterwards.`}
         size="sm"
         footer={
           <>
@@ -1041,7 +1052,8 @@ export function DeliveryDetails({
         ) : null}
         {blockers.length === 0 && !compartmentsAddUp ? (
           <Notice tone="warning" title="The compartments are not filled in">
-            You can still confirm, but the litres per truck compartment are not on the record.
+            You can still confirm, but the {delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'}{' '}
+            per truck compartment are not on the record.
           </Notice>
         ) : null}
       </Modal>

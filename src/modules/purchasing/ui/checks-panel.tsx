@@ -166,7 +166,7 @@ export function ChecksPanel({
                           <StatusBadge tone={headline.tone}>{headline.label}</StatusBadge>
                         </span>
                         <span className={`${styles.numeric} ${styles.cell}`} data-label="Received">
-                          {litresText(row.acceptedLitres)}
+                          {litresText(row.acceptedLitres, row.unit)}
                         </span>
                         <span className={styles.chevron} aria-hidden="true">
                           <Icon name="chevron-right" />
@@ -191,15 +191,15 @@ export function ChecksPanel({
                           <dl className={styles.facts}>
                             <div>
                               <dt>Delivery note said</dt>
-                              <dd>{litresText(row.noteLitres)}</dd>
+                              <dd>{litresText(row.noteLitres, row.unit)}</dd>
                             </div>
                             <div>
                               <dt>We received</dt>
                               <dd>
-                                {litresText(row.acceptedLitres)}
-                                {differenceText(row.receivedVsNoteLitres, 'litres') !==
+                                {litresText(row.acceptedLitres, row.unit)}
+                                {differenceText(row.receivedVsNoteLitres, 'litres', row.unit) !==
                                 'no difference'
-                                  ? ` (${differenceText(row.receivedVsNoteLitres, 'litres')} than the note)`
+                                  ? ` (${differenceText(row.receivedVsNoteLitres, 'litres', row.unit)} than the note)`
                                   : ''}
                               </dd>
                             </div>
@@ -208,11 +208,14 @@ export function ChecksPanel({
                               <dd>
                                 {row.invoicedLitres === null
                                   ? 'No invoice yet'
-                                  : `${litresText(row.invoicedLitres)}${
+                                  : `${litresText(row.invoicedLitres, row.unit)}${
                                       row.invoicedVsAcceptedLitres &&
-                                      differenceText(row.invoicedVsAcceptedLitres, 'litres') !==
-                                        'no difference'
-                                        ? ` (${differenceText(row.invoicedVsAcceptedLitres, 'litres')} than received)`
+                                      differenceText(
+                                        row.invoicedVsAcceptedLitres,
+                                        'litres',
+                                        row.unit,
+                                      ) !== 'no difference'
+                                        ? ` (${differenceText(row.invoicedVsAcceptedLitres, 'litres', row.unit)} than received)`
                                         : ''
                                     }`}
                               </dd>
@@ -221,9 +224,9 @@ export function ChecksPanel({
                               <dt>Invoice price</dt>
                               <dd>
                                 {row.invoicedUnitPrice
-                                  ? `${pricePerLitreText(row.invoicedUnitPrice)}${
+                                  ? `${pricePerLitreText(row.invoicedUnitPrice, row.unit)}${
                                       row.priceDifference && basis
-                                        ? ` (${differenceText(row.priceDifference, 'price')} than ${basis})`
+                                        ? ` (${differenceText(row.priceDifference, 'price', row.unit)} than ${basis})`
                                         : ''
                                     }`
                                   : 'No priced invoice line yet'}
@@ -233,7 +236,7 @@ export function ChecksPanel({
                               <div>
                                 <dt>Price we expected</dt>
                                 <dd>
-                                  {pricePerLitreText(agreed)}
+                                  {pricePerLitreText(agreed, row.unit)}
                                   {basis ? ` — ${basis}` : ''}
                                 </dd>
                               </div>

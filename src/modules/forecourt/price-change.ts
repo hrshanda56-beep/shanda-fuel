@@ -106,9 +106,10 @@ async function loadPriceChange(
   const products = await transaction.execute<{
     id: string;
     name: string;
+    unit: string;
     currentPrice: string | null;
   }>(sql`
-    select p.id, p.name,
+    select p.id, p.name, p.unit,
            (select sp.unit_price::text from app.selling_prices sp
              where sp.tenant_id = p.tenant_id and sp.station_id = ${input.stationId}
                and sp.product_id = p.id and sp.state = 'ACTIVE'
@@ -244,6 +245,7 @@ async function loadPriceChange(
       return {
         productId: product.id,
         name: product.name,
+        unit: product.unit === 'KILOGRAMS' ? ('KILOGRAMS' as const) : ('LITRES' as const),
         currentPrice: product.currentPrice,
         change: change
           ? {

@@ -1,6 +1,7 @@
 import { addDays, subtractMonths } from '@/modules/reporting/period';
 import { exact, sumExact } from '@/modules/reporting/domain';
-import { formatTileLitres, formatTileMoney } from '@/modules/reporting/format';
+import { combineQuantityUnits, type CombinedUnit } from '@/design-system/formatters';
+import { formatTileMoney, formatTileQuantity } from '@/modules/reporting/format';
 import { compareProducts } from '@/platform/domain/product-order';
 
 /**
@@ -13,6 +14,8 @@ export type DailyRow = Readonly<{
   reportDate: string;
   stationId: string;
   litresSold: string;
+  /** What the fuel sold that day is measured in; MIXED when litres and kilograms were both sold. */
+  unit?: CombinedUnit;
   salesValue: string;
   cashVariance: string;
   customerCreditEvidence: string;
@@ -26,6 +29,7 @@ export type DailyTotals = Readonly<{
   stationCount: number;
   salesValue: string;
   litresSold: string;
+  unit: CombinedUnit;
   cashVariance: string;
   accountSales: string;
 }>;
@@ -45,6 +49,7 @@ export function dailyTotals(rows: readonly DailyRow[]): DailyTotals | null {
     stationCount: new Set(approved.map((row) => row.stationId)).size,
     salesValue: sumExact(approved.map((row) => row.salesValue)),
     litresSold: sumExact(approved.map((row) => row.litresSold)),
+    unit: combineQuantityUnits(approved.map((row) => row.unit)),
     cashVariance: sumExact(approved.map((row) => row.cashVariance)),
     accountSales: sumExact(
       approved.flatMap((row) => [row.customerCreditEvidence, row.prepaidEvidence]),
@@ -117,6 +122,7 @@ export type SalesRow = Readonly<{
   productKind?: string | null;
   productDisplayOrder?: number | null;
   litres: string;
+  unit?: 'LITRES' | 'KILOGRAMS';
 }>;
 
 /** Distinct product names in the shared fuel order, not alphabetical. */
@@ -140,39 +146,76 @@ export type LitresPoint = Readonly<{
   to: string;
   /** Exact total litres, or null when no approved report covers the bucket. */
   litres: string | null;
-  products: readonly { name: string; litres: string }[];
+  /** The unit the total is in: litres, unless every fuel in the range is sold in kilograms. */
+  unit: 'LITRES' | 'KILOGRAMS';
+  products: readonly { name: string; litres: string; unit: 'LITRES' | 'KILOGRAMS' }[];
 }>;
 
-/** Litres per bucket, split by product name exactly as configured. */
+/** The unit a chart is drawn in: kilograms only when every fuel in the range is sold in kilograms. */
+export function chartUnit(rows: readonly SalesRow[]): 'LITRES' | 'KILOGRAMS' {
+  return rows.length > 0 && rows.every((row) => row.unit === 'KILOGRAMS') ? 'KILOGRAMS' : 'LITRES';
+}
+
+function rowUnit(row: SalesRow): 'LITRES' | 'KILOGRAMS' {
+  return row.unit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES';
+}
+
+/**
+ * Quantity per bucket, split by product name exactly as configured. The total adds up only the
+ * fuels measured in the chart's unit, because litres and kilograms cannot be added together; each
+ * fuel is still listed in its own unit.
+ */
 export function litresSeries(rows: readonly SalesRow[], buckets: readonly Bucket[]): LitresPoint[] {
+  const unit = chartUnit(rows);
   return buckets.map((bucket) => {
     const inside = rows.filter(
       (row) => row.businessDate >= bucket.from && row.businessDate <= bucket.to,
     );
     if (inside.length === 0) {
-      return { label: bucket.label, from: bucket.from, to: bucket.to, litres: null, products: [] };
+      return {
+        label: bucket.label,
+        from: bucket.from,
+        to: bucket.to,
+        litres: null,
+        unit,
+        products: [],
+      };
     }
     const names = orderedProductNames(inside);
     return {
       label: bucket.label,
       from: bucket.from,
       to: bucket.to,
-      litres: sumExact(inside.map((row) => row.litres)),
-      products: names.map((name) => ({
-        name,
-        litres: sumExact(inside.filter((row) => row.productName === name).map((row) => row.litres)),
-      })),
+      // A day with only fuel in the other unit has no figure in this chart's unit, which is not zero.
+      litres: inside.some((row) => rowUnit(row) === unit)
+        ? sumExact(inside.filter((row) => rowUnit(row) === unit).map((row) => row.litres))
+        : null,
+      unit,
+      products: names.map((name) => {
+        const own = inside.filter((row) => row.productName === name);
+        return {
+          name,
+          litres: sumExact(own.map((row) => row.litres)),
+          unit: own[0] ? rowUnit(own[0]) : 'LITRES',
+        };
+      }),
     };
   });
 }
 
 /** Range total per product, for the line under the chart. */
-export function productTotals(rows: readonly SalesRow[]): { name: string; litres: string }[] {
+export function productTotals(
+  rows: readonly SalesRow[],
+): { name: string; litres: string; unit: 'LITRES' | 'KILOGRAMS' }[] {
   const names = orderedProductNames(rows);
-  return names.map((name) => ({
-    name,
-    litres: sumExact(rows.filter((row) => row.productName === name).map((row) => row.litres)),
-  }));
+  return names.map((name) => {
+    const own = rows.filter((row) => row.productName === name);
+    return {
+      name,
+      litres: sumExact(own.map((row) => row.litres)),
+      unit: own[0] ? rowUnit(own[0]) : 'LITRES',
+    };
+  });
 }
 
 /** Plotting needs a number; the label and tooltip keep the exact string. */
@@ -194,10 +237,11 @@ export function signedMoney(value: string): string {
   return tone === 'none' ? amount : `${tone === 'short' ? '−' : '+'}${amount}`;
 }
 
-/** "−12 L" / "+4 L" / "0 L". */
-export function signedLitres(value: string): string {
+/** "−12 L" / "+4 kg" / "0 L". A mix of litre and kilogram fuels has no single figure. */
+export function signedLitres(value: string, unit?: CombinedUnit): string {
+  if (unit === 'MIXED') return 'Mixed units';
   const tone = varianceTone(value);
-  const amount = formatTileLitres(exact(value).value.abs().toFixed());
+  const amount = formatTileQuantity(exact(value).value.abs().toFixed(), unit);
   return tone === 'none' ? amount : `${tone === 'short' ? '−' : '+'}${amount}`;
 }
 
@@ -222,12 +266,16 @@ export function figureChars(value: string): number {
 export type ChartTable = Readonly<{
   /** Product names exactly as configured, in a stable order. */
   products: readonly string[];
+  /** The unit each product is measured in, in the same order as `products`. */
+  productUnits: readonly ('LITRES' | 'KILOGRAMS')[];
+  /** The unit the period totals are in. */
+  unit: 'LITRES' | 'KILOGRAMS';
   rows: readonly Readonly<{
     from: string;
     to: string;
     /** Exact total litres, or null when no approved report covers the period. */
     total: string | null;
-    /** Exact litres per product; null when the product has no approved row. */
+    /** Exact quantity per product; null when the product has no approved row. */
     byProduct: readonly (string | null)[];
   }>[];
 }>;
@@ -243,6 +291,12 @@ export function chartTable(points: readonly LitresPoint[]): ChartTable {
   ].sort();
   return {
     products,
+    productUnits: products.map(
+      (name) =>
+        points.flatMap((point) => point.products).find((product) => product.name === name)?.unit ??
+        'LITRES',
+    ),
+    unit: points[0]?.unit ?? 'LITRES',
     rows: points.map((point) => ({
       from: point.from,
       to: point.to,

@@ -51,6 +51,8 @@ export function staffBenefitExpenseReference(accountId: string, month: string): 
 export type BenefitFuelTaken = Readonly<{
   productId: string;
   productName: string;
+  /** What the fuel is measured in; litres when absent. */
+  unit?: 'LITRES' | 'KILOGRAMS';
   litres: string;
   /** What the staff member was charged at the pump price. Shown for context only. */
   soldValue: string;
@@ -67,6 +69,7 @@ export type BenefitProductCost = Readonly<{
 export type BenefitCostLine = Readonly<{
   productId: string;
   productName: string;
+  unit?: 'LITRES' | 'KILOGRAMS';
   litres: string;
   soldValue: string;
   costPerLitre: string;
@@ -115,6 +118,7 @@ export function computeBenefitCost(
     lines.push({
       productId: row.productId,
       productName: row.productName,
+      unit: row.unit,
       litres: new ExactDecimal(row.litres)
         .quantize(DECIMAL_POLICIES.litres)
         .value.toFixed(DECIMAL_POLICIES.litres.scale),

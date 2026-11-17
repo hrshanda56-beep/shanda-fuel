@@ -245,8 +245,12 @@ async function sealMetersFromSavedReadings(
     const row = rows[0];
     return row ? `pump ${row.pump_number} nozzle ${row.nozzle_number}` : 'one of the pumps';
   };
-  const cannotClose = (reason: string) =>
-    new AppError('CONFLICT', `This shift cannot be closed yet: ${reason}`);
+  const cannotClose = (reason: string, why?: string) =>
+    new AppError(
+      'CONFLICT',
+      `This shift cannot be closed yet: ${reason}`,
+      why ? { reason: why } : undefined,
+    );
 
   if (Date.parse(now) <= Date.parse(startAt))
     throw cannotClose('it was only just started. Wait a moment, then press Close Shift again.');
@@ -278,7 +282,7 @@ async function sealMetersFromSavedReadings(
       for update of i
     `);
     const installation = installations[0];
-    if (!installation) throw cannotClose(meterNotWorkingForShiftMessage(label));
+    if (!installation) throw cannotClose(meterNotWorkingForShiftMessage(label), 'METER_NOT_SET_UP');
 
     const prices = await transaction.execute<{
       id: string;
