@@ -29,6 +29,7 @@ import { postCanonicalSaleRevenueInTransaction } from '../revenue';
 import { expectedClosingStock } from '../inventory/expected-closing-stock';
 import { postShiftExpensesInTransaction } from './shift-expense-posting';
 import { describeMissingDips, tanksMissingClosingDip } from './closing-shift-dips';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 const uuid = z.string().uuid();
 export const productionReconciliationPaymentMethods = [
@@ -1712,7 +1713,7 @@ export async function getProductionReconciliationFromRequest(
       join app.reconciliations cur on cur.tenant_id=t.tenant_id and cur.station_id=t.station_id and cur.id=${input.reconciliationId}
       join app.station_business_days bd on bd.tenant_id=cur.tenant_id and bd.station_id=cur.station_id and bd.id=cur.business_day_id
       where t.tenant_id=${context.tenantId} and t.station_id=${context.stationId} and t.status='ACTIVE'
-      order by p.name, t.code
+      order by ${productOrderSql('p')}, t.code
     `);
     const metrics = await loadMetrics(transaction, context, input.reconciliationId);
     // Tells the review page to hide Approve from the person who submitted the day, using the same
@@ -1780,18 +1781,24 @@ export async function getProductionReconciliationFromRequest(
       tankId: string;
       productId: string;
     }>(sql`
-      select distinct product.name, stream.tank_id as "tankId", stream.product_id as "productId"
-      from app.reconciliation_meter_readings reading
-      join app.products product
-        on product.tenant_id = reading.tenant_id and product.id = reading.product_id
-      join app.inventory_cost_stream_state stream
-        on stream.tenant_id = reading.tenant_id and stream.station_id = reading.station_id
-       and stream.product_id = reading.product_id
-      where reading.tenant_id = ${context.tenantId}
-        and reading.station_id = ${context.stationId}
-        and reading.reconciliation_id = ${input.reconciliationId}
-        and stream.valuation_status <> 'VALUED' and stream.quantity_litres > 0
-      order by product.name
+      -- SELECT DISTINCT cannot be ordered by an expression outside its select list, so the
+      -- distinct rows are taken first and the shared fuel order is applied outside.
+      select product.name, product."tankId", product."productId"
+      from (
+        select distinct p.name, p.display_order, p.kind,
+          stream.tank_id as "tankId", stream.product_id as "productId"
+        from app.reconciliation_meter_readings reading
+        join app.products p
+          on p.tenant_id = reading.tenant_id and p.id = reading.product_id
+        join app.inventory_cost_stream_state stream
+          on stream.tenant_id = reading.tenant_id and stream.station_id = reading.station_id
+         and stream.product_id = reading.product_id
+        where reading.tenant_id = ${context.tenantId}
+          and reading.station_id = ${context.stationId}
+          and reading.reconciliation_id = ${input.reconciliationId}
+          and stream.valuation_status <> 'VALUED' and stream.quantity_litres > 0
+      ) product
+      order by ${productOrderSql('product')}
     `);
     return {
       ...header,

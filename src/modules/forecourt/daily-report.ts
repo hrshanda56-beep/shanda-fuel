@@ -8,6 +8,7 @@ import { authorize } from '../../platform/security/permissions';
 import { resolveForecourtCommandContext } from './application';
 import { loadForecourtStation } from './persistence';
 import { buildDailyReport, type DailyReport, type DailyReportInput } from './daily-report-model';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 export const dailyReportQuery = z.object({
   tenantId: z.string().uuid(),
@@ -85,6 +86,7 @@ export async function getDailyReportFromRequest(
         transaction.execute<DailyReportInput['readings'][number]>(sql`
           select p.number as "pumpNumber", n.number as "nozzleNumber",
                  r.product_id as "productId", pr.name as "productName",
+                 pr.kind as "productKind", pr.display_order as "productDisplayOrder",
                  r.opening_reading::text as "openingReading", r.closing_reading::text as "closingReading",
                  r.litres_sold::text as "litresSold", r.unit_price::text as "unitPrice",
                  r.sales_value::text as "salesValue"
@@ -158,8 +160,8 @@ export async function getDailyReportFromRequest(
               countedStates.map((state) => sql`${state}`),
               sql`, `,
             )}))
-          group by pr.name
-          order by pr.name
+          group by pr.name, pr.display_order, pr.kind
+          order by ${productOrderSql('pr')}
         `),
         transaction.execute<{ total: string | null }>(sql`
           select sum(e.amount)::text as total

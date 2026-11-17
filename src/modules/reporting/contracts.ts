@@ -98,6 +98,9 @@ export type SalesBreakdownRow = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  /** Ordering only: see platform/domain/product-order.ts. */
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
   litres: ReportLitres;
   salesValue: ReportMoney;
   averageRealizedPrice: ReportMoney | null;

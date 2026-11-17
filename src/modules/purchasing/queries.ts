@@ -17,6 +17,7 @@ import {
 } from './domain';
 import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
 import { loadReceiptByLine } from './persistence';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 const uuid = z.string().uuid();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -304,8 +305,9 @@ export async function getPurchaseOrderReferenceFromRequest(
       where tenant_id = ${context.tenantId} and status = 'ACTIVE' order by code
     `);
     const products = await transaction.execute<{ id: string; code: string; name: string }>(sql`
-      select id, code, name from app.products
-      where tenant_id = ${context.tenantId} and status = 'ACTIVE' order by code
+      select p.id, p.code, p.name from app.products p
+      where p.tenant_id = ${context.tenantId} and p.status = 'ACTIVE'
+      order by ${productOrderSql('p')}, p.code
     `);
     const deliveries = await transaction.execute<{
       id: string;

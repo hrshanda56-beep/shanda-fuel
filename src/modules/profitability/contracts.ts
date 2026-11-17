@@ -13,6 +13,9 @@ export type RestatedSaleCogs = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  /** Ordering only: see platform/domain/product-order.ts. */
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
   reconciliationId: string;
   revisionId: string;
   meterSegmentId: string;
@@ -57,6 +60,9 @@ export type CanonicalSaleRevenue = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  /** Ordering only: see platform/domain/product-order.ts. */
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
   reconciliationId: string;
   revisionId: string;
   meterSegmentId: string;

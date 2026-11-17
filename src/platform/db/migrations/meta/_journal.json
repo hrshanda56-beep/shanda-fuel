@@ -631,6 +631,13 @@
       "when": 1793200105000,
       "tag": "0105_supervisor_price_request",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1793200106000,
+      "tag": "0106_product_kind_order",
+      "breakpoints": true
     }
   ]
 }

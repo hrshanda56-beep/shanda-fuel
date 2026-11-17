@@ -1,3 +1,11 @@
+import {
+  BLEND_PERCENTS,
+  PRODUCT_KINDS,
+  PRODUCT_KIND_LABELS,
+  parseProductKindInput,
+  type BlendPercent,
+  type ProductKind,
+} from '../../platform/domain/product-order';
 import type { ConfigurationSetupOverview } from './contracts';
 
 /**
@@ -399,4 +407,68 @@ export function friendlyPriceError(status: number, message?: string): string {
     return 'Approved. It starts once the pump meters are read for the price change.';
   }
   return friendlySetupError(status, message);
+}
+
+export type FuelChoiceErrors = Partial<Record<'kind' | 'blendPercent' | 'name', string>>;
+
+/**
+ * Checks the "Add a fuel type" form the same way the server contract does, in plain words. A
+ * percentage left over from an earlier Blend choice is dropped for any other kind.
+ */
+export function validateFuelChoice(input: {
+  kind: string;
+  blendPercent: string;
+  name: string;
+}):
+  | { ok: true; value: { kind: ProductKind; blendPercent: BlendPercent | null; name: string } }
+  | { ok: false; errors: FuelChoiceErrors } {
+  if (!(PRODUCT_KINDS as readonly string[]).includes(input.kind)) {
+    return { ok: false, errors: { kind: 'Choose the type of fuel.' } };
+  }
+  const kind = input.kind as ProductKind;
+  const percent = kind === 'BLEND' ? Number(input.blendPercent) : null;
+  if (kind === 'BLEND' && !(BLEND_PERCENTS as readonly number[]).includes(percent as number)) {
+    return { ok: false, errors: { blendPercent: 'Choose the blend: 5%, 10%, 15% or 20%.' } };
+  }
+  const name = input.name.trim();
+  if (!name) {
+    return {
+      ok: false,
+      errors: {
+        name:
+          kind === 'OTHER'
+            ? 'Enter the name of the fuel, for example Paraffin.'
+            : 'Enter the name of the fuel, for example Diesel.',
+      },
+    };
+  }
+  return { ok: true, value: parseProductKindInput({ kind, blendPercent: percent, name }) };
+}
+
+/** Checks only the type (and blend percentage) of a fuel that already exists. */
+export function validateFuelKind(input: {
+  kind: string;
+  blendPercent: string;
+}):
+  | { ok: true; value: { kind: ProductKind; blendPercent: BlendPercent | null } }
+  | { ok: false; errors: FuelChoiceErrors } {
+  if (!(PRODUCT_KINDS as readonly string[]).includes(input.kind)) {
+    return { ok: false, errors: { kind: 'Choose the type of fuel.' } };
+  }
+  const kind = input.kind as ProductKind;
+  const percent = kind === 'BLEND' ? Number(input.blendPercent) : null;
+  if (kind === 'BLEND' && !(BLEND_PERCENTS as readonly number[]).includes(percent as number)) {
+    return { ok: false, errors: { blendPercent: 'Choose the blend: 5%, 10%, 15% or 20%.' } };
+  }
+  return { ok: true, value: { kind, blendPercent: percent as BlendPercent | null } };
+}
+
+/** The type of a fuel in plain words, or null when none has been chosen yet. */
+export function describeFuelKind(
+  kind: string | null | undefined,
+  blendPercent: number | null | undefined,
+): string | null {
+  if (!kind || !(PRODUCT_KINDS as readonly string[]).includes(kind)) return null;
+  const label = PRODUCT_KIND_LABELS[kind as ProductKind];
+  return kind === 'BLEND' && blendPercent ? `${label} ${blendPercent}%` : label;
 }

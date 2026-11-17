@@ -1,6 +1,6 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-11-01** for `main` at `6e4bb214`: 89 migrations, 0000 to 0103 (0098 to 0102 added 2026-11-02, 0103 on 2026-11-11). Production's own count is not known from the repository: read it first (section 4, step 2).
+**Updated 2026-11-01** for `main` at `6e4bb214`: 91 migrations, 0000 to 0106 (no 0104) (0098 to 0102 added 2026-11-02, 0103 on 2026-11-11, 0105 and 0106 on 2026-11-16/17). Production's own count is not known from the repository: read it first (section 4, step 2).
 
 > **Urgent, 2026-11-01:** the application code for 0087 to 0097 is already live, but those migrations are not recorded as applied to production. **0097 is required**: without it the app's database role cannot approve a reconciliation that has pump readings (the validation triggers fail with "permission denied"). Apply 0084 to 0103 in order after reading production's level (section 4, step 2).
 
@@ -101,8 +101,10 @@ that was reviewed.
 | 0101 | staff_access_replace | New SECURITY DEFINER function `app.clear_membership_assignments(tenant, membership)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only); callable only by a tenant-wide owner or administrator of that organisation; removes one member's assignments there. No table DELETE right is granted | **Required.** Without it "Change access" for a staff member fails with "permission denied" for everyone (the command replaces assignments by delete and insert). `db.smoke` still asserts the application role has no other deletes |
 | 0102 | staff_remove | New nullable column `app.memberships.removed_at`; new SECURITY DEFINER function `app.remove_staff_membership(tenant, membership)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only); callable only by a tenant-wide owner or administrator, for a deactivated member other than themself; erases a member with no records, otherwise sets `removed_at` to hide them. No table DELETE right is granted | **Required for the Remove button** on deactivated staff. Without it, Remove fails; nothing else is affected |
 | 0103 | staff_invitation_roles | Replaces one check constraint, `staff_invitations_scope_ck`, so invitations accept AUDITOR (company-wide) and AREA_MANAGER / CASH_COLLECTOR (selected stations). No table, policy, grant or data change | **Required for inviting those three roles.** Without it the invite fails with a check violation (500). Applied to the Neon development database on 2026-11-11; not applied to production |
+| 0105 | supervisor_price_request | Grants `price.change.request` to SUPERVISOR and AREA_MANAGER in `platform.role_permissions` (supervisors ask for a price change; owner/administrator still approve and activate). Data only, `ON CONFLICT DO NOTHING` | Not applied to production. Recorded as DEC-052 (merged in PR #233) |
+| 0106 | product_kind_order | Adds nullable `kind`, `blend_percent`, `display_order` to `app.products` with three check constraints, so fuels list Diesel, Petrol/Blend, Gas. Existing rows stay NULL; no backfill, RLS/grants/triggers unchanged | Not applied to production. Additive nullable columns |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 89 entries, 0000 to 0103 (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 91 entries, 0000 to 0106 (no 0104) (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -274,6 +276,8 @@ d050f34732c8c791ecee6dc29011f6cb7a4aa0826bd7476322690f74fd2a0797  0100_member_di
 e05eca7376ca738a1c246ec9b42daadfdd7e85d12b85780a822bc96e7bb02dc8  0101_staff_access_replace.sql
 f789ca29da899a2037ae6175554a5305ddb9e250d3e9fd6f4de0827980916081  0102_staff_remove.sql
 4408eba79cbd0cd7e85fe92cdc2fb8da8c79f4cc9c25b5adde743f899cf0b1fc  0103_staff_invitation_roles.sql
+42231b17d16b5414f5f4bcd4de8d507a449be3cafd0a978bef39ca74c3008972  0105_supervisor_price_request.sql
+7fb5098b54d2e5bf78886bcc99f78b5ebbee289d4a84778d00e0d340232dcad4  0106_product_kind_order.sql
 ```
 
 ## 7. Release record (copy this and fill it in)

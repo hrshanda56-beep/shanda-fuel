@@ -2,6 +2,7 @@ import 'server-only';
 
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { toSetupProduct } from './product-contract';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
 import {
@@ -14,6 +15,7 @@ import { resolveInventoryCommandContext } from '../inventory/application';
 import { computeSetupBlockers } from './blockers';
 import { resolveSetupCapabilities } from './capabilities';
 import type { ConfigurationSetupOverview } from './contracts';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 const input = z.object({ tenantId: z.string().uuid(), stationId: z.string().uuid() });
 
@@ -55,9 +57,18 @@ export async function getSetupOverview(args: {
 
   return withTenantTransaction(context.authority.transaction, async (tx) => {
     const products = view.stationView
-      ? await tx.execute<{ id: string; code: string; name: string; status: string }>(sql`
-          select id, code, name, status from app.products
-          where tenant_id = ${tenantId} order by code`)
+      ? await tx.execute<{
+          id: string;
+          code: string;
+          name: string;
+          status: string;
+          kind: string | null;
+          blend_percent: number | null;
+          display_order: number | null;
+        }>(sql`
+          select p.id, p.code, p.name, p.status, p.kind, p.blend_percent, p.display_order
+          from app.products p
+          where p.tenant_id = ${tenantId} order by ${productOrderSql('p')}, p.code`)
       : null;
     const tanks = view.inventory
       ? await tx.execute<{
@@ -88,14 +99,42 @@ export async function getSetupOverview(args: {
           product_id: string;
           status: string;
           meter_serial_number: string | null;
+          meter_working_since: string | null;
+          meter_working_since_editable: boolean;
         }>(sql`
           select n.id, n.pump_id, n.number, n.product_id, n.status,
             (select m.serial_number from app.meter_installations i
                join app.meters m on m.tenant_id = i.tenant_id and m.id = i.meter_id
               where i.tenant_id = n.tenant_id and i.station_id = n.station_id
                 and i.nozzle_id = n.id and i.effective_to is null
-              order by i.effective_from desc limit 1) as meter_serial_number
+              order by i.effective_from desc limit 1) as meter_serial_number,
+            (select (i.effective_from at time zone st.timezone)::date::text
+               from app.meter_installations i
+              where i.tenant_id = n.tenant_id and i.station_id = n.station_id
+                and i.nozzle_id = n.id and i.effective_to is null
+              order by i.effective_from desc limit 1) as meter_working_since,
+            (
+              (select count(*) from app.meter_installations i
+                where i.tenant_id = n.tenant_id and i.station_id = n.station_id
+                  and i.nozzle_id = n.id) = 1
+              and not exists (
+                select 1 from app.meter_installations i
+                where i.tenant_id = n.tenant_id and i.station_id = n.station_id
+                  and i.nozzle_id = n.id and i.effective_to is null
+                  and (exists (select 1 from app.meter_boundaries b
+                                where b.tenant_id = i.tenant_id and b.meter_installation_id = i.id)
+                    or exists (select 1 from app.meter_segments g
+                                where g.tenant_id = i.tenant_id and g.meter_installation_id = i.id)
+                    or exists (select 1 from app.meter_exceptions e
+                                where e.tenant_id = i.tenant_id and e.meter_installation_id = i.id))
+              )
+              and exists (
+                select 1 from app.meter_installations i
+                where i.tenant_id = n.tenant_id and i.station_id = n.station_id
+                  and i.nozzle_id = n.id and i.effective_to is null)
+            ) as meter_working_since_editable
           from app.nozzles n
+          join app.stations st on st.tenant_id = n.tenant_id and st.id = n.station_id
           where n.tenant_id = ${tenantId} and n.station_id = ${stationId}
           order by n.number`)
       : null;
@@ -166,8 +205,7 @@ export async function getSetupOverview(args: {
       stationId,
       stationStatus: station[0]?.status ?? 'UNKNOWN',
       capabilities,
-      products:
-        products?.map((r) => ({ id: r.id, code: r.code, name: r.name, status: r.status })) ?? null,
+      products: products?.map(toSetupProduct) ?? null,
       tanks:
         tanks?.map((r) => ({
           id: r.id,
@@ -189,6 +227,8 @@ export async function getSetupOverview(args: {
           productId: r.product_id,
           status: r.status,
           meterSerialNumber: r.meter_serial_number,
+          meterWorkingSince: r.meter_working_since,
+          meterWorkingSinceEditable: r.meter_working_since_editable === true,
         })) ?? null,
       shiftTemplates:
         shiftTemplates?.map((r) => ({

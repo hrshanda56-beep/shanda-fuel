@@ -13,6 +13,8 @@ import {
   type InventoryCommandContext,
 } from '../inventory/application';
 import { assertProductBelongsToTenant } from '../inventory/persistence';
+import { checkMeterWorkingSinceDate } from './meter-working-since';
+import { createProductPayload, setProductKindPayload } from './product-contract';
 
 /**
  * Milestone A owner self-service setup commands. These are the only setup
@@ -33,11 +35,13 @@ export const SETUP_COMMAND_TYPES = [
   'RenameProduct',
   'SetProductStatus',
   'DeleteProduct',
+  'SetProductKind',
   'CreatePump',
   'CreateNozzle',
   'CreateCashLocation',
   'UpdatePump',
   'UpdateNozzle',
+  'SetMeterWorkingSince',
   'DraftPriceChange',
   'UpdateSupplier',
   'SetResponsibleSupervisor',
@@ -53,10 +57,6 @@ export function assertSetupCommandType(value: unknown): SetupCommandType {
   return value as SetupCommandType;
 }
 
-const createProductPayload = authority.extend({
-  code: z.string().trim().min(1).max(32),
-  name: z.string().trim().min(1).max(120),
-});
 const productRef = authority.extend({ productId: uuid });
 const renameProductPayload = productRef.extend({ name: z.string().trim().min(1).max(120) });
 const setProductStatusPayload = productRef.extend({ status: z.enum(['ACTIVE', 'INACTIVE']) });
@@ -68,11 +68,19 @@ const createPumpPayload = authority.extend({
   number: z.string().trim().min(1).max(16),
   name: z.string().trim().max(80).nullish(),
 });
+const stationDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a date');
 const createNozzlePayload = authority.extend({
   pumpId: uuid,
   number: z.string().trim().min(1).max(16),
   productId: uuid,
   meterSerialNumber: z.string().trim().min(1).max(80),
+  /** The station date the meter was fitted. Omit when it is being fitted now. */
+  meterWorkingSinceDate: stationDate.optional(),
+});
+const setMeterWorkingSincePayload = authority.extend({
+  nozzleId: uuid,
+  /** The station date the meter was fitted. It starts at the beginning of that day, station time. */
+  meterWorkingSinceDate: stationDate,
 });
 const updatePumpPayload = authority.extend({
   pumpId: uuid,
@@ -157,6 +165,29 @@ function contextFor(request: Request, payload: { tenantId: string; stationId: st
 
 type Payload<T extends z.ZodType> = z.infer<T>;
 
+/**
+ * Turns a station date into the start of that day in the station's own timezone, after checking it
+ * is a sensible "meter working since" date (real, not in the future, not more than a year back).
+ * Returns the instant as text for use as a timestamptz.
+ */
+async function resolveMeterWorkingSince(
+  transaction: Parameters<Parameters<typeof executeInventoryCommand>[0]['execute']>[0],
+  context: InventoryCommandContext,
+  date: string,
+): Promise<string> {
+  const rows = await transaction.execute<{ starts_at: string; today: string }>(sql`
+    select ((${date}::date)::timestamp at time zone s.timezone)::text as starts_at,
+      (now() at time zone s.timezone)::date::text as today
+    from app.stations s
+    where s.tenant_id = ${context.tenantId} and s.id = ${context.stationId}
+  `);
+  const row = rows[0];
+  if (!row) throw new AppError('NOT_FOUND', 'The station was not found');
+  const problem = checkMeterWorkingSinceDate(date, row.today);
+  if (problem) throw new AppError('VALIDATION_FAILED', problem);
+  return row.starts_at;
+}
+
 export function createProductCommand(
   context: InventoryCommandContext,
   payload: Payload<typeof createProductPayload>,
@@ -175,10 +206,12 @@ export function createProductCommand(
     },
     execute: async (transaction) => {
       const productId = randomUUID();
+      const blendPercent = payload.kind === 'BLEND' ? (payload.blendPercent ?? null) : null;
       try {
         await transaction.execute(sql`
-          insert into app.products (id, tenant_id, code, name, status)
-          values (${productId}, ${context.tenantId}, ${payload.code}, ${payload.name}, 'ACTIVE')
+          insert into app.products (id, tenant_id, code, name, status, kind, blend_percent)
+          values (${productId}, ${context.tenantId}, ${payload.code}, ${payload.name}, 'ACTIVE',
+                  ${payload.kind ?? null}, ${blendPercent})
         `);
       } catch (error) {
         if (isUniqueViolation(error)) {
@@ -186,7 +219,55 @@ export function createProductCommand(
         }
         throw error;
       }
-      return { productId, code: payload.code, name: payload.name };
+      return {
+        productId,
+        code: payload.code,
+        name: payload.name,
+        kind: payload.kind ?? null,
+        blendPercent,
+      };
+    },
+  });
+}
+
+export function setProductKindCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setProductKindPayload>,
+  key: string,
+) {
+  const blendPercent = payload.kind === 'BLEND' ? (payload.blendPercent ?? null) : null;
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetProductKind',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_KIND_SET',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{
+          kind: string | null;
+          blend_percent: number | null;
+        }>(sql`
+          select kind, blend_percent from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        const row = rows[0];
+        return row ? { kind: row.kind, blendPercent: row.blend_percent } : null;
+      },
+    },
+    execute: async (transaction) => {
+      // Only the kind and blend percentage change: never the name or code.
+      const updated = await transaction.execute<{ id: string }>(sql`
+        update app.products
+        set kind = ${payload.kind}, blend_percent = ${blendPercent}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        returning id
+      `);
+      if (updated.length === 0) throw new AppError('NOT_FOUND', 'The fuel type was not found');
+      return { productId: payload.productId, kind: payload.kind, blendPercent };
     },
   });
 }
@@ -451,6 +532,9 @@ export function createNozzleCommand(
       if (pumps.length !== 1) {
         throw new AppError('NOT_FOUND', 'The pump was not found at this station');
       }
+      const workingSince = payload.meterWorkingSinceDate
+        ? await resolveMeterWorkingSince(transaction, context, payload.meterWorkingSinceDate)
+        : (await transaction.execute<{ now: string }>(sql`select now()::text as now`))[0]!.now;
       const nozzleId = randomUUID();
       const meterId = randomUUID();
       const installationId = randomUUID();
@@ -468,7 +552,7 @@ export function createNozzleCommand(
           insert into app.meter_installations
             (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
           values (${installationId}, ${context.tenantId}, ${context.stationId}, ${nozzleId},
-            ${meterId}, now(), ${context.authority.membership.membershipId})
+            ${meterId}, ${workingSince}::timestamptz, ${context.authority.membership.membershipId})
         `);
       } catch (error) {
         if (isUniqueViolation(error)) {
@@ -485,6 +569,111 @@ export function createNozzleCommand(
         installationId,
         pumpId: payload.pumpId,
         number: payload.number,
+        meterWorkingSince: workingSince,
+      };
+    },
+  });
+}
+
+/**
+ * Sets when a nozzle's meter was really fitted ("Meter working since"), so a nozzle added after a
+ * shift opened can still be closed into that shift. It only moves the start EARLIER, and only
+ * while nothing has been recorded against the meter: it must be the nozzle's one and only meter,
+ * with no readings, sealed pump totals or meter problems linked to it. Once any exist the date is
+ * part of the sales record and can no longer be changed here.
+ */
+export function setMeterWorkingSinceCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setMeterWorkingSincePayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetMeterWorkingSince',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.METER_WORKING_SINCE_SET',
+      subjectType: 'Nozzle',
+      subjectId: payload.nozzleId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ effective_from: string }>(sql`
+          select effective_from::text from app.meter_installations
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and nozzle_id = ${payload.nozzleId}
+          order by effective_from limit 1
+        `);
+        return { meterWorkingSince: rows[0]?.effective_from ?? null };
+      },
+    },
+    execute: async (transaction) => {
+      const nozzles = await transaction.execute<{ id: string }>(sql`
+        select id from app.nozzles
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.nozzleId}
+        for update
+      `);
+      if (nozzles.length !== 1) {
+        throw new AppError('NOT_FOUND', 'The nozzle was not found at this station');
+      }
+      const installations = await transaction.execute<{
+        id: string;
+        effective_from: string;
+        effective_to: string | null;
+      }>(sql`
+        select id, effective_from::text, effective_to::text from app.meter_installations
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and nozzle_id = ${payload.nozzleId}
+        for update
+      `);
+      const only = installations[0];
+      if (installations.length !== 1 || !only || only.effective_to !== null) {
+        throw new AppError(
+          'CONFLICT',
+          'This nozzle has had its meter changed, so the date it started working can no longer be edited',
+        );
+      }
+      const used = await transaction.execute<{ n: number }>(sql`
+        select (
+          (select count(*) from app.meter_boundaries
+             where tenant_id = ${context.tenantId} and meter_installation_id = ${only.id}) +
+          (select count(*) from app.meter_segments
+             where tenant_id = ${context.tenantId} and meter_installation_id = ${only.id}) +
+          (select count(*) from app.meter_exceptions
+             where tenant_id = ${context.tenantId} and meter_installation_id = ${only.id})
+        )::int as n
+      `);
+      if (Number(used[0]?.n ?? 0) > 0) {
+        throw new AppError(
+          'CONFLICT',
+          'Readings have already been recorded for this meter, so the date it started working can no longer be edited',
+        );
+      }
+      const startsAt = await resolveMeterWorkingSince(
+        transaction,
+        context,
+        payload.meterWorkingSinceDate,
+      );
+      const earlier = await transaction.execute<{ ok: boolean }>(sql`
+        select ${startsAt}::timestamptz <= ${only.effective_from}::timestamptz as ok
+      `);
+      if (!earlier[0]?.ok) {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          'The date can only be moved earlier than the one already set',
+        );
+      }
+      await transaction.execute(sql`
+        update app.meter_installations
+        set effective_from = ${startsAt}::timestamptz
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${only.id} and effective_to is null
+      `);
+      return {
+        nozzleId: payload.nozzleId,
+        installationId: only.id,
+        meterWorkingSince: startsAt,
       };
     },
   });
@@ -663,6 +852,11 @@ export async function createCashLocationFromRequest(request: Request, input: unk
   const payload = createCashLocationPayload.parse(input);
   return createCashLocationCommand(await contextFor(request, payload), payload, keyOf(request));
 }
+
+export async function setProductKindFromRequest(request: Request, input: unknown) {
+  const payload = setProductKindPayload.parse(input);
+  return setProductKindCommand(await contextFor(request, payload), payload, keyOf(request));
+}
 export async function createPumpFromRequest(request: Request, input: unknown) {
   const payload = createPumpPayload.parse(input);
   return createPumpCommand(await contextFor(request, payload), payload, keyOf(request));
@@ -681,6 +875,10 @@ export async function updateNozzleFromRequest(request: Request, input: unknown) 
   return updateNozzleCommand(await contextFor(request, payload), payload, keyOf(request));
 }
 
+export async function setMeterWorkingSinceFromRequest(request: Request, input: unknown) {
+  const payload = setMeterWorkingSincePayload.parse(input);
+  return setMeterWorkingSinceCommand(await contextFor(request, payload), payload, keyOf(request));
+}
 export async function draftPriceChangeFromRequest(request: Request, input: unknown) {
   const payload = draftPricePayload.parse(input);
   return draftPriceChangeCommand(await contextFor(request, payload), payload, keyOf(request));

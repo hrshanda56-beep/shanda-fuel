@@ -63,6 +63,7 @@ import {
 } from './domain';
 import { resolveForecourtCommandContext } from './application';
 import { shiftOpensAt } from './shift-schedule';
+import { meterNotWorkingForShiftMessage } from './shift-close-messages';
 import { readLockBlockers } from './lock-blockers';
 import { ensureDefaultExpenseCategories } from '../expenses/default-categories';
 import {
@@ -277,10 +278,7 @@ async function sealMetersFromSavedReadings(
       for update of i
     `);
     const installation = installations[0];
-    if (!installation)
-      throw cannotClose(
-        `the meter for ${label} is not set up as working for this shift. Ask the owner to check the pump setup.`,
-      );
+    if (!installation) throw cannotClose(meterNotWorkingForShiftMessage(label));
 
     const prices = await transaction.execute<{
       id: string;

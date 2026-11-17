@@ -1,6 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card, ErrorState, Field, SuccessState } from '@/design-system/primitives';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
@@ -14,15 +22,14 @@ import {
 } from '../../../platform/drafts/local-draft';
 import { compartmentSumProblem, shortageOrExcess, type CompartmentRow } from '../record-delivery';
 import { InfoTip } from '@/design-system/info-tip';
-
-export const NO_PO_REASONS = [
-  { value: '', label: 'I will link a purchase order later' },
-  { value: 'EMERGENCY_PURCHASE', label: 'No purchase order: emergency purchase' },
-  { value: 'CASH_PURCHASE', label: 'No purchase order: bought for cash' },
-  { value: 'SUPPLIER_DIRECT', label: 'No purchase order: supplier delivered without an order' },
-  { value: 'PO_NOT_RAISED', label: 'No purchase order: the order was not raised in time' },
-  { value: 'OTHER', label: 'No purchase order: another reason' },
-] as const;
+import { friendlyMessage } from '../../purchasing/ui/purchasing-client';
+import {
+  LINKED_CHOICE,
+  buildPurchaseOrderStep,
+  parsePurchaseOrderChoice,
+  purchaseOrderChoiceProblem,
+} from '../purchase-order-choice';
+import { PurchaseOrderChoice } from './purchase-order-choice';
 
 type Failure = { message: string; code?: string; status?: number; step?: 'confirm' };
 /** What is typed so far, kept on this device so a dropped connection does not lose it. */
@@ -63,8 +70,11 @@ export type DeliveryEdit = Readonly<{
     water: '' | 'PASS' | 'FAIL';
     waterMm: string;
     driverConfirmed: boolean;
+    /** The no-purchase-order reason already saved, or empty. */
     noPo: string;
     noPoNote: string;
+    /** The number of the purchase order the delivery is already linked to, or empty. */
+    linkedOrder: string;
   }>;
   /** Called once every changed step has been saved. */
   onSaved: () => void;
@@ -83,7 +93,15 @@ type Progress = {
   compartments?: boolean;
   waterTest?: boolean;
   driver?: boolean;
+  /** The purchase-order answer is saved: a reason was recorded or the order was linked. */
+  purchaseOrder?: boolean;
 };
+
+/** The reason a choice stands for, or empty when it is an order or not answered. */
+function reasonOf(choice: string): string {
+  const parsed = parsePurchaseOrderChoice(choice);
+  return parsed.kind === 'REASON' ? parsed.reason : '';
+}
 
 const emptyCompartment = (n: number): CompartmentRow => ({
   number: n,
@@ -150,7 +168,8 @@ function Section({
 /**
  * Record a fuel delivery in one form: who brought it, what the note says, what was actually
  * received, the tank dips either side, the truck compartments and seals, the water test and
- * the driver's confirmation. A purchase order is optional. The steps are saved in order and a
+ * the driver's confirmation. It also asks whether there is a purchase order, which must be
+ * answered before the delivery can be confirmed. The steps are saved in order and a
  * failed step can simply be retried: the ones that worked are not repeated.
  */
 export function RecordDelivery({
@@ -192,15 +211,25 @@ export function RecordDelivery({
   const [water, setWater] = useState<'' | 'PASS' | 'FAIL'>(start?.water ?? '');
   const [waterMm, setWaterMm] = useState(start?.waterMm ?? '');
   const [driverConfirmed, setDriverConfirmed] = useState(start?.driverConfirmed ?? false);
-  const [noPo, setNoPo] = useState<string>(start?.noPo ?? '');
+  /** What the purchase-order question holds: empty, a no-order reason, or an order to link. */
+  const initialChoice = start?.noPo || (start?.linkedOrder ? LINKED_CHOICE : '');
+  const [noPo, setNoPo] = useState<string>(initialChoice);
   const [noPoNote, setNoPoNote] = useState(start?.noPoNote ?? '');
   const [busy, setBusy] = useState<'record' | 'confirm' | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [deliveryId, setDeliveryId] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  /** True once the purchase-order answer is saved, so the one-step-left panel need not ask again. */
+  const [poSaved, setPoSaved] = useState(false);
+  const [poError, setPoError] = useState<string | null>(null);
   const [stepUpOpen, setStepUpOpen] = useState(false);
 
   const tank = tanks.find((item) => item.id === tankId);
+  const onPoChange = useCallback((next: { value: string; note: string }) => {
+    setNoPo(next.value);
+    setNoPoNote(next.note);
+    setPoError(null);
+  }, []);
   const difference = shortageOrExcess(noteLitres, receivedLitres);
   const sumProblem = useMemo(
     () => compartmentSumProblem(compartments, noteLitres, receivedLitres),
@@ -364,8 +393,8 @@ export function RecordDelivery({
       transporter.trim() !== before.transporter ||
       driver.trim() !== before.driver ||
       truck.trim() !== before.truck ||
-      noPo !== before.noPo ||
-      (noPo === 'OTHER' && noPoNote.trim() !== before.noPoNote);
+      reasonOf(noPo) !== before.noPo ||
+      (reasonOf(noPo) === 'OTHER' && noPoNote.trim() !== before.noPoNote);
     if (headerChanged && !state.updated) {
       await post('/api/inventory/commands', 'update', {
         commandType: 'UpdateDelivery',
@@ -379,10 +408,30 @@ export function RecordDelivery({
         transporter: transporter.trim() || null,
         driver: driver.trim() || null,
         truckRegistration: truck.trim() || null,
-        noPoReason: noPo || null,
-        noPoNote: noPo === 'OTHER' ? noPoNote.trim() : null,
+        noPoReason: reasonOf(noPo) || null,
+        noPoNote: reasonOf(noPo) === 'OTHER' ? noPoNote.trim() : null,
       });
       state.updated = true;
+    }
+    if (parsePurchaseOrderChoice(noPo).kind === 'LINK' && !state.purchaseOrder) {
+      const step = buildPurchaseOrderStep(noPo, noPoNote, {
+        tenantId,
+        stationId,
+        deliveryId: target.deliveryId,
+      });
+      if (step) {
+        try {
+          await post(step.url, `po:${noPo}`, step.body);
+        } catch (caught) {
+          throw new Error(
+            friendlyMessage(
+              caught instanceof Error ? caught.message : '',
+              'The purchase order could not be linked. Try again, or choose another answer.',
+            ),
+          );
+        }
+      }
+      state.purchaseOrder = true;
     }
     const filled = compartments.filter((row) => row.noteLitres.trim() || row.receivedLitres.trim());
     const rowsOf = (rows: readonly CompartmentRow[]) =>
@@ -442,6 +491,14 @@ export function RecordDelivery({
   async function record(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     setFailure(null);
+    // The answer is asked once. After the delivery exists, the one-step-left panel takes over.
+    const choiceProblem = progress.current.deliveryId
+      ? null
+      : purchaseOrderChoiceProblem(noPo, noPoNote);
+    if (choiceProblem) {
+      setFailure({ message: choiceProblem });
+      return;
+    }
     if (sumProblem) {
       setFailure({ message: sumProblem });
       return;
@@ -487,11 +544,33 @@ export function RecordDelivery({
                 },
               }
             : {}),
-          ...(noPo ? { noPoReason: noPo } : {}),
-          ...(noPo === 'OTHER' && noPoNote.trim() ? { noPoNote: noPoNote.trim() } : {}),
+          ...(reasonOf(noPo) ? { noPoReason: reasonOf(noPo) } : {}),
+          ...(reasonOf(noPo) === 'OTHER' && noPoNote.trim() ? { noPoNote: noPoNote.trim() } : {}),
         });
         state.deliveryId = String(result.deliveryId);
         setDeliveryId(state.deliveryId);
+        if (reasonOf(noPo)) {
+          state.purchaseOrder = true;
+          setPoSaved(true);
+        } else {
+          // Linking an order needs the saved delivery. If it cannot be linked (for example the
+          // person may not link orders) the panel below asks again instead of leaving a dead end.
+          const step = buildPurchaseOrderStep(noPo, noPoNote, {
+            tenantId,
+            stationId,
+            deliveryId: state.deliveryId,
+          });
+          try {
+            if (step) await post(step.url, `po:${noPo}`, step.body);
+            state.purchaseOrder = true;
+            setPoSaved(true);
+          } catch (caught) {
+            setPoError(
+              `We could not link that order. ${friendlyMessage(caught instanceof Error ? caught.message : '', 'Try again, or choose another answer.')}`,
+            );
+            setNoPo('');
+          }
+        }
       }
       const id = state.deliveryId;
       const filled = compartments.filter(
@@ -551,9 +630,31 @@ export function RecordDelivery({
 
   async function confirm() {
     if (!deliveryId) return;
-    setBusy('confirm');
     setFailure(null);
+    if (!poSaved) {
+      const problem = purchaseOrderChoiceProblem(noPo, noPoNote);
+      if (problem) {
+        setFailure({ message: problem, step: 'confirm' });
+        return;
+      }
+    }
+    setBusy('confirm');
     try {
+      if (!poSaved) {
+        const step = buildPurchaseOrderStep(noPo, noPoNote, { tenantId, stationId, deliveryId });
+        try {
+          if (step) await post(step.url, `po:${noPo}:${noPoNote.trim()}`, step.body);
+        } catch (caught) {
+          throw new Error(
+            friendlyMessage(
+              caught instanceof Error ? caught.message : '',
+              'The purchase order answer could not be saved. Try again.',
+            ),
+          );
+        }
+        setPoSaved(true);
+        setPoError(null);
+      }
       await post('/api/inventory/commands', 'confirm', {
         commandType: 'ConfirmDelivery',
         deliveryId,
@@ -662,6 +763,19 @@ export function RecordDelivery({
                   required
                 />
               </Field>
+            </div>
+            <div className="rd-po">
+              <PurchaseOrderChoice
+                id="rd-po"
+                tenantId={tenantId}
+                stationId={stationId}
+                supplierId={supplierId}
+                productId={tank?.productId ?? ''}
+                value={noPo}
+                note={noPoNote}
+                onChange={onPoChange}
+                linkedOrderNumber={start?.linkedOrder || undefined}
+              />
             </div>
           </section>
 
@@ -885,37 +999,6 @@ export function RecordDelivery({
                 ) : null}
               </div>
             </Section>
-
-            <Section
-              title="Purchase order"
-              note={noPo ? 'No order' : ''}
-              forceOpen={noPo === 'OTHER'}
-            >
-              <Field id="rd-no-po" label="Is there an order for this delivery?" optional>
-                <select
-                  id="rd-no-po"
-                  value={noPo}
-                  onChange={(event) => setNoPo(event.target.value)}
-                >
-                  {NO_PO_REASONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {noPo === 'OTHER' ? (
-                <Field id="rd-no-po-note" label="Why is there no purchase order?" required>
-                  <input
-                    id="rd-no-po-note"
-                    value={noPoNote}
-                    maxLength={300}
-                    onChange={(event) => setNoPoNote(event.target.value)}
-                    required
-                  />
-                </Field>
-              ) : null}
-            </Section>
           </div>
         </fieldset>
         {failure && failure.step !== 'confirm' ? (
@@ -957,6 +1040,21 @@ export function RecordDelivery({
               fuel on the tank&apos;s books and records you as the supervisor who checked it.
             </InfoTip>
           </div>
+          {poSaved ? null : (
+            <div className="rd-po">
+              <PurchaseOrderChoice
+                id="rd-saved-po"
+                tenantId={tenantId}
+                stationId={stationId}
+                supplierId={supplierId}
+                productId={tank?.productId ?? ''}
+                value={noPo}
+                note={noPoNote}
+                onChange={onPoChange}
+                error={poError ?? undefined}
+              />
+            </div>
+          )}
           <DocumentAttachments
             tenantId={tenantId}
             stationId={stationId}

@@ -6,6 +6,7 @@ import type { Database } from '../../platform/db';
 import type { OwnerPosition } from './contracts';
 import { readSupplierExposure } from '../creditors/purchasing-queries';
 import { formatLitres, formatMoney, latestStationLocalDate } from './domain';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 type PositionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -89,8 +90,8 @@ export async function readOwnerPosition(
     join app.stations st on st.tenant_id = s.tenant_id and st.id = s.station_id
     join app.products p on p.tenant_id = s.tenant_id and p.id = s.product_id
     where s.tenant_id = ${filters.tenantId} ${stationFilter('s', filters.stationIds)}
-    group by st.name, p.name
-    order by st.name, p.name
+    group by st.name, p.name, p.display_order, p.kind
+    order by st.name, ${productOrderSql('p')}
   `);
   const accountsTotal = Number(bank?.accounts_total ?? 0);
   const accountsWithBalance = Number(bank?.accounts_with_balance ?? 0);

@@ -1,6 +1,7 @@
 import { addDays, subtractMonths } from '@/modules/reporting/period';
 import { exact, sumExact } from '@/modules/reporting/domain';
 import { formatTileLitres, formatTileMoney } from '@/modules/reporting/format';
+import { compareProducts } from '@/platform/domain/product-order';
 
 /**
  * Presentation helpers for the dashboard. Every figure is summed with exact
@@ -112,8 +113,25 @@ export function chartBuckets(
 export type SalesRow = Readonly<{
   businessDate: string;
   productName: string;
+  /** Ordering only: Diesel, then Petrol/Blend, then Gas (product-order.ts). */
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
   litres: string;
 }>;
+
+/** Distinct product names in the shared fuel order, not alphabetical. */
+function orderedProductNames(rows: readonly SalesRow[]): string[] {
+  const byName = new Map<string, SalesRow>();
+  for (const row of rows) if (!byName.has(row.productName)) byName.set(row.productName, row);
+  return [...byName.values()]
+    .sort((a, b) =>
+      compareProducts(
+        { name: a.productName, kind: a.productKind, displayOrder: a.productDisplayOrder },
+        { name: b.productName, kind: b.productKind, displayOrder: b.productDisplayOrder },
+      ),
+    )
+    .map((row) => row.productName);
+}
 
 export type LitresPoint = Readonly<{
   label: string;
@@ -134,7 +152,7 @@ export function litresSeries(rows: readonly SalesRow[], buckets: readonly Bucket
     if (inside.length === 0) {
       return { label: bucket.label, from: bucket.from, to: bucket.to, litres: null, products: [] };
     }
-    const names = [...new Set(inside.map((row) => row.productName))].sort();
+    const names = orderedProductNames(inside);
     return {
       label: bucket.label,
       from: bucket.from,
@@ -150,7 +168,7 @@ export function litresSeries(rows: readonly SalesRow[], buckets: readonly Bucket
 
 /** Range total per product, for the line under the chart. */
 export function productTotals(rows: readonly SalesRow[]): { name: string; litres: string }[] {
-  const names = [...new Set(rows.map((row) => row.productName))].sort();
+  const names = orderedProductNames(rows);
   return names.map((name) => ({
     name,
     litres: sumExact(rows.filter((row) => row.productName === name).map((row) => row.litres)),

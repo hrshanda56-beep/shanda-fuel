@@ -12,6 +12,8 @@ import {
   draftPriceChangeFromRequest,
   recordBankBalanceFromRequest,
   setAlertSettingsFromRequest,
+  setMeterWorkingSinceFromRequest,
+  setProductKindFromRequest,
   setResponsibleSupervisorFromRequest,
   updateNozzleFromRequest,
   updatePumpFromRequest,
@@ -46,6 +48,9 @@ export const POST = withRequestObservability(
         case 'CreateCashLocation':
           result = await createCashLocationFromRequest(request, body);
           break;
+        case 'SetProductKind':
+          result = await setProductKindFromRequest(request, body);
+          break;
         case 'CreatePump':
           result = await createPumpFromRequest(request, body);
           break;
@@ -57,6 +62,9 @@ export const POST = withRequestObservability(
           break;
         case 'UpdateNozzle':
           result = await updateNozzleFromRequest(request, body);
+          break;
+        case 'SetMeterWorkingSince':
+          result = await setMeterWorkingSinceFromRequest(request, body);
           break;
         case 'DraftPriceChange':
           result = await draftPriceChangeFromRequest(request, body);

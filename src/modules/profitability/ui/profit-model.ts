@@ -7,6 +7,7 @@ import {
   recognizedOperatingExpenses,
 } from '../../reporting/statements';
 import { operatingProfit } from '../../reporting/operating-profit';
+import { compareProducts } from '../../../platform/domain/product-order';
 
 /**
  * Plain-language view of the profit figures for one period. Pure: it reshapes
@@ -202,9 +203,11 @@ export function buildProfitView(report: ManagementReport): ProfitView {
         litres: fuelLitres,
         sales: fuelSales,
         pricePerLitre: perLitre(fuelSales, fuelLitres),
+        order: { kind: rows[0]?.productKind, displayOrder: rows[0]?.productDisplayOrder },
       };
     })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => compareProducts({ name: a.name, ...a.order }, { name: b.name, ...b.order }))
+    .map(({ order: _order, ...fuel }) => fuel);
 
   return {
     state,

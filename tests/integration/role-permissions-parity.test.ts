@@ -73,3 +73,21 @@ describe('role permissions in the database against the code (D2)', () => {
     });
   }
 });
+
+describe('supervisor price request (migration 0105)', () => {
+  it('SUPERVISOR and AREA_MANAGER may request a price change but not approve or activate', async () => {
+    const own = postgres(databaseUrl!, { max: 1, prepare: false });
+    try {
+      const rows = await own<{ role_code: string; permission_code: string }[]>`
+        select role_code, permission_code from platform.role_permissions
+        where role_code in ('SUPERVISOR', 'AREA_MANAGER') and permission_code like 'price.change.%'
+      `;
+      const held = rows.map((row) => `${row.role_code}:${row.permission_code}`);
+      expect(held).toContain('SUPERVISOR:price.change.request');
+      expect(held).toContain('AREA_MANAGER:price.change.request');
+      expect(held.filter((entry) => /approve|activate/.test(entry))).toEqual([]);
+    } finally {
+      await own.end();
+    }
+  });
+});

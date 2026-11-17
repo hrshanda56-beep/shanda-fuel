@@ -1,4 +1,5 @@
 import { sumDecimals } from './decimal-sum';
+import { compareProducts } from '../../platform/domain/product-order';
 
 /** Raw rows the daily report is built from; every figure stays an exact decimal string. */
 export type DailyReportInput = Readonly<{
@@ -15,6 +16,9 @@ export type DailyReportInput = Readonly<{
     nozzleNumber: string;
     productId: string;
     productName: string;
+    /** Ordering only: see platform/domain/product-order.ts. */
+    productKind?: string | null;
+    productDisplayOrder?: number | null;
     openingReading: string;
     closingReading: string;
     litresSold: string;
@@ -130,6 +134,11 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
         .sort((a, b) => compareLabels(a.sortKey, b.sortKey))
         .map(({ sortKey: _sortKey, ...pump }) => pump);
       return {
+        order: {
+          name: rows[0]!.productName,
+          kind: rows[0]!.productKind,
+          displayOrder: rows[0]!.productDisplayOrder,
+        },
         productName: rows[0]!.productName,
         prices: [...new Set(rows.map((row) => row.unitPrice))].sort(compareLabels),
         pumps,
@@ -137,7 +146,8 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
         salesValue: sumDecimals(rows.map((row) => row.salesValue)),
       };
     })
-    .sort((a, b) => compareLabels(a.productName, b.productName));
+    .sort((a, b) => compareProducts(a.order, b.order))
+    .map(({ order: _order, ...product }) => product);
 
   const dipsByTank = new Map<string, DailyReportInput['dips'][number][]>();
   for (const dip of input.dips) {

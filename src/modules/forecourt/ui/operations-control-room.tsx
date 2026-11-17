@@ -3,7 +3,7 @@
 import { useReverification } from '@clerk/nextjs';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConfirm } from '../../../design-system/feedback-provider';
+import { OWN_ERRORS_HEADER, useConfirm } from '../../../design-system/feedback-provider';
 import {
   Button,
   Card,
@@ -52,6 +52,7 @@ type Overview = {
     StartShift: ActionAvailability;
     CloseMeters: ActionAvailability;
     CompleteShift: ActionAvailability;
+    MarkNotOperated?: ActionAvailability;
   };
   businessDays: Array<{
     id: string;
@@ -332,6 +333,7 @@ export function OperationsControlRoom({
       headers: {
         'content-type': 'application/json',
         'idempotency-key': stableIdempotencyKey(commandType, values, subjectId),
+        [OWN_ERRORS_HEADER]: '1',
       },
       body: JSON.stringify({ commandType, ...values }),
     });

@@ -20,6 +20,7 @@ import {
 } from '@/design-system/primitives';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { parseCalibrationText } from '../calibration';
+import { NO_PO_REASONS } from '../../deliveries/purchase-order-choice';
 import { formatLitres } from '@/design-system/formatters';
 import { InfoTip } from '@/design-system/info-tip';
 
@@ -825,13 +826,8 @@ export type DeliveryFormValues = Readonly<{
   tankId: string;
 }>;
 
-export const NO_PO_REASON_OPTIONS = [
-  { value: 'EMERGENCY_PURCHASE', label: 'Emergency purchase' },
-  { value: 'CASH_PURCHASE', label: 'Bought for cash' },
-  { value: 'SUPPLIER_DIRECT', label: 'Supplier delivered without an order' },
-  { value: 'PO_NOT_RAISED', label: 'The order was not raised in time' },
-  { value: 'OTHER', label: 'Another reason' },
-] as const;
+/** The same reasons every delivery screen offers; kept as one list in the deliveries module. */
+export const NO_PO_REASON_OPTIONS = NO_PO_REASONS;
 
 /**
  * Build the existing CreateDelivery command without sending empty optional strings.

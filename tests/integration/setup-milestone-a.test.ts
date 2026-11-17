@@ -291,6 +291,91 @@ describe('Milestone A owner setup commands (PostgreSQL)', { timeout: 60_000 }, (
     expect(audit.map((r) => r.event_code)).toEqual(['SETUP.NOZZLE_CREATED', 'SETUP.PUMP_CREATED']);
   });
 
+  it('Meter working since: backdates only the first unused installation, audited, bounded', async () => {
+    const stationDay = (offsetDays: number) =>
+      new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
+    // Created with a date: the installation starts at the start of that station day.
+    const created = await post(setupPost, 'owner', 'setup-since-noz-1', {
+      commandType: 'CreateNozzle',
+      ...A,
+      pumpId: state.pump,
+      number: '7',
+      productId: state.diesel,
+      meterSerialNumber: 'SN-SINCE-1',
+      meterWorkingSinceDate: stationDay(-3),
+    });
+    expect(created.status).toBe(200);
+    const nozzleId = created.body.nozzleId as string;
+    const startedBefore = (await client`
+      select effective_from < now() - interval '2 days' as ok from app.meter_installations
+      where nozzle_id = ${nozzleId}
+    `) as unknown as Array<{ ok: boolean }>;
+    expect(startedBefore[0]?.ok).toBe(true);
+    // A future date is refused when creating a nozzle.
+    expect(
+      (
+        await post(setupPost, 'owner', 'setup-since-noz-2', {
+          commandType: 'CreateNozzle',
+          ...A,
+          pumpId: state.pump,
+          number: '8',
+          productId: state.diesel,
+          meterSerialNumber: 'SN-SINCE-2',
+          meterWorkingSinceDate: stationDay(5),
+        })
+      ).status,
+    ).toBe(400);
+    // Moving the date earlier works and is audited; future, later, and unauthorised are refused.
+    const body = { commandType: 'SetMeterWorkingSince', ...A, nozzleId };
+    expect(
+      (
+        await post(setupPost, 'owner', 'setup-since-1', {
+          ...body,
+          meterWorkingSinceDate: stationDay(-10),
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await post(setupPost, 'owner', 'setup-since-2', {
+          ...body,
+          meterWorkingSinceDate: stationDay(5),
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await post(setupPost, 'owner', 'setup-since-3', {
+          ...body,
+          meterWorkingSinceDate: stationDay(-1),
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await post(setupPost, 'attendant', 'setup-since-4', {
+          ...body,
+          meterWorkingSinceDate: stationDay(-11),
+        })
+      ).status,
+    ).toBe(403);
+    const audit =
+      await client`select event_code from platform.security_events where tenant_id = ${ids.tenantA} and event_code = 'SETUP.METER_WORKING_SINCE_SET' and details->>'subjectId' = ${nozzleId}`;
+    expect(audit).toHaveLength(1);
+    // Once the meter has been replaced (a second installation exists) the date is locked.
+    await client`update app.meter_installations set effective_to = now() where nozzle_id = ${nozzleId}`;
+    expect(
+      (
+        await post(setupPost, 'owner', 'setup-since-5', {
+          ...body,
+          meterWorkingSinceDate: stationDay(-12),
+        })
+      ).status,
+    ).toBe(409);
+    // NOT COVERED here: a boundary/segment already recorded against the installation (needs a full
+    // shift fixture); the command refuses with 409 and the overview reports it as not editable.
+  });
+
   it('DefineShiftTemplate (existing command) creates a template', async () => {
     const res = await post(forecourtPost, 'owner', 'setup-shift-1', {
       commandType: 'DefineShiftTemplate',

@@ -12,6 +12,9 @@ import {
   parsePositiveDecimal,
   progress,
   suggestCode,
+  validateFuelChoice,
+  validateFuelKind,
+  describeFuelKind,
 } from './guided-setup';
 
 type Data = Omit<ConfigurationSetupOverview, 'blockers'>;
@@ -114,6 +117,8 @@ describe('buildGuidedSteps', () => {
       productId: 'p1',
       status: 'ACTIVE',
       meterSerialNumber: 'SN1',
+      meterWorkingSince: null,
+      meterWorkingSinceEditable: false,
     };
     const without = byId(buildGuidedSteps({ ...base, products: [diesel], pumps: [pump] }), 'pumps');
     expect(without.status).toBe('todo');
@@ -178,6 +183,8 @@ describe('buildFuelCards', () => {
     productId,
     status: 'ACTIVE',
     meterSerialNumber: 'SN',
+    meterWorkingSince: null,
+    meterWorkingSinceEditable: false,
   });
   const price = (productId: string) => ({
     id: `x-${productId}`,
@@ -276,5 +283,84 @@ describe('friendlySetupError', () => {
     expect(friendlySetupError(500, 'stack trace')).toBe(
       'Something went wrong on our side. Nothing was saved. Try again.',
     );
+  });
+});
+
+describe('validateFuelChoice', () => {
+  it('asks for a kind first', () => {
+    const result = validateFuelChoice({ kind: '', blendPercent: '', name: 'Diesel' });
+    expect(result).toEqual({ ok: false, errors: { kind: 'Choose the type of fuel.' } });
+  });
+
+  it('accepts a plain kind with its name', () => {
+    expect(validateFuelChoice({ kind: 'DIESEL', blendPercent: '', name: ' Diesel ' })).toEqual({
+      ok: true,
+      value: { kind: 'DIESEL', blendPercent: null, name: 'Diesel' },
+    });
+  });
+
+  it('needs a blend percentage of 5, 10, 15 or 20', () => {
+    expect(validateFuelChoice({ kind: 'BLEND', blendPercent: '', name: 'Blend' })).toEqual({
+      ok: false,
+      errors: { blendPercent: 'Choose the blend: 5%, 10%, 15% or 20%.' },
+    });
+    expect(validateFuelChoice({ kind: 'BLEND', blendPercent: '12', name: 'Blend' }).ok).toBe(false);
+    expect(validateFuelChoice({ kind: 'BLEND', blendPercent: '10', name: 'Blend E10' })).toEqual({
+      ok: true,
+      value: { kind: 'BLEND', blendPercent: 10, name: 'Blend E10' },
+    });
+  });
+
+  it('ignores a leftover percentage for a kind that is not a blend', () => {
+    const result = validateFuelChoice({ kind: 'PETROL', blendPercent: '10', name: 'Petrol' });
+    expect(result).toEqual({
+      ok: true,
+      value: { kind: 'PETROL', blendPercent: null, name: 'Petrol' },
+    });
+  });
+
+  it('needs a typed name, which is what Others relies on', () => {
+    expect(validateFuelChoice({ kind: 'OTHER', blendPercent: '', name: '  ' })).toEqual({
+      ok: false,
+      errors: { name: 'Enter the name of the fuel, for example Paraffin.' },
+    });
+    expect(validateFuelChoice({ kind: 'OTHER', blendPercent: '', name: 'Paraffin' }).ok).toBe(true);
+  });
+});
+
+describe('validateFuelKind', () => {
+  it('asks for a type', () => {
+    expect(validateFuelKind({ kind: '', blendPercent: '' })).toEqual({
+      ok: false,
+      errors: { kind: 'Choose the type of fuel.' },
+    });
+  });
+
+  it('accepts a type without needing a name', () => {
+    expect(validateFuelKind({ kind: 'D50', blendPercent: '' })).toEqual({
+      ok: true,
+      value: { kind: 'D50', blendPercent: null },
+    });
+  });
+
+  it('needs a valid blend percentage and drops a leftover one for other types', () => {
+    expect(validateFuelKind({ kind: 'BLEND', blendPercent: '' }).ok).toBe(false);
+    expect(validateFuelKind({ kind: 'BLEND', blendPercent: '20' })).toEqual({
+      ok: true,
+      value: { kind: 'BLEND', blendPercent: 20 },
+    });
+    expect(validateFuelKind({ kind: 'GAS', blendPercent: '20' })).toEqual({
+      ok: true,
+      value: { kind: 'GAS', blendPercent: null },
+    });
+  });
+});
+
+describe('describeFuelKind', () => {
+  it('names the type in plain words, including a blend percentage', () => {
+    expect(describeFuelKind('DIESEL', null)).toBe('Diesel');
+    expect(describeFuelKind('BLEND', 10)).toBe('Blend 10%');
+    expect(describeFuelKind('OTHER', null)).toBe('Others');
+    expect(describeFuelKind(null, null)).toBeNull();
   });
 });

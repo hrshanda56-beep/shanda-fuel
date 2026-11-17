@@ -9,6 +9,7 @@ import {
   numeric,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   time,
@@ -36,10 +37,26 @@ export const products = appSchema.table(
     code: text('code').notNull(),
     name: text('name').notNull(),
     status: text('status').notNull().default('ACTIVE'),
+    // Null for rows created before kinds existed; ordering falls back to name (product-order.ts).
+    kind: text('kind'),
+    blendPercent: smallint('blend_percent'),
+    displayOrder: integer('display_order'),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
     updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
   },
   (table) => [
+    check(
+      'products_kind_ck',
+      sql`${table.kind} IS NULL OR ${table.kind} IN ('DIESEL', 'D50', 'PETROL', 'BLEND', 'GAS', 'OTHER')`,
+    ),
+    check(
+      'products_blend_percent_ck',
+      sql`(${table.kind} = 'BLEND' AND ${table.blendPercent} IN (5, 10, 15, 20)) OR ((${table.kind} IS NULL OR ${table.kind} <> 'BLEND') AND ${table.blendPercent} IS NULL)`,
+    ),
+    check(
+      'products_display_order_ck',
+      sql`${table.displayOrder} IS NULL OR ${table.displayOrder} > 0`,
+    ),
     unique('products_tenant_id_id_uidx').on(table.tenantId, table.id),
     unique('products_tenant_code_uidx').on(table.tenantId, table.code),
     index('products_tenant_status_idx').on(table.tenantId, table.status),

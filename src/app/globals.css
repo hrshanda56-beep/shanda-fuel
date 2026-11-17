@@ -6612,6 +6612,10 @@ h3,
   gap: var(--space-3);
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
 }
+.rd-po {
+  display: grid;
+  gap: var(--space-3);
+}
 .rd-difference {
   margin: 0;
 }

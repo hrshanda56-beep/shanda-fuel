@@ -8,6 +8,7 @@ import type { TableReportReader } from './read';
 import { equalsClause, reconciliationNarrowing } from './read-extra';
 import { buildStationDailyRows, type DailyReportExpense } from './station-daily-report';
 import { stockVarianceRow, tankWithoutDipRow } from './stock-variance';
+import { productOrderSql } from '../../../platform/domain/product-order-sql';
 
 const limit = sql.raw(String(TABLE_REPORT_ROW_LIMIT + 1));
 
@@ -53,8 +54,8 @@ export const readSalesByPeriod: TableReportReader = async (transaction, filters)
       ${equalsClause('mr.product_id::text', filters.productId)}
       ${equalsClause('sh.shift_template_id::text', filters.shiftTemplateId)}
       ${reconciliationNarrowing('r', filters)}
-    group by bd.business_date, st.name, p.name
-    order by bd.business_date desc, st.name, p.name
+    group by bd.business_date, st.name, p.name, p.display_order, p.kind
+    order by bd.business_date desc, st.name, ${productOrderSql('p')}
     limit ${limit}
   `);
   return rows.map((row) => ({
