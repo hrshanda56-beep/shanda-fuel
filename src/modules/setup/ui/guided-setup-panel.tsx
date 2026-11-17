@@ -1364,7 +1364,15 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
   );
 }
 
-function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; productId?: string }) {
+function PumpStep({
+  ctx,
+  productId: onlyProductId,
+  focusMeterStart,
+}: {
+  ctx: FormContext;
+  productId?: string;
+  focusMeterStart?: boolean;
+}) {
   const pumpSaver = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
   const nozzleSaver = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
   const sinceSaver = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
@@ -1483,6 +1491,16 @@ function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
   const canEdit = ctx.data.capabilities.forecourt;
   const pumpOf = (id: string) => pumps.find((p) => p.id === id);
   const editableNozzles = nozzles.filter((n) => n.meterWorkingSinceEditable);
+  // Arriving from a blocked shift close: bring the date form into view and put the cursor on it.
+  const sinceForm = useRef<HTMLFormElement>(null);
+  const sinceFormShown = editableNozzles.length > 0;
+  useEffect(() => {
+    if (!focusMeterStart || !sinceFormShown) return;
+    const form = sinceForm.current;
+    if (!form) return;
+    form.scrollIntoView?.({ block: 'center' });
+    form.querySelector<HTMLElement>('select, button[role="combobox"], input')?.focus();
+  }, [focusMeterStart, sinceFormShown]);
   return (
     <>
       <div className={styles.headingRow}>
@@ -1664,6 +1682,7 @@ function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
           </Modal>
           {editableNozzles.length > 0 ? (
             <form
+              ref={sinceForm}
               className={styles.form}
               onSubmit={setMeterSince}
               noValidate
@@ -2127,6 +2146,7 @@ export function StationSetupGuide({
   stationName,
   staff,
   onOpenStaff,
+  focus,
 }: {
   tenantId: string;
   stationId: string;
@@ -2134,6 +2154,8 @@ export function StationSetupGuide({
   staff?: StaffOverview;
   /** Lets the "no supervisor yet" step take the person straight to the Staff section. */
   onOpenStaff?: () => void;
+  /** Opens straight on the form for correcting when a meter started working. */
+  focus?: 'meter-start';
 }) {
   const { state, refresh, reload } = useStationConfig(tenantId, stationId);
   if (state.kind === 'loading') return <LoadingState label="Loading station setup" />;
@@ -2158,6 +2180,7 @@ export function StationSetupGuide({
       refresh={refresh}
       staff={staff}
       onOpenStaff={onOpenStaff}
+      focus={focus}
     />
   );
 }
@@ -2268,12 +2291,14 @@ function FuelSteps({
   header,
   overlay,
   bodyId,
+  focusMeterStart,
 }: {
   ctx: FormContext;
   productId: string;
   header: ReactNode;
   overlay: ReactNode;
   bodyId: string;
+  focusMeterStart?: boolean;
 }) {
   const { data } = ctx;
   const parts = [
@@ -2296,6 +2321,7 @@ function FuelSteps({
     },
   ];
   const [index, setIndex] = useState(() => {
+    if (focusMeterStart) return parts.findIndex((part) => part.id === 'pumps');
     const first = parts.findIndex((part) => !part.done);
     return first === -1 ? 0 : first;
   });
@@ -2342,7 +2368,9 @@ function FuelSteps({
         <FuelKind ctx={ctx} productId={productId} />
         {part.id === 'price' ? <PriceStep ctx={ctx} productId={productId} /> : null}
         {part.id === 'tanks' ? <TankStep ctx={ctx} productId={productId} /> : null}
-        {part.id === 'pumps' ? <PumpStep ctx={ctx} productId={productId} /> : null}
+        {part.id === 'pumps' ? (
+          <PumpStep ctx={ctx} productId={productId} focusMeterStart={focusMeterStart} />
+        ) : null}
       </div>
     </BottomNotchCard>
   );
@@ -2356,6 +2384,7 @@ function GuideSteps({
   refresh,
   staff,
   onOpenStaff,
+  focus,
 }: {
   tenantId: string;
   stationId: string;
@@ -2364,6 +2393,7 @@ function GuideSteps({
   refresh: () => void;
   staff?: StaffOverview;
   onOpenStaff?: () => void;
+  focus?: 'meter-start';
 }) {
   const steps = buildGuidedSteps(data);
   const fuelCards = buildFuelCards(data);
@@ -2416,7 +2446,17 @@ function GuideSteps({
 
   // The section opened on first load stays open after saving, so its confirmation is not lost;
   // the person moves on with the "Next" button.
+  // Coming from a blocked shift close, open the first fuel that has a nozzle whose start date can
+  // still be corrected, so the form is already on screen.
+  const meterFocusKey = (() => {
+    if (focus !== 'meter-start') return null;
+    const nozzle = (data.nozzles ?? []).find((n) => n.meterWorkingSinceEditable);
+    return nozzle ? `fuel:${nozzle.productId}` : null;
+  })();
   const [open, setOpen] = useState<string | null>(() => {
+    if (meterFocusKey && sections.some((section) => section.key === meterFocusKey)) {
+      return meterFocusKey;
+    }
     const first = sections.find((section) => section.key !== 'fuel' && section.status === 'todo');
     return first ? first.key : null;
   });
@@ -2622,6 +2662,7 @@ function GuideSteps({
             header={header}
             overlay={cardActions}
             bodyId={bodyId}
+            focusMeterStart={section.key === meterFocusKey}
           />
         </li>
       );

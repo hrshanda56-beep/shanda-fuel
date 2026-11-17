@@ -245,11 +245,32 @@ async function sealMetersFromSavedReadings(
     const row = rows[0];
     return row ? `pump ${row.pump_number} nozzle ${row.nozzle_number}` : 'one of the pumps';
   };
-  const cannotClose = (reason: string, why?: string) =>
+  // The one definition of "this nozzle's meter was working when the shift opened", used both to
+  // list every problem up front and to lock the row while sealing, so the two cannot disagree.
+  const findWorkingInstallation = async (
+    reading: { nozzle_id: string; product_id: string },
+    lock: boolean,
+  ) => {
+    const rows = await transaction.execute<{ installation_id: string; meter_id: string }>(sql`
+      select i.id as installation_id, i.meter_id
+      from app.meter_installations i
+      join app.nozzles n on n.tenant_id = i.tenant_id and n.station_id = i.station_id and n.id = i.nozzle_id
+      join app.meters m on m.tenant_id = i.tenant_id and m.id = i.meter_id
+      where i.tenant_id = ${context.tenantId} and i.station_id = ${context.stationId}
+        and i.nozzle_id = ${reading.nozzle_id} and i.effective_to is null
+        and i.effective_from <= ${startAt}::timestamptz
+        and n.status = 'ACTIVE' and m.status = 'ACTIVE' and n.product_id = ${reading.product_id}
+      limit 1
+      ${lock ? sql`for update of i` : sql``}
+    `);
+    return rows[0];
+  };
+
+  const cannotClose = (reason: string, why?: string, extra?: Record<string, unknown>) =>
     new AppError(
       'CONFLICT',
       `This shift cannot be closed yet: ${reason}`,
-      why ? { reason: why } : undefined,
+      why ? { reason: why, ...extra } : undefined,
     );
 
   if (Date.parse(now) <= Date.parse(startAt))
@@ -264,25 +285,26 @@ async function sealMetersFromSavedReadings(
     seen.add(reading.nozzle_id);
   }
 
+  // Name every nozzle whose meter was not working when the shift opened in one go, so the owner
+  // fixes them all in one visit to Setup instead of meeting them one Close Shift at a time.
+  const notWorking: string[] = [];
+  for (const reading of readings) {
+    if (!(await findWorkingInstallation(reading, false)))
+      notWorking.push(await pumpLabel(reading.nozzle_id));
+  }
+  if (notWorking.length > 0) {
+    throw cannotClose(meterNotWorkingForShiftMessage(notWorking), 'METER_NOT_SET_UP', {
+      stationId: context.stationId,
+    });
+  }
+
   for (const reading of readings) {
     const label = await pumpLabel(reading.nozzle_id);
-    const installations = await transaction.execute<{
-      installation_id: string;
-      meter_id: string;
-    }>(sql`
-      select i.id as installation_id, i.meter_id
-      from app.meter_installations i
-      join app.nozzles n on n.tenant_id = i.tenant_id and n.station_id = i.station_id and n.id = i.nozzle_id
-      join app.meters m on m.tenant_id = i.tenant_id and m.id = i.meter_id
-      where i.tenant_id = ${context.tenantId} and i.station_id = ${context.stationId}
-        and i.nozzle_id = ${reading.nozzle_id} and i.effective_to is null
-        and i.effective_from <= ${startAt}::timestamptz
-        and n.status = 'ACTIVE' and m.status = 'ACTIVE' and n.product_id = ${reading.product_id}
-      limit 1
-      for update of i
-    `);
-    const installation = installations[0];
-    if (!installation) throw cannotClose(meterNotWorkingForShiftMessage(label), 'METER_NOT_SET_UP');
+    const installation = await findWorkingInstallation(reading, true);
+    if (!installation)
+      throw cannotClose(meterNotWorkingForShiftMessage(label), 'METER_NOT_SET_UP', {
+        stationId: context.stationId,
+      });
 
     const prices = await transaction.execute<{
       id: string;

@@ -255,12 +255,15 @@ export function SettingsWorkspace({
   view,
   initialTab,
   initialSetupStation,
+  initialFocus,
 }: {
   view: SettingsView;
   /** A section to open first, e.g. from a link on the readiness list. */
   initialTab?: string;
   /** A station whose setup should open straight away, e.g. from the readiness list. */
   initialSetupStation?: string;
+  /** Part of that station's setup to take the person to, e.g. from a blocked shift close. */
+  initialFocus?: 'meter-start';
 }) {
   // Station setup lives on the Stations section, so an older link to it lands there.
   const requested = initialTab === 'setup' ? 'stations' : initialTab;
@@ -437,6 +440,7 @@ export function SettingsWorkspace({
                 tenantId={organisation.id}
                 stationId={setupStation.id}
                 stationName={setupStation.name}
+                focus={initialFocus}
                 staff={view.staff?.canManage ? view.staff : undefined}
                 onOpenStaff={() => {
                   choose('staff');

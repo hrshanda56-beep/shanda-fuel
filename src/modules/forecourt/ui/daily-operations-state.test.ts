@@ -366,9 +366,24 @@ describe('a pump that is not set up for the shift', () => {
     );
     expect(problem.fix).toEqual({
       kind: 'link',
-      label: 'Check the pump setup',
+      label: 'Set the meter start date',
       href: '/settings?tab=stations',
     });
+  });
+
+  it("opens that station's setup when the station is known, from the reason or the wording alone", () => {
+    const fromReason = dailyOperationsProblem(409, 'CONFLICT', 'x', {
+      details: { reason: 'METER_NOT_SET_UP', stationId: 'st 1' },
+    });
+    expect(fromReason.fix).toMatchObject({
+      href: '/settings?tab=stations&setup=st%201&focus=meter-start',
+    });
+    const wording =
+      'This shift cannot be closed yet: the meter for pump A nozzle 1 is not set up as working for this shift.';
+    expect(dailyOperationsLinkFix(wording, 'st-1')?.href).toBe(
+      '/settings?tab=stations&setup=st-1&focus=meter-start',
+    );
+    expect(dailyOperationsLinkFix('Something else went wrong', 'st-1')).toBeUndefined();
   });
 });
 
