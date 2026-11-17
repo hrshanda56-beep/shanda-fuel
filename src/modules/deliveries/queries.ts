@@ -7,6 +7,7 @@ import { isPermissionGranted, type PermissionCode } from '../../platform/securit
 import { authorizeInventoryCommand, withInventoryReadContext } from '../inventory/application';
 import { classifyCompartmentVariance, classifyDeliveryReceipt } from './domain';
 import type { CompartmentVarianceKind, DeliveryReceiptKind } from './domain';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 /**
  * Whether the person's role allows this, for deciding which buttons to show. These permissions
@@ -136,7 +137,7 @@ export async function queryDeliveryList(input: {
         join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
         where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}
           and t.status = 'ACTIVE'
-        order by p.name, t.code
+        order by ${productOrderSql('p')}, t.code
       `);
       return {
         stationTimezone: context.stationTimezone,

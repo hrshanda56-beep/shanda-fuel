@@ -2,7 +2,7 @@
 import type { RecordData } from '../daily-operations-read-model';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConfirm, useToast } from '../../../design-system/feedback-provider';
+import { OWN_ERRORS_HEADER, useConfirm, useToast } from '../../../design-system/feedback-provider';
 import {
   Button,
   Card,
@@ -279,7 +279,9 @@ function errorFixFor(message: string, cause: unknown): ErrorFix | undefined {
 
 function errorFromResponse(status: number, body: unknown): OperationsFailure {
   const result = body as { error?: string; message?: string; details?: Record<string, unknown> };
-  const problem = dailyOperationsProblem(status, result.error, result.message, result.details);
+  const problem = dailyOperationsProblem(status, result.error, result.message, {
+    details: result.details,
+  });
   const failure = new Error(problem.message) as OperationsFailure;
   failure.fix = problem.fix;
   failure.status = status;
@@ -567,6 +569,7 @@ export function DailyOperationsWorkspace({
         headers: {
           'content-type': 'application/json',
           'idempotency-key': idempotencyKey,
+          [OWN_ERRORS_HEADER]: '1',
         },
         body: JSON.stringify({ commandType, ...values }),
       });
@@ -1098,7 +1101,8 @@ export function DailyOperationsWorkspace({
       if (!overviewResponse.ok)
         throw new Error('The shift could not be found. Refresh and try again.');
       const overview = (await overviewResponse.json()) as {
-        shifts: Array<{ id: string; state: string; version: number }>;
+        shifts: Array<{ id: string; state: string; version: number; attendantCount?: number }>;
+        actions?: { MarkNotOperated?: { canExecute?: boolean } };
       };
       const shift = overview.shifts.find((candidate) => candidate.id === context.shiftId);
       if (!shift) throw new Error('The shift could not be found. Refresh and try again.');
@@ -1114,6 +1118,7 @@ export function DailyOperationsWorkspace({
           headers: {
             'content-type': 'application/json',
             'idempotency-key': `close-shift-${commandType}-${context.shiftId}-${crypto.randomUUID()}`,
+            [OWN_ERRORS_HEADER]: '1',
           },
           body: JSON.stringify({ commandType, ...base, expectedVersion }),
         });
@@ -1121,10 +1126,15 @@ export function DailyOperationsWorkspace({
           const body = (await response.json().catch(() => ({}))) as {
             error?: string;
             message?: string;
+            details?: Record<string, unknown>;
           };
-          throw new Error(
-            dailyOperationsProblem(response.status, body.error, body.message).message,
-          );
+          const problem = dailyOperationsProblem(response.status, body.error, body.message, {
+            details: body.details,
+            attendantCount: shift.attendantCount,
+            shiftState: shift.state,
+            canMarkNotOperated: overview.actions?.MarkNotOperated?.canExecute === true,
+          });
+          throw Object.assign(new Error(problem.message), { fix: problem.fix });
         }
       };
       if (shift.state === 'OPEN') {
@@ -1140,7 +1150,60 @@ export function DailyOperationsWorkspace({
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'The shift could not be closed.';
       setError(message);
+      setErrorFix(errorFixFor(message, cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markNotOperatedNow() {
+    const agreed = await confirm({
+      title: 'Mark this shift as not operated?',
+      consequence:
+        'Use this only if nobody worked this shift. It will not count towards the day. This cannot be undone from here.',
+      confirmLabel: 'Mark as not operated',
+      tone: 'warning',
+    });
+    if (!agreed) return;
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: context.businessDayId,
+        shiftId: context.shiftId,
+      });
+      const overviewResponse = await fetch(`/api/forecourt/operations/overview?${params}`, {
+        cache: 'no-store',
+      });
+      if (!overviewResponse.ok)
+        throw new Error('The shift could not be found. Refresh and try again.');
+      const overview = (await overviewResponse.json()) as {
+        shifts: Array<{ id: string; version: number }>;
+      };
+      const shift = overview.shifts.find((candidate) => candidate.id === context.shiftId);
+      if (!shift) throw new Error('The shift could not be found. Refresh and try again.');
+      await sendCommand(
+        'MarkNotOperated',
+        {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          businessDayId: context.businessDayId,
+          shiftId: context.shiftId,
+          expectedVersion: shift.version,
+          reason: 'No attendants worked this shift.',
+        },
+        `mark-not-operated-${context.shiftId}-${crypto.randomUUID()}`,
+      );
+      setError(undefined);
       setErrorFix(undefined);
+      toast.success('Shift marked as not operated.');
+      await load();
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : 'The shift could not be marked as not operated.';
+      setError(message);
+      setErrorFix(errorFixFor(message, cause));
     } finally {
       setBusy(false);
     }
@@ -1149,6 +1212,10 @@ export function DailyOperationsWorkspace({
   const errorFixButton = errorAction ? (
     errorAction.kind === 'close-shift' ? (
       <Button onClick={() => void closeShiftNow()} loading={busy}>
+        {errorAction.label}
+      </Button>
+    ) : errorAction.kind === 'mark-not-operated' ? (
+      <Button onClick={() => void markNotOperatedNow()} loading={busy}>
         {errorAction.label}
       </Button>
     ) : errorAction.kind === 'link' ? (

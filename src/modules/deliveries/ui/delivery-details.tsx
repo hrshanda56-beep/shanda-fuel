@@ -2,7 +2,7 @@
 
 import Decimal from 'decimal.js';
 import Link from 'next/link';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Notice } from '@/design-system/feedback';
 import { Checkbox, Select } from '@/design-system/forms';
 import { formatQuantity, type QuantityUnit } from '@/design-system/formatters';
@@ -11,6 +11,13 @@ import { Modal } from '@/design-system/modal';
 import { Button, StatusBadge } from '@/design-system/primitives';
 import { StepUpDialog } from '../../setup/ui/step-up-dialog';
 import { RecordDelivery, type DeliveryEdit } from './record-delivery';
+import { PurchaseOrderChoice } from './purchase-order-choice';
+import {
+  buildPurchaseOrderStep,
+  noPoReasonLabel,
+  purchaseOrderChoiceProblem,
+} from '../purchase-order-choice';
+import { friendlyMessage } from '../../purchasing/ui/purchasing-client';
 import type { DeliveryDetail } from '../queries';
 import { InfoTip } from '@/design-system/info-tip';
 
@@ -109,16 +116,9 @@ function editStart(data: DeliveryDetail): DeliveryEdit['start'] {
     driverConfirmed: data.driverConfirmation?.confirmed ?? false,
     noPo: delivery.noPoReason ?? '',
     noPoNote: delivery.noPoNote ?? '',
+    linkedOrder: delivery.purchaseOrderNumber ?? '',
   };
 }
-
-const NO_PO_REASONS: Record<string, string> = {
-  EMERGENCY_PURCHASE: 'Emergency purchase',
-  CASH_PURCHASE: 'Bought for cash',
-  SUPPLIER_DIRECT: 'The supplier delivered without an order',
-  PO_NOT_RAISED: 'The order was not raised in time',
-  OTHER: 'Another reason',
-};
 
 const WATER_RESULTS = [
   { value: 'PASS', label: 'Passed, no water found' },
@@ -237,6 +237,16 @@ export function DeliveryDetails({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  /** The answer to "is there a purchase order?", asked inline when confirming finds none. */
+  const [poChoice, setPoChoice] = useState('');
+  const [poNote, setPoNote] = useState('');
+  const [poError, setPoError] = useState<string | null>(null);
+  const poKey = useRef({ answer: '', key: crypto.randomUUID() });
+  const onPoChange = useCallback((next: { value: string; note: string }) => {
+    setPoChoice(next.value);
+    setPoNote(next.note);
+    setPoError(null);
+  }, []);
   /** One key per confirm attempt, so a retry after the identity check is not a second confirm. */
   const confirmKey = useRef(crypto.randomUUID());
   const [message, setMessage] = useState<{ tone: 'positive' | 'critical'; text: string } | null>(
@@ -294,9 +304,42 @@ export function DeliveryDetails({
 
   /** Confirming puts the fuel on the tank's books, so it asks first and may need an identity check. */
   async function confirmDelivery() {
+    if (purchaseOrderMissing) {
+      const found = purchaseOrderChoiceProblem(poChoice, poNote);
+      if (found) {
+        setPoError(found);
+        return;
+      }
+    }
     setConfirming(true);
     setMessage(null);
     try {
+      if (purchaseOrderMissing) {
+        // The answer is saved first, so confirming is never refused for a missing order.
+        const step = buildPurchaseOrderStep(poChoice, poNote, ids);
+        if (step) {
+          const answer = `${poChoice}:${poNote.trim()}`;
+          if (poKey.current.answer !== answer) {
+            poKey.current = { answer, key: crypto.randomUUID() };
+          }
+          try {
+            await send(step.body.commandType, step.body, {
+              url: step.url,
+              key: poKey.current.key,
+            });
+          } catch (error) {
+            // A fresh identity check is handled by the outer handler, which asks for it.
+            if (error instanceof CommandError && error.code === 'STEP_UP_REQUIRED') throw error;
+            const text = friendlyMessage(
+              error instanceof Error ? error.message : '',
+              'The purchase order answer could not be saved. Try again.',
+            );
+            setPoError(text);
+            return;
+          }
+          await reload();
+        }
+      }
       await send(
         'ConfirmDelivery',
         { ...ids },
@@ -456,13 +499,6 @@ export function DeliveryDetails({
       text: 'Every delivery must say who delivered the fuel before it can be confirmed.',
     });
   }
-  if (purchaseOrderMissing) {
-    blockers.push({
-      title: 'This delivery has no purchase order',
-      text: 'Link it to a purchase order, or record why there is none, before confirming it.',
-      href: purchasingHref,
-    });
-  }
   if (data.waterTestRequired && data.waterTest === null) {
     blockers.push({
       title: 'A water test is needed first',
@@ -472,13 +508,14 @@ export function DeliveryDetails({
   const purchaseOrderLine = delivery.purchaseOrderNumber ? (
     `Order ${delivery.purchaseOrderNumber}`
   ) : delivery.noPoReason ? (
-    `None. ${NO_PO_REASONS[delivery.noPoReason] ?? 'Recorded without an order'}`
+    `None. ${noPoReasonLabel(delivery.noPoReason)}`
   ) : canEdit ? (
     <>
       <span className="dd-diff" data-tone="bad">
-        Not linked, and no reason recorded.
+        Not answered yet.
       </span>{' '}
-      <Link href={purchasingHref}>Open Purchasing to link one</Link>
+      You pick an order, or say why there is none, when you confirm the delivery. You can also{' '}
+      <Link href={purchasingHref}>open Purchasing</Link>.
     </>
   ) : (
     <span className="dd-empty">None</span>
@@ -999,6 +1036,20 @@ export function DeliveryDetails({
             ) : null}
           </Notice>
         ))}
+        {purchaseOrderMissing ? (
+          <PurchaseOrderChoice
+            id="dd-po"
+            tenantId={context.tenantId}
+            stationId={context.stationId}
+            supplierId={delivery.supplierId ?? ''}
+            productId={delivery.productId}
+            value={poChoice}
+            note={poNote}
+            onChange={onPoChange}
+            error={poError ?? undefined}
+            disabled={confirming}
+          />
+        ) : null}
         {blockers.length === 0 && !compartmentsAddUp ? (
           <Notice tone="warning" title="The compartments are not filled in">
             You can still confirm, but the {delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'}{' '}

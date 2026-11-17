@@ -51,6 +51,8 @@ describe('computeSetupBlockers', () => {
           productId: 'p1',
           status: 'ACTIVE',
           meterSerialNumber: 'x',
+          meterWorkingSince: null,
+          meterWorkingSinceEditable: false,
         },
       ],
       prices: [

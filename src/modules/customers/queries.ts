@@ -18,6 +18,7 @@ import { deriveAccountBalance } from './domain';
 import { loadAccount } from './persistence';
 import { isPermissionGranted } from '../../platform/security/permissions';
 import { sql } from 'drizzle-orm';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 export type CustomerStatementLine = Readonly<{
   entry: CustomerLedgerEntry;
@@ -558,10 +559,10 @@ export async function getCustomerAccountsFromRequest(
             name: string;
             unit: 'LITRES' | 'KILOGRAMS';
           }>(sql`
-            select id, code, name, unit
-            from app.products
-            where tenant_id = ${context.tenantId} and status = 'ACTIVE'
-            order by code`)),
+            select p.id, p.code, p.name, p.unit
+            from app.products p
+            where p.tenant_id = ${context.tenantId} and p.status = 'ACTIVE'
+            order by ${productOrderSql('p')}, p.code`)),
         ]
       : [];
 

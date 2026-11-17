@@ -15,6 +15,13 @@ import {
 import { Icon } from '@/design-system/icons';
 import { BottomNotchCard } from '@/design-system/bottom-notch-card';
 import { Modal } from '@/design-system/modal';
+import {
+  BLEND_PERCENTS,
+  PRODUCT_KINDS,
+  PRODUCT_KIND_LABELS,
+  suggestedFuelName,
+  type ProductKind,
+} from '@/platform/domain/product-order';
 import { Radio, Select } from '@/design-system/forms';
 import { formatMoney } from '@/design-system/formatters';
 import {
@@ -30,10 +37,12 @@ import type {
   ConfigurationSetupOverview,
   SetupNozzle,
   SetupOverview,
+  SetupProduct,
   SetupPump,
   SetupShiftTemplate,
   SetupTank,
 } from '../contracts';
+import { describeMeterWorkingSince } from '../meter-working-since';
 import {
   buildFuelCards,
   buildGuidedSteps,
@@ -42,13 +51,16 @@ import {
   friendlyPriceError,
   friendlySetupError,
   endTimeFrom,
-  FUEL_CATALOGUE,
   hoursToMinutes,
   minutesBetween,
   parsePositiveDecimal,
   planPriceAdvance,
   progress,
+  describeFuelKind,
   suggestCode,
+  validateFuelChoice,
+  validateFuelKind,
+  defaultUnitForKind,
   unitLabel,
   type FuelUnitChoice,
   type GuidedStepId,
@@ -275,6 +287,143 @@ function CardList({
   );
 }
 
+/**
+ * One existing fuel. A fuel with no type yet is asked for it in plain words; one that has a type
+ * shows it with a way to change it. Only the type changes, never the name.
+ */
+function FuelKindRow({
+  ctx,
+  product,
+  save,
+  busy,
+}: {
+  ctx: FormContext;
+  product: SetupProduct;
+  save: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  busy: boolean;
+}) {
+  const current = describeFuelKind(product.kind, product.blendPercent);
+  const [editing, setEditing] = useState(false);
+  const [kind, setKind] = useState(product.kind ?? '');
+  const [blendPercent, setBlendPercent] = useState(
+    product.blendPercent ? String(product.blendPercent) : '',
+  );
+  const [errors, setErrors] = useState<Errors>({});
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const checked = validateFuelKind({ kind, blendPercent });
+    if (!checked.ok) {
+      setErrors(checked.errors);
+      return;
+    }
+    setErrors({});
+    const { value } = checked;
+    ctx.gate(async () => {
+      const saved = await save(
+        {
+          commandType: 'SetProductKind',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          productId: product.id,
+          kind: value.kind,
+          blendPercent: value.blendPercent,
+        },
+        `${product.name} is now set as ${describeFuelKind(value.kind, value.blendPercent)}.`,
+      );
+      if (saved) setEditing(false);
+    });
+  }
+
+  if (current && !editing) {
+    return (
+      <li>
+        {product.name}: {current}{' '}
+        {ctx.data.capabilities.products ? (
+          <Button type="button" variant="quiet" onClick={() => setEditing(true)}>
+            Change type
+          </Button>
+        ) : null}
+      </li>
+    );
+  }
+  if (!ctx.data.capabilities.products) return <li>{product.name}</li>;
+  return (
+    <li>
+      <form
+        className={styles.form}
+        onSubmit={submit}
+        noValidate
+        aria-label={`Type of ${product.name}`}
+      >
+        <Field
+          id={`kind-${product.id}`}
+          label={current ? `Type of ${product.name}` : `What type of fuel is ${product.name}?`}
+          error={errors.kind}
+          required
+        >
+          <Select
+            id={`kind-${product.id}`}
+            name="kind"
+            value={kind}
+            placeholder="Choose the type of fuel"
+            options={PRODUCT_KINDS.map((value) => ({ value, label: PRODUCT_KIND_LABELS[value] }))}
+            onChange={(event) => {
+              setKind(event.target.value);
+              if (event.target.value !== 'BLEND') setBlendPercent('');
+            }}
+          />
+        </Field>
+        {kind === 'BLEND' ? (
+          <Field
+            id={`blend-${product.id}`}
+            label="Blend percentage"
+            error={errors.blendPercent}
+            required
+          >
+            <Select
+              id={`blend-${product.id}`}
+              name="blendPercent"
+              value={blendPercent}
+              placeholder="Choose the blend"
+              options={BLEND_PERCENTS.map((value) => ({
+                value: String(value),
+                label: `${value}%`,
+              }))}
+              onChange={(event) => setBlendPercent(event.target.value)}
+            />
+          </Field>
+        ) : null}
+        <div className={styles.formActions}>
+          <Button type="submit" loading={busy}>
+            Save
+          </Button>
+          {current ? (
+            <Button type="button" variant="quiet" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          ) : null}
+        </div>
+      </form>
+    </li>
+  );
+}
+
+/** The type of one fuel, shown at the top of that fuel's card. */
+function FuelKind({ ctx, productId }: { ctx: FormContext; productId: string }) {
+  const { save, busy, outcome } = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
+  const product = (ctx.data.products ?? []).find((p) => p.id === productId);
+  if (!product) return null;
+  return (
+    <>
+      <ul className={styles.itemList} aria-label="Type of fuel">
+        <FuelKindRow ctx={ctx} product={product} save={save} busy={busy} />
+      </ul>
+      <Message outcome={outcome} />
+    </>
+  );
+}
+
 function FuelStep({
   ctx,
   open,
@@ -288,37 +437,31 @@ function FuelStep({
   const [errors, setErrors] = useState<Errors>({});
   // Held in state, not read from the form, so it is cleared even if the screen was redrawn while
   // the identity check was open.
+  const [kind, setKind] = useState('');
+  const [blendPercent, setBlendPercent] = useState('');
   const [fuelName, setFuelName] = useState('');
-  // The fuel picked from the list ('' = none yet, OTHER = typed by hand) and how it is measured.
-  const [fuelChoice, setFuelChoice] = useState('');
+  // Once the person types their own name the suggestion stops overwriting it.
+  const [nameEdited, setNameEdited] = useState(false);
+  // How the fuel is measured: set from the type (gas in kilograms) and changeable by the person.
   const [fuelUnit, setFuelUnit] = useState<FuelUnitChoice>('LITRES');
 
-  function chooseFuel(choice: string) {
-    setFuelChoice(choice);
-    const known = FUEL_CATALOGUE.find((fuel) => fuel.name === choice);
-    if (known) {
-      setFuelName(known.name);
-      setFuelUnit(known.unit);
-    } else {
-      setFuelName('');
-    }
-    setErrors({});
+  function suggest(nextKind: string, nextPercent: string) {
+    if (nameEdited) return;
+    if (!(PRODUCT_KINDS as readonly string[]).includes(nextKind)) return;
+    setFuelName(suggestedFuelName(nextKind as ProductKind, Number(nextPercent) || null));
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const name = fuelName.trim();
-    const next = {
-      name: name
-        ? undefined
-        : fuelChoice === 'OTHER'
-          ? 'Enter the name of the fuel.'
-          : 'Choose the fuel from the list.',
-    };
-    setErrors(next);
-    if (hasErrors(next)) return;
+    const checked = validateFuelChoice({ kind, blendPercent, name: fuelName });
+    if (!checked.ok) {
+      setErrors(checked.errors);
+      return;
+    }
+    setErrors({});
+    const { value } = checked;
     const code = suggestCode(
-      name,
+      value.name,
       (ctx.data.products ?? []).map((p) => p.code),
     );
     ctx.gate(async () => {
@@ -328,14 +471,18 @@ function FuelStep({
           tenantId: ctx.tenantId,
           stationId: ctx.stationId,
           code,
-          name,
+          name: value.name,
+          kind: value.kind,
+          blendPercent: value.blendPercent,
           unit: fuelUnit,
         },
-        `${name} was added.`,
+        `${value.name} was added.`,
       );
       if (saved) {
+        setKind('');
+        setBlendPercent('');
         setFuelName('');
-        setFuelChoice('');
+        setNameEdited(false);
         setFuelUnit('LITRES');
         onClose();
       }
@@ -351,39 +498,63 @@ function FuelStep({
       dismissible={!busy}
     >
       <form className={styles.form} onSubmit={submit} noValidate aria-label="Add a fuel type">
-        <Field
-          id="fuel-choice"
-          label="Fuel type"
-          error={fuelChoice === 'OTHER' ? undefined : errors.name}
-          required
-        >
-          <select
-            id="fuel-choice"
-            value={fuelChoice}
-            onChange={(event) => chooseFuel(event.target.value)}
-          >
-            <option value="">Choose a fuel…</option>
-            {FUEL_CATALOGUE.map((fuel) => (
-              <option key={fuel.name} value={fuel.name}>
-                {fuel.name}
-              </option>
-            ))}
-            <option value="OTHER">Other (type the name)</option>
-          </select>
+        <Field id="fuel-kind" label="Type of fuel" error={errors.kind} required>
+          <Select
+            id="fuel-kind"
+            name="kind"
+            value={kind}
+            placeholder="Choose the type of fuel"
+            options={PRODUCT_KINDS.map((value) => ({
+              value,
+              label: PRODUCT_KIND_LABELS[value],
+            }))}
+            onChange={(event) => {
+              const next = event.target.value;
+              setKind(next);
+              setFuelUnit(defaultUnitForKind(next));
+              if (next !== 'BLEND') setBlendPercent('');
+              suggest(next, '');
+            }}
+          />
         </Field>
-        {fuelChoice === 'OTHER' ? (
-          <Field id="fuel-name" label="Fuel name" error={errors.name} required>
-            <input
-              id="fuel-name"
-              name="name"
-              value={fuelName}
-              onChange={(event) => setFuelName(event.target.value)}
-              autoComplete="off"
-              maxLength={120}
-              placeholder="Jet A1"
+        {kind === 'BLEND' ? (
+          <Field id="fuel-blend" label="Blend percentage" error={errors.blendPercent} required>
+            <Select
+              id="fuel-blend"
+              name="blendPercent"
+              value={blendPercent}
+              placeholder="Choose the blend"
+              options={BLEND_PERCENTS.map((value) => ({
+                value: String(value),
+                label: `${value}%`,
+              }))}
+              onChange={(event) => {
+                setBlendPercent(event.target.value);
+                suggest(kind, event.target.value);
+              }}
             />
           </Field>
         ) : null}
+        <Field
+          id="fuel-name"
+          label="Fuel name"
+          hint={kind === 'OTHER' ? 'Type the name of this fuel.' : undefined}
+          error={errors.name}
+          required
+        >
+          <input
+            id="fuel-name"
+            name="name"
+            value={fuelName}
+            onChange={(event) => {
+              setFuelName(event.target.value);
+              setNameEdited(true);
+            }}
+            autoComplete="off"
+            maxLength={120}
+            placeholder="Diesel"
+          />
+        </Field>
         <Field id="fuel-unit" label="Measured in">
           <select
             id="fuel-unit"
@@ -1196,6 +1367,8 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
 function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; productId?: string }) {
   const pumpSaver = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
   const nozzleSaver = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
+  const sinceSaver = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
+  const [sinceErrors, setSinceErrors] = useState<Errors>({});
   const [pumpErrors, setPumpErrors] = useState<Errors>({});
   const [nozzleErrors, setNozzleErrors] = useState<Errors>({});
   const [addingPump, setAddingPump] = useState(false);
@@ -1250,6 +1423,7 @@ function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
     const number = text(data, 'number');
     const productId = onlyProductId ?? text(data, 'productId');
     const meter = text(data, 'meter');
+    const since = text(data, 'since');
     const next = {
       pump: pumpId ? undefined : 'Choose the pump.',
       number: number ? undefined : 'Enter the nozzle number, for example 1.',
@@ -1268,6 +1442,7 @@ function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
           number,
           productId,
           meterSerialNumber: meter,
+          ...(since ? { meterWorkingSinceDate: since } : {}),
         },
         `Nozzle ${number} was added.`,
       );
@@ -1278,7 +1453,36 @@ function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
     });
   }
 
+  function setMeterSince(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const nozzleId = text(data, 'nozzleId');
+    const since = text(data, 'since');
+    const next = {
+      nozzle: nozzleId ? undefined : 'Choose the nozzle.',
+      since: since ? undefined : 'Choose the day the meter was fitted.',
+    };
+    setSinceErrors(next);
+    if (hasErrors(next)) return;
+    ctx.gate(async () => {
+      const saved = await sinceSaver.save(
+        {
+          commandType: 'SetMeterWorkingSince',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          nozzleId,
+          meterWorkingSinceDate: since,
+        },
+        'The date was saved.',
+      );
+      if (saved) form.reset();
+    });
+  }
+
   const canEdit = ctx.data.capabilities.forecourt;
+  const pumpOf = (id: string) => pumps.find((p) => p.id === id);
+  const editableNozzles = nozzles.filter((n) => n.meterWorkingSinceEditable);
   return (
     <>
       <div className={styles.headingRow}>
@@ -1322,8 +1526,8 @@ function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
                 : own
                     .map((n) =>
                       onlyProductId
-                        ? `nozzle ${n.number}`
-                        : `nozzle ${n.number} (${products.find((x) => x.id === n.productId)?.name ?? 'fuel'})`,
+                        ? `nozzle ${n.number}, meter working since ${describeMeterWorkingSince(n.meterWorkingSince)}`
+                        : `nozzle ${n.number} (${products.find((x) => x.id === n.productId)?.name ?? 'fuel'}, meter working since ${describeMeterWorkingSince(n.meterWorkingSince)})`,
                     )
                     .join(', '),
           };
@@ -1394,6 +1598,14 @@ function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
               >
                 <input id={`${idp}nozzle-meter`} name="meter" autoComplete="off" maxLength={80} />
               </Field>
+              <Field
+                id="nozzle-since"
+                label="Meter working since"
+                hint="Optional. Leave empty if the meter was fitted today. If it was fitted earlier, for example before the current shift started, choose that day."
+                optional
+              >
+                <input id="nozzle-since" name="since" type="date" />
+              </Field>
               <div className={styles.formActions}>
                 <Button
                   type="button"
@@ -1450,6 +1662,51 @@ function PumpStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
               </div>
             </form>
           </Modal>
+          {editableNozzles.length > 0 ? (
+            <form
+              className={styles.form}
+              onSubmit={setMeterSince}
+              noValidate
+              aria-label="Meter working since"
+            >
+              <h4 className={styles.subTitle}>Correct when a meter started working</h4>
+              <Field
+                id={`${idp}since-nozzle`}
+                label="Nozzle"
+                hint="A shift cannot be closed for a nozzle whose meter started working after the shift opened. You can only move the date earlier, and only until readings are recorded."
+                error={sinceErrors.nozzle}
+                required
+              >
+                <Select
+                  id={`${idp}since-nozzle`}
+                  name="nozzleId"
+                  defaultValue=""
+                  placeholder="Choose the nozzle"
+                  options={editableNozzles.map((n) => {
+                    const pump = pumpOf(n.pumpId);
+                    return {
+                      value: n.id,
+                      label: `${pump ? pumpLabel(pump) : 'Pump'}, nozzle ${n.number}`,
+                    };
+                  })}
+                />
+              </Field>
+              <Field
+                id={`${idp}since-date`}
+                label="Meter working since"
+                error={sinceErrors.since}
+                required
+              >
+                <input id={`${idp}since-date`} name="since" type="date" />
+              </Field>
+              <div className={styles.formActions}>
+                <Button type="submit" loading={sinceSaver.busy}>
+                  Save date
+                </Button>
+                <Message outcome={sinceSaver.outcome} />
+              </div>
+            </form>
+          ) : null}
         </>
       ) : null}
     </>
@@ -2082,6 +2339,7 @@ function FuelSteps({
             </li>
           ))}
         </ol>
+        <FuelKind ctx={ctx} productId={productId} />
         {part.id === 'price' ? <PriceStep ctx={ctx} productId={productId} /> : null}
         {part.id === 'tanks' ? <TankStep ctx={ctx} productId={productId} /> : null}
         {part.id === 'pumps' ? <PumpStep ctx={ctx} productId={productId} /> : null}

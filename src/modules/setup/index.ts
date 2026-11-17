@@ -12,6 +12,8 @@ export {
   draftPriceChangeFromRequest,
   recordBankBalanceFromRequest,
   setAlertSettingsFromRequest,
+  setMeterWorkingSinceFromRequest,
+  setProductKindFromRequest,
   setResponsibleSupervisorFromRequest,
   updateNozzleFromRequest,
   updatePumpFromRequest,

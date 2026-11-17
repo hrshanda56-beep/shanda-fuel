@@ -16,6 +16,7 @@ import {
   staffBenefitExpenseReference,
   type BenefitCostResult,
 } from './staff-benefit-expense';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 type Executor = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -92,8 +93,8 @@ export async function loadStaffBenefitMonth(
       where a.tenant_id = ${input.tenantId} and a.account_id = ${input.accountId}
         and a.station_id = ${input.stationId} and a.used_litres > 0
         and to_char(a.requested_at at time zone ${row.timezone}, 'YYYY-MM') = ${month}
-      group by a.product_id, p.name, p.unit
-      order by p.name
+      group by a.product_id, p.name, p.unit, p.display_order, p.kind
+      order by ${productOrderSql('p')}
     `),
     transaction.execute<{ product_id: string; litres: string; cogs: string }>(sql`
       select a.product_id,

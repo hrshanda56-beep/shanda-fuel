@@ -4,6 +4,10 @@ export type SetupProduct = Readonly<{
   code: string;
   name: string;
   status: string;
+  /** Null for fuel types added before kinds existed. */
+  kind?: string | null;
+  blendPercent?: number | null;
+  displayOrder?: number | null;
   unit: FuelUnit;
 }>;
 export type SetupTank = Readonly<{
@@ -29,6 +33,10 @@ export type SetupNozzle = Readonly<{
   productId: string;
   status: string;
   meterSerialNumber: string | null;
+  /** The station date the meter started working, or null when there is no meter. */
+  meterWorkingSince: string | null;
+  /** True while the date can still be corrected (one meter, nothing recorded against it). */
+  meterWorkingSinceEditable: boolean;
 }>;
 export type SetupShiftTemplate = Readonly<{
   id: string;

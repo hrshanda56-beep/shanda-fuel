@@ -4,6 +4,7 @@ import {
   checkNewPrice,
   nextPriceChangeStep,
   quickSteps,
+  whoCanHelp,
   type PriceChangeCapabilities,
 } from './price-change-state';
 
@@ -82,5 +83,34 @@ describe('nextPriceChangeStep', () => {
       step: 'APPROVE',
       blockedBy: 'approve',
     });
+  });
+});
+
+describe('a supervisor (may request, may not approve or switch on)', () => {
+  const supervisor: PriceChangeCapabilities = {
+    request: true,
+    approve: false,
+    prepare: true,
+    boundary: true,
+    activate: false,
+  };
+  it('saves and sends the price for approval, then stops and says who must approve', () => {
+    expect(quickSteps(null, supervisor)).toEqual({
+      run: [
+        { step: 'DRAFT', expectedVersion: 0 },
+        { step: 'REQUEST', expectedVersion: 0 },
+      ],
+      stoppedAt: 'approve',
+    });
+    expect(whoCanHelp('approve')).toMatch(/approve/);
+  });
+  it('shows the waiting price as blocked on approval, and later on activation', () => {
+    expect(nextPriceChangeStep({ state: 'PENDING_APPROVAL' }, [], supervisor)).toEqual({
+      step: 'APPROVE',
+      blockedBy: 'approve',
+    });
+    expect(
+      nextPriceChangeStep({ state: 'PENDING_STATION_ACTIVATION' }, [{ done: true }], supervisor),
+    ).toEqual({ step: 'ACTIVATE', blockedBy: 'activate' });
   });
 });

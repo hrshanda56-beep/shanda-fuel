@@ -43,6 +43,7 @@ import {
   type ReportDateBasis,
   type SalesPaymentRow,
 } from './contracts';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 type ReportingTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -230,6 +231,8 @@ async function readSales(transaction: ReportingTransaction, filters: ManagementR
       product_id: string;
       product_code: string;
       product_name: string;
+      product_kind: string | null;
+      product_display_order: number | null;
       litres: string;
       unit: string;
       sales_value: string;
@@ -239,6 +242,7 @@ async function readSales(transaction: ReportingTransaction, filters: ManagementR
       with approved as (${base})
       select bd.business_date, a.station_id, s.code as station_code,
         m.product_id, p.code as product_code, p.name as product_name,
+        p.kind as product_kind, p.display_order as product_display_order,
         coalesce(sum(m.litres_sold), 0)::text as litres,
         p.unit as unit,
         coalesce(sum(m.sales_value), 0)::text as sales_value,
@@ -253,8 +257,9 @@ async function readSales(transaction: ReportingTransaction, filters: ManagementR
        and m.reconciliation_id = a.reconciliation_id
       join app.products p on p.tenant_id = m.tenant_id and p.id = m.product_id
       join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
-      group by bd.business_date, a.station_id, s.code, m.product_id, p.code, p.name, p.unit
-      order by bd.business_date, s.code, p.code
+      group by bd.business_date, a.station_id, s.code, m.product_id, p.code, p.name, p.unit,
+        p.kind, p.display_order
+      order by bd.business_date, s.code, ${productOrderSql('p')}, p.code
     `),
   ]);
   const total = totals[0] ?? {
@@ -287,6 +292,8 @@ async function readSales(transaction: ReportingTransaction, filters: ManagementR
       productId: row.product_id,
       productCode: row.product_code,
       productName: row.product_name,
+      productKind: row.product_kind,
+      productDisplayOrder: row.product_display_order,
       litres: formatLitres(row.litres),
       unit: asUnit(row.unit),
       salesValue: formatMoney(row.sales_value),

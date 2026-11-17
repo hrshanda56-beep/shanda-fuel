@@ -9,6 +9,7 @@ import { creditLimitPosition } from './credit-limit';
 import { DEFAULT_DUE_SOON_DAYS } from './due-status';
 import { paymentNeedsProofFlag } from './payment-proof';
 import { resolveSupplierReadContext } from './read-context';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 type SummaryRow = {
   supplier_id: string;
@@ -333,9 +334,9 @@ export async function getSupplierInvoiceChoicesFromRequest(
   });
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const products = await transaction.execute<{ id: string; name: string }>(sql`
-      select id, name from app.products
-      where tenant_id = ${context.tenantId} and status = 'ACTIVE'
-      order by name
+      select p.id, p.name from app.products p
+      where p.tenant_id = ${context.tenantId} and p.status = 'ACTIVE'
+      order by ${productOrderSql('p')}
     `);
     const stations = await transaction.execute<{ id: string; name: string }>(sql`
       select id, name from app.stations

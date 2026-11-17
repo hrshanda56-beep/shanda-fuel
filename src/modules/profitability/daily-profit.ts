@@ -19,12 +19,15 @@ import {
   subtractExact,
   sumExact,
 } from '../reporting/domain';
+import { compareProducts } from '../../platform/domain/product-order';
 
 export type DailyProfitSale = Readonly<{
   businessDate: string;
   productId: string;
   productCode: string;
   productName: string;
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
   productUnit?: QuantityUnit;
   recognizedRevenue: string;
   quantityLitres: string;
@@ -35,6 +38,8 @@ export type DailyProfitCost = Readonly<{
   productId: string;
   productCode?: string;
   productName?: string;
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
   restatedCogs: string | null;
   valuationStatus: string;
 }>;
@@ -111,6 +116,8 @@ type Fuel = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
   unit: QuantityUnit;
 }>;
 
@@ -187,6 +194,8 @@ function groupFuels(
       productId: sale.productId,
       productCode: sale.productCode,
       productName: sale.productName,
+      productKind: sale.productKind,
+      productDisplayOrder: sale.productDisplayOrder,
       unit: asQuantityUnit(sale.productUnit),
     });
   }
@@ -196,13 +205,19 @@ function groupFuels(
         productId: cost.productId,
         productCode: cost.productCode ?? 'UNKNOWN',
         productName: cost.productName ?? 'Unknown fuel',
+        productKind: cost.productKind,
+        productDisplayOrder: cost.productDisplayOrder,
         unit: 'LITRES',
       });
     }
   }
   return [...fuels.values()]
-    .sort((a, b) =>
-      `${a.productName}\u0000${a.productId}`.localeCompare(`${b.productName}\u0000${b.productId}`),
+    .sort(
+      (a, b) =>
+        compareProducts(
+          { name: a.productName, kind: a.productKind, displayOrder: a.productDisplayOrder },
+          { name: b.productName, kind: b.productKind, displayOrder: b.productDisplayOrder },
+        ) || a.productId.localeCompare(b.productId),
     )
     .map((fuel) =>
       fuelLine(

@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '../../../platform/db';
 import type { TableReportFilterKey } from './definitions';
 import { PAYMENT_METHOD_OPTIONS } from './narrowing';
+import { productOrderSql } from '../../../platform/domain/product-order-sql';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -30,8 +31,8 @@ export async function loadFilterOptions(
   for (const key of keys) {
     if (key === 'product') {
       out.product = await take(sql`
-        select id, name as label from app.products
-        where tenant_id = ${tenantId} order by name limit ${MAX_OPTIONS}`);
+        select p.id, p.name as label from app.products p
+        where p.tenant_id = ${tenantId} order by ${productOrderSql('p')} limit ${MAX_OPTIONS}`);
     } else if (key === 'supplier') {
       out.supplier = await take(sql`
         select id, legal_name as label from app.suppliers

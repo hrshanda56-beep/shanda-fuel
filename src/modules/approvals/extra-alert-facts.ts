@@ -11,6 +11,7 @@ import {
   type ExtraAlertFacts,
   type ExtraAlertSettings,
 } from './extra-alerts';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 /**
  * Read-only facts for the extra alerts at one station. Every part the person may not see comes
@@ -110,8 +111,8 @@ export async function loadExtraAlertFacts(
         and r.state in ('SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'POSTED', 'LOCKED')
         and bd.business_date::date >= ${today}::date - ${lookback}::int
         and mr.unit_price < sp.unit_price
-      group by bd.business_date, p.name, p.unit, mr.unit_price, sp.unit_price
-      order by bd.business_date desc, p.name
+      group by bd.business_date, p.name, p.unit, p.display_order, p.kind, mr.unit_price, sp.unit_price
+      order by bd.business_date desc, ${productOrderSql('p')}
       limit 20`)
       ).map((row) => ({
         businessDate: row.business_date,

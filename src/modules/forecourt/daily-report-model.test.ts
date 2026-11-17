@@ -145,3 +145,24 @@ describe('plainAmount', () => {
     expect(plainAmount('n/a')).toBe('n/a');
   });
 });
+
+describe('buildDailyReport product order', () => {
+  it('lists Diesel before Petrol before Gas, then unknown kinds by name', () => {
+    const ordered = (kinds: Array<[string, string, string | null]>) =>
+      buildDailyReport({
+        ...base,
+        readings: kinds.map(([id, name, kind], index) => ({
+          ...reading(id, name, String(index + 1), 'A', '0', '10', '10'),
+          productKind: kind,
+        })),
+      }).products.map((product) => product.productName);
+    expect(
+      ordered([
+        ['g', 'Gas', 'GAS'],
+        ['x', 'Aardvark', null],
+        ['p', 'Petrol', 'PETROL'],
+        ['d', 'Diesel', 'DIESEL'],
+      ]),
+    ).toEqual(['Diesel', 'Petrol', 'Gas', 'Aardvark']);
+  });
+});

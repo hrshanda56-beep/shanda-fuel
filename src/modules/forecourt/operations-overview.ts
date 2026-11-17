@@ -40,6 +40,7 @@ const CONTROL_ROOM_COMMANDS = [
   'StartShift',
   'CloseMeters',
   'CompleteShift',
+  'MarkNotOperated',
 ] as const satisfies readonly ForecourtCommandType[];
 
 type ActionAvailability = {

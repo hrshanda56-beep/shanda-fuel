@@ -115,6 +115,21 @@ describe('delivery detail screens', () => {
     ).not.toContain('Confirm delivery');
   });
 
+  it('says plainly whether the purchase order is answered, using the shared reason words', () => {
+    const render = (noPoReason: string | null) =>
+      renderToStaticMarkup(
+        createElement(DeliveryDetails, {
+          context,
+          listHref: '/inventory/deliveries',
+          initialData: { ...detail, delivery: { ...detail.delivery, noPoReason } },
+        }),
+      );
+    expect(render(null)).toContain('Not answered yet.');
+    const answered = render('CASH_PURCHASE');
+    expect(answered).toContain('None. Bought for cash');
+    expect(answered).not.toContain('Not answered yet.');
+  });
+
   it('tells the truth when there are no deliveries', () => {
     const empty: DeliveryList = {
       stationTimezone: 'Africa/Harare',

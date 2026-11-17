@@ -92,12 +92,17 @@ test.describe('Guided station setup', () => {
     await page.getByRole('button', { name: 'Add a fuel type' }).click();
     const form = page.getByRole('form', { name: 'Add a fuel type' });
     await form.getByRole('button', { name: 'Add fuel type' }).click();
-    await expect(page.getByText('Choose the fuel from the list.')).toBeVisible();
+    await expect(page.getByText('Choose the type of fuel.')).toBeVisible();
     expect(commands).toHaveLength(0);
 
-    // Every setup save asks for the identity check first; nothing is sent until it is confirmed.
-    await form.getByLabel('Fuel type').selectOption('LP Gas');
+    // Gas is measured in kilograms by default; every other type in litres.
+    await form.getByLabel('Type of fuel').selectOption('GAS');
     await expect(form.getByLabel('Measured in')).toHaveValue('KILOGRAMS');
+
+    // Every setup save asks for the identity check first; nothing is sent until it is confirmed.
+    await form.getByLabel('Type of fuel').selectOption('OTHER');
+    await expect(form.getByLabel('Measured in')).toHaveValue('LITRES');
+    await form.getByLabel('Fuel name').fill('Unleaded 95');
     await form.getByRole('button', { name: 'Add fuel type' }).click();
     await expect(page.getByText('Confirm it is you').first()).toBeVisible();
     expect(commands).toHaveLength(0);

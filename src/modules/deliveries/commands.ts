@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
+import { fuelDeliveries } from '../../platform/db/schema/a4';
 import {
   deliverySettings,
   fuelDeliveryCompartmentSeals,
@@ -25,6 +26,7 @@ import {
   classifyDeliveryReceipt,
 } from './domain';
 import { loadDeliveryForUpdate } from './persistence';
+import { setNoPurchaseOrderReasonSchema } from './purchase-order-choice';
 
 const uuid = z.string().uuid();
 const litresText = z
@@ -382,6 +384,67 @@ export function setWaterTestRequiredCommand(
 export async function setWaterTestRequiredFromRequest(request: Request, input: unknown) {
   const payload = waterTestRequiredPayload.parse(input);
   return setWaterTestRequiredCommand(
+    await contextFor(request, payload),
+    payload,
+    requireIdempotency(request),
+  );
+}
+
+/**
+ * Records why a delivery that is not confirmed yet has no purchase order. Confirming a delivery
+ * needs either a purchase-order link or this reason, so this is how the answer is given after the
+ * delivery was saved (including deliveries that go into several tanks, which the edit form cannot
+ * change).
+ */
+export function setDeliveryNoPurchaseOrderReasonCommand(
+  context: InventoryCommandContext,
+  payload: z.infer<typeof setNoPurchaseOrderReasonSchema>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'SetDeliveryNoPurchaseOrderReason',
+    permissionCode: 'inventory.delivery.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.DELIVERY_NO_PO_REASON_SET',
+      subjectType: 'FuelDelivery',
+      subjectId: payload.deliveryId,
+    },
+    execute: async (transaction) => {
+      const delivery = await loadDeliveryForUpdate(
+        transaction,
+        scopeOf(context, payload.deliveryId),
+      );
+      if (delivery.status !== 'DRAFT') {
+        throw new AppError(
+          'CONFLICT',
+          'This delivery has already been confirmed or cancelled, so the purchase order answer can no longer be changed.',
+        );
+      }
+      const noPoNote = payload.noPoNote || null;
+      await transaction
+        .update(fuelDeliveries)
+        .set({ noPoReason: payload.noPoReason, noPoNote })
+        .where(
+          and(
+            eq(fuelDeliveries.tenantId, context.tenantId),
+            eq(fuelDeliveries.stationId, context.stationId),
+            eq(fuelDeliveries.id, delivery.id),
+          ),
+        );
+      return { deliveryId: delivery.id, noPoReason: payload.noPoReason, noPoNote };
+    },
+  });
+}
+
+export async function setDeliveryNoPurchaseOrderReasonFromRequest(
+  request: Request,
+  input: unknown,
+) {
+  const payload = setNoPurchaseOrderReasonSchema.parse(input);
+  return setDeliveryNoPurchaseOrderReasonCommand(
     await contextFor(request, payload),
     payload,
     requireIdempotency(request),

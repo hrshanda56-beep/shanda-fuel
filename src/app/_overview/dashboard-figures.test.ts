@@ -115,6 +115,20 @@ describe('litresSeries', () => {
     });
   });
 
+  it('lists Diesel first, then Petrol, then Gas, whatever their names sort to', () => {
+    const rows = [
+      { businessDate: '2026-10-10', productName: 'Gas', productKind: 'GAS', litres: '1' },
+      { businessDate: '2026-10-10', productName: 'Petrol', productKind: 'PETROL', litres: '2' },
+      { businessDate: '2026-10-10', productName: 'Zed Diesel', productKind: 'DIESEL', litres: '3' },
+    ];
+    expect(productTotals(rows).map((p) => p.name)).toEqual(['Zed Diesel', 'Petrol', 'Gas']);
+    expect(litresSeries(rows, buckets)[5]?.products.map((p) => p.name)).toEqual([
+      'Zed Diesel',
+      'Petrol',
+      'Gas',
+    ]);
+  });
+
   it('totals each product over the range', () => {
     expect(productTotals(sales)).toEqual([
       { name: 'Diesel', litres: '588.5', unit: 'LITRES' },

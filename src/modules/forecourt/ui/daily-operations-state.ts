@@ -159,7 +159,9 @@ export type DailyOperationsFix =
   | Readonly<{ kind: 'link'; label: string; href: string }>
   | Readonly<{ kind: 'step'; label: string; step: number }>
   /** Closes the shift on this page, so the person need not go anywhere else. */
-  | Readonly<{ kind: 'close-shift'; label: string }>;
+  | Readonly<{ kind: 'close-shift'; label: string }>
+  /** Marks this shift as not operated, for a shift nobody worked. */
+  | Readonly<{ kind: 'mark-not-operated'; label: string }>;
 
 export type DailyOperationsProblem = Readonly<{ message: string; fix?: DailyOperationsFix }>;
 
@@ -180,9 +182,16 @@ export function dailyOperationsProblem(
   status: number,
   code: string | undefined,
   message: string | undefined,
-  details?: Record<string, unknown>,
+  context?: Readonly<{
+    attendantCount?: number;
+    /** The shift's state, and whether the person may mark it not operated (the server only allows a shift that has not started). */
+    shiftState?: string;
+    canMarkNotOperated?: boolean;
+    /** The server's error details, such as `{ reason: 'METER_NOT_SET_UP' }`. */
+    details?: Record<string, unknown>;
+  }>,
 ): DailyOperationsProblem {
-  if (details?.reason === 'METER_NOT_SET_UP') {
+  if (context?.details?.reason === 'METER_NOT_SET_UP') {
     return {
       message: message ?? 'A pump is not set up for this shift.',
       fix: link('Check the pump setup', '/settings?tab=stations'),
@@ -208,9 +217,28 @@ export function dailyOperationsProblem(
   // The server states why the shift cannot be closed, and what to do, in its own words.
   if (/^This shift cannot be closed yet/i.test(text)) return { message: text };
   if (/sealed meter segments|meter-close boundary/i.test(text)) {
+    if (
+      context?.attendantCount === 0 &&
+      context.shiftState === 'PLANNED' &&
+      context.canMarkNotOperated === true
+    ) {
+      return {
+        message:
+          'No one worked this shift, so there are no pump readings to close. If the shift did not run, mark it as not operated. Nothing was changed.',
+        fix: { kind: 'mark-not-operated', label: 'Mark as not operated' },
+      };
+    }
+    if (context?.attendantCount === 0) {
+      return {
+        message:
+          'This shift cannot be closed yet because no pump readings have been submitted for it. Enter the pump readings and submit them before it can be closed. Nothing was changed.',
+        fix: step('Go to pump readings', 1),
+      };
+    }
     return {
       message:
         'This shift cannot be closed yet because no pump readings have been submitted for it. Open the shift figures, enter the pump readings and submit them, then press Close Shift again. Nothing was changed.',
+      fix: step('Go to pump readings', 1),
     };
   }
   if (/meter-unavailable exception/i.test(text)) {

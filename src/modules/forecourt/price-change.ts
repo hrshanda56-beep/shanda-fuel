@@ -8,6 +8,7 @@ import { authorize, isPermissionGranted } from '../../platform/security/permissi
 import { resolveForecourtCommandContext, type ForecourtCommandContext } from './application';
 import { loadForecourtStation } from './persistence';
 import type { PriceChangeData } from './price-change-state';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 const uuid = z.string().uuid();
 
@@ -120,7 +121,7 @@ async function loadPriceChange(
         where n.tenant_id = p.tenant_id and n.station_id = ${input.stationId}
           and n.product_id = p.id and n.status = 'ACTIVE'
       )
-    order by p.name, p.id
+    order by ${productOrderSql('p')}, p.id
   `);
 
   const changes = await transaction.execute<{

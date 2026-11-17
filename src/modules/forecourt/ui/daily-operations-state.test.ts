@@ -222,6 +222,53 @@ describe('daily operations problems', () => {
     expect(result.message).not.toMatch(/segment|nozzle|boundary|changed elsewhere/i);
   });
 
+  const NO_READINGS =
+    'Every operated shift requires sealed meter segments and an authoritative terminal meter-close boundary for each participating nozzle';
+
+  it('offers to mark a not-yet-started shift with no attendants as not operated when permitted', () => {
+    const result = dailyOperationsProblem(409, 'CONFLICT', NO_READINGS, {
+      attendantCount: 0,
+      shiftState: 'PLANNED',
+      canMarkNotOperated: true,
+    });
+    expect(result.fix).toEqual({ kind: 'mark-not-operated', label: 'Mark as not operated' });
+    expect(result.message).not.toMatch(/segment|nozzle|boundary|changed elsewhere/i);
+  });
+
+  it('offers no not-operated button when the person is not permitted', () => {
+    const result = dailyOperationsProblem(409, 'CONFLICT', NO_READINGS, {
+      attendantCount: 0,
+      shiftState: 'PLANNED',
+      canMarkNotOperated: false,
+    });
+    expect(result.fix?.kind).not.toBe('mark-not-operated');
+  });
+
+  it('sends an open shift with no attendants to the pump readings, honestly', () => {
+    const result = dailyOperationsProblem(409, 'CONFLICT', NO_READINGS, {
+      attendantCount: 0,
+      shiftState: 'OPEN',
+      canMarkNotOperated: true,
+    });
+    expect(result.fix).toEqual({ kind: 'step', label: 'Go to pump readings', step: 1 });
+    expect(result.message).toContain('submit');
+    expect(result.message).not.toMatch(/not operated/i);
+  });
+
+  it('sends a shift that had attendants to its pump readings', () => {
+    const result = dailyOperationsProblem(409, 'CONFLICT', NO_READINGS, { attendantCount: 2 });
+    expect(result.fix).toEqual({ kind: 'step', label: 'Go to pump readings', step: 1 });
+    expect(result.message).toContain('Close Shift again');
+  });
+
+  it('points to the pump readings when the attendant count is not known', () => {
+    expect(problem(409, 'CONFLICT', NO_READINGS).fix).toEqual({
+      kind: 'step',
+      label: 'Go to pump readings',
+      step: 1,
+    });
+  });
+
   it('keeps the reason the server gives for a shift that cannot be closed', () => {
     const reason =
       'This shift cannot be closed yet: the opening reading for pump 1 nozzle 1 (900) is not where that meter last closed (1000). Correct the opening reading on the Pump readings step, then press Close Shift again.';
@@ -315,7 +362,7 @@ describe('a pump that is not set up for the shift', () => {
       409,
       'CONFLICT',
       'This shift cannot be closed yet: the meter for pump A is not set up.',
-      { reason: 'METER_NOT_SET_UP' },
+      { details: { reason: 'METER_NOT_SET_UP' } },
     );
     expect(problem.fix).toEqual({
       kind: 'link',
