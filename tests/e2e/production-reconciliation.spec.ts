@@ -353,7 +353,7 @@ test.describe('production reconciliation persistence', () => {
     // room must not require a ClerkProvider or crash before its content loads.
     await expect(controlRoom).toBeVisible();
     await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
-    await expect(controlRoom.getByRole('button', { name: 'Close meters' }).first()).toBeVisible();
+    await expect(controlRoom.getByRole('button', { name: 'Close Shift' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
     await expect(
       controlRoom
@@ -364,7 +364,7 @@ test.describe('production reconciliation persistence', () => {
         .first(),
     ).toBeVisible();
 
-    const closeMeters = controlRoom.getByRole('button', { name: 'Close meters' }).first();
+    const closeMeters = controlRoom.getByRole('button', { name: 'Close Shift' }).first();
     await closeMeters.focus();
     await expect(closeMeters).toBeFocused();
 
@@ -394,7 +394,7 @@ test.describe('production reconciliation persistence', () => {
     const shiftRow = page
       // The approved layout no longer prints raw shift ids; rows carry data-shift-id.
       .locator(`article.operations-shift-row[data-shift-id="${ids.controlRoomShift}"]`);
-    const closeMeters = shiftRow.getByRole('button', { name: 'Close meters' });
+    const closeMeters = shiftRow.getByRole('button', { name: 'Close Shift' });
     await expect(closeMeters).toBeVisible();
     await client.unsafe(
       `update app.shifts set version = version + 1 where id = '${ids.controlRoomShift}'`,

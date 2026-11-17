@@ -63,6 +63,7 @@ export function CashWallet({
   currency,
   hidden,
   onToggleHidden,
+  accountsHidden = false,
 }: {
   accounts: readonly WalletAccount[];
   deposits: readonly WalletDeposit[];
@@ -70,6 +71,8 @@ export function CashWallet({
   currency: string;
   hidden: boolean;
   onToggleHidden: () => void;
+  /** True when this role is not allowed to see bank accounts (so none is not the same as unlinked). */
+  accountsHidden?: boolean;
 }) {
   const [selected, setSelected] = useState(0);
   const count = accounts.length;
@@ -92,7 +95,9 @@ export function CashWallet({
               data-tone="0"
               data-empty="true"
             >
-              <span className="cash-wallet-card-name">No bank account linked</span>
+              <span className="cash-wallet-card-name">
+                {accountsHidden ? 'Bank accounts not shown' : 'No bank account linked'}
+              </span>
             </div>
           ) : (
             accounts.map((account, index) => {

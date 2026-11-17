@@ -1,5 +1,6 @@
 'use client';
 
+import { combineQuantityUnits } from '@/design-system/formatters';
 import Decimal from 'decimal.js';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -25,6 +26,7 @@ import { OrderForm } from './order-form';
 import {
   dateText,
   litresText,
+  orderTotalText,
   orderStatus,
   pricePerLitreText,
   totalOrderedLitres,
@@ -174,6 +176,9 @@ export function PurchaseOrderDetail({
   const openLitres = (order?.lines ?? [])
     .filter((line) => line.status === 'ACTIVE')
     .reduce((sum, line) => sum.add(line.openLitres), new Decimal(0));
+  const openUnit = combineQuantityUnits(
+    (order?.lines ?? []).filter((line) => line.status === 'ACTIVE').map((line) => line.productUnit),
+  );
   const activeLinks = order?.deliveries.filter((d) => d.state === 'ACTIVE') ?? [];
   const canEdit =
     capabilities.createOrders &&
@@ -239,8 +244,14 @@ export function PurchaseOrderDetail({
 
       {order ? (
         <>
-          <Card as="section" className="panel content-span" aria-labelledby="po-lines-title">
-            <h3 id="po-lines-title">Fuel on this order</h3>
+          <Card
+            as="section"
+            className="panel profit-panel content-span"
+            aria-labelledby="po-lines-title"
+          >
+            <h2 id="po-lines-title" className="profit-title">
+              Fuel on this order
+            </h2>
             <div className={`${styles.table} ${styles.stack}`}>
               <div className={styles.head + ' list-head'} aria-hidden="true">
                 <span>Fuel</span>
@@ -259,48 +270,56 @@ export function PurchaseOrderDetail({
                           <strong>{line.productName}</strong>
                           {line.shortClosedLitres ? (
                             <small>
-                              {litresText(line.shortClosedLitres)} was not delivered; the order was
-                              closed.
+                              {litresText(line.shortClosedLitres, line.productUnit)} was not
+                              delivered; the order was closed.
                             </small>
                           ) : null}
                         </span>
                         <span className={`${styles.numeric} ${styles.cell}`} data-label="Ordered">
-                          {litresText(line.orderedLitres)}
+                          {litresText(line.orderedLitres, line.productUnit)}
                         </span>
                         <span
                           className={`${styles.numeric} ${styles.cell}`}
                           data-label="Delivered so far"
                         >
-                          {litresText(line.receivedLitres)}
+                          {litresText(line.receivedLitres, line.productUnit)}
                           {new Decimal(line.pendingLitres).gt(0) ? (
-                            <small> (+{litresText(line.pendingLitres)} not confirmed yet)</small>
+                            <small>
+                              {' '}
+                              (+{litresText(line.pendingLitres, line.productUnit)} not confirmed
+                              yet)
+                            </small>
                           ) : null}
                         </span>
                         <span
                           className={`${styles.numeric} ${styles.cell}`}
                           data-label="Still to come"
                         >
-                          {litresText(line.openLitres)}
+                          {litresText(line.openLitres, line.productUnit)}
                         </span>
                         <span
                           className={`${styles.numeric} ${styles.cell}`}
                           data-label="Agreed price"
                         >
-                          {pricePerLitreText(line.agreedUnitPrice)}
+                          {pricePerLitreText(line.agreedUnitPrice, line.productUnit)}
                         </span>
                       </div>
                     </li>
                   ))}
               </ul>
-              <p className={styles.muted}>
-                Total ordered: {litresText(totalOrderedLitres(order.lines))}
-              </p>
+              <p className={styles.muted}>Total ordered: {orderTotalText(order.lines)}</p>
             </div>
           </Card>
 
-          <Card as="section" className="panel content-span" aria-labelledby="po-deliveries-title">
+          <Card
+            as="section"
+            className="panel profit-panel content-span"
+            aria-labelledby="po-deliveries-title"
+          >
             <div className={styles.toolbar}>
-              <h3 id="po-deliveries-title">Deliveries linked to this order</h3>
+              <h2 id="po-deliveries-title" className="profit-title">
+                Deliveries linked to this order
+              </h2>
               {canLink ? (
                 <Button
                   className={styles.toolbarEnd}
@@ -326,7 +345,13 @@ export function PurchaseOrderDetail({
                   <li key={link.linkId} className={styles.subRow}>
                     <span>Delivery note {link.deliveryNoteNumber}</span>
                     <span>{lineName(link.purchaseOrderLineId)}</span>
-                    <span>{litresText(link.actualQuantityLitres)}</span>
+                    <span>
+                      {litresText(
+                        link.actualQuantityLitres,
+                        order.lines.find((row) => row.lineId === link.purchaseOrderLineId)
+                          ?.productUnit,
+                      )}
+                    </span>
                     <span>{DELIVERY_STATUS[link.deliveryStatus] ?? 'Recorded'}</span>
                     {canLink ? (
                       <Button
@@ -349,9 +374,15 @@ export function PurchaseOrderDetail({
             )}
           </Card>
 
-          <Card as="section" className="panel content-span" aria-labelledby="po-details-title">
+          <Card
+            as="section"
+            className="panel profit-panel content-span"
+            aria-labelledby="po-details-title"
+          >
             <div className={styles.toolbar}>
-              <h3 id="po-details-title">Order details</h3>
+              <h2 id="po-details-title" className="profit-title">
+                Order details
+              </h2>
               {canEdit || canCancel || canClose ? (
                 <div className={`${styles.actions} ${styles.toolbarEnd}`}>
                   {canEdit ? (
@@ -435,8 +466,14 @@ export function PurchaseOrderDetail({
           </Card>
 
           {order.revisions.filter((revision) => revision.reason).length > 0 ? (
-            <Card as="section" className="panel content-span" aria-labelledby="po-history-title">
-              <h3 id="po-history-title">Changes made to this order</h3>
+            <Card
+              as="section"
+              className="panel profit-panel content-span"
+              aria-labelledby="po-history-title"
+            >
+              <h2 id="po-history-title" className="profit-title">
+                Changes made to this order
+              </h2>
               <ul className={styles.subRows} aria-label="Order changes">
                 {order.revisions
                   .filter((revision) => revision.reason)
@@ -527,7 +564,7 @@ export function PurchaseOrderDetail({
           order
             ? [
                 { label: 'Supplier', value: order.supplierName },
-                { label: 'Total fuel', value: litresText(totalOrderedLitres(order.lines)) },
+                { label: 'Total fuel', value: orderTotalText(order.lines) },
               ]
             : undefined
         }
@@ -595,7 +632,9 @@ export function PurchaseOrderDetail({
             <p>
               Closing means you are not expecting any more fuel on this order.
               {openLitres.gt(0)
-                ? ` The ${litresText(openLitres.toFixed(3))} that has not arrived will be recorded as not delivered.`
+                ? ` The ${
+                    openUnit === 'MIXED' ? 'fuel' : litresText(openLitres.toFixed(3), openUnit)
+                  } that has not arrived will be recorded as not delivered.`
                 : ''}{' '}
               It cannot be undone.
             </p>
@@ -770,7 +809,7 @@ function LinkDeliveryBody({
               }}
               options={lines.map((row) => ({
                 value: row.lineId,
-                label: `${row.productName} — ${litresText(row.openLitres)} still to come`,
+                label: `${row.productName} — ${litresText(row.openLitres, row.productUnit)} still to come`,
               }))}
             />
           </Field>
@@ -789,7 +828,7 @@ function LinkDeliveryBody({
               placeholder="Choose a delivery"
               options={deliveries.map((d) => ({
                 value: d.id,
-                label: `Note ${d.deliveryNoteNumber} · ${dateText(d.businessDate)} · ${litresText(d.actualQuantityLitres)}${d.status === 'DRAFT' ? ' (not confirmed yet)' : ''}`,
+                label: `Note ${d.deliveryNoteNumber} · ${dateText(d.businessDate)} · ${litresText(d.actualQuantityLitres, d.unit)}${d.status === 'DRAFT' ? ' (not confirmed yet)' : ''}`,
               }))}
             />
           </Field>

@@ -2,16 +2,17 @@ import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ view: vi.fn(), session: vi.fn() }));
+const mocks = vi.hoisted(() => ({ view: vi.fn(), session: vi.fn(), email: vi.fn() }));
 vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
 vi.mock('./invitation', () => ({ resolveInvitationView: mocks.view }));
-vi.mock('./session', () => ({ hasActiveSession: mocks.session }));
+vi.mock('./session', () => ({ hasActiveSession: mocks.session, signedInEmail: mocks.email }));
 vi.mock('./entry-shell', () => ({
   EntryShell: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock('./invite-views', () => ({ InviteUnavailable: () => 'Unavailable' }));
 vi.mock('./invite-acceptance', () => ({
   ExistingInviteFlow: () => 'Accept invitation',
+  WrongAccountInvite: () => 'Different account',
   NewInviteFlow: () => 'Create invited account',
 }));
 vi.mock('./clerk-login-form', () => ({
@@ -22,7 +23,10 @@ vi.mock('./clerk-login-form', () => ({
 import InvitePage from '@/app/invite/[token]/page';
 
 describe('Clerk invitation routing', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.email.mockResolvedValue('invited@example.com');
+  });
 
   it.each(['existing-identity', 'new-identity'])(
     'requires server acceptance for signed-in %s',
@@ -41,8 +45,26 @@ describe('Clerk invitation routing', () => {
     },
   );
 
+  it.each(['existing-identity', 'new-identity'])(
+    'tells a signed-in %s visitor when the account is not the invited one',
+    async (kind) => {
+      mocks.view.mockResolvedValue({
+        kind,
+        organisationName: 'Organisation',
+        email: 'invited@example.com',
+      });
+      mocks.session.mockResolvedValue(true);
+      mocks.email.mockResolvedValue('someone-else@example.com');
+      const html = renderToStaticMarkup(
+        await InvitePage({ params: Promise.resolve({ token: 'invite-token' }) }),
+      );
+      expect(html).toContain('Different account');
+      expect(html).not.toContain('Accept invitation');
+    },
+  );
+
   it('preserves the invitation destination through existing-account Clerk sign in', async () => {
-    mocks.view.mockResolvedValue({ kind: 'existing-identity' });
+    mocks.view.mockResolvedValue({ kind: 'existing-identity', email: 'invited@example.com' });
     mocks.session.mockResolvedValue(false);
     const html = renderToStaticMarkup(
       await InvitePage({ params: Promise.resolve({ token: 'invite-token' }) }),

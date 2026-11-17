@@ -23,7 +23,6 @@ describe('report narrowing in the address', () => {
   it('is declared on the reports that need it', () => {
     const filters = (slug: string) => TABLE_REPORTS.find((r) => r.slug === slug)?.filters ?? [];
     expect(filters('sales-by-attendant')).toEqual(['shift', 'employee']);
-    expect(filters('purchases')).toContain('supplier');
-    expect(filters('supplier-payments')).toEqual(['supplier']);
+    expect(filters('supplier-statement')).toContain('supplier');
   });
 });

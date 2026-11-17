@@ -1,4 +1,5 @@
 import type { TankRow } from '../inventory/tank-read-model';
+import { asQuantityUnit } from '../../design-system/formatters';
 import { profileDatabaseRead } from '../../platform/observability/read-timing';
 import type { AuthenticatedActorContext } from '../identity';
 import 'server-only';
@@ -7,7 +8,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { AppError } from '../../platform/errors';
-import { isAuthorized } from '../../platform/security/permissions';
+import { isAuthorized, isPermissionGranted } from '../../platform/security/permissions';
 import {
   authorizeInventoryCommand,
   resolveInventoryCommandContext,
@@ -58,6 +59,7 @@ function streamFromRow(row: DbRow) {
       id: String(row.product_id),
       code: String(row.product_code),
       name: String(row.product_name),
+      unit: asQuantityUnit(row.product_unit as string | undefined),
     },
     quantityLitres: String(row.quantity_litres),
     valuationStatus: status,
@@ -71,7 +73,7 @@ function streamFromRow(row: DbRow) {
     blockingReason:
       status === 'UNVALUED'
         ? source
-          ? 'Authoritative cost is missing for this source movement. Sale-cost posting and reconciliation approval remain blocked until the source is valued.'
+          ? 'The cost of this stock is missing. Sale costs cannot be worked out until the stock is valued.'
           : 'The stream does not have a complete authoritative cost chronology. Review its cost events before approving reconciliation.'
         : null,
     sourceMovementRequiringCost: source,
@@ -101,6 +103,7 @@ function revaluationFromRow(row: DbRow) {
       id: String(row.product_id),
       code: String(row.product_code),
       name: String(row.product_name),
+      unit: asQuantityUnit(row.product_unit as string | undefined),
     },
     source: row.source_id ? { type: String(row.source_type), id: String(row.source_id) } : null,
     amount: row.amount === null ? null : String(row.amount),
@@ -202,9 +205,9 @@ const revaluationFrom = sql`
 `;
 
 const actorSelect = sql`
-  (select u.name from app.memberships m join app.users u on u.id = m.identity_id where m.tenant_id = r.tenant_id and m.id = r.requested_by) as requested_actor_name,
-  (select u.name from app.memberships m join app.users u on u.id = m.identity_id where m.tenant_id = r.tenant_id and m.id = r.approved_by) as approved_actor_name,
-  (select u.name from app.memberships m join app.users u on u.id = m.identity_id where m.tenant_id = r.tenant_id and m.id = r.posted_by) as posted_actor_name
+  (select m.name from app.member_directory(r.tenant_id) m where m.id = r.requested_by) as requested_actor_name,
+  (select m.name from app.member_directory(r.tenant_id) m where m.id = r.approved_by) as approved_actor_name,
+  (select m.name from app.member_directory(r.tenant_id) m where m.id = r.posted_by) as posted_actor_name
 `;
 
 async function contextFor(request: Request, input: unknown) {
@@ -222,8 +225,12 @@ function capabilities(context: Awaited<ReturnType<typeof resolveInventoryCommand
   const actorInput = { actor: context.authority.authorization, requestedScope: context.scope };
   return {
     request: isAuthorized({ ...actorInput, permissionCode: 'inventory.adjustment.post' }),
+    // Saving a delivery's cost is checked against delivery management, not adjustments.
+    recordReceiptCost: isAuthorized({ ...actorInput, permissionCode: 'inventory.delivery.manage' }),
     approve: isAuthorized({ ...actorInput, permissionCode: 'approval.act' }),
     post: isAuthorized({ ...actorInput, permissionCode: 'inventory.adjustment.post' }),
+    // Role only: the identity check for this permission is asked for when the person saves.
+    addTank: isPermissionGranted({ ...actorInput, permissionCode: 'inventory.tank.manage' }),
   };
 }
 
@@ -244,7 +251,7 @@ export async function getInventoryValuationReadModel(
     async (transaction, context) => {
       const streamQuery = sql`
       select s.station_id, station.code as station_code, station.name as station_name,
-             s.tank_id, tank.code as tank_code, s.product_id, product.code as product_code, product.name as product_name,
+             s.tank_id, tank.code as tank_code, s.product_id, product.code as product_code, product.name as product_name, product.unit as product_unit,
              s.quantity_litres::text, s.valuation_status, s.inventory_value::text, s.weighted_average_cost::text, s.currency,
              s.last_cost_event_effective_at, s.last_cost_event_id, s.projection_version,
              missing_source.*, active_revaluation.*
@@ -256,7 +263,7 @@ export async function getInventoryValuationReadModel(
       const revaluationQuery = sql`
       select r.id as revaluation_id, r.status as revaluation_status, r.reason,
              r.station_id, station.code as station_code, station.name as station_name,
-             r.tank_id, tank.code as tank_code, r.product_id, product.code as product_code, product.name as product_name,
+             r.tank_id, tank.code as tank_code, r.product_id, product.code as product_code, product.name as product_name, product.unit as product_unit,
              r.source_type, r.source_id, r.amount::text, r.currency, r.effective_at, r.business_date,
              r.requested_by, r.requested_at, r.approved_by, r.approved_at, r.posted_by, r.posted_at, r.replay_fingerprint,
              ${actorSelect}, ${revaluationProjection}
@@ -285,6 +292,7 @@ export async function getInventoryValuationReadModel(
           t.reorder_level_litres::text as "reorderLevelLitres",
           coalesce(m.expected, 0)::text as "expectedLitres",
           d.physical_litres::text as "physicalLitres",
+          d.business_date as "physicalDate",
           (d.physical_litres - coalesce(m.expected, 0))::text as "varianceLitres"
         from app.tanks t
         join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
@@ -295,7 +303,7 @@ export async function getInventoryValuationReadModel(
             and m.business_date <= (now() at time zone ${context.stationTimezone})::date::text
         ) m on true
         left join lateral (
-          select physical_litres from app.tank_dips d
+          select physical_litres, business_date from app.tank_dips d
           where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id
             and d.voided_at is null
             and d.measured_at < (((now() at time zone ${context.stationTimezone})::date + 1)::timestamp

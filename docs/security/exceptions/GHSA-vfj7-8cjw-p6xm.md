@@ -2,7 +2,13 @@
 
 ## Status
 
-Active for pre-production CI and staging-cleanup work only. This is an
+**Retired 2026-11-11.** The review date (2026-11-03) passed and `pnpm audit` no longer
+reports this advisory at any severity, so the exception was removed from
+`.github/dependency-audit-exceptions.json` and the audit script now permits no exceptions.
+The text below is kept as the historical record. If the advisory returns, handle it as a new,
+reviewed change.
+
+Previously: active for pre-production CI and staging-cleanup work only. This is an
 exception, not remediation. It must not be used to authorize a production
 deployment.
 

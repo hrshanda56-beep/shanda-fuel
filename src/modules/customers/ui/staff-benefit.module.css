@@ -165,6 +165,15 @@
   grid-column: 1 / -1;
 }
 
+.picker {
+  position: relative;
+}
+
+.picker [role='listbox'] {
+  width: 100%;
+  max-width: none;
+}
+
 .money {
   position: relative;
 }

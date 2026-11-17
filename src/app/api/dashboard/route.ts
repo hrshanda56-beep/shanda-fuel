@@ -6,8 +6,12 @@ export const runtime = 'nodejs';
 const query = z.object({
   tenantId: z.string().uuid(),
   stationId: z.string().uuid().optional(),
+  /** The period every period figure follows. */
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
+  /** The sales chart's own window; when absent it follows the period. */
+  chartFromDate: z.string().optional(),
+  chartToDate: z.string().optional(),
 });
 export const GET = withRequestObservability(async (request: Request) => {
   try {

@@ -73,11 +73,40 @@ export function providerCharges(input: {
 }
 
 /**
+ * The three amounts of one provider payout, exact. `declared` is the sales evidence matched to it.
+ * Charges are the fee plus any deduction; net settled is what the provider reported paying out, or
+ * the gross less the charges when it reported none. The difference is declared minus (net settled
+ * plus charges): zero when every dollar is accounted for, positive when money is missing.
+ */
+export function payoutAmounts(input: {
+  gross: string;
+  fee: string | null;
+  deduction: string | null;
+  reportedNet: string | null;
+  declared: string;
+}): { charges: string; netSettled: string; difference: string } {
+  const charges = new ExactDecimal(
+    providerCharges({ feeAmount: input.fee, deductionAmount: input.deduction }) ?? '0',
+  );
+  const gross = new ExactDecimal(input.gross);
+  const netSettled =
+    input.reportedNet === null ? gross.subtract(charges) : new ExactDecimal(input.reportedNet);
+  const difference = new ExactDecimal(input.declared).subtract(netSettled.add(charges));
+  return {
+    charges: charges.value.toFixed(4),
+    netSettled: netSettled.value.toFixed(4),
+    difference: difference.value.toFixed(4),
+  };
+}
+
+/**
  * The same words for a provider settlement that was already recorded. "Needs review" is a
  * settlement that was matched with a difference.
  */
 export const SETTLEMENT_RECORD_LABELS = {
-  RECORDED: PAYMENT_SETTLEMENT_LABELS.AWAITING,
+  // The provider has already paid this payout; it is just not matched to sales yet. It is not
+  // "awaiting settlement", which is what the sales it covers are called before it arrives.
+  RECORDED: 'Received, not matched to sales yet',
   PARTIALLY_MATCHED: PAYMENT_SETTLEMENT_LABELS.PARTLY_SETTLED,
   RECONCILED: PAYMENT_SETTLEMENT_LABELS.SETTLED,
   EXCEPTION: 'Settled with a difference',

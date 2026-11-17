@@ -1,17 +1,72 @@
 import { sumDecimals } from '../../cash/ui/cash-visuals';
 
 /** What the existing read-only reconciliation endpoint returns, trimmed to what the statement shows. */
+/** The one unit every nozzle of a sheet sells in, or undefined when litres and kilograms are mixed. */
+function singleUnit(detail: ReconciliationDetail): 'LITRES' | 'KILOGRAMS' | undefined {
+  const units = new Set(
+    detail.readings.map(
+      (reading) =>
+        detail.tanks?.find((tank) => tank.productId === reading.productId)?.unit ?? 'LITRES',
+    ),
+  );
+  return units.size === 1 ? [...units][0] : undefined;
+}
+
 export type ReconciliationDetail = Readonly<{
   state: string;
-  readings: ReadonlyArray<{ id: string; litresSold: string; salesValue: string }>;
-  payments: ReadonlyArray<{ id: string; method: string; amount: string }>;
-  expenses: ReadonlyArray<{ id: string; category: string; amount: string; paymentMethod: string }>;
-  cash: { countedCash: string; netExpectedCash: string; cashVariance: string } | null;
+  readings: ReadonlyArray<{
+    id: string;
+    productId?: string;
+    litresSold: string;
+    salesValue: string;
+  }>;
+  payments: ReadonlyArray<{
+    id: string;
+    method: string;
+    amount: string;
+    reference?: string | null;
+    note?: string | null;
+    beneficiaryName?: string | null;
+  }>;
+  expenses: ReadonlyArray<{
+    id: string;
+    category: string;
+    amount: string;
+    paymentMethod: string;
+    description?: string;
+    personPaid?: string | null;
+    reference?: string | null;
+  }>;
+  cash: {
+    countedCash: string;
+    netExpectedCash: string;
+    cashVariance: string;
+    expectedPhysicalCash?: string;
+    cashPaidExpenses?: string;
+  } | null;
+  /** The written reasons for a variance, one per category. */
+  explanations?: ReadonlyArray<{ category: string; explanation: string }>;
+  approvalNote?: string | null;
+  tanks?: ReadonlyArray<{
+    tankId: string;
+    productId?: string;
+    productName: string;
+    unit?: 'LITRES' | 'KILOGRAMS';
+    toleranceLitres?: string | null;
+    expectedLitres?: string | null;
+  }>;
+  dips?: ReadonlyArray<{ tankId: string; physicalLitres: string }>;
+  deliveries?: ReadonlyArray<{
+    deliveryNoteNumber: string;
+    productId?: string;
+    actualQuantityLitres: string;
+  }>;
   totals: {
     expectedSales: string;
     accountedSales: string;
     salesVariance: string;
     cashVariance: string | null;
+    stockVariance?: Record<string, string>;
   };
 }>;
 
@@ -31,6 +86,8 @@ export type StatementSection = Readonly<{
   /** Meter readings, so the sales line can say how many nozzles it covers. */
   nozzles: number;
   litres: string;
+  /** Litres or kilograms; undefined when the sheet mixes both, so no total is shown. */
+  quantityUnit?: 'LITRES' | 'KILOGRAMS';
   expectedSales: string;
   paymentLines: readonly StatementLine[];
   expenseLines: readonly StatementLine[];
@@ -89,6 +146,7 @@ export function buildStatement(
       state: shift.state,
       nozzles: detail.readings.length,
       litres: sumDecimals(detail.readings.map((reading) => reading.litresSold)),
+      quantityUnit: singleUnit(detail),
       expectedSales: detail.totals.expectedSales,
       paymentLines: groupLines(
         detail.payments.map((payment) => ({ key: payment.method, amount: payment.amount })),
@@ -137,7 +195,10 @@ function csvCell(value: string): string {
   return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
-/** Full-precision CSV of the statement, one line per figure, for opening in a spreadsheet. */
+/**
+ * Full-precision CSV of the statement for opening in a spreadsheet. It is one plain table: every
+ * row has the same columns, so any spreadsheet or viewer splits it correctly and it can be filtered.
+ */
 export function statementToCsv(input: {
   organisation: string;
   station: string;
@@ -146,55 +207,65 @@ export function statementToCsv(input: {
   statement: Statement;
 }): string {
   const { statement } = input;
+  const { totals } = statement;
   const rows: string[][] = [
-    ['Reconciliation statement'],
-    ['Organisation', input.organisation],
-    ['Station', input.station],
-    ['Business date', input.businessDate],
-    ['Currency', input.currency],
-    [],
-    ['Shift', 'Section', 'Description', 'Amount'],
+    [
+      'Organisation',
+      'Station',
+      'Business date',
+      'Shift',
+      'Section',
+      'Description',
+      `Amount (${input.currency})`,
+    ],
   ];
+  const line = (shift: string, part: string, description: string, amount: string | null) => {
+    rows.push([
+      input.organisation,
+      input.station,
+      input.businessDate,
+      shift,
+      part,
+      description,
+      amount ?? NOT_RECORDED,
+    ]);
+  };
   for (const section of statement.sections) {
-    const add = (part: string, description: string, amount: string | null) => {
-      rows.push([section.label, part, description, amount ?? NOT_RECORDED]);
-    };
+    const add = (part: string, description: string, amount: string | null) =>
+      line(section.label, part, description, amount);
     add(
       'Sales',
       `Expected sales (${section.nozzles} nozzles, ${section.litres} L)`,
       section.expectedSales,
     );
-    for (const line of section.paymentLines) add('Accounted by', line.description, line.amount);
-    for (const line of section.expenseLines) add('Expenses', line.description, line.amount);
+    for (const entry of section.paymentLines) add('Accounted by', entry.description, entry.amount);
+    for (const entry of section.expenseLines) add('Expenses', entry.description, entry.amount);
     add('Sales', 'Accounted sales', section.accountedSales);
     add('Sales', 'Sales variance', section.salesVariance);
     add('Cash', 'Expected cash', section.expectedCash);
     add('Cash', 'Counted cash', section.countedCash);
     add('Cash', 'Cash variance', section.cashVariance);
   }
-  for (const shift of statement.missing) {
-    rows.push([shift.label, 'Sales', 'Figures could not be loaded', NOT_AVAILABLE]);
-  }
-  const { totals } = statement;
-  rows.push([]);
-  rows.push(['Total', 'Sales', 'Expected sales', totals.expectedSales ?? NOT_AVAILABLE]);
-  rows.push(['Total', 'Sales', 'Accounted sales', totals.accountedSales ?? NOT_AVAILABLE]);
-  rows.push(['Total', 'Sales', 'Sales variance', totals.salesVariance ?? NOT_AVAILABLE]);
-  rows.push(['Total', 'Cash', 'Counted cash', totals.countedCash ?? NOT_RECORDED]);
-  rows.push(['Total', 'Cash', 'Cash variance', totals.cashVariance ?? NOT_RECORDED]);
+  for (const shift of statement.missing)
+    line(shift.label, 'Sales', 'Figures could not be loaded', NOT_AVAILABLE);
+  line('Total', 'Sales', 'Expected sales', totals.expectedSales ?? NOT_AVAILABLE);
+  line('Total', 'Sales', 'Accounted sales', totals.accountedSales ?? NOT_AVAILABLE);
+  line('Total', 'Sales', 'Sales variance', totals.salesVariance ?? NOT_AVAILABLE);
+  line('Total', 'Cash', 'Counted cash', totals.countedCash);
+  line('Total', 'Cash', 'Cash variance', totals.cashVariance);
   if (statement.missing.length > 0)
-    rows.push([
+    line(
       'Note',
       '',
       `Totals exclude ${statement.missing.length} shift(s) whose figures could not be loaded`,
       '',
-    ]);
+    );
   if (totals.shiftsWithoutCash > 0)
-    rows.push([
+    line(
       'Note',
       '',
       `Cash totals exclude ${totals.shiftsWithoutCash} shift(s) with no counted cash`,
       '',
-    ]);
+    );
   return rows.map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }

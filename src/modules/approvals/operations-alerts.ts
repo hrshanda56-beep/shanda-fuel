@@ -1,4 +1,9 @@
-import { formatLitres, formatUsd } from '../../design-system/formatters';
+import {
+  formatBusinessDate,
+  formatQuantity,
+  formatUsd,
+  type QuantityUnit,
+} from '../../design-system/formatters';
 import { ExactDecimal } from '../../platform/domain/primitives';
 
 /**
@@ -91,6 +96,8 @@ export type TankAlertFacts = Readonly<{
   tankId: string;
   tankCode: string;
   productName: string;
+  /** What the fuel is measured in; litres when absent. */
+  unit?: QuantityUnit;
   expectedLitres: string;
   /** The latest dip, and the book stock at the moment it was taken. */
   physicalLitres: string | null;
@@ -162,7 +169,7 @@ export function buildOperationsAlerts(
       detail:
         late.length === 1
           ? 'The day has been worked but its reconciliation is still not in.'
-          : `The oldest is ${oldest}. Each worked day needs its reconciliation submitted.`,
+          : `The oldest is ${formatBusinessDate(oldest)}. Each worked day needs its reconciliation submitted.`,
       href: `${stationPath}/reconciliations`,
       tone: 'attention',
     });
@@ -190,7 +197,7 @@ export function buildOperationsAlerts(
   for (const row of shortages.slice(0, 3)) {
     out.push({
       id: `cash-short-${row.businessDate}`,
-      title: `Cash was ${formatUsd(row.amount)} short on ${row.businessDate}`,
+      title: `Cash was ${formatUsd(row.amount)} short on ${formatBusinessDate(row.businessDate)}`,
       detail: 'The cash counted was less than the cash expected from sales.',
       href: `${stationPath}/reconciliations`,
       tone: 'attention',
@@ -217,7 +224,7 @@ export function buildOperationsAlerts(
       const direction = variance.value.isNegative() ? 'under' : 'over';
       out.push({
         id: `stock-variance-${tank.tankId}`,
-        title: `${tank.tankCode} (${tank.productName}) is ${formatLitres(variance.value.abs().toString())} ${direction} book stock`,
+        title: `${tank.tankCode} (${tank.productName}) is ${formatQuantity(variance.value.abs().toString(), tank.unit)} ${direction} book stock`,
         detail:
           signal === 'alert'
             ? 'The dip is well outside the acceptable difference. Check for a leak, a missed delivery or a meter fault.'
@@ -238,7 +245,7 @@ export function buildOperationsAlerts(
       out.push({
         id: `stock-low-${tank.tankId}`,
         title: `${tank.tankCode} (${tank.productName}) is at or below its reorder level`,
-        detail: `${formatLitres(tank.expectedLitres)} left by the books. Time to order fuel.`,
+        detail: `${formatQuantity(tank.expectedLitres, tank.unit)} left by the books. Time to order fuel.`,
         href: '/inventory',
         tone: 'attention',
       });

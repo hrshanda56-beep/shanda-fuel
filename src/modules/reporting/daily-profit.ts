@@ -1,6 +1,5 @@
 import { buildDailyProfit, type DailyProfitSummary } from '../profitability/daily-profit';
 import type { ManagementReport } from './contracts';
-import { approvedFuelBenefit } from './statements';
 
 /** The owner's daily profit view, built only from figures the management report carries. */
 export function dailyProfitFromReport(report: ManagementReport): DailyProfitSummary {
@@ -10,6 +9,9 @@ export function dailyProfitFromReport(report: ManagementReport): DailyProfitSumm
       productId: sale.productId,
       productCode: sale.productCode,
       productName: sale.productName,
+      productKind: sale.productKind,
+      productDisplayOrder: sale.productDisplayOrder,
+      productUnit: sale.productUnit,
       recognizedRevenue: sale.recognizedRevenue,
       quantityLitres: sale.quantityLitres,
     })),
@@ -18,6 +20,8 @@ export function dailyProfitFromReport(report: ManagementReport): DailyProfitSumm
       productId: sale.productId,
       productCode: sale.productCode,
       productName: sale.productName,
+      productKind: sale.productKind,
+      productDisplayOrder: sale.productDisplayOrder,
       restatedCogs: sale.restatedCogs,
       valuationStatus: sale.valuationStatus,
     })),
@@ -26,6 +30,6 @@ export function dailyProfitFromReport(report: ManagementReport): DailyProfitSumm
       classification: row.classification,
       amount: row.amount,
     })),
-    fuelBenefit: approvedFuelBenefit(report),
+    fuelBenefitByDate: report.sales.staffFuelByDate ?? [],
   });
 }

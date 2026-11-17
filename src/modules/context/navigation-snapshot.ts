@@ -34,6 +34,7 @@ const snapshotSchema = z.object({
     z.object({
       organisation_id: z.string().uuid(),
       organisation_name: z.string(),
+      organisation_slug: z.string().optional(),
       legal_entity_id: z.string().uuid().nullable(),
       legal_entity_name: z.string().nullable(),
       station_id: z.string().uuid().nullable(),

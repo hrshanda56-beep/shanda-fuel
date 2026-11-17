@@ -14,12 +14,18 @@ const litres = z
   .string()
   .min(1)
   .max(24)
-  .regex(/^\d+(?:\.\d{1,3})?$/, 'An exact litres string with at most 3 decimals is required');
+  .regex(
+    /^\d{1,12}(?:\.\d{1,3})?$/,
+    'Litres must be a number below one trillion with at most 3 decimals',
+  );
 const price = z
   .string()
   .min(1)
   .max(30)
-  .regex(/^\d+(?:\.\d{1,8})?$/, 'An exact price string with at most 8 decimals is required');
+  .regex(
+    /^\d{1,9}(?:\.\d{1,8})?$/,
+    'The price per litre must be a number below one billion with at most 8 decimals',
+  );
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A YYYY-MM-DD date is required');
 const version = z.number().int().nonnegative();
 const reason = z.string().trim().min(1).max(500);

@@ -1,4 +1,5 @@
 import 'server-only';
+import { asQuantityUnit } from '../../design-system/formatters';
 
 import Decimal from 'decimal.js';
 import { sql } from 'drizzle-orm';
@@ -6,6 +7,7 @@ import type { Database } from '../../platform/db';
 import type { OwnerPosition } from './contracts';
 import { readSupplierExposure } from '../creditors/purchasing-queries';
 import { formatLitres, formatMoney, latestStationLocalDate } from './domain';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 type PositionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -79,9 +81,10 @@ export async function readOwnerPosition(
     station: string;
     product: string;
     litres: string;
+    unit: string;
     value: string | null;
   }>(sql`
-    select st.name as station, p.name as product,
+    select st.name as station, p.name as product, p.unit as unit,
       sum(s.quantity_litres)::text as litres,
       case when count(*) filter (where s.valuation_status <> 'VALUED' and s.quantity_litres > 0) > 0
         then null else coalesce(sum(s.inventory_value), 0)::text end as value
@@ -89,8 +92,8 @@ export async function readOwnerPosition(
     join app.stations st on st.tenant_id = s.tenant_id and st.id = s.station_id
     join app.products p on p.tenant_id = s.tenant_id and p.id = s.product_id
     where s.tenant_id = ${filters.tenantId} ${stationFilter('s', filters.stationIds)}
-    group by st.name, p.name
-    order by st.name, p.name
+    group by st.name, p.name, p.unit, p.display_order, p.kind
+    order by st.name, ${productOrderSql('p')}
   `);
   const accountsTotal = Number(bank?.accounts_total ?? 0);
   const accountsWithBalance = Number(bank?.accounts_with_balance ?? 0);
@@ -106,6 +109,7 @@ export async function readOwnerPosition(
     stockByStation: stock.map((row) => ({
       stationName: row.station,
       productName: row.product,
+      unit: asQuantityUnit(row.unit),
       litres: formatLitres(row.litres),
       value: row.value === null ? null : formatMoney(row.value),
     })),

@@ -1,16 +1,16 @@
 import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { ContextRequiredState } from '@/design-system/primitives';
+import { isAccessRefusal } from '@/platform/errors';
 import { getManagementReportFromRequest } from '@/modules/reporting/queries';
 import { parseReportFilters, resolveReportFilters } from '@/modules/reporting/filters';
 import { businessToday } from '@/modules/reporting/period';
 import { ProfitWorkspace } from '@/modules/profitability/ui/profit-workspace';
 
-export const metadata = { title: 'Profit' };
+export const metadata = { title: 'Profits' };
 export const dynamic = 'force-dynamic';
 
 function messageFor(error: unknown): string {
-  const message = error instanceof Error ? error.message : '';
-  if (/forbidden|permission|not allowed|denied/i.test(message))
+  if (isAccessRefusal(error))
     return 'You do not have access to profit figures for these stations. Ask the owner to give you access to reports.';
   return 'Something went wrong while adding up the figures. Nothing has been changed. Try again in a moment.';
 }
@@ -26,7 +26,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
     <ServerDataPage
       pathname="/profitability"
       search={search}
-      shell={{ pageSubtitle: 'How much money the business made' }}
+      shell={{ pageSubtitle: 'How much money the business made, by day and by month' }}
       fallback={
         <ContextRequiredState
           title="Choose a work context"
@@ -50,7 +50,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
           });
           return { ...base, report };
         } catch (error) {
-          return { ...base, error: messageFor(error) };
+          return { ...base, error: messageFor(error), restricted: isAccessRefusal(error) };
         }
       }}
       render={(data) =>

@@ -1,12 +1,15 @@
+import { quantityUnitLabel } from '../../../design-system/formatters';
 import 'server-only';
 
 import { sql, type SQL } from 'drizzle-orm';
 import { readCanonicalRevenue, readRestatedCogs } from '../../profitability/query';
+import { approvedReconciliations, readRecurringCostDays } from '../queries';
 import { TABLE_REPORT_ROW_LIMIT } from './definitions';
 import type { TableReportReader } from './read';
 import { equalsClause, reconciliationNarrowing } from './read-extra';
 import { buildStationDailyRows, type DailyReportExpense } from './station-daily-report';
 import { stockVarianceRow, tankWithoutDipRow } from './stock-variance';
+import { productOrderSql } from '../../../platform/domain/product-order-sql';
 
 const limit = sql.raw(String(TABLE_REPORT_ROW_LIMIT + 1));
 
@@ -28,13 +31,14 @@ export const readSalesByPeriod: TableReportReader = async (transaction, filters)
     month: string;
     station: string;
     product: string;
+    unit: string;
     litres: string;
     sales: string;
   }>(sql`
     select bd.business_date::text as date,
       to_char(date_trunc('week', bd.business_date::date), 'YYYY-MM-DD') as week_starting,
       to_char(bd.business_date::date, 'YYYY-MM') as month,
-      st.name as station, p.name as product,
+      st.name as station, p.name as product, p.unit as unit,
       sum(mr.litres_sold)::text as litres, sum(mr.sales_value)::text as sales
     from app.reconciliation_meter_readings mr
     join app.reconciliations r
@@ -52,8 +56,8 @@ export const readSalesByPeriod: TableReportReader = async (transaction, filters)
       ${equalsClause('mr.product_id::text', filters.productId)}
       ${equalsClause('sh.shift_template_id::text', filters.shiftTemplateId)}
       ${reconciliationNarrowing('r', filters)}
-    group by bd.business_date, st.name, p.name
-    order by bd.business_date desc, st.name, p.name
+    group by bd.business_date, st.name, p.name, p.unit, p.display_order, p.kind
+    order by bd.business_date desc, st.name, ${productOrderSql('p')}
     limit ${limit}
   `);
   return rows.map((row) => ({
@@ -62,6 +66,7 @@ export const readSalesByPeriod: TableReportReader = async (transaction, filters)
     month: row.month,
     station: row.station,
     product: row.product,
+    unit: quantityUnitLabel(row.unit),
     litres: row.litres,
     sales: row.sales,
   }));
@@ -73,6 +78,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     station: string;
     tank: string;
     product: string;
+    unit: string;
     physical: string;
     expected: string;
     variance: string;
@@ -80,7 +86,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     red: string | null;
     day_approved: boolean;
   }>(sql`
-    select d.business_date::text as date, s.name as station, t.code as tank, p.name as product,
+    select d.business_date::text as date, s.name as station, t.code as tank, p.name as product, p.unit as unit,
       d.physical_litres::text as physical,
       coalesce(book.expected, 0)::text as expected,
       (d.physical_litres - coalesce(book.expected, 0))::text as variance,
@@ -117,10 +123,11 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     station: string;
     tank: string;
     product: string;
+    unit: string;
     tolerance: string | null;
     red: string | null;
   }>(sql`
-    select s.name as station, t.code as tank, p.name as product,
+    select s.name as station, t.code as tank, p.name as product, p.unit as unit,
       t.acceptable_variance_litres::text as tolerance, t.variance_red_litres::text as red
     from app.tanks t
     join app.stations s on s.tenant_id = t.tenant_id and s.id = t.station_id
@@ -141,6 +148,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
         station: row.station,
         tank: row.tank,
         product: row.product,
+        unit: row.unit,
         physical: row.physical,
         expected: row.expected,
         variance: row.variance,
@@ -170,10 +178,11 @@ export const readStationDailyReport: TableReportReader = async (transaction, fil
     business_date: string;
     classification: DailyReportExpense['classification'];
     description: string | null;
+    template_id: string | null;
     amount: string;
   }>(sql`
     select m.station_id, s.name as station, m.recognition_date::text as business_date,
-      m.classification, coalesce(e.description, t.name) as description,
+      m.classification, coalesce(e.description, t.name) as description, t.id::text as template_id,
       coalesce(sum(case when m.movement_type = 'REVERSAL' then -m.amount else m.amount end), 0)::text as amount
     from app.expense_recognition_movements m
     join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
@@ -187,11 +196,27 @@ export const readStationDailyReport: TableReportReader = async (transaction, fil
       and m.recognition_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause('m', filters.stationIds)}
     group by m.station_id, s.name, m.recognition_date, m.classification, e.description, t.name,
-      m.source_type, m.source_id
+      t.id, m.source_type, m.source_id
     limit ${limit}
   `);
   const stationNames = new Map(expenseRows.map((row) => [row.station_id, row.station]));
-  const salesStationIds = [...new Set(revenue.sales.map((sale) => sale.stationId))];
+  // Recurring costs follow the same daily allocation as every other screen (B6), so a month nobody
+  // has "added" still counts, and a recorded month is not counted twice.
+  const recurring = await readRecurringCostDays(
+    transaction,
+    filters,
+    new Set(
+      expenseRows
+        .filter((row) => row.template_id)
+        .map((row) => `${row.station_id}:${row.business_date}:${row.template_id}`),
+    ),
+  );
+  const salesStationIds = [
+    ...new Set([
+      ...revenue.sales.map((sale) => sale.stationId),
+      ...recurring.map((day) => day.stationId),
+    ]),
+  ];
   const missing = salesStationIds.filter((id) => !stationNames.has(id));
   if (missing.length > 0) {
     const names = await transaction.execute<{ id: string; name: string }>(sql`
@@ -204,17 +229,47 @@ export const readStationDailyReport: TableReportReader = async (transaction, fil
     `);
     for (const row of names) stationNames.set(row.id, row.name);
   }
+  const fuelBenefitRows = await transaction.execute<{
+    station_id: string;
+    business_date: string;
+    amount: string;
+  }>(sql`
+    with approved as (${approvedReconciliations(filters)})
+    select a.station_id, a.business_date, coalesce(sum(p.amount), 0)::text as amount
+    from approved a
+    join app.reconciliation_payments p
+      on p.tenant_id = ${filters.tenantId}
+     and p.station_id = a.station_id
+     and p.reconciliation_id = a.reconciliation_id
+    where p.method = 'STAFF_OR_MANAGEMENT_FUEL'
+    group by a.station_id, a.business_date
+  `);
   return buildStationDailyRows({
     stationNames,
+    fuelBenefits: fuelBenefitRows.map((row) => ({
+      stationId: row.station_id,
+      businessDate: row.business_date,
+      amount: row.amount,
+    })),
     sales: revenue.sales,
     costs: cogs.sales,
-    expenses: expenseRows.map((row) => ({
-      stationId: row.station_id,
-      stationName: row.station,
-      businessDate: row.business_date,
-      classification: row.classification,
-      amount: row.amount,
-      description: row.description,
-    })),
+    expenses: [
+      ...expenseRows.map((row) => ({
+        stationId: row.station_id,
+        stationName: row.station,
+        businessDate: row.business_date,
+        classification: row.classification,
+        amount: row.amount,
+        description: row.description,
+      })),
+      ...recurring.map((day) => ({
+        stationId: day.stationId,
+        stationName: stationNames.get(day.stationId) ?? 'Unknown station',
+        businessDate: day.businessDate,
+        classification: 'FIXED_COST' as const,
+        amount: day.amount,
+        description: `${day.name} (daily allocation)`,
+      })),
+    ],
   });
 };

@@ -2,7 +2,18 @@ export type RecordData = {
   state: string;
   version: number;
   approvalBlocked?: boolean;
+  /** Who submitted the day and when; null until it has been submitted, or when the name is not known. */
+  submitter?: { name: string; submittedAt: string | null } | null;
+  /** What this person may do on a submitted reconciliation; absent means not known. */
+  canApprove?: boolean;
+  canReturn?: boolean;
+  /** Whether this person is an administrator who may correct a recorded opening reading. */
+  canCorrectOpening?: boolean;
   requiresApproverNote?: boolean;
+  /** Fuels sold in this report whose stock has no known cost, so profit for the day is incomplete. */
+  unvaluedFuels?: string[];
+  /** The tank and fuel behind each missing cost, so the cost can be entered from the screen. */
+  unvaluedStreams?: Array<{ name: string; tankId: string; productId: string }>;
   approvalNote: string | null;
   business_date: string;
   /** Customer accounts that may be charged at this station, with what they may still spend. */
@@ -46,6 +57,7 @@ export type RecordData = {
   deliveries: Array<{
     deliveryId: string;
     deliveryNoteNumber: string;
+    productId?: string;
     actualQuantityLitres: string;
   }>;
   dips: Array<{
@@ -61,12 +73,16 @@ export type RecordData = {
     code: string;
     productId: string;
     productName: string;
+    /** How this fuel is measured, so figures read "kg" for gas and "L" for petrol. */
+    unit?: 'LITRES' | 'KILOGRAMS';
     capacityLitres: string;
     toleranceLitres: string | null;
     /** The red limit; empty means twice the yellow one. */
     redLitres?: string | null;
     /** Dipstick readings in millimetres can be turned into litres. */
     hasMillimetreChart: boolean;
+    /** Litres the books say are in the tank at the end of the day; null when it cannot be told. */
+    expectedLitres?: string | null;
   }>;
   cash: {
     countedCash: string;

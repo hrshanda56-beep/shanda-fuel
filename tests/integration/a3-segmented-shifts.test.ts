@@ -588,6 +588,27 @@ describe('A3 shift templates and multi-segment shifts through production command
     expect(handover.status).toBe(200);
 
     const finalCloseBoundaryId = randomUUID();
+    // Someone who is not an attendant at this station cannot be named, and the refused command
+    // changes nothing.
+    const notAnAttendant = await postCommand(
+      {
+        commandType: 'ConfirmBoundary',
+        tenantId: ids.tenant,
+        stationId: ids.stationHandover,
+        boundaryId: randomUUID(),
+        nozzleId: ids.nozzleHandover,
+        meterInstallationId: ids.installationHandover,
+        businessDayId,
+        shiftId,
+        responsibleAttendantId: randomUUID(),
+        reason: 'SHIFT_CLOSE',
+        readingStatus: 'AVAILABLE',
+        readingValue: '5900.000',
+        expectedVersion: 2,
+      },
+      `a3c-handover-not-an-attendant-${shiftId}`,
+    );
+    expect(notAnAttendant.status).toBe(403);
     const finalClose = await postCommand(
       {
         commandType: 'ConfirmBoundary',

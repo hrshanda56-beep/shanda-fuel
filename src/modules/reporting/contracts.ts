@@ -77,6 +77,8 @@ export type ReportDateBasis = {
 
 export type ReportMoney = string;
 export type ReportLitres = string;
+/** The unit a quantity is measured in; MIXED on a total of fuels measured differently. */
+export type ReportUnit = 'LITRES' | 'KILOGRAMS' | 'MIXED';
 export type ReportExpenseClassification = 'OPERATING' | 'FIXED_COST' | 'DIRECT_INVENTORY_COST';
 
 export type ReportStation = Readonly<{
@@ -98,15 +100,36 @@ export type SalesBreakdownRow = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  /** Ordering only: see platform/domain/product-order.ts. */
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
   litres: ReportLitres;
+  unit?: 'LITRES' | 'KILOGRAMS';
   salesValue: ReportMoney;
   averageRealizedPrice: ReportMoney | null;
   variance: ReportMoney;
   reconciliationIds: readonly string[];
 }>;
 
+export type CashCustody = Readonly<{
+  /** In a station till or safe. */
+  atStation: ReportMoney;
+  /** Handed to a collector and on its way. */
+  withCollector: ReportMoney;
+  /** In a collector or management location, not yet taken to the bank. */
+  heldByManagement: ReportMoney;
+  /** Deposited at the bank and waiting for the bank to confirm. */
+  awaitingBank: ReportMoney;
+  /** Confirmed by the bank. */
+  banked: ReportMoney;
+  /** All cash collected up to the end date. */
+  total: ReportMoney;
+}>;
+
 export type CashPosition = Readonly<{
   cashEvidence: ReportMoney;
+  /** Cash paid out of the till for expenses, taken off what is expected to be handed over. */
+  cashPaidExpenses: ReportMoney;
   collected: ReportMoney;
   awaitingCollection: ReportMoney;
   /** Amount placed into a bank deposit, including deposits awaiting confirmation. */
@@ -119,6 +142,11 @@ export type CashPosition = Readonly<{
   heldByManagement?: ReportMoney;
   /** Deposited cash whose bank confirmation is still outstanding. */
   inTransit?: ReportMoney;
+  /**
+   * Where all the cash collected up to the end date is, as at that date and whatever start date
+   * was chosen. Each amount is in exactly one place, so the five places add up to `total`.
+   */
+  custody?: CashCustody;
   cashVariance: ReportMoney;
   collectionIds: readonly string[];
   depositIds: readonly string[];
@@ -169,6 +197,7 @@ export type CustomerCreditActivityRow = Readonly<{
   accountType: string;
   drawnAmount: ReportMoney;
   drawnLitres: ReportLitres;
+  unit?: ReportUnit;
   authorizationCount: number;
 }>;
 
@@ -181,6 +210,7 @@ export type CustomerExposure = Readonly<{
   prepaidValueBalance: ReportMoney | null;
   reservedAmount: ReportMoney | null;
   reservedLitres: ReportLitres | null;
+  reservedUnit?: ReportUnit;
   rows: readonly {
     customerId: string;
     accountReference: string;
@@ -189,10 +219,12 @@ export type CustomerExposure = Readonly<{
     prepaidValueBalance: ReportMoney;
     reservedAmount: ReportMoney;
     reservedLitres: ReportLitres;
+    reservedUnit?: ReportUnit;
   }[];
 }>;
 
 export type InventoryPosition = Readonly<{
+  unit?: ReportUnit;
   expectedLitres: ReportLitres;
   physicalLitres: ReportLitres | null;
   varianceLitres: ReportLitres | null;
@@ -205,13 +237,18 @@ export type InventoryPosition = Readonly<{
     productId: string;
     productCode: string;
     productName: string;
+    unit?: 'LITRES' | 'KILOGRAMS';
     capacityLitres: ReportLitres;
     reorderLevelLitres: ReportLitres | null;
     acceptableVarianceLitres: ReportLitres | null;
     varianceRedLitres?: ReportLitres | null;
     expectedLitres: ReportLitres;
     physicalLitres: ReportLitres | null;
+    /** Business date of the dip behind `physicalLitres`. */
+    physicalDate?: string | null;
     varianceLitres: ReportLitres | null;
+    /** Business date of the latest dip behind `physicalLitres`; null when there is none. */
+    lastDipDate: string | null;
     deliveryLitres: ReportLitres;
     deliveryValue: ReportMoney;
     movementIds: readonly string[];
@@ -240,6 +277,7 @@ export type OwnerPosition = Readonly<{
   stockByStation?: readonly Readonly<{
     stationName: string;
     productName: string;
+    unit?: 'LITRES' | 'KILOGRAMS';
     litres: ReportLitres;
     value: ReportMoney | null;
   }>[];
@@ -268,10 +306,13 @@ export type ManagementReport = Readonly<{
   stations: readonly ReportStation[];
   sales: Readonly<{
     litresSold: ReportLitres;
+    unit?: ReportUnit;
     salesValue: ReportMoney;
     approvedReconciliationCount: number;
     salesVariance: ReportMoney;
     payments: readonly SalesPaymentRow[];
+    /** Staff and management fuel at selling price, on the business day it was issued. */
+    staffFuelByDate: readonly Readonly<{ businessDate: string; amount: ReportMoney }>[];
     rows: readonly SalesBreakdownRow[];
     reconciliationIds: readonly string[];
   }>;
@@ -316,6 +357,8 @@ export type DailyOperationsRow = Readonly<{
   stationId: string;
   stationCode: string;
   litresSold: ReportLitres;
+  /** The unit of the fuel sold that day; MIXED when litres and kilograms were both sold. */
+  unit?: ReportUnit;
   salesValue: ReportMoney;
   paymentBreakdown: readonly SalesPaymentRow[];
   cashDeclared: ReportMoney;

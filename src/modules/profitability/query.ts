@@ -23,6 +23,8 @@ type RestatedCogsRow = {
   product_id: string;
   product_code: string;
   product_name: string;
+  product_kind: string | null;
+  product_display_order: number | null;
   reconciliation_id: string;
   revision_id: string;
   meter_segment_id: string;
@@ -88,6 +90,8 @@ function mapSale(row: RestatedCogsRow): RestatedSaleCogs {
     productId: row.product_id,
     productCode: row.product_code,
     productName: row.product_name,
+    productKind: row.product_kind,
+    productDisplayOrder: row.product_display_order,
     reconciliationId: row.reconciliation_id,
     revisionId: row.revision_id,
     meterSegmentId: row.meter_segment_id,
@@ -179,6 +183,8 @@ export async function readRestatedCogs(
       movement.product_id,
       product.code as product_code,
       product.name as product_name,
+      product.kind as product_kind,
+      product.display_order as product_display_order,
       latest.reconciliation_id,
       latest.revision_id,
       segment.id as meter_segment_id,
@@ -265,6 +271,9 @@ type CanonicalRevenueRow = {
   product_id: string;
   product_code: string;
   product_name: string;
+  product_kind: string | null;
+  product_display_order: number | null;
+  product_unit?: string;
   reconciliation_id: string;
   revision_id: string;
   meter_segment_id: string;
@@ -306,6 +315,9 @@ export async function readCanonicalRevenue(
       revenue.product_id,
       product.code as product_code,
       product.name as product_name,
+      product.kind as product_kind,
+      product.display_order as product_display_order,
+      product.unit as product_unit,
       revenue.reconciliation_id,
       revenue.reconciliation_revision_id as revision_id,
       revenue.meter_segment_id,
@@ -335,6 +347,9 @@ export async function readCanonicalRevenue(
     productId: row.product_id,
     productCode: row.product_code,
     productName: row.product_name,
+    productKind: row.product_kind,
+    productDisplayOrder: row.product_display_order,
+    productUnit: row.product_unit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES',
     reconciliationId: row.reconciliation_id,
     revisionId: row.revision_id,
     meterSegmentId: row.meter_segment_id,

@@ -1,4 +1,9 @@
-import { formatLitres, formatUsd } from '../../design-system/formatters';
+import {
+  formatBusinessDate,
+  formatQuantity,
+  formatUsd,
+  type QuantityUnit,
+} from '../../design-system/formatters';
 import { ExactDecimal } from '../../platform/domain/primitives';
 import { paymentNeedsProofFlag } from '../creditors/payment-proof';
 import type { CustomerOverLimitFact, CustomerOverdueFact } from '../customers/alert-facts';
@@ -56,6 +61,7 @@ export type ExtraAlertFacts = Readonly<{
         soldPrice: string;
         approvedPrice: string;
         litres: string;
+        unit?: QuantityUnit;
       }[]
     | null;
   shortDeliveries:
@@ -65,11 +71,19 @@ export type ExtraAlertFacts = Readonly<{
         product: string;
         deliveryNote: string;
         shortLitres: string;
+        unit?: QuantityUnit;
       }[]
     | null;
   /** Book stock below zero. This is flagged rather than blocking late-dated entries. */
   negativeStock?:
-    readonly { tankId: string; tankCode: string; product: string; litres: string }[] | null;
+    | readonly {
+        tankId: string;
+        tankCode: string;
+        product: string;
+        litres: string;
+        unit?: QuantityUnit;
+      }[]
+    | null;
   /** Count of changes to approved records in the look-back window. Null when not permitted. */
   approvedInformationChanges: number | null;
   /**
@@ -96,6 +110,7 @@ export type ExtraAlertFacts = Readonly<{
     | readonly {
         shiftId: string;
         kind: 'OPENING' | 'CLOSING';
+        businessDate: string;
         tankCodes: readonly string[];
       }[]
     | null;
@@ -148,8 +163,8 @@ export function buildExtraAlerts(
     const oldest = [...old].map((row) => row.businessDate).sort()[0]!;
     out.push({
       id: 'cash-unbanked-old',
-      title: `${formatUsd(total.toString())} has been unbanked for ${settings.unbankedCashDays} days or more`,
-      detail: `The oldest cash is from ${oldest}. Bank it and record the deposit.`,
+      title: `${formatUsd(total.toString())} of cash collected ${settings.unbankedCashDays} or more days ago is not yet confirmed by the bank`,
+      detail: `The oldest cash is from ${formatBusinessDate(oldest)}. This includes deposits still waiting for bank confirmation. Bank any cash not yet deposited and confirm the rest.`,
       href: `${stationPath}/cash`,
       tone: 'attention',
     });
@@ -161,7 +176,7 @@ export function buildExtraAlerts(
     .slice(0, 3)) {
     out.push({
       id: `expense-high-${row.id}`,
-      title: `A ${formatUsd(row.amount)} expense was recorded on ${row.expenseDate}`,
+      title: `A ${formatUsd(row.amount)} expense was recorded on ${formatBusinessDate(row.expenseDate)}`,
       detail: `${row.description}. Expenses of ${formatUsd(settings.highExpenseAmount)} or more are flagged for a look.`,
       href: '/expenses',
       tone: 'attention',
@@ -174,8 +189,8 @@ export function buildExtraAlerts(
   for (const row of belowPrice.slice(0, 3)) {
     out.push({
       id: `sale-below-price-${row.businessDate}-${row.product}`,
-      title: `${row.product} was sold below the approved price on ${row.businessDate}`,
-      detail: `Sold at ${formatUsd(row.soldPrice)} a litre; the approved price is ${formatUsd(row.approvedPrice)}.`,
+      title: `${row.product} was sold below the approved price on ${formatBusinessDate(row.businessDate)}`,
+      detail: `Sold at ${formatUsd(row.soldPrice)} a ${row.unit === 'KILOGRAMS' ? 'kilogram' : 'litre'}; the approved price is ${formatUsd(row.approvedPrice)}.`,
       href: `${stationPath}/reconciliations`,
       tone: 'attention',
     });
@@ -196,8 +211,8 @@ export function buildExtraAlerts(
     .slice(0, 3)) {
     out.push({
       id: `delivery-short-${row.id}`,
-      title: `${row.product} delivery ${row.deliveryNote} was ${formatLitres(row.shortLitres)} short`,
-      detail: `Received on ${row.businessDate}. Less fuel arrived than the delivery note says.`,
+      title: `${row.product} delivery ${row.deliveryNote} was ${formatQuantity(row.shortLitres, row.unit)} short`,
+      detail: `Received on ${formatBusinessDate(row.businessDate)}. Less fuel arrived than the delivery note says.`,
       href: '/inventory',
       tone: 'attention',
     });
@@ -207,7 +222,7 @@ export function buildExtraAlerts(
     out.push({
       id: `negative-stock-${row.tankId}`,
       title: `Negative stock in ${row.tankCode} · ${row.product}`,
-      detail: `Books are ${formatLitres(row.litres)} below zero. Check the opening balance, deliveries and sales before relying on this tank total.`,
+      detail: `Books are ${formatQuantity(row.litres, row.unit)} below zero. Check the opening balance, deliveries and sales before relying on this tank total.`,
       href: '/inventory',
       tone: 'attention',
     });
@@ -229,7 +244,7 @@ export function buildExtraAlerts(
     out.push({
       id: `supplier-payment-no-proof-${row.id}`,
       title: `${formatUsd(row.amount)} paid to ${row.supplierName} has no proof of payment`,
-      detail: `Payment ${row.reference} on ${row.paymentDate}. Payments of US$1,000 or more should have proof attached.`,
+      detail: `Payment ${row.reference} on ${formatBusinessDate(row.paymentDate)}. Payments of US$1,000 or more should have proof attached.`,
       href: `/suppliers/${encodeURIComponent(row.supplierId)}/payments`,
       tone: 'attention',
     });
@@ -251,11 +266,11 @@ export function buildExtraAlerts(
       id: `dip-reminder-${reminder.kind.toLowerCase()}-${reminder.shiftId}`,
       title:
         reminder.kind === 'OPENING'
-          ? `Take the opening dip reading on ${tanks}`
-          : `Take the closing dip reading on ${tanks} before the shift ends`,
+          ? `Take the opening dip reading on ${tanks} for ${formatBusinessDate(reminder.businessDate)}`
+          : `Take the closing dip reading on ${tanks} before the ${formatBusinessDate(reminder.businessDate)} shift ends`,
       detail:
         reminder.kind === 'OPENING'
-          ? `The shift has started and ${many ? 'these tanks have' : 'this tank has'} no dip reading yet.`
+          ? `${many ? 'These tanks have' : 'This tank has'} no opening dip reading for this shift yet.`
           : `The shift ends within 30 minutes (or already has) and ${many ? 'these tanks have' : 'this tank has'} no closing dip reading.`,
       href: '/inventory',
       tone: 'attention',
@@ -270,7 +285,7 @@ export function buildExtraAlerts(
   for (const row of overdue.slice(0, 3)) {
     out.push({
       id: `customer-overdue-${row.accountId}`,
-      title: `${row.customerName} owes ${formatUsd(row.owed)}, unpaid since ${row.oldestUnpaidDate}`,
+      title: `${row.customerName} owes ${formatUsd(row.owed)}, unpaid since ${formatBusinessDate(row.oldestUnpaidDate)}`,
       detail: `The oldest unpaid charge is ${daysBetween(row.oldestUnpaidDate, facts.today)} days old and this customer has ${row.creditDays ?? settings.customerOverdueDays} days to pay. Payments clear the oldest charge first.`,
       href: `/customers/${encodeURIComponent(row.customerId)}`,
       tone: 'attention',

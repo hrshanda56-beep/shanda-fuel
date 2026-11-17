@@ -14,6 +14,7 @@ import '@/design-system/styles/approved-ui.css';
 import '@/design-system/styles/my-shift.css';
 import '@/design-system/styles/feedback.css';
 import '@/design-system/styles/patterns.css';
+import '@/design-system/styles/section-card.css';
 
 import { FeedbackProvider } from '@/design-system/feedback-provider';
 import { shellInitScript } from '@/design-system/shell-preferences';

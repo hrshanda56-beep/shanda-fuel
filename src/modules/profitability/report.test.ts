@@ -187,3 +187,24 @@ describe('buildProfitabilityReport', () => {
     });
   });
 });
+
+describe('buildFuelProfitRows order', () => {
+  it('lists Diesel, then Petrol, then Gas, and falls back to name for unknown kinds', () => {
+    const sale = (id: string, name: string, kind: string | null, n: number) => ({
+      ...rev('1.00', n),
+      productId: id,
+      productName: name,
+      productKind: kind,
+    });
+    const rows = buildFuelProfitRows(
+      [
+        sale('00000000-0000-4000-8000-000000000003', 'Gas', 'GAS', 1),
+        sale('00000000-0000-4000-8000-000000000004', 'Aardvark', null, 2),
+        sale('00000000-0000-4000-8000-000000000002', 'Petrol', 'PETROL', 3),
+        sale('00000000-0000-4000-8000-000000000001', 'Zed Diesel', 'DIESEL', 4),
+      ],
+      [],
+    );
+    expect(rows.map((row) => row.productName)).toEqual(['Zed Diesel', 'Petrol', 'Gas', 'Aardvark']);
+  });
+});

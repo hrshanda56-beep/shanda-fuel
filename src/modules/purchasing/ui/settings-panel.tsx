@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Modal } from '@/design-system/modal';
 import { Select } from '@/design-system/forms';
 import { Icon } from '@/design-system/icons';
+import { InfoTip } from '@/design-system/info-tip';
 import {
   Button,
   Card,
@@ -83,11 +84,6 @@ export function SettingsPanel({
 
   return (
     <div className={styles.stack}>
-      <p className={styles.intro}>
-        These settings decide how closely a supplier&apos;s invoice has to match what you ordered
-        and received, and how VAT is treated. Set them once for the whole company, then give a
-        supplier its own settings only if it needs different rules.
-      </p>
       {notice ? <SuccessState title="Saved" message={notice} /> : null}
       {loading ? <LoadingState label="Loading settings" /> : null}
       {error ? (
@@ -99,9 +95,14 @@ export function SettingsPanel({
 
       {data && r && !loading && !error ? (
         <>
-          <Card as="section" className="panel" aria-labelledby="po-company-settings">
+          <Card as="section" className="panel profit-panel" aria-labelledby="po-company-settings">
             <div className={styles.toolbar}>
-              <h3 id="po-company-settings">For the whole company</h3>
+              <span className="heading-with-tip">
+                <h2 id="po-company-settings" className="profit-title">
+                  For The Whole Company
+                </h2>
+                <InfoTip text="These settings decide how closely a supplier's invoice has to match what you ordered and received, and how VAT is treated. Set them once for the whole company, then give a supplier its own settings only if it needs different rules." />
+              </span>
               {capabilities.manageSettings ? (
                 <Button
                   className={styles.toolbarEnd}
@@ -118,54 +119,48 @@ export function SettingsPanel({
                 added. Choose Set up to say how much difference is acceptable.
               </p>
             ) : null}
-            <div className={styles.settingsGrid}>
-              <div className={styles.settingBlock}>
-                <h4>Litres on the invoice compared with litres received</h4>
-                <p>
-                  {litresAllowanceSentence(r.quantityToleranceLitres, r.quantityTolerancePercent)}
-                </p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>Litres received compared with the delivery note</h4>
-                <p>
-                  {litresAllowanceSentence(
+            <dl className={styles.settingsList}>
+              {[
+                [
+                  'Invoice quantity vs quantity received',
+                  litresAllowanceSentence(r.quantityToleranceLitres, r.quantityTolerancePercent),
+                ],
+                [
+                  'Quantity received vs delivery note',
+                  litresAllowanceSentence(
                     r.overReceiptToleranceLitres,
                     r.overReceiptTolerancePercent,
-                  )}
-                </p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>Invoice price compared with the agreed price</h4>
-                <p>{percentAllowanceSentence(r.priceTolerancePercent)}</p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>Invoice total compared with what we expect</h4>
-                <p>{amountAllowanceSentence(r.amountTolerance)}</p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>If a difference is bigger than allowed</h4>
-                <p>{toleranceActionText(r.toleranceAction)}</p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>VAT</h4>
-                <p>{vatModeText(r.vatMode, r.defaultVatRate)}</p>
-              </div>
-              <div className={styles.settingBlock}>
-                <h4>Invoice lines</h4>
-                <p>
-                  {r.requireInvoiceLines
-                    ? 'Each invoice must list the fuel it is for'
-                    : 'Invoices can be entered as a single total'}
-                </p>
-              </div>
-            </div>
+                  ),
+                ],
+                [
+                  'Invoice price vs agreed price',
+                  percentAllowanceSentence(r.priceTolerancePercent),
+                ],
+                ['Invoice total vs expected', amountAllowanceSentence(r.amountTolerance)],
+                ['When a difference is too big', toleranceActionText(r.toleranceAction)],
+                ['VAT', vatModeText(r.vatMode, r.defaultVatRate)],
+                [
+                  'Invoice lines',
+                  r.requireInvoiceLines
+                    ? 'Each invoice lists the fuel it is for'
+                    : 'A single total is fine',
+                ],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
           </Card>
 
-          <Card as="section" className="panel" aria-labelledby="po-supplier-settings">
-            <h3 id="po-supplier-settings">Suppliers with different rules</h3>
-            <p className={styles.muted}>
-              Every supplier follows the company settings unless you give it its own.
-            </p>
+          <Card as="section" className="panel profit-panel" aria-labelledby="po-supplier-settings">
+            <span className="heading-with-tip">
+              <h2 id="po-supplier-settings" className="profit-title">
+                Suppliers With Different Rules
+              </h2>
+              <InfoTip text="Every supplier follows the company settings unless you give it its own." />
+            </span>
             {suppliers.length === 0 ? (
               <EmptyState
                 title="No suppliers yet"
@@ -363,9 +358,13 @@ function PolicyDialog({
     event.preventDefault();
     setError(null);
     const fields: Array<[keyof FormState, string, number]> = [
-      ['quantityToleranceLitres', 'Allowed litres difference on the invoice', 3],
-      ['quantityTolerancePercent', 'Allowed percentage difference on the invoice litres', 4],
-      ['overReceiptToleranceLitres', 'Allowed extra litres compared with the delivery note', 3],
+      ['quantityToleranceLitres', 'Allowed quantity difference on the invoice (litres or kg)', 3],
+      ['quantityTolerancePercent', 'Allowed percentage difference on the invoice quantity', 4],
+      [
+        'overReceiptToleranceLitres',
+        'Allowed extra quantity compared with the delivery note (litres or kg)',
+        3,
+      ],
       ['overReceiptTolerancePercent', 'Allowed extra percentage compared with the note', 4],
       ['priceTolerancePercent', 'Allowed price difference', 4],
       ['amountTolerance', 'Allowed invoice total difference', 4],
@@ -454,7 +453,7 @@ function PolicyDialog({
               <div className={styles.pair}>
                 <Field
                   id="pp-qty-l"
-                  label="Litres on the invoice vs litres received (litres)"
+                  label="Quantity on the invoice vs quantity received (litres or kg)"
                   optional
                 >
                   <input
@@ -474,7 +473,7 @@ function PolicyDialog({
                 </Field>
                 <Field
                   id="pp-over-l"
-                  label="Extra litres received vs delivery note (litres)"
+                  label="Extra quantity received vs delivery note (litres or kg)"
                   optional
                 >
                   <input
@@ -563,7 +562,7 @@ function PolicyDialog({
                   companyView.quantityToleranceLitres,
                   companyView.quantityTolerancePercent,
                 ).toLowerCase()}{' '}
-                on invoice litres,{' '}
+                on invoice quantity,{' '}
                 {percentAllowanceSentence(companyView.priceTolerancePercent).toLowerCase()} on
                 price.
               </p>

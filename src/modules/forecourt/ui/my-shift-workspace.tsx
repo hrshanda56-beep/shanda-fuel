@@ -29,6 +29,7 @@ import {
   summariseFigures,
   type AttentionItem,
 } from '../my-shift-summary';
+import { InfoTip } from '@/design-system/info-tip';
 
 type Scope = { tenantId: string; stationId: string };
 
@@ -237,15 +238,15 @@ export function MyShiftWorkspace({
       {view.meters.length > 0 ? (
         <dl className="my-shift-figures" aria-label="Shift progress">
           <Figure
-            label="Completed"
+            label="Done"
             value={figures.completed}
             caption={`of ${figures.total}`}
             icon="check-circle"
             tone="done"
           />
-          <Figure label="Pending" value={figures.pending} icon="clock" tone="pending" />
+          <Figure label="To do later" value={figures.pending} icon="clock" tone="pending" />
           <Figure
-            label="Due now"
+            label="Do now"
             value={figures.due}
             icon="alert"
             tone="due"
@@ -492,8 +493,7 @@ function Step({ title, step }: { title: string; step: MeterView['opening'] }) {
       <dd>
         {step.value ? <span className="my-shift-value numeric">{step.value}</span> : null}
         <StatusBadge tone={STEP_TONE[step.state]}>
-          {step.state === 'done' ? '✓ ' : ''}
-          {step.text}
+          {step.state === 'done' ? '✓' : step.text}
         </StatusBadge>
       </dd>
     </div>
@@ -522,6 +522,7 @@ function CaptureForm({
   const [error, setError] = useState<string>();
   const [noteError, setNoteError] = useState<string>();
   const [pending, setPending] = useState(false);
+  const [different, setDifferent] = useState(false);
   const previous = view.meter.previousReading;
   // A brand-new meter has nothing to inherit; the server requires a stated reason.
   const needsNote = boundary === 'SHIFT_OPEN' && previous === null;
@@ -529,7 +530,7 @@ function CaptureForm({
 
   useEffect(() => {
     document.getElementById(`${id}-reading`)?.focus();
-  }, [id]);
+  }, [id, different]);
 
   async function handle(event: React.FormEvent) {
     event.preventDefault();
@@ -547,6 +548,67 @@ function CaptureForm({
     const failure = await onSubmit(boundary, checked.value, needsNote ? trimmed : '');
     setPending(false);
     if (failure) setError(failure);
+  }
+
+  async function acceptPrevious() {
+    if (pending || !previous) return;
+    setPending(true);
+    setError(undefined);
+    const failure = await onSubmit(boundary, previous, '');
+    setPending(false);
+    if (failure) setError(failure);
+  }
+
+  // The usual handover: the meter still shows where the last shift left it, so one tap confirms it.
+  if (isOpening && previous && !different) {
+    return (
+      <div className="my-shift-form" role="group" aria-label={`Opening reading for ${view.label}`}>
+        <InfoTip>
+          The last shift left {view.label} at{' '}
+          <strong>
+            {previous} {view.meter.unit === 'KILOGRAMS' ? 'kg' : 'L'}
+          </strong>
+          . Look at the meter.
+        </InfoTip>
+        {error ? (
+          <p className="field-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <div className="my-shift-form-actions">
+          <Button
+            type="button"
+            variant="primary"
+            size="lg"
+            block
+            loading={pending}
+            onClick={() => void acceptPrevious()}
+          >
+            {pending ? 'Saving…' : `Yes, the meter shows ${previous}`}
+          </Button>
+          <Button
+            type="button"
+            variant="quiet"
+            size="lg"
+            block
+            onClick={() => setDifferent(true)}
+            disabled={pending}
+          >
+            The meter shows a different number
+          </Button>
+          <Button
+            type="button"
+            variant="quiet"
+            size="lg"
+            block
+            onClick={onCancel}
+            disabled={pending}
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -572,7 +634,7 @@ function CaptureForm({
           setError(undefined);
         }}
         error={error}
-        unit="L"
+        unit={view.meter.unit === 'KILOGRAMS' ? 'kg' : 'L'}
         autoComplete="off"
         required
         disabled={pending}
@@ -605,9 +667,7 @@ function CaptureForm({
           Cancel
         </Button>
       </div>
-      <p className="my-shift-form-help">
-        Cannot read the meter? Do not guess. Tell your supervisor.
-      </p>
+      <InfoTip>Cannot read the meter? Do not guess. Tell your supervisor.</InfoTip>
     </form>
   );
 }

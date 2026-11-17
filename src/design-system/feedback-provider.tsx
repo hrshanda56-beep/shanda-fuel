@@ -72,6 +72,10 @@ export function useConfirm() {
   return useFeedback().confirm;
 }
 
+/** A page that reloads right after a save would wipe its toast, so it is carried over. */
+const CARRIED_TOASTS_KEY = 'shanda-fuel:carried-toasts';
+const CARRIED_TOAST_MAX_AGE_MS = 10000;
+
 /** Wait this long before showing anything, so quick changes do not flicker. */
 const SHOW_AFTER_MS = 150;
 /** After this long, say so out loud. */
@@ -92,12 +96,31 @@ function isTrackedRequest(input: RequestInfo | URL, init?: RequestInit): boolean
     const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw, window.location.href);
     // Clerk's session polling is background noise, not something the person asked for.
-    if (url.origin !== window.location.origin || url.pathname.startsWith('/api/clerk'))
+    // Next's own development tooling (error overlay lookups) is not a save either.
+    if (
+      url.origin !== window.location.origin ||
+      url.pathname.startsWith('/api/clerk') ||
+      url.pathname.startsWith('/__nextjs')
+    )
       return false;
     return !isPrefetch(input, init);
   } catch {
     return false;
   }
+}
+
+/**
+ * A screen that explains its own failures in plain words (a banner with a button) sets this
+ * header on its request, so the corner pop-up does not repeat the server's raw wording.
+ */
+export const OWN_ERRORS_HEADER = 'x-handles-own-errors';
+
+export function wantsOwnErrors(input: RequestInfo | URL, init?: RequestInit): boolean {
+  const headers = new Headers(
+    init?.headers ??
+      (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined),
+  );
+  return headers.has(OWN_ERRORS_HEADER);
 }
 
 type SaveOutcome = 'saved' | 'rejected' | 'failed';
@@ -184,6 +207,7 @@ function useBusyTracking(
       requests.current += 1;
       sync();
       const savePath = saveRequestPath(input, init);
+      const ownErrors = wantsOwnErrors(input, init);
       try {
         // A command first makes sure the sign-in is fresh, so a tab left idle does not meet a 401.
         const response = savePath
@@ -194,7 +218,7 @@ function useBusyTracking(
               (window as unknown as { Clerk?: ClerkLike }).Clerk,
             )
           : await originalFetch(input, init);
-        if (savePath) {
+        if (savePath && !(!response.ok && ownErrors)) {
           onSaveRef.current(
             response.ok ? 'saved' : response.status >= 500 ? 'failed' : 'rejected',
             savePath,
@@ -203,7 +227,7 @@ function useBusyTracking(
         }
         return response;
       } catch (error) {
-        if (savePath) onSaveRef.current('failed', savePath);
+        if (savePath && !ownErrors) onSaveRef.current('failed', savePath);
         throw error;
       } finally {
         requests.current = Math.max(0, requests.current - 1);
@@ -240,6 +264,10 @@ function useBusyTracking(
   return { busy, slow, endNavigation };
 }
 
+/** Wording meant for engineers; shown raw it means nothing to station staff. */
+const TECHNICAL_WORDING =
+  /sealed meter|meter-close boundary|meter-segment|NOT_OPERATED|nozzle|idempotency|\bRLS\b|violates|constraint|stack trace/i;
+
 /**
  * The words to show for a refused or conflicting command, or null when the screen already
  * handles it: a sign-in or step-up check has its own dialog, and other failures (such as a
@@ -254,7 +282,9 @@ export async function refusalMessage(response: Response): Promise<string | null>
       clerk_error?: unknown;
     };
     if (body.clerk_error || body.error === 'STEP_UP_REQUIRED') return null;
-    return typeof body.message === 'string' && body.message.trim() ? body.message.trim() : null;
+    const message = typeof body.message === 'string' ? body.message.trim() : '';
+    // Safety net: screens map technical wording themselves; never pop it up unmapped.
+    return message && !TECHNICAL_WORDING.test(message) ? message : null;
   } catch {
     return null;
   }
@@ -296,6 +326,38 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     toastRef.current = toast;
+  }, [toast]);
+
+  // Mirror what is on screen so the pagehide handler can carry it across a reload.
+  const visibleToasts = useRef<Array<Toast & { at: number }>>([]);
+  useEffect(() => {
+    visibleToasts.current = toasts.map((item) => ({ ...item, at: Date.now() }));
+  }, [toasts]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(CARRIED_TOASTS_KEY);
+      if (raw) {
+        sessionStorage.removeItem(CARRIED_TOASTS_KEY);
+        const carried = JSON.parse(raw) as Array<{ tone: ToastTone; message: string; at: number }>;
+        for (const item of carried) {
+          if (Date.now() - item.at < CARRIED_TOAST_MAX_AGE_MS) toast(item.tone, item.message);
+        }
+      }
+    } catch {
+      // Storage can be blocked; the toast was a courtesy, not the record.
+    }
+    function carryOver() {
+      try {
+        if (visibleToasts.current.length > 0) {
+          sessionStorage.setItem(CARRIED_TOASTS_KEY, JSON.stringify(visibleToasts.current));
+        }
+      } catch {
+        // Nothing to carry.
+      }
+    }
+    window.addEventListener('pagehide', carryOver);
+    return () => window.removeEventListener('pagehide', carryOver);
   }, [toast]);
 
   const confirm = useCallback(

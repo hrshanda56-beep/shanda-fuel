@@ -133,7 +133,7 @@ async function lookupSubjectNames(
   add(
     'Membership',
     (ids) =>
-      sql`select 'Membership', m.id::text, coalesce(nullif(u.name, ''), u.email) from app.memberships m join app.users u on u.id = m.identity_id where m.tenant_id = ${tenantId} and m.id in (${ids})`,
+      sql`select 'Membership', m.id::text, m.name from app.member_directory(${tenantId}::uuid) m where m.id in (${ids})`,
   );
   add(
     'CustomerAccount',
@@ -199,9 +199,9 @@ async function lookupValueNames(
     union all select id::text, legal_name from app.suppliers where tenant_id = ${tenantId} and id in (${list})
     union all select id::text, display_name from app.customers where tenant_id = ${tenantId} and id in (${list})
     union all select id::text, name from app.bank_accounts where tenant_id = ${tenantId} and id in (${list})
-    union all select m.id::text, coalesce(nullif(u.name, ''), u.email)
-      from app.memberships m join app.users u on u.id = m.identity_id
-      where m.tenant_id = ${tenantId} and m.id in (${list})
+    union all select m.id::text, m.name
+      from app.member_directory(${tenantId}::uuid) m
+      where m.id in (${list})
   `);
   return new Map(rows.filter((row) => row.name).map((row) => [row.id, row.name as string]));
 }
@@ -269,10 +269,9 @@ export async function listAuditEventsFromRequest(
         details: unknown;
       }>(sql`
       select e.id, e.event_code, e.occurred_at,
-             coalesce(nullif(u.name, ''), u.email) as actor_name, e.details
+             m.name as actor_name, e.details
       from platform.security_events e
-      left join app.memberships m on m.tenant_id = e.tenant_id and m.id = e.membership_id
-      left join app.users u on u.id = m.identity_id
+      left join app.member_directory(e.tenant_id) m on m.id = e.membership_id
       where e.tenant_id = ${input.tenantId}
         ${input.area ? sql`and e.event_code like ${`${input.area}.%`}` : sql``}
         ${input.stationId ? sql`and e.details->'metadata'->>'stationId' = ${input.stationId}` : sql``}

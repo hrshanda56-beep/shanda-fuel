@@ -62,6 +62,14 @@ export function validateContextSelection(
     legalEntity = stationMatch.legalEntity;
   }
 
+  // A company with a single legal entity has nothing to choose, so the page does not ask.
+  if (
+    policy.legalEntity === 'required' &&
+    !legalEntity &&
+    organisation.legalEntities.length === 1
+  ) {
+    legalEntity = organisation.legalEntities[0];
+  }
   if (policy.legalEntity === 'required' && !legalEntity) {
     throw invalidContext('legal entity');
   }
@@ -69,6 +77,15 @@ export function validateContextSelection(
     throw invalidContext('all-stations selection');
   }
   if (selection.allStations && !policy.allStationsAllowed) {
+    throw invalidContext('all-stations selection');
+  }
+  // A station-level person has no permissions across all stations, so that view would be empty.
+  const entitiesInScope = legalEntity ? [legalEntity] : organisation.legalEntities;
+  if (
+    selection.allStations &&
+    entitiesInScope.length > 0 &&
+    entitiesInScope.every((entity) => entity.stationsOnly)
+  ) {
     throw invalidContext('all-stations selection');
   }
   if (policy.station === 'required' && !selection.stationId) {
@@ -95,7 +112,9 @@ export function defaultContextSelection(
   const legalEntity = organisation.legalEntities[0];
   if (policy.legalEntity === 'required' && !legalEntity) return null;
 
-  if (policy.allStationsAllowed) {
+  // A station-level person has no permissions across all stations, so starting there
+  // would leave their navigation and page empty. Start on their own station instead.
+  if (policy.allStationsAllowed && !legalEntity?.stationsOnly) {
     return {
       organisationId: organisation.id,
       ...(policy.legalEntity === 'required' && legalEntity

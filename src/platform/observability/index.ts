@@ -146,7 +146,7 @@ function errorType(error: unknown): string {
 }
 
 /** The five-character Postgres error code (such as 53300) buried under a Drizzle wrapper, if any. */
-function sqlState(error: unknown): string | undefined {
+export function sqlState(error: unknown): string | undefined {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
     const code = (current as { code?: unknown }).code;

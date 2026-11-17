@@ -1,3 +1,7 @@
+import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
+
+import { getServerShellAccess } from '@/design-system/navigation-server';
 import { ServerDailyOperations } from '@/modules/forecourt/server-daily';
 import { ServerOperationsOverview } from '@/modules/forecourt/server-overview';
 import { type DailyOperationsContext } from '@/modules/forecourt/ui/daily-operations-workspace';
@@ -18,6 +22,19 @@ export default async function DailyOperationsPage({
   }>;
 }) {
   const search = await searchParams;
+  // Running the day is not finance work: that person goes to the Finance overview instead.
+  const access = await getServerShellAccess(await headers());
+  if (
+    access.status === 'ready' &&
+    access.projection?.some((entry) => entry.key === 'finance-home' && entry.home)
+  ) {
+    const query = new URLSearchParams();
+    for (const key of ['tenantId', 'stationId'] as const) {
+      const value = search[key];
+      if (value) query.set(key, value);
+    }
+    redirect(query.size > 0 ? `/finance?${query}` : '/finance');
+  }
   const hasContext = Boolean(
     search.tenantId && search.stationId && search.businessDayId && search.shiftId,
   );

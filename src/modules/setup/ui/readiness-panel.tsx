@@ -3,13 +3,13 @@
 import {
   AccessDeniedState,
   Button,
-  EmptyState,
   ErrorState,
   LoadingState,
   StatusBadge,
   type StatusTone,
 } from '@/design-system/primitives';
 import { Notice } from '@/design-system/feedback';
+import { CardRow, CardRows, SectionCard } from '@/design-system/section-card';
 import { useState } from 'react';
 
 import type { ReadinessStatus, SetupOverview, StationReadiness } from '../contracts';
@@ -23,9 +23,19 @@ const TONE: Record<ReadinessStatus, StatusTone> = {
   NOT_ENTERED: 'neutral',
 };
 
-function tabHref(tab: string) {
+/**
+ * Where "Fix this" leads. Station setup lives on the Stations section and opens for the station
+ * the item belongs to; payments and staff keep their own sections.
+ */
+function fixHref(tab: string, stationId: string) {
   const params = new URLSearchParams(window.location.search);
-  params.set('tab', tab);
+  if (tab === 'setup') {
+    params.set('tab', 'stations');
+    params.set('setup', stationId);
+  } else {
+    params.set('tab', tab);
+    params.delete('setup');
+  }
   return `/settings?${params.toString()}`;
 }
 
@@ -38,7 +48,6 @@ function StationCard({
   tenantId: string;
   onActivated: () => void;
 }) {
-  const headingId = `readiness-${station.stationId}`;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -68,41 +77,40 @@ function StationCard({
     }
   }
 
+  const settingUp = station.stationStatus === 'ONBOARDING';
+
   return (
-    <section className={styles.card} aria-labelledby={headingId}>
-      <div className={styles.cardHeader}>
-        <h3 id={headingId} className={styles.cardTitle}>
+    <SectionCard
+      id={`readiness-${station.stationId}`}
+      title={
+        <>
           {station.stationName} <span className={styles.note}>({station.stationCode})</span>
-        </h3>
-        <StatusBadge
-          tone={
-            station.stationStatus === 'ONBOARDING'
-              ? 'pending'
-              : station.ready
-                ? 'positive'
-                : 'warning'
-          }
-        >
-          {station.stationStatus === 'ONBOARDING'
-            ? 'Setting up'
-            : station.ready
-              ? 'Setup complete'
-              : 'Setup incomplete'}
+        </>
+      }
+      action={
+        <StatusBadge tone={settingUp ? 'pending' : station.ready ? 'positive' : 'warning'}>
+          {settingUp ? 'Setting up' : station.ready ? 'Setup complete' : 'Setup incomplete'}
         </StatusBadge>
-      </div>
-      {station.stationStatus === 'ONBOARDING' ? (
-        <div>
+      }
+    >
+      {settingUp ? (
+        <div className={styles.todo}>
           {station.missing.length > 0 ? (
             <>
               <p className={styles.note}>Before this station can go live you still need:</p>
-              <ul className={styles.list} aria-label={`${station.stationName} still needed`}>
+              <ul className={styles.todoList} aria-label={`${station.stationName} still needed`}>
                 {station.missing.map((item) => (
-                  <li key={item.code} className={styles.row}>
-                    <div className={styles.rowMain}>
+                  <li key={item.code} className={styles.todoItem}>
+                    <div>
                       <span className={styles.rowTitle}>{item.label}</span>
                       <span className={styles.rowDetail}>{item.detail}</span>
                     </div>
-                    <a href={tabHref(item.tab)}>Fix this</a>
+                    <a
+                      className="button button-secondary button-sm"
+                      href={fixHref(item.tab, station.stationId)}
+                    >
+                      Fix this
+                    </a>
                   </li>
                 ))}
               </ul>
@@ -113,30 +121,35 @@ function StationCard({
             </p>
           )}
           {station.canActivate ? (
-            <Button variant="primary" loading={busy} onClick={activate}>
-              Activate station
-            </Button>
+            <div>
+              <Button variant="primary" loading={busy} onClick={activate}>
+                Activate station
+              </Button>
+            </div>
           ) : null}
-          {error ? <p role="alert">{error}</p> : null}
+          {error ? (
+            <p className={styles.messageError} role="alert">
+              {error}
+            </p>
+          ) : null}
         </div>
       ) : null}
-      <ul className={styles.list} aria-label={`${station.stationName} setup`}>
+      <CardRows label={`${station.stationName} setup`}>
         {station.areas.map((area) => (
-          <li key={area.code} className={styles.row}>
-            <div className={styles.rowMain}>
-              <span className={styles.rowTitle}>{area.label}</span>
-              <span className={styles.rowDetail}>{area.detail}</span>
-            </div>
-            <StatusBadge tone={TONE[area.status]}>{statusLabel(area.status)}</StatusBadge>
-          </li>
+          <CardRow
+            key={area.code}
+            title={area.label}
+            detail={area.detail}
+            aside={<StatusBadge tone={TONE[area.status]}>{statusLabel(area.status)}</StatusBadge>}
+          />
         ))}
-      </ul>
+      </CardRows>
       {station.blockedSummary ? (
         <Notice tone="warning" title="Some transactions are blocked here">
           {station.blockedSummary}
         </Notice>
       ) : null}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -152,18 +165,33 @@ export function ReadinessView({
   }
   if (overview.stations.length === 0) {
     return (
-      <EmptyState
-        title="No stations to show"
-        message="No stations are available to you yet. Stations appear here once they are created."
+      <SectionCard
+        id="readiness"
+        title="Readiness"
+        note="No stations are available to you yet. Stations appear here once they are created."
       />
     );
   }
+  const ready = overview.stations.filter((station) => station.ready).length;
+  const total = overview.stations.length;
   return (
     <div className={styles.stack}>
-      <p className={styles.note}>
-        This is read from what has been entered. Anything marked Not entered or Incomplete has not
-        been set up, and transactions that depend on it are blocked until it is.
-      </p>
+      <SectionCard
+        id="readiness"
+        title="Readiness"
+        note="This is read from what has been entered. Anything marked Not entered or Incomplete has not been set up, and transactions that depend on it are blocked until it is."
+        action={
+          <StatusBadge tone={ready === total ? 'positive' : 'warning'}>
+            {ready === total
+              ? total === 1
+                ? 'Station set up'
+                : 'All stations set up'
+              : ready === 0
+                ? 'No station set up yet'
+                : `${ready} of ${total} stations set up`}
+          </StatusBadge>
+        }
+      />
       {overview.stations.map((station) => (
         <StationCard
           key={station.stationId}

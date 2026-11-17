@@ -6,6 +6,7 @@ import { observeError } from '../platform/observability';
 
 import { resolveCurrentContext } from '../modules/context/server';
 import type { CurrentContext } from '../modules/context/contracts';
+import { readAuthenticatedAccount } from '../modules/identity/account';
 import { resolveTenantExecutionContext } from '../modules/tenancy/server';
 import { buildNavigationProjection } from './navigation-projection';
 import { syntheticNavigationProjection, type NavigationProjection } from './navigation';
@@ -79,6 +80,19 @@ export async function getServerNavigationProjection(
   }
 }
 
+/**
+ * The signed-in person's own name, so the account menu says who is signed in. A self-only
+ * read; any failure leaves the menu on its generic wording instead of breaking the page.
+ */
+async function readAccountName(request: Request): Promise<string | undefined> {
+  try {
+    const { user } = await readAuthenticatedAccount(request);
+    return user.name?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export type ServerShellAccess =
   | { status: 'signed-out' }
   | { status: 'no-workplace' }
@@ -88,6 +102,8 @@ export type ServerShellAccess =
       /** The same request-verified scope used to build the projection. */
       current: CurrentContext | null;
       resolution?: ContextResolution;
+      /** The signed-in person's name for the account menu; absent when it could not be read. */
+      accountName?: string;
     };
 
 /**
@@ -120,10 +136,20 @@ export const getServerShellAccess = cache(async function getServerShellAccess(
     const resolution = await resolveCurrentContext(request);
     if (resolution.available.organisations.length === 0) return { status: 'no-workplace' };
     if (!resolution.current) throw new AppError('FORBIDDEN', 'A valid work context is required');
-    const projection = await buildServerNavigationProjection(request, resolution.current);
+    // Independent reads, so they wait on the database together rather than one after the other.
+    const [projection, accountName] = await Promise.all([
+      buildServerNavigationProjection(request, resolution.current),
+      readAccountName(request),
+    ]);
     if (projection === null)
       throw new AppError('FORBIDDEN', 'Navigation access could not be verified');
-    return { status: 'ready' as const, projection, current: resolution.current, resolution };
+    return {
+      status: 'ready' as const,
+      projection,
+      current: resolution.current,
+      resolution,
+      ...(accountName ? { accountName } : {}),
+    };
   } catch (error) {
     if (error instanceof AppError && error.code === 'UNAUTHENTICATED')
       return { status: 'signed-out' };

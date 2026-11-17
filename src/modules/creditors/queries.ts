@@ -4,10 +4,12 @@ import { sql } from 'drizzle-orm';
 import { authorize } from '../../platform/security/permissions';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import type { AuthenticatedActorContext } from '../identity';
+import { asQuantityUnit } from '../../design-system/formatters';
 import { creditLimitPosition } from './credit-limit';
 import { DEFAULT_DUE_SOON_DAYS } from './due-status';
 import { paymentNeedsProofFlag } from './payment-proof';
 import { resolveSupplierReadContext } from './read-context';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 type SummaryRow = {
   supplier_id: string;
@@ -332,9 +334,9 @@ export async function getSupplierInvoiceChoicesFromRequest(
   });
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const products = await transaction.execute<{ id: string; name: string }>(sql`
-      select id, name from app.products
-      where tenant_id = ${context.tenantId} and status = 'ACTIVE'
-      order by name
+      select p.id, p.name from app.products p
+      where p.tenant_id = ${context.tenantId} and p.status = 'ACTIVE'
+      order by ${productOrderSql('p')}
     `);
     const stations = await transaction.execute<{ id: string; name: string }>(sql`
       select id, name from app.stations
@@ -364,10 +366,13 @@ export async function getSupplierInvoiceChoicesFromRequest(
           business_date: string;
           received: string;
           on_note: string;
+          unit: string;
         }>(sql`
           select d.id, d.station_id, d.product_id, d.delivery_note_number, d.business_date,
-            d.actual_quantity_litres::text as received, d.note_quantity_litres::text as on_note
+            d.actual_quantity_litres::text as received, d.note_quantity_litres::text as on_note,
+            p.unit
           from app.fuel_deliveries d
+          join app.products p on p.tenant_id = d.tenant_id and p.id = d.product_id
           join app.stations s on s.tenant_id = d.tenant_id and s.id = d.station_id
           where d.tenant_id = ${context.tenantId}
             and s.legal_entity_id = ${context.legalEntityId}
@@ -398,6 +403,7 @@ export async function getSupplierInvoiceChoicesFromRequest(
         businessDate: row.business_date,
         receivedLitres: row.received,
         noteLitres: row.on_note,
+        unit: asQuantityUnit(row.unit),
       })),
     };
   });

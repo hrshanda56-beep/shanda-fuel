@@ -101,6 +101,12 @@ export async function establishStepUp(input: {
   context: TenantExecutionContext;
   action: ClerkStepUpAction;
   now?: Date;
+  /**
+   * DEC-052: only accept what the person has already shown (a check that is still active, or a
+   * sign-in inside the reuse window). Never starts a challenge, so a person who is signed in is
+   * not asked again, and one who is not is left to the normal confirmation dialog untouched.
+   */
+  silent?: boolean;
 }): Promise<StepUpResult> {
   const now = input.now ?? new Date();
   const session = await resolveClerkSession(input.request);
@@ -166,6 +172,9 @@ export async function establishStepUp(input: {
   const reuseMinutes = stepUpTtlMs() / 60_000;
   const freshSignIn = hasRecentClerkSignIn(input.request, level, reuseMinutes);
   if (!freshSignIn) {
+    if (input.silent) {
+      throw new AppError('FORBIDDEN', 'A recent sign-in is needed to skip the identity check');
+    }
     if (!readClerkStepUpChallenge(input.request, challengeInput, now)) {
       throw new ClerkReverificationRequiredError(
         level,

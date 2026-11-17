@@ -3,6 +3,7 @@
  * the same green / yellow / red judgement the alerts use (`classifyStockVariance`). Pure part: the
  * report definition and the row building. The query is in `read-more.ts`.
  */
+import { quantityUnitLabel } from '../../../design-system/formatters';
 import { classifyStockVariance } from '../../approvals/operations-alerts';
 import type { TableReportDefinition, TableReportRow } from './definitions';
 
@@ -20,10 +21,11 @@ export const STOCK_VARIANCE_REPORT: TableReportDefinition = {
     { key: 'station', label: 'Station', kind: 'text' },
     { key: 'tank', label: 'Tank', kind: 'text' },
     { key: 'product', label: 'Fuel', kind: 'text' },
-    { key: 'physicalLitres', label: 'Measured (L)', kind: 'number' },
-    { key: 'expectedLitres', label: 'Expected (L)', kind: 'number' },
-    { key: 'varianceLitres', label: 'Short (−) / over (+) (L)', kind: 'number' },
-    { key: 'toleranceLitres', label: 'Yellow above (L)', kind: 'number' },
+    { key: 'unit', label: 'Measured in', kind: 'text' },
+    { key: 'physicalLitres', label: 'Measured', kind: 'number' },
+    { key: 'expectedLitres', label: 'Expected', kind: 'number' },
+    { key: 'varianceLitres', label: 'Short (−) / over (+)', kind: 'number' },
+    { key: 'toleranceLitres', label: 'Yellow above', kind: 'number' },
     { key: 'signal', label: 'Judgement', kind: 'text' },
     { key: 'dayApproved', label: 'Day approved', kind: 'text' },
   ],
@@ -41,6 +43,7 @@ export type StockVarianceFact = Readonly<{
   station: string;
   tank: string;
   product: string;
+  unit?: string;
   physical: string;
   expected: string;
   variance: string;
@@ -56,6 +59,7 @@ export function stockVarianceRow(fact: StockVarianceFact): TableReportRow {
     station: fact.station,
     tank: fact.tank,
     product: fact.product,
+    unit: quantityUnitLabel(fact.unit),
     physicalLitres: fact.physical,
     expectedLitres: fact.expected,
     varianceLitres: fact.variance,
@@ -67,13 +71,20 @@ export function stockVarianceRow(fact: StockVarianceFact): TableReportRow {
 
 /** A tank with no dip in the chosen dates still gets a line, so it never disappears from view. */
 export function tankWithoutDipRow(
-  fact: Readonly<{ station: string; tank: string; product: string; tolerance: string | null }>,
+  fact: Readonly<{
+    station: string;
+    tank: string;
+    product: string;
+    unit?: string;
+    tolerance: string | null;
+  }>,
 ): TableReportRow {
   return {
     date: null,
     station: fact.station,
     tank: fact.tank,
     product: fact.product,
+    unit: quantityUnitLabel(fact.unit),
     physicalLitres: null,
     expectedLitres: null,
     varianceLitres: null,

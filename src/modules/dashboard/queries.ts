@@ -13,9 +13,14 @@ import { withRequestAuthority } from '../tenancy/request-authority';
 import { resolveTenantExecutionContext } from '../tenancy/authority';
 import { AppError, isAccessRefusal } from '../../platform/errors';
 
-async function section<T>(work: () => Promise<T>) {
+async function section<T>(work: () => Promise<T>, name = 'section') {
+  const started = Date.now();
   try {
-    return { status: 'ready' as const, data: await work() };
+    const data = await work();
+    // Local development only, like the other read-latency lines: which section is slow.
+    if (process.env.APP_ENV === 'local')
+      console.info(`[dashboard-timing] ${name} ${Date.now() - started}ms`);
+    return { status: 'ready' as const, data };
   } catch (error) {
     return isAccessRefusal(error)
       ? { status: 'forbidden' as const }
@@ -25,8 +30,12 @@ async function section<T>(work: () => Promise<T>) {
 export type DashboardInput = {
   tenantId: string;
   stationId?: string;
+  /** The period every period figure follows (daily totals, cash, profit, snapshot). */
   fromDate?: string;
   toDate?: string;
+  /** The sales chart's own window; when absent it follows the period. */
+  chartFromDate?: string;
+  chartToDate?: string;
 };
 export async function getDashboardFromRequest(request: Request, input: DashboardInput) {
   return await withRequestAuthority(async () => {
@@ -37,31 +46,37 @@ export async function getDashboardFromRequest(request: Request, input: Dashboard
       tenantId: input.tenantId,
       ...(input.stationId ? { stationIds: input.stationId } : {}),
     };
+    const periodScope = {
+      ...reportScope,
+      ...(input.fromDate ? { fromDate: input.fromDate } : {}),
+      ...(input.toDate ? { toDate: input.toDate } : {}),
+    };
     const [daily, customers, operations, chart, report] = await Promise.all([
-      section(() => getDailyOperationsFromRequest(request, reportScope)),
-      section(() => getCustomerAccountsFromRequest(request, { tenantId: input.tenantId })),
+      section(() => getDailyOperationsFromRequest(request, periodScope), 'daily'),
+      section(
+        () => getCustomerAccountsFromRequest(request, { tenantId: input.tenantId }),
+        'customers',
+      ),
       input.stationId
-        ? section(() =>
-            getOperationsOverviewFromRequest(request, {
-              tenantId: input.tenantId,
-              stationId: input.stationId!,
-            }),
+        ? section(
+            () =>
+              getOperationsOverviewFromRequest(request, {
+                tenantId: input.tenantId,
+                stationId: input.stationId!,
+              }),
+            'operations',
           )
         : Promise.resolve(null),
-      section(() =>
-        getDashboardSalesFromRequest(request, {
-          ...reportScope,
-          fromDate: input.fromDate,
-          toDate: input.toDate,
-        }),
+      section(
+        () =>
+          getDashboardSalesFromRequest(request, {
+            ...reportScope,
+            fromDate: input.chartFromDate ?? input.fromDate,
+            toDate: input.chartToDate ?? input.toDate,
+          }),
+        'chart',
       ),
-      section(() =>
-        getManagementReportFromRequest(request, {
-          ...reportScope,
-          fromDate: input.fromDate,
-          toDate: input.toDate,
-        }),
-      ),
+      section(() => getManagementReportFromRequest(request, periodScope), 'management-report'),
     ]);
     // One management report feeds both the money tiles and the stock and cash snapshot.
     const finance =

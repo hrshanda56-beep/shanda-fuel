@@ -73,6 +73,7 @@ export default async function SettingsPage({
       <SettingsWorkspace
         view={view}
         initialTab={typeof params.tab === 'string' ? params.tab : undefined}
+        initialSetupStation={typeof params.setup === 'string' ? params.setup : undefined}
       />
     </AppShell>
   );

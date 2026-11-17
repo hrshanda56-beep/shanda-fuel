@@ -56,5 +56,5 @@ export type StaffScopeOption = Readonly<{
 
 export type InvitationView =
   | { kind: 'new-identity'; organisationName: string; email: string; invitedName: string }
-  | { kind: 'existing-identity'; organisationName: string }
+  | { kind: 'existing-identity'; organisationName: string; email: string }
   | { kind: 'unavailable' };

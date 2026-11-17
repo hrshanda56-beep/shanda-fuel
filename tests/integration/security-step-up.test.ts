@@ -43,6 +43,11 @@ const assertion = (overrides: Partial<Parameters<typeof issueClerkStepUpAssertio
     ...overrides,
   }).split(';')[0]!;
 
+function tamperedMiddle(value: string): string {
+  const at = Math.floor(value.length / 2);
+  return `${value.slice(0, at)}${value[at] === 'x' ? 'y' : 'x'}${value.slice(at + 1)}`;
+}
+
 describe('Clerk server identity, assurance, and revocation boundary', () => {
   beforeAll(async () => {
     process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-step-up-key';
@@ -113,8 +118,9 @@ describe('Clerk server identity, assurance, and revocation boundary', () => {
       assertion({ providerSessionId: ids.otherSession }),
       assertion({ internalUserId: ids.otherTenant }),
       assertion({ now: new Date(Date.now() - 16 * 60_000) }),
-      // Always change the last character (a fixed 'x' would leave the cookie intact 1 time in 64).
-      assertion().replace(/.$/, (last) => (last === 'x' ? 'y' : 'x')),
+      // Always change a character in the middle: the last base64 character can carry ignored
+      // padding bits, so changing only it sometimes leaves the decoded cookie intact.
+      tamperedMiddle(assertion()),
     ]) {
       const actor = await resolveAuthenticatedActor(request('step-up-session', cookie));
       expect(() => assertStepUp(actor!.session, 1, new Date(), ids.tenant)).toThrow();

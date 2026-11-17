@@ -8,7 +8,7 @@ import { ManagementReportDashboard } from './ui/management-report-dashboard';
 import { QuickLook } from './ui/quick-look';
 import { RecentActivity } from './ui/reports-rail';
 import { ReportList } from './ui/report-list';
-import { canViewFinanceReports, getManagementReportFromRequest } from './queries';
+import { canExportReports, canViewFinanceReports, getManagementReportFromRequest } from './queries';
 import { listRecentReportActivity } from './report-events';
 import { parseReportFilters, resolveReportFilters } from './filters';
 import { businessToday, precedingRange, resolvePeriod } from './period';
@@ -88,7 +88,7 @@ export function ServerReportsIndex({ search }: { search: PageSearch }) {
     <ServerDataPage
       pathname="/reports"
       search={search}
-      shell={{ pageSubtitle: 'Operational Financial Position' }}
+      shell={{ pageSubtitle: 'Open, share or download a report.' }}
       fallback={
         typeof search.tenantId === 'string' ? (
           <div className="reports-stack wide-workspace">
@@ -110,6 +110,7 @@ export function ServerReportsIndex({ search }: { search: PageSearch }) {
                 request,
                 resolution.current.organisationId,
               ),
+              canExport: await canExportReports(request, resolution.current.organisationId),
             }
           : null
       }
@@ -117,7 +118,11 @@ export function ServerReportsIndex({ search }: { search: PageSearch }) {
         result ? (
           <div className="reports-stack wide-workspace">
             <div className="reports-layout">
-              <ReportList tenantId={result.tenantId} financeReports={result.financeReports} />
+              <ReportList
+                tenantId={result.tenantId}
+                financeReports={result.financeReports}
+                canExport={result.canExport}
+              />
               {result.financeReports ? (
                 <aside className="reports-rail" aria-label="Browse reports">
                   <Suspense fallback={<LoadingState label="Loading figures…" />}>

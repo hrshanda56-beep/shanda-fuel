@@ -44,13 +44,13 @@ it('loads operations through the existing authorization boundary and links exact
   expect(facts.at(-1)?.href).toContain('reconciliationId=record');
   expect(facts.at(-1)?.href).toContain('stationId=station');
 });
-it('preserves exact cash decimals and currency without cross-station arithmetic', async () => {
+it('shows cash in cents with plain wording, without cross-station arithmetic', async () => {
   mocks.cash.mockResolvedValue({
     currency: 'USD',
     totals: { collectedButUnbanked: '999999999999.1234' },
   });
   expect(await loadPortfolioStation(request, selection, 'cash')).toEqual([
-    { label: 'collected But Unbanked', value: 'USD 999999999999.1234' },
+    { label: 'Collected, not yet deposited', value: '$999,999,999,999.12' },
   ]);
 });
 it('reads settlement and unmatched counts from the combined service', async () => {

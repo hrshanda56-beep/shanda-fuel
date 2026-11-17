@@ -6,6 +6,7 @@ import {
   parseReportExportFormat,
   reportExportContentType,
   reportExportFilename,
+  reportExportMeta,
 } from '../../../../modules/reporting/export-documents';
 import { getManagementReportFromRequest } from '../../../../modules/reporting/queries';
 import { buildTableReportCsv } from '../../../../modules/reporting/table-reports/csv';
@@ -42,7 +43,11 @@ export const GET = withRequestObservability(
       let filename: string;
       if (findTableReport(slug)) {
         const result = await runTableReport(request, slug, query, { requireStepUp: true });
-        document = buildExportFromCsv(format, buildTableReportCsv(result.definition, result.rows));
+        document = buildExportFromCsv(
+          format,
+          buildTableReportCsv(result.definition, result.rows),
+          reportExportMeta(definition.title, result.fromDate, result.toDate, result.stationCount),
+        );
         filename = reportExportFilename(
           slug,
           result.fromDate,
@@ -54,7 +59,17 @@ export const GET = withRequestObservability(
         const report = await getManagementReportFromRequest(request, query, {
           requireStepUp: true,
         });
-        document = buildReportExport(format, slug, report);
+        document = buildReportExport(
+          format,
+          slug,
+          report,
+          reportExportMeta(
+            definition.title,
+            report.filters.fromDate,
+            report.filters.toDate,
+            report.filters.stationIds.length,
+          ),
+        );
         filename = reportExportFilename(
           slug,
           report.filters.fromDate,

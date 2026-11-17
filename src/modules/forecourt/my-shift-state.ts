@@ -20,6 +20,8 @@ export type MyShiftMeter = {
   pumpNumber: string;
   nozzleNumber: string;
   productName: string;
+  /** How the meter counts: litres for petrol and diesel, kilograms for gas. */
+  unit?: 'LITRES' | 'KILOGRAMS';
   /** Last sealed reading before this shift; the opening reading must match it. */
   previousReading: string | null;
   opening: MyShiftBoundary | null;
@@ -228,6 +230,11 @@ export function deriveMyShiftView(data: MyShiftData): MyShiftView {
         nozzleId: closing.meter.nozzleId,
         label: `Record the closing reading for ${closing.label}`,
       };
+    } else if (meters.length > 0 && meters.every((view) => view.closing.state === 'done')) {
+      next = {
+        kind: 'none',
+        message: 'All your readings are recorded. Your supervisor still needs to close this shift.',
+      };
     } else if (meters.every((view) => view.opening.state === 'done')) {
       next = {
         kind: 'none',
@@ -239,7 +246,9 @@ export function deriveMyShiftView(data: MyShiftData): MyShiftView {
   const headline = finished
     ? 'This shift is finished.'
     : running
-      ? 'Your shift is running.'
+      ? closingDue
+        ? 'Your shift time is over. Enter your closing readings; your supervisor will close the shift.'
+        : 'Your shift is running.'
       : 'Your shift has not started yet.';
 
   return { phase, headline, meters, next };

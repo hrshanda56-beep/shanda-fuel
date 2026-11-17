@@ -16,6 +16,7 @@ import {
 } from './domain';
 import type { CashCommandContext } from './application';
 import { bankingStatusForDeposit, cashStatusLabelForCustody, depositProofFlags } from './status';
+import { businessToday, isValidDateOnly } from '../reporting/period';
 import type { ForecourtTransaction } from '../forecourt/application';
 
 type SourceRow = {
@@ -159,6 +160,8 @@ function stationCashPositionQuery(context: CashCommandContext) {
         select sum(e.amount) from app.expenses e
         where e.tenant_id = ${context.tenantId} and e.station_id = ${context.stationId}
           and e.payment_method = 'STATION_CASH' and e.shift_id is null
+          -- Already inside the approved shift report's cash count.
+          and (e.reference is null or e.reference not like 'SHIFTREPORT-%')
           and e.state in ('SUBMITTED', 'APPROVED', 'POSTED')
           and e.created_at > coalesce((
             select max(c.recorded_at) from app.cash_collections c
@@ -505,6 +508,8 @@ export async function confirmBankDepositInTransaction(
     expectedVersion: number;
     confirmedAmount: string;
     bankReference: string;
+    bankDate?: string;
+    differenceReason?: string;
   },
 ) {
   const rows = await transaction.execute<{
@@ -555,11 +560,29 @@ export async function confirmBankDepositInTransaction(
     );
   }
   const variance = confirmed.subtract(decimal(deposit.amount)).toString();
+  // A different amount needs a reason, so the difference is never silent (B5).
+  const reason = input.differenceReason?.trim() ?? '';
+  if (!decimal(variance).value.isZero() && reason.length < 5) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'The bank confirmed a different amount from the one deposited. Write why, in a few words, before confirming.',
+    );
+  }
+  if (input.bankDate !== undefined) {
+    if (!isValidDateOnly(input.bankDate)) {
+      throw new AppError('VALIDATION_FAILED', 'Enter the bank date as a real calendar date.');
+    }
+    if (input.bankDate > businessToday()) {
+      throw new AppError('VALIDATION_FAILED', 'The bank date cannot be in the future.');
+    }
+  }
   const updated = await transaction.execute<{ version: number | string }>(sql`
     update app.bank_deposits
     set state = 'CONFIRMED',
         confirmed_amount = ${confirmed.toString()},
         confirmation_variance = ${variance},
+        bank_date = ${input.bankDate ?? null},
+        confirmation_reason = ${decimal(variance).value.isZero() ? null : reason},
         bank_reference = ${input.bankReference},
         confirmed_by = ${context.actor.membershipId},
         confirmed_at = now(),
@@ -805,14 +828,12 @@ export async function getCashStationSummaryInTransaction(
     select h.id, h.from_location_id, h.to_location_id,
            h.expected_amount::text, h.counted_amount::text, h.variance::text,
            h.state, h.version, h.dispute_reason, h.resolution_note,
-           h.delivered_by, coalesce(du.name, 'Unknown') as delivered_by_name,
-           coalesce(ru.name, null) as received_by_name,
+           h.delivered_by, coalesce(dm.name, 'Unknown') as delivered_by_name,
+           rm.name as received_by_name,
            h.submitted_at, h.accepted_at, h.resolved_at
     from app.cash_handovers h
-    left join app.memberships dm on dm.tenant_id = h.tenant_id and dm.id = h.delivered_by
-    left join app.users du on du.id = dm.identity_id
-    left join app.memberships rm on rm.tenant_id = h.tenant_id and rm.id = coalesce(h.resolved_by, h.received_by)
-    left join app.users ru on ru.id = rm.identity_id
+    left join app.member_directory(h.tenant_id) dm on dm.id = h.delivered_by
+    left join app.member_directory(h.tenant_id) rm on rm.id = coalesce(h.resolved_by, h.received_by)
     where h.tenant_id = ${context.tenantId}
       and h.station_id = ${context.stationId}
       and (h.state in ('SUBMITTED', 'DISPUTED') or h.updated_at > now() - interval '14 days')

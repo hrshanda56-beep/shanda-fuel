@@ -67,7 +67,7 @@ test.describe('Settings', () => {
       await client?.end();
     });
 
-    const sections = ['Organisation', 'Companies', 'Stations', 'Account'] as const;
+    const sections = ['Organisation', 'Stations', 'Account'] as const;
 
     test.beforeEach(async ({ context, page }) => {
       await authenticateClerk(context, ids.actor);
@@ -107,8 +107,7 @@ test.describe('Settings', () => {
     });
 
     test('each section shows its own details once opened', async ({ page }) => {
-      await sectionButton(page, 'Companies').click();
-      await expectOnlyPressed(page, 'Companies');
+      // Companies are listed on the Organisation section, under the organisation's own details.
       await expect(
         content(page).getByRole('heading', { name: 'Companies', level: 2 }),
       ).toBeVisible();
@@ -119,14 +118,14 @@ test.describe('Settings', () => {
       await sectionButton(page, 'Stations').click();
       await expectOnlyPressed(page, 'Stations');
       await expect(
-        content(page).getByRole('heading', { name: 'Stations', level: 2 }),
+        content(page).getByRole('heading', { name: 'Station details', level: 2 }),
       ).toBeVisible();
       await expect(content(page).getByText('Settings E2E Station', { exact: true })).toBeVisible();
 
       await sectionButton(page, 'Account').click();
       await expectOnlyPressed(page, 'Account');
-      await expect(content(page).getByRole('heading', { name: 'Account', level: 2 })).toBeVisible();
-      await expect(content(page).getByRole('heading', { name: 'Profile', level: 3 })).toBeVisible();
+      await expect(content(page).getByRole('heading', { name: 'Profile', level: 2 })).toBeVisible();
+      await expect(content(page).getByRole('heading', { name: 'Session', level: 2 })).toBeVisible();
       await expect(content(page).getByText('Name', { exact: true })).toBeVisible();
       await expect(content(page).getByText('Email', { exact: true })).toBeVisible();
       // The email is shown in the profile card and again in the details list.
@@ -141,18 +140,16 @@ test.describe('Settings', () => {
       ).toBeVisible();
     });
 
-    test('sections work from the keyboard and stay on the same address', async ({ page }) => {
+    test('sections work from the keyboard and are remembered in the address', async ({ page }) => {
       const url = page.url();
       await sectionButton(page, 'Organisation').focus();
       await page.keyboard.press('Tab');
-      await expect(sectionButton(page, 'Companies')).toBeFocused();
+      await expect(sectionButton(page, 'Stations')).toBeFocused();
       await page.keyboard.press('Enter');
-      await expectOnlyPressed(page, 'Companies');
-      await expect(
-        content(page).getByText('Settings E2E Legal Entity', { exact: true }),
-      ).toBeVisible();
+      await expectOnlyPressed(page, 'Stations');
+      await expect(content(page).getByText('Settings E2E Station', { exact: true })).toBeVisible();
 
-      // Which sections sit between Companies and Account depends on the person's access, so tab
+      // Which sections sit between Stations and Account depends on the person's access, so tab
       // forward through them in order until Account has focus.
       for (let step = 0; step < sections.length + 12; step += 1) {
         await page.keyboard.press('Tab');
@@ -163,8 +160,13 @@ test.describe('Settings', () => {
       await page.keyboard.press('Space');
       await expectOnlyPressed(page, 'Account');
 
-      // Sections are in-page state: no #account anchor or navigation.
-      expect(page.url()).toBe(url);
+      // The section is kept in the query string (no #account anchor, no navigation), so a
+      // refresh returns to it.
+      const after = new URL(page.url());
+      expect(after.pathname).toBe(new URL(url).pathname);
+      expect(after.searchParams.get('tab')).toBe('account');
+      await page.reload();
+      await expectOnlyPressed(page, 'Account');
     });
 
     test('is read-only: no save action in any section', async ({ page }) => {

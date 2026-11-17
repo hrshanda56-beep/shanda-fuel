@@ -1,8 +1,10 @@
-import { and, asc, desc, eq, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, lte } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
 import {
+  assertMovementFitsTank,
   deriveExpectedTankStock,
   calculateTankStockVariance,
+  type TimedStockMovement,
   validateMovementQuantity,
   type InventoryMovementType,
 } from './domain';
@@ -52,7 +54,23 @@ export async function loadTankForUpdate(
   transaction: InventoryTransaction,
   input: { tenantId: string; stationId: string; tankId: string },
 ): Promise<TankRecord> {
-  const rows = await transaction
+  return loadTank(transaction, input, true);
+}
+
+/** Reads must not take row locks: polling would otherwise block deliveries, dips and sales. */
+async function loadTankForRead(
+  transaction: InventoryTransaction,
+  input: { tenantId: string; stationId: string; tankId: string },
+): Promise<TankRecord> {
+  return loadTank(transaction, input, false);
+}
+
+async function loadTank(
+  transaction: InventoryTransaction,
+  input: { tenantId: string; stationId: string; tankId: string },
+  lock: boolean,
+): Promise<TankRecord> {
+  const query = transaction
     .select({
       id: tanks.id,
       tenantId: tanks.tenantId,
@@ -73,8 +91,8 @@ export async function loadTankForUpdate(
         eq(tanks.stationId, input.stationId),
         eq(tanks.id, input.tankId),
       ),
-    )
-    .for('update');
+    );
+  const rows = await (lock ? query.for('update') : query);
   const tank = rows[0];
   if (!tank) throw new AppError('NOT_FOUND', 'The requested tank was not found');
   return tank;
@@ -83,11 +101,12 @@ export async function loadTankForUpdate(
 async function movementRows(
   transaction: InventoryTransaction,
   input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
-): Promise<readonly { movementType: InventoryMovementType; quantityLitres: string }[]> {
+): Promise<readonly TimedStockMovement[]> {
   const rows = await transaction
     .select({
       movementType: inventoryMovements.movementType,
       quantityLitres: inventoryMovements.quantityLitres,
+      effectiveAt: inventoryMovements.effectiveAt,
     })
     .from(inventoryMovements)
     .where(
@@ -102,6 +121,7 @@ async function movementRows(
   return rows.map((row) => ({
     movementType: row.movementType as InventoryMovementType,
     quantityLitres: row.quantityLitres,
+    effectiveAt: row.effectiveAt,
   }));
 }
 
@@ -112,33 +132,51 @@ export async function getExpectedTankStockInTransaction(
   return deriveExpectedTankStock(undefined, await movementRows(transaction, input));
 }
 
-export async function getPhysicalTankStockInTransaction(
+async function latestDip(
   transaction: InventoryTransaction,
   input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
-): Promise<string | null> {
+): Promise<{ physicalLitres: string; measuredAt: Date } | null> {
   const rows = await transaction
-    .select({ physicalLitres: tankDips.physicalLitres })
+    .select({ physicalLitres: tankDips.physicalLitres, measuredAt: tankDips.measuredAt })
     .from(tankDips)
     .where(
       and(
         eq(tankDips.tenantId, input.tenantId),
         eq(tankDips.stationId, input.stationId),
         eq(tankDips.tankId, input.tankId),
+        // A voided dip was recorded in error and must never count as a measurement.
+        isNull(tankDips.voidedAt),
         input.asOf ? lte(tankDips.measuredAt, input.asOf) : undefined,
       ),
     )
     .orderBy(desc(tankDips.measuredAt), desc(tankDips.id))
     .limit(1);
-  return rows[0] ? litres(rows[0].physicalLitres).toString() : null;
+  const row = rows[0];
+  return row
+    ? { physicalLitres: litres(row.physicalLitres).toString(), measuredAt: row.measuredAt }
+    : null;
+}
+
+export async function getPhysicalTankStockInTransaction(
+  transaction: InventoryTransaction,
+  input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
+): Promise<string | null> {
+  return (await latestDip(transaction, input))?.physicalLitres ?? null;
 }
 
 export async function getTankStockPositionInTransaction(
   transaction: InventoryTransaction,
   input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
 ): Promise<StockPosition> {
-  const tank = await loadTankForUpdate(transaction, input);
-  const expectedLitres = await getExpectedTankStockInTransaction(transaction, input);
-  const physicalLitres = await getPhysicalTankStockInTransaction(transaction, input);
+  const tank = await loadTankForRead(transaction, input);
+  const dip = await latestDip(transaction, input);
+  const physicalLitres = dip?.physicalLitres ?? null;
+  // The books are compared at the moment of the dip, not today: stock sold or delivered since the
+  // dip would otherwise show up as a false shortage or surplus.
+  const expectedLitres = await getExpectedTankStockInTransaction(transaction, {
+    ...input,
+    asOf: dip?.measuredAt ?? input.asOf,
+  });
   return {
     tankId: tank.id,
     stationId: tank.stationId,
@@ -256,8 +294,15 @@ export async function postInventoryMovementInTransaction(
     throw new AppError('CONFLICT', 'Retired tanks cannot receive new inventory movements');
   }
   const quantityLitres = validateMovementQuantity(input.movementType, input.quantityLitres);
-  const current = await getExpectedTankStockInTransaction(transaction, input);
-  deriveExpectedTankStock(current, [{ movementType: input.movementType, quantityLitres }]);
+  assertMovementFitsTank(
+    await movementRows(transaction, input),
+    {
+      movementType: input.movementType,
+      quantityLitres,
+      effectiveAt: input.effectiveAt,
+    },
+    tank.capacityLitres,
+  );
   const rows = await transaction
     .insert(inventoryMovements)
     .values({

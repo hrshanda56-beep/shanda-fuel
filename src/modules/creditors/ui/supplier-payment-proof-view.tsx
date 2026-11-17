@@ -6,6 +6,7 @@ import { DocumentAttachments } from '@/modules/documents/ui/document-attachments
 import { SUPPLIER_PAYMENT_PROOF_THRESHOLD_USD } from '../payment-proof';
 import type { SupplierPaymentWithProof } from '../payment-proof-queries';
 import { movementLabel } from './supplier-format';
+import { InfoTip } from '@/design-system/info-tip';
 
 /**
  * A supplier's payments with their proof of payment. A payment of US$1,000 or more with no proof
@@ -45,10 +46,10 @@ export function SupplierPaymentProofView({
             Back to supplier
           </Link>
         </div>
-        <p className="field-hint">
+        <InfoTip>
           Add a photo or PDF of the bank slip or transfer confirmation to each payment. Proof is
           optional, but a payment of {threshold} or more without proof is flagged for review.
-        </p>
+        </InfoTip>
         {missing > 0 ? (
           <p role="status">
             <StatusBadge tone="warning">

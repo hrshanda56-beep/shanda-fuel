@@ -450,6 +450,10 @@ export const bankDeposits = appSchema.table(
     confirmedAmount: numeric('confirmed_amount', { precision: 20, scale: 4 }),
     confirmationVariance: numeric('confirmation_variance', { precision: 20, scale: 4 }),
     bankReference: text('bank_reference'),
+    /** The date the bank gives for the deposit (YYYY-MM-DD), entered when it is confirmed. */
+    bankDate: text('bank_date'),
+    /** Why the bank confirmed a different amount; required whenever there is a difference. */
+    confirmationReason: text('confirmation_reason'),
     confirmedAt: utcTimestamp('confirmed_at'),
     recordedBy: uuid('recorded_by').notNull(),
     confirmedBy: uuid('confirmed_by'),

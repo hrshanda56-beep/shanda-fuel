@@ -82,7 +82,7 @@ it('loads supplier balances only once per entity rather than once per station', 
   ]);
   const output = await html(createElement(SupplierPortfolio, { request, resolution }));
   expect(mocks.suppliers).toHaveBeenCalledTimes(1);
-  expect(output).toContain('1234.5678');
+  expect(output).toContain('1,234.5678');
   expect(output).toContain('legalEntityId=entity');
 });
 it('keeps a supplier failure truthful and does not expose diagnostic details', async () => {

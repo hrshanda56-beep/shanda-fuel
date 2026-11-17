@@ -5,6 +5,7 @@ import { TableScrollRegion } from '@/design-system/table';
 import { formatBusinessDate, formatStatusLabel } from '@/design-system/formatters';
 import { Icon } from '@/design-system/icons';
 import type { PortfolioFact } from './portfolio-data';
+import { InfoTip } from '@/design-system/info-tip';
 export function PortfolioOperationsTable({
   children,
   count,
@@ -18,7 +19,7 @@ export function PortfolioOperationsTable({
         <h2>
           Station overview <span className="finance-table-count">{count}</span>
         </h2>
-        <p className="table-secondary">Operations and approvals across your stations.</p>
+        <InfoTip>Operations and approvals across your stations.</InfoTip>
       </header>
       <TableScrollRegion label="Operations by station">
         <table className="data-table portfolio-station-table">
@@ -61,7 +62,8 @@ export function PortfolioStationRow({
     const tone =
       state && ['RETURNED', 'REJECTED', 'BLOCKED', 'EXCEPTION'].includes(state)
         ? 'warning'
-        : state && ['SUBMITTED', 'PENDING_APPROVAL', 'READY_FOR_REVIEW'].includes(state)
+        : state &&
+            ['SUBMITTED', 'PENDING_APPROVAL', 'READY_FOR_REVIEW', 'READY_TO_CLOSE'].includes(state)
           ? 'pending'
           : state && ['CLOSED', 'APPROVED', 'POSTED', 'LOCKED'].includes(state)
             ? 'locked'

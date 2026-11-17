@@ -47,12 +47,12 @@ export function soleOwnerQuery(scope: {
     select
       bool_or(m.id = ${scope.membershipId}) as is_owner,
       bool_or(m.id <> ${scope.membershipId}) as has_other_owner
-    from app.memberships m
-    join app.membership_role_assignments a
-      on a.tenant_id = m.tenant_id and a.membership_id = m.id and a.role_code = 'OWNER'
+    from app.membership_role_assignments a
+    join app.member_directory(${scope.tenantId}::uuid) m on m.id = a.membership_id
     join app.stations s
-      on s.tenant_id = m.tenant_id and s.id = ${scope.stationId}
-    where m.tenant_id = ${scope.tenantId}
+      on s.tenant_id = a.tenant_id and s.id = ${scope.stationId}
+    where a.tenant_id = ${scope.tenantId}
+      and a.role_code = 'OWNER'
       and m.status = 'ACTIVE'
       and (a.expires_at is null or a.expires_at > now())
       and (

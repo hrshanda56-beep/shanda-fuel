@@ -84,7 +84,7 @@ Decisions I made inside that instruction, each small and reversible. Please conf
 | D8 | Shift business date was already guarded. Added migration 0089 triggers: meter boundaries are append-only (price change link excepted) and shifts cannot move station, day or date. Approved reconciliation headers still allow the `version` column to change, on purpose. |
 | D9 | `/api/reports/activity` now needs report view permission at some scope. `/api/context` is left alone: it lists only what the signed-in person may already select. |
 | D10 | Left. Float use is display only (chart heights, comparisons); nothing stored is computed from it. |
-| D11 | Stale comment fixed. The debug log only runs when `APP_ENV` is `local`. PDF stays a plain text layout (a layout redesign is a new build). |
+| D11 | Stale comment fixed. The debug log only runs when `APP_ENV` is `local`. PDF was a plain text layout; replaced 2026-11-02 with a formatted table document (DEC-052). |
 | D12 | Left. Clerk owns sign-in and sign-out (DEC-043). |
 | New defect found and fixed | A repeated collection or deposit reference returned a 500. Now 409 with a plain message, and any unique-value database error maps to 409 in the shared error handler. |
 

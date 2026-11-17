@@ -138,6 +138,8 @@ export type VarianceInput = Readonly<{
   purchaseOrderUnitPrice?: string | null;
   purchaseOrderNumber?: string | null;
   deliveryLabel?: string;
+  /** What the fuel is measured in; litres when absent. Only changes the words in the messages. */
+  unit?: 'LITRES' | 'KILOGRAMS';
   policy: Pick<
     PurchasingPolicyValues,
     | 'quantityToleranceLitres'
@@ -208,6 +210,8 @@ export function evaluateDeliveryVariance(input: VarianceInput): VarianceResult {
   const findings: VarianceFinding[] = [];
   const skipped: string[] = [];
   const label = input.deliveryLabel ? `Delivery ${input.deliveryLabel}` : 'This delivery';
+  const word = input.unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
+  const one = input.unit === 'KILOGRAMS' ? 'kilogram' : 'litre';
   const note = new Decimal(input.noteQuantityLitres);
   const accepted = new Decimal(input.acceptedQuantityLitres);
   const policy = input.policy;
@@ -230,7 +234,7 @@ export function evaluateDeliveryVariance(input: VarianceInput): VarianceResult {
         findings.push({
           code: 'OVER_RECEIPT',
           severity: 'EXCEPTION',
-          message: `${label}: ${fmt(accepted, 3)} litres were received but the delivery note says ${fmt(note, 3)} (${fmt(receiptDifference, 3)} more than the note; allowed ${fmt(allowed, 3)}). The fuel is already in the tank, so this is flagged for review, not blocked.`,
+          message: `${label}: ${fmt(accepted, 3)} ${word} were received but the delivery note says ${fmt(note, 3)} (${fmt(receiptDifference, 3)} more than the note; allowed ${fmt(allowed, 3)}). The fuel is already in the tank, so this is flagged for review, not blocked.`,
           difference: fmt(receiptDifference, 3),
           allowed: fmt(allowed, 3),
         });
@@ -245,7 +249,7 @@ export function evaluateDeliveryVariance(input: VarianceInput): VarianceResult {
         findings.push({
           code: 'SHORT_RECEIPT',
           severity: 'EXCEPTION',
-          message: `${label}: only ${fmt(accepted, 3)} litres were received but the delivery note says ${fmt(note, 3)} (${fmt(shortage, 3)} short; allowed ${fmt(allowed, 3)}).`,
+          message: `${label}: only ${fmt(accepted, 3)} ${word} were received but the delivery note says ${fmt(note, 3)} (${fmt(shortage, 3)} short; allowed ${fmt(allowed, 3)}).`,
           difference: fmt(shortage, 3),
           allowed: fmt(allowed, 3),
         });
@@ -255,7 +259,7 @@ export function evaluateDeliveryVariance(input: VarianceInput): VarianceResult {
 
   // Invoiced vs accepted quantity.
   if (input.invoicedQuantityLitres === null) {
-    skipped.push('Quantity check skipped: the invoice does not state litres for this delivery.');
+    skipped.push(`Quantity check skipped: the invoice does not state ${word} for this delivery.`);
   } else {
     const invoiced = new Decimal(input.invoicedQuantityLitres);
     const difference = invoiced.sub(accepted);
@@ -268,7 +272,7 @@ export function evaluateDeliveryVariance(input: VarianceInput): VarianceResult {
         findings.push({
           code: 'QUANTITY_OVER_BILLED',
           severity: 'EXCEPTION',
-          message: `${label}: the invoice bills ${fmt(invoiced, 3)} litres but only ${fmt(accepted, 3)} litres were received (${fmt(difference, 3)} more; allowed ${fmt(allowed, 3)}). Do not pay for fuel that was not received.`,
+          message: `${label}: the invoice bills ${fmt(invoiced, 3)} ${word} but only ${fmt(accepted, 3)} ${word} were received (${fmt(difference, 3)} more; allowed ${fmt(allowed, 3)}). Do not pay for fuel that was not received.`,
           difference: fmt(difference, 3),
           allowed: fmt(allowed, 3),
         });
@@ -276,7 +280,7 @@ export function evaluateDeliveryVariance(input: VarianceInput): VarianceResult {
         findings.push({
           code: 'QUANTITY_UNDER_BILLED',
           severity: 'INFO',
-          message: `${label}: the invoice bills ${fmt(invoiced, 3)} litres but ${fmt(accepted, 3)} litres were received (${fmt(difference.abs(), 3)} not yet billed). The rest may arrive on another invoice.`,
+          message: `${label}: the invoice bills ${fmt(invoiced, 3)} ${word} but ${fmt(accepted, 3)} ${word} were received (${fmt(difference.abs(), 3)} not yet billed). The rest may arrive on another invoice.`,
           difference: fmt(difference.abs(), 3),
           allowed: fmt(allowed, 3),
         });
@@ -318,7 +322,7 @@ export function evaluateDeliveryVariance(input: VarianceInput): VarianceResult {
             ? 'PRICE_ABOVE_RECEIPT_COST'
             : 'PRICE_BELOW_RECEIPT_COST',
         severity: above ? 'EXCEPTION' : 'INFO',
-        message: `${label}: the invoice price is ${fmt(price, 8)} per litre but ${basisText} is ${fmt(reference, 8)} (${fmt(difference.abs(), 8)} ${above ? 'higher' : 'lower'}; allowed ${fmt(allowed, 8)}).`,
+        message: `${label}: the invoice price is ${fmt(price, 8)} per ${one} but ${basisText} is ${fmt(reference, 8)} (${fmt(difference.abs(), 8)} ${above ? 'higher' : 'lower'}; allowed ${fmt(allowed, 8)}).`,
         difference: fmt(difference.abs(), 8),
         allowed: fmt(allowed, 8),
       });
@@ -343,7 +347,7 @@ export function evaluateDeliveryVariance(input: VarianceInput): VarianceResult {
       findings.push({
         code: above ? 'AMOUNT_ABOVE_EXPECTED' : 'AMOUNT_BELOW_EXPECTED',
         severity: above ? 'EXCEPTION' : 'INFO',
-        message: `${label}: the invoice charges ${fmt(billed, 4)} but ${fmt(accepted, 3)} litres at the invoiced price come to ${fmt(expected, 4)} (${fmt(difference.abs(), 4)} ${above ? 'more' : 'less'}; allowed ${fmt(allowed, 4)}).`,
+        message: `${label}: the invoice charges ${fmt(billed, 4)} but ${fmt(accepted, 3)} ${word} at the invoiced price come to ${fmt(expected, 4)} (${fmt(difference.abs(), 4)} ${above ? 'more' : 'less'}; allowed ${fmt(allowed, 4)}).`,
         difference: fmt(difference.abs(), 4),
         allowed: fmt(allowed, 4),
       });

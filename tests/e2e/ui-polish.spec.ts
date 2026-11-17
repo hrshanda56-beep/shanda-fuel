@@ -442,7 +442,7 @@ async function sidewaysOverflow(page: Page) {
       const box = element.getBoundingClientRect();
       if (box.width <= 1 || box.height <= 1) continue;
       const style = getComputedStyle(element);
-      const scrollContainer = element.closest<HTMLElement>('.pill-group');
+      const scrollContainer = element.closest<HTMLElement>('.pill-group, .profit-tabs');
       if (scrollContainer && getComputedStyle(scrollContainer).overflowX === 'auto') continue;
       const scrolls =
         /(auto|scroll)/.test(style.overflowX) && element.scrollWidth > element.clientWidth + 1;

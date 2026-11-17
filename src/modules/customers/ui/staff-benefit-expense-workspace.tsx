@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { Select } from '@/design-system/forms';
 import { PageHeader } from '@/design-system/layout';
+import { Pagination, usePagination } from '@/design-system/pagination';
 import { Button, Card, EmptyState, ErrorState, Field } from '@/design-system/primitives';
 import { formatTileMoney } from '@/modules/reporting/format';
 import type { StaffBenefitMonth } from '../staff-benefit-expense-read';
@@ -27,6 +28,7 @@ export function StaffBenefitExpenseWorkspace({
   rows: readonly StaffBenefitExpenseView[];
 }) {
   const router = useRouter();
+  const accountPage = usePagination(rows, { resetKey: month });
   const [busyAccount, setBusyAccount] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +113,7 @@ export function StaffBenefitExpenseWorkspace({
         />
       ) : (
         <div className="stack">
-          {rows.map((row) => (
+          {accountPage.rows.map((row) => (
             <Card key={row.accountId} as="article" className="panel stack">
               <h2>{row.staffName}</h2>
               {row.cost.status === 'NO_FUEL' ? (
@@ -132,8 +134,8 @@ export function StaffBenefitExpenseWorkspace({
                     <thead>
                       <tr>
                         <th scope="col">Fuel</th>
-                        <th scope="col">Litres</th>
-                        <th scope="col">Cost a litre</th>
+                        <th scope="col">Quantity</th>
+                        <th scope="col">Cost per litre or kg</th>
                         <th scope="col">Cost</th>
                         <th scope="col">Pump price value</th>
                       </tr>
@@ -142,7 +144,7 @@ export function StaffBenefitExpenseWorkspace({
                       {row.cost.lines.map((line) => (
                         <tr key={line.productId}>
                           <th scope="row">{line.productName}</th>
-                          <td>{line.litres}</td>
+                          <td>{`${line.litres} ${line.unit === 'KILOGRAMS' ? 'kg' : 'L'}`}</td>
                           <td>{line.costPerLitre}</td>
                           <td>{line.cost}</td>
                           <td>{formatTileMoney(line.soldValue)}</td>
@@ -187,6 +189,7 @@ export function StaffBenefitExpenseWorkspace({
               ) : null}
             </Card>
           ))}
+          <Pagination slice={accountPage} label="Accounts pages" noun="accounts" />
         </div>
       )}
     </>

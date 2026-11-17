@@ -7,7 +7,7 @@ import { Modal } from '@/design-system/modal';
 import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import { companyForNewCustomer } from '../company-choice';
-import { makeReference, STAFF_CUSTOMER_KIND } from './customer-reference';
+import { isDuplicateCustomerName, makeReference, STAFF_CUSTOMER_KIND } from './customer-reference';
 
 type Kind = 'CREDIT' | 'PREPAID_VALUE' | 'PREPAID_LITRES' | 'STAFF';
 
@@ -48,6 +48,7 @@ export function AddCustomer({
   companies = [],
   canAdd,
   canOpenAccount,
+  existingNames = [],
 }: {
   tenantId: string;
   /** The company chosen in the context selector; a customer's credit is with one company. */
@@ -56,6 +57,8 @@ export function AddCustomer({
   companies?: ReadonlyArray<{ id: string; name: string }>;
   canAdd: boolean;
   canOpenAccount: boolean;
+  /** Names already in use, so a second customer with the same name is noticed before saving. */
+  existingNames?: readonly string[];
 }) {
   const router = useRouter();
   // The staff fuel benefit page links here with ?add=staff so the form opens ready for a staff member.
@@ -282,7 +285,16 @@ export function AddCustomer({
               />
             </Field>
           ) : (
-            <Field id="add-customer-name" label="Customer name" required>
+            <Field
+              id="add-customer-name"
+              label="Customer name"
+              required
+              hint={
+                isDuplicateCustomerName(name, existingNames)
+                  ? 'A customer with this name already exists. Check the list before adding another.'
+                  : undefined
+              }
+            >
               <input
                 id="add-customer-name"
                 maxLength={200}

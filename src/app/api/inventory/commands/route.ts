@@ -4,8 +4,10 @@ import {
   confirmDeliveryFromRequest,
   correctDeliverySupplierFromRequest,
   createDeliveryFromRequest,
+  updateDeliveryFromRequest,
   createTankFromRequest,
   setTankVarianceLimitsFromRequest,
+  updateTankFromRequest,
   deactivateTankFromRequest,
   approveInventoryCostRevaluationFromRequest,
   postInventoryAdjustmentFromRequest,
@@ -24,12 +26,14 @@ import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/
 
 const COMMANDS = [
   'CreateTank',
+  'UpdateTank',
   'DeactivateTank',
   'SetTankVarianceLimits',
   'RecordTankDip',
   'VoidTankDip',
   'SetTankCalibration',
   'CreateDelivery',
+  'UpdateDelivery',
   'ConfirmDelivery',
   'CorrectDeliverySupplier',
   'PostInventoryAdjustment',
@@ -64,6 +68,9 @@ export const POST = withRequestObservability(
         case 'CreateTank':
           result = await createTankFromRequest(request, body);
           break;
+        case 'UpdateTank':
+          result = await updateTankFromRequest(request, body);
+          break;
         case 'SetTankVarianceLimits':
           result = await setTankVarianceLimitsFromRequest(request, body);
           break;
@@ -81,6 +88,9 @@ export const POST = withRequestObservability(
           break;
         case 'CreateDelivery':
           result = await createDeliveryFromRequest(request, body);
+          break;
+        case 'UpdateDelivery':
+          result = await updateDeliveryFromRequest(request, body);
           break;
         case 'ConfirmDelivery':
           result = await confirmDeliveryFromRequest(request, body);

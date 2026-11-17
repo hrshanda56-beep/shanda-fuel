@@ -7,9 +7,15 @@ import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { CustomerAccount, CustomerSummary } from './types';
+import { InfoTip } from '@/design-system/info-tip';
 
 export type ActionStation = { id: string; name: string; code: string };
-export type ActionProduct = { id: string; code: string; name: string };
+export type ActionProduct = {
+  id: string;
+  code: string;
+  name: string;
+  unit?: 'LITRES' | 'KILOGRAMS';
+};
 
 type Sheet = 'payment' | 'topup' | 'account' | 'suspend' | 'reactivate';
 
@@ -225,10 +231,11 @@ export function CustomerActions({
           'PREPAID_TOPUP',
         );
       } else {
-        const value = parsePositive(litres, 3);
-        if (!value) return setFieldError('Enter the litres paid for, for example 200.');
-        if (!productId) return setFieldError('Choose which fuel the litres are for.');
         const fuel = fuelProducts.find((product) => product.id === productId);
+        const word = fuel?.unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
+        const value = parsePositive(litres, 3);
+        if (!value) return setFieldError(`Enter the ${word} paid for, for example 200.`);
+        if (!productId) return setFieldError('Choose which fuel the quantity is for.');
         await send(
           {
             commandType: 'RecordPrepaidTopUp',
@@ -241,7 +248,7 @@ export function CustomerActions({
             businessDate: date,
             ...entryDetailsFromForm(),
           },
-          `${value} litres of ${fuel?.name ?? 'fuel'} added for ${who}.`,
+          `${value} ${word} of ${fuel?.name ?? 'fuel'} added for ${who}.`,
           'PREPAID_TOPUP',
         );
       }
@@ -346,13 +353,13 @@ export function CustomerActions({
 
           {sheet === 'payment' && creditAccount ? (
             <>
-              <p className="field-hint">
+              <InfoTip>
                 {creditAccount.balance === null
                   ? `This lowers what ${customer.displayName} owes. The amount they owe is not recorded.`
                   : creditAccount.balance.trim().startsWith('-')
                     ? `${customer.displayName} has already paid ${formatTileMoney(creditAccount.balance.replace('-', ''), creditAccount.currency)} more than they owe. A new payment adds to that.`
                     : `This lowers what ${customer.displayName} owes. They currently owe ${formatTileMoney(creditAccount.balance, creditAccount.currency)}.`}
-              </p>
+              </InfoTip>
               <Field
                 id="action-amount"
                 label={`Amount received (${creditAccount.currency})`}
@@ -460,7 +467,15 @@ export function CustomerActions({
                       }))}
                     />
                   </Field>
-                  <Field id="action-litres" label="Litres paid for" required>
+                  <Field
+                    id="action-litres"
+                    label={
+                      fuelProducts.find((product) => product.id === productId)?.unit === 'KILOGRAMS'
+                        ? 'Kilograms paid for'
+                        : 'Litres paid for'
+                    }
+                    required
+                  >
                     <input
                       id="action-litres"
                       inputMode="decimal"
@@ -559,10 +574,10 @@ export function CustomerActions({
                   />
                 </Field>
               ) : null}
-              <p className="field-hint">
+              <InfoTip>
                 After opening it, choose which stations it can be used at under “Where this customer
                 can buy fuel”.
-              </p>
+              </InfoTip>
             </>
           ) : null}
 

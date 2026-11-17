@@ -1,4 +1,4 @@
-import { formatUsd } from '../../design-system/formatters';
+import { formatBusinessDate, formatUsd } from '../../design-system/formatters';
 import { ExactDecimal } from '../../platform/domain/primitives';
 import {
   DEFAULT_ALERT_SETTINGS,
@@ -180,7 +180,7 @@ export function buildActionCenter(facts: ActionCenterFacts): ActionCenter {
       items.push({
         id: `reconciliation-${row.id}`,
         area: 'Approvals',
-        title: `Reconciliation for ${row.businessDate} is waiting for approval`,
+        title: `Reconciliation for ${formatBusinessDate(row.businessDate)} is waiting for approval`,
         detail: blocked
           ? 'You submitted this, so someone else needs to approve it.'
           : 'Review and approve or return it.',

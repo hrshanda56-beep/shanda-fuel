@@ -109,17 +109,85 @@ describe('litresSeries', () => {
     expect(series[5]).toMatchObject({
       litres: '1284.5',
       products: [
-        { name: 'Diesel', litres: '578.5' },
-        { name: 'Petrol', litres: '706' },
+        { name: 'Diesel', litres: '578.5', unit: 'LITRES' },
+        { name: 'Petrol', litres: '706', unit: 'LITRES' },
       ],
     });
   });
 
+  it('lists Diesel first, then Petrol, then Gas, whatever their names sort to', () => {
+    const rows = [
+      { businessDate: '2026-10-10', productName: 'Gas', productKind: 'GAS', litres: '1' },
+      { businessDate: '2026-10-10', productName: 'Petrol', productKind: 'PETROL', litres: '2' },
+      { businessDate: '2026-10-10', productName: 'Zed Diesel', productKind: 'DIESEL', litres: '3' },
+    ];
+    expect(productTotals(rows).map((p) => p.name)).toEqual(['Zed Diesel', 'Petrol', 'Gas']);
+    expect(litresSeries(rows, buckets)[5]?.products.map((p) => p.name)).toEqual([
+      'Zed Diesel',
+      'Petrol',
+      'Gas',
+    ]);
+  });
+
   it('totals each product over the range', () => {
     expect(productTotals(sales)).toEqual([
-      { name: 'Diesel', litres: '588.5' },
-      { name: 'Petrol', litres: '706' },
+      { name: 'Diesel', litres: '588.5', unit: 'LITRES' },
+      { name: 'Petrol', litres: '706', unit: 'LITRES' },
     ]);
+  });
+});
+
+describe('fuels measured in kilograms', () => {
+  const rows = [
+    { businessDate: '2026-10-11', productName: 'Diesel', litres: '100', unit: 'LITRES' as const },
+    { businessDate: '2026-10-11', productName: 'LP Gas', litres: '40', unit: 'KILOGRAMS' as const },
+  ];
+
+  it('adds only the fuels in the chart unit, and lists each fuel in its own unit', () => {
+    const point = litresSeries(rows, chartBuckets('7D', '2026-10-11').buckets).at(-1);
+    expect(point?.unit).toBe('LITRES');
+    expect(point?.litres).toBe('100');
+    expect(point?.products).toEqual([
+      { name: 'Diesel', litres: '100', unit: 'LITRES' },
+      { name: 'LP Gas', litres: '40', unit: 'KILOGRAMS' },
+    ]);
+  });
+
+  it('has no figure, not zero, for a day with only fuel in the other unit', () => {
+    const buckets = chartBuckets('7D', '2026-10-11').buckets;
+    const mixed = [
+      { businessDate: '2026-10-10', productName: 'Diesel', litres: '100', unit: 'LITRES' as const },
+      {
+        businessDate: '2026-10-11',
+        productName: 'LP Gas',
+        litres: '40',
+        unit: 'KILOGRAMS' as const,
+      },
+    ];
+    const point = litresSeries(mixed, buckets).at(-1);
+    expect(point?.unit).toBe('LITRES');
+    expect(point?.litres).toBeNull();
+  });
+
+  it('draws the chart in kilograms when every fuel is sold in kilograms', () => {
+    const gasOnly = rows.filter((row) => row.unit === 'KILOGRAMS');
+    expect(litresSeries(gasOnly, chartBuckets('7D', '2026-10-11').buckets).at(-1)?.unit).toBe(
+      'KILOGRAMS',
+    );
+  });
+
+  it('says mixed units on a day total that adds litres and kilograms', () => {
+    const base = {
+      stationId: 's',
+      salesValue: '1',
+      cashVariance: '0',
+      customerCreditEvidence: '0',
+      prepaidEvidence: '0',
+      reconciliationIds: ['r'],
+    };
+    expect(
+      dailyTotals([{ ...base, reportDate: '2026-10-11', litresSold: '5', unit: 'MIXED' }])?.unit,
+    ).toBe('MIXED');
   });
 });
 
@@ -160,8 +228,8 @@ describe('configured products and unavailable stock variance', () => {
       'ULP 95 – Tank B',
     ]);
     expect(litresSeries(rows, chartBuckets('7D', '2026-10-11').buckets).at(-1)?.products).toEqual([
-      { name: 'Blend E10', litres: '5' },
-      { name: 'ULP 95 – Tank B', litres: '10' },
+      { name: 'Blend E10', litres: '5', unit: 'LITRES' },
+      { name: 'ULP 95 – Tank B', litres: '10', unit: 'LITRES' },
     ]);
   });
 

@@ -1,13 +1,15 @@
 'use client';
 
 import { useReverification } from '@clerk/nextjs';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Icon } from '@/design-system/icons';
 import { Button, EmptyState, StatusBadge } from '@/design-system/primitives';
 import type { StatusTone } from '@/design-system/primitives';
 import { Modal } from '@/design-system/modal';
+import { useToast } from '@/design-system/feedback-provider';
 
 import type { RoleCode } from '@/modules/authorization';
+import { defaultScopeForRole, scopeChoicesForRole } from '@/modules/staff/role-scopes';
 import type { SettingsView } from '../contracts';
 import styles from './settings-workspace.module.css';
 import { matchesStaffScope } from './staff-filter';
@@ -18,6 +20,7 @@ import {
   classifyStepUpFailure,
   stepUpFailureMessage,
 } from './staff-step-up-diagnostics';
+import { InfoTip } from '@/design-system/info-tip';
 
 type StaffOverview = NonNullable<SettingsView['staff']>;
 type Role = Exclude<RoleCode, 'OWNER'> | 'OWNER';
@@ -34,17 +37,21 @@ const ROLE_LABELS: Record<Role, string> = {
   FINANCE: 'Finance',
   SUPERVISOR: 'Supervisor',
   ATTENDANT: 'Attendant',
+  AUDITOR: 'Auditor (read only)',
+  AREA_MANAGER: 'Area manager',
+  CASH_COLLECTOR: 'Cash collector',
 };
 
 function defaultScope(role: Role) {
-  return role === 'OWNER' || role === 'ADMINISTRATOR'
-    ? 'TENANT'
-    : role === 'FINANCE'
-      ? 'LEGAL_ENTITY'
-      : 'STATION';
+  return defaultScopeForRole(role);
 }
 
-const INVITE_NOTICE_KEY = 'shanda-fuel:invite-notice';
+const COMMAND_SUCCESS_MESSAGES: Record<string, string> = {
+  ResendStaffInvitation: 'Invitation sent again.',
+  RevokeStaffInvitation: 'Invitation cancelled.',
+  UpdateStaffAssignment: 'Access updated.',
+  RemoveStaffMember: 'Staff member removed.',
+};
 
 type StaffFilter = 'all' | 'active' | 'invited' | 'deactivated';
 
@@ -76,7 +83,7 @@ function initials(name: string) {
 }
 
 /** Change one active person's role and stations. The server re-checks everything. */
-function EditAccessModal({
+export function EditAccessModal({
   member,
   overview,
   verify,
@@ -160,7 +167,7 @@ function EditAccessModal({
               ))}
           </select>
         </label>
-        {role === 'FINANCE' ? (
+        {scopeChoicesForRole(role).length > 1 ? (
           <label>
             <span>Scope</span>
             <select
@@ -262,23 +269,11 @@ export function StaffPanel({
   }>();
   const [editTarget, setEditTarget] = useState<StaffMember>();
   const [deactivationTarget, setDeactivationTarget] = useState<StaffMember>();
+  const [removeTarget, setRemoveTarget] = useState<StaffMember>();
   const [deactivationBusy, setDeactivationBusy] = useState(false);
   const [deactivationOutcome, setDeactivationOutcome] = useState<DeactivationOutcome>();
   const deactivationInFlight = useRef(false);
-
-  useEffect(() => {
-    try {
-      const notice = sessionStorage.getItem(INVITE_NOTICE_KEY);
-      if (notice) {
-        sessionStorage.removeItem(INVITE_NOTICE_KEY);
-        // Read after mount: sessionStorage does not exist on the server render.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setMessage(notice);
-      }
-    } catch {
-      // Storage can be blocked; there is simply no notice to show.
-    }
-  }, []);
+  const toast = useToast();
 
   const legalEntity = useMemo(
     () => overview.scopeOptions.find((option) => option.id === legalEntityId),
@@ -313,6 +308,8 @@ export function StaffPanel({
       }
       const result = (await response.json().catch(() => null)) as unknown;
       setMessage('Saved.');
+      const done = COMMAND_SUCCESS_MESSAGES[String(body.commandType)];
+      if (done) toast.success(done);
       if (reload) window.location.reload();
       return result;
     } catch {
@@ -356,18 +353,15 @@ export function StaffPanel({
     } else if (result) {
       const email = typeof result === 'object' ? (result as { delivery?: string }) : {};
       const address = String(form.get('email') ?? '').trim();
-      // The page reloads to show the new invite, so the outcome is kept for the next load.
-      try {
-        sessionStorage.setItem(
-          INVITE_NOTICE_KEY,
-          email.delivery === 'failed'
-            ? `The invitation for ${address} was saved, but the email could not be sent. Check the address, then use Manual (staff number) to give them a code instead.`
-            : email.delivery === 'sent'
-              ? `Invitation email sent to ${address}. It can take a minute to arrive; ask them to check spam.`
-              : '',
+      // The toast is carried across the reload that shows the new invite.
+      if (email.delivery === 'failed') {
+        toast.error(
+          `The invitation for ${address} was saved, but the email could not be sent. Check the address, then use Manual (staff number) to give them a code instead.`,
         );
-      } catch {
-        // Storage can be blocked; the invite itself is already saved.
+      } else {
+        toast.success(
+          `Invitation email sent to ${address}. It can take a minute to arrive; ask them to check spam.`,
+        );
       }
       window.location.reload();
     }
@@ -633,7 +627,18 @@ export function StaffPanel({
       scope: scopeText(member.scopeLabels),
       statusLabel: 'Deactivated',
       tone: 'neutral',
-      actions: null,
+      actions: overview.canManage ? (
+        <Button
+          type="button"
+          variant="quiet"
+          className={styles.staffDanger}
+          size="sm"
+          onClick={() => setRemoveTarget(member)}
+          disabled={busy}
+        >
+          Remove
+        </Button>
+      ) : null,
     })),
   ];
 
@@ -780,9 +785,6 @@ export function StaffPanel({
                 onClick={() => setSelectedId(row.id)}
               >
                 <div className={styles.staffName}>
-                  <span className={styles.staffAvatar} aria-hidden="true">
-                    {initials(row.name)}
-                  </span>
                   <div>
                     <button
                       type="button"
@@ -935,7 +937,7 @@ export function StaffPanel({
                 ))}
             </select>
           </label>
-          {role !== 'OWNER' && role !== 'ADMINISTRATOR' ? (
+          {scopeChoicesForRole(role).length > 1 ? (
             <label>
               <span>Scope</span>
               <select
@@ -946,7 +948,9 @@ export function StaffPanel({
                   setStationIds([]);
                 }}
               >
-                {role === 'FINANCE' ? <option value="LEGAL_ENTITY">Legal entity</option> : null}
+                {scopeChoicesForRole(role).includes('LEGAL_ENTITY') ? (
+                  <option value="LEGAL_ENTITY">Legal entity</option>
+                ) : null}
                 <option value="STATION">Selected stations</option>
               </select>
             </label>
@@ -1067,6 +1071,43 @@ export function StaffPanel({
       </Modal>
 
       <Modal
+        open={Boolean(removeTarget)}
+        onClose={() => setRemoveTarget(undefined)}
+        title="Remove staff member?"
+        description="They are already deactivated and cannot sign in."
+        role="alertdialog"
+        dismissible={!busy}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRemoveTarget(undefined)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy}
+              onClick={async () => {
+                if (!removeTarget) return;
+                await command({
+                  commandType: 'RemoveStaffMember',
+                  membershipId: removeTarget.membershipId,
+                });
+                setRemoveTarget(undefined);
+              }}
+            >
+              Remove
+            </Button>
+          </>
+        }
+      >
+        {removeTarget ? (
+          <InfoTip>
+            {removeTarget.name} will be taken off this list. If they appear in shifts, cash or other
+            records, those records stay as they are and only their name is hidden here.
+          </InfoTip>
+        ) : null}
+      </Modal>
+
+      <Modal
         open={Boolean(deactivationTarget)}
         onClose={closeDeactivation}
         title="Deactivate staff member?"
@@ -1105,10 +1146,10 @@ export function StaffPanel({
       >
         {deactivationTarget ? (
           <>
-            <p className="semantic-note">
+            <InfoTip>
               {deactivationTarget.name} will lose workplace access immediately. This action cannot
               be undone from this screen.
-            </p>
+            </InfoTip>
             {deactivationOutcome ? (
               <p
                 className={`state ${deactivationOutcome.kind === 'success' ? 'state-success' : 'state-error'}`}

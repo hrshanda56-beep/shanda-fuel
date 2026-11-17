@@ -19,6 +19,8 @@ export type AttendantShiftSale = Readonly<{
   sales: string;
   accounted: string;
   litres: string;
+  /** The unit of `litres` for this shift; MIXED when litre and kilogram fuels were both sold. */
+  unit?: string;
 }>;
 
 export type AttendantCredit = Readonly<{
@@ -45,6 +47,7 @@ export type AttendantSalesRow = Readonly<{
   label: string;
   shifts: number;
   litres: string;
+  unit: string;
   sales: string;
   accounted: string;
 }>;
@@ -61,6 +64,7 @@ export function creditSalesToAttendants(
       credit: AttendantCredit;
       shifts: number;
       litres: ExactDecimal;
+      units: Set<string>;
       sales: ExactDecimal;
       accounted: ExactDecimal;
     }
@@ -73,10 +77,12 @@ export function creditSalesToAttendants(
       credit,
       shifts: 0,
       litres: zero(),
+      units: new Set<string>(),
       sales: zero(),
       accounted: zero(),
     };
     group.shifts += 1;
+    group.units.add(shift.unit ?? 'LITRES');
     group.litres = group.litres.add(new ExactDecimal(shift.litres));
     group.sales = group.sales.add(new ExactDecimal(shift.sales));
     group.accounted = group.accounted.add(new ExactDecimal(shift.accounted));
@@ -91,6 +97,10 @@ export function creditSalesToAttendants(
       label: group.credit.label,
       shifts: group.shifts,
       litres: group.litres.toString(),
+      unit:
+        group.units.has('MIXED') || group.units.size > 1
+          ? 'MIXED'
+          : ([...group.units][0] ?? 'LITRES'),
       sales: group.sales.toString(),
       accounted: group.accounted.toString(),
     }))

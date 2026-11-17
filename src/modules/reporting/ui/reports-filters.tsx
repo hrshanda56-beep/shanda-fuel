@@ -47,10 +47,10 @@ export function ReportCategoryFilter({ financeReports = true }: { financeReports
       value={active ?? ''}
       options={[
         { value: '', label: `All Reports (${reportsFor(financeReports).length})` },
-        ...REPORT_CATEGORIES.map((category) => ({
-          value: category.id,
-          label: `${category.label} (${reportsInCategory(category.id, financeReports).length})`,
-        })),
+        ...REPORT_CATEGORIES.flatMap((category) => {
+          const count = reportsInCategory(category.id, financeReports).length;
+          return count ? [{ value: category.id, label: `${category.label} (${count})` }] : [];
+        }),
       ]}
       onValueChange={(value) => {
         const next = new URLSearchParams(searchParams.toString());

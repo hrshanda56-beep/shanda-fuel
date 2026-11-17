@@ -62,6 +62,18 @@ describe('purchasing command contracts', () => {
     expect(create.safeParse({ ...base, lines: [] }).success).toBe(false);
   });
 
+  it('rejects litres and prices too large for the database columns', () => {
+    const create = PURCHASING_COMMAND_SCHEMAS.CreatePurchaseOrder;
+    const base = { commandType: 'CreatePurchaseOrder', ...ids, orderDate: '2026-10-19' };
+    const line = (orderedLitres: string, agreedUnitPrice: string) => ({
+      ...base,
+      lines: [{ productId: ids.productId, orderedLitres, agreedUnitPrice }],
+    });
+    expect(create.safeParse(line('99999999999999999', '1')).success).toBe(false);
+    expect(create.safeParse(line('1', '99999999999999999')).success).toBe(false);
+    expect(create.safeParse(line('999999999999.999', '999999999.12345678')).success).toBe(true);
+  });
+
   it('requires a reason to cancel and close', () => {
     for (const type of ['CancelPurchaseOrder', 'ClosePurchaseOrder'] as const) {
       const schema = PURCHASING_COMMAND_SCHEMAS[type];

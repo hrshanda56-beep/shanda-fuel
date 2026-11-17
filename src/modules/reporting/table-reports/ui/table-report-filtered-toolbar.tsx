@@ -39,6 +39,7 @@ export function TableReportFilteredToolbar({
   toDate,
   filterKeys,
   filterOptions,
+  canExport,
 }: {
   tenantId: string;
   slug: string;
@@ -48,6 +49,8 @@ export function TableReportFilteredToolbar({
   /** The extra filters this report understands. */
   filterKeys: readonly TableReportFilterKey[];
   filterOptions: FilterOptions;
+  /** Leaves the download buttons out for someone who may read the report but not take it out. */
+  canExport: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -122,16 +125,10 @@ export function TableReportFilteredToolbar({
   }
 
   return (
-    <div
-      className="table-report-toolbar"
-      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}
-    >
+    <div className="table-report-toolbar">
       <ReportFiltersMenu stations={stations} filters={filters} onChange={changeFilters} />
       {filterKeys.map((key) => (
-        <label
-          key={key}
-          style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}
-        >
+        <label key={key} className="table-report-field">
           <span className="field-hint">{NARROWING_LABELS[key]}</span>
           <Select
             aria-label={NARROWING_LABELS[key]}
@@ -147,22 +144,21 @@ export function TableReportFilteredToolbar({
           />
         </label>
       ))}
-      <div
-        className="table-report-downloads"
-        style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}
-      >
-        {(Object.keys(FORMAT_LABELS) as Format[]).map((format) => (
-          <Button
-            key={format}
-            variant={format === 'xlsx' ? 'primary' : 'secondary'}
-            loading={busy === format}
-            disabled={busy !== null}
-            onClick={() => void download(format)}
-          >
-            {FORMAT_LABELS[format]}
-          </Button>
-        ))}
-      </div>
+      {canExport ? (
+        <div className="table-report-downloads">
+          {(Object.keys(FORMAT_LABELS) as Format[]).map((format) => (
+            <Button
+              key={format}
+              variant={format === 'xlsx' ? 'primary' : 'secondary'}
+              loading={busy === format}
+              disabled={busy !== null}
+              onClick={() => void download(format)}
+            >
+              {FORMAT_LABELS[format]}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       <ReportActionStatus
         status={status}
         onDismiss={() => setStatus(null)}

@@ -925,7 +925,7 @@ describe('A6 expenses PostgreSQL persistence', () => {
       to: '2026-10-31',
     });
     expect(summary.status).toBe(200);
-    expect(summary.json.fixedCostRecognition).toBe('73.3343');
+    expect(summary.json.fixedCostRecognition).toBe('2006.6667');
     expect(typeof summary.json.operatingExpenses).toBe('string');
     expect(summary.json.byCategory.length).toBeGreaterThan(0);
 

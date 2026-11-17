@@ -9,6 +9,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
     <ServerDataPage
       pathname="/purchasing"
       search={search}
+      shell={{ pageSubtitle: 'Fuel you have ordered, received and been invoiced for' }}
       fallback={
         <ContextRequiredState
           title="Choose a work context"

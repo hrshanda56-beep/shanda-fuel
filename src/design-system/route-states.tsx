@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 
+import { WorkContextProvider } from '../modules/context/client-context';
 import { AppShell } from './app-shell';
 import { emptyNavigationProjection } from './navigation-projection';
 import { Button, EmptyState, ErrorState, SkeletonBlock } from './primitives';
+import { recallShell } from './shell-memory';
 
 /**
  * Whole-page states rendered inside the Product Shell, so navigation stays
@@ -16,23 +18,37 @@ import { Button, EmptyState, ErrorState, SkeletonBlock } from './primitives';
  */
 
 export function RouteLoading() {
-  return (
-    <main className="route-loading-standalone" id="main-content">
-      <div className="route-loading" role="status" aria-live="polite">
-        <span className="visually-hidden">Loading page…</span>
-        <div className="route-loading-header" aria-hidden="true">
-          <SkeletonBlock width="7rem" height="0.75rem" />
-          <SkeletonBlock width="min(22rem, 70%)" height="1.75rem" />
-          <SkeletonBlock width="min(34rem, 90%)" height="0.875rem" />
-        </div>
-        <div className="route-loading-grid" aria-hidden="true">
-          <SkeletonBlock height="6.5rem" />
-          <SkeletonBlock height="6.5rem" />
-          <SkeletonBlock height="6.5rem" />
-        </div>
-        <SkeletonBlock height="16rem" />
+  const skeleton = (
+    <div className="route-loading" role="status" aria-live="polite">
+      <span className="visually-hidden">Loading page…</span>
+      <div className="route-loading-header" aria-hidden="true">
+        <SkeletonBlock width="7rem" height="0.75rem" />
+        <SkeletonBlock width="min(22rem, 70%)" height="1.75rem" />
+        <SkeletonBlock width="min(34rem, 90%)" height="0.875rem" />
       </div>
-    </main>
+      <div className="route-loading-grid" aria-hidden="true">
+        <SkeletonBlock height="6.5rem" />
+        <SkeletonBlock height="6.5rem" />
+        <SkeletonBlock height="6.5rem" />
+      </div>
+      <SkeletonBlock height="16rem" />
+    </div>
+  );
+  // After the first page of a visit the sidebar and header are drawn again around the skeleton,
+  // so moving between pages changes only the page area. A first load has nothing to draw yet.
+  const shell = recallShell();
+  if (!shell) {
+    return (
+      <main className="route-loading-standalone" id="main-content">
+        {skeleton}
+      </main>
+    );
+  }
+  const { resolution, ...props } = shell;
+  return (
+    <WorkContextProvider resolution={resolution}>
+      <AppShell {...props}>{skeleton}</AppShell>
+    </WorkContextProvider>
   );
 }
 

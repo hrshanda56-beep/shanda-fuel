@@ -62,9 +62,7 @@ test.describe('data-filled screens', () => {
 
       await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
       await expect(page.getByText('Shift board ·', { exact: false })).toHaveCount(0);
-      const dayControls = page.locator('section[aria-labelledby="current-day-title"]');
-      await expect(dayControls.getByRole('heading', { name: 'Day controls' })).toBeVisible();
-      await expect(dayControls.locator('.status')).toHaveCount(0);
+      await expect(page.locator('.ops-hero')).toBeVisible();
       const attention = page.locator('section[aria-labelledby="operations-attention-title"]');
       await expect(attention).toHaveCount(0);
       await expect(page.locator('section[aria-labelledby="timeline-title"]')).toHaveCount(0);
@@ -205,6 +203,7 @@ test.describe('data-filled screens', () => {
 
       if (width >= 1024) {
         // The matching table spans the row, so no column hides behind its scroll.
+        await page.getByRole('tab', { name: 'Payments Waiting' }).click();
         const region = page.locator('.responsive-table-wrap', {
           has: page.getByRole('columnheader', { name: 'Remaining' }),
         });

@@ -1,13 +1,22 @@
 export {
   SETUP_COMMAND_TYPES,
   assertSetupCommandType,
+  createCashLocationFromRequest,
   createNozzleFromRequest,
   createProductFromRequest,
+  deleteProductFromRequest,
+  renameProductFromRequest,
+  setProductUnitFromRequest,
+  setProductStatusFromRequest,
   createPumpFromRequest,
   draftPriceChangeFromRequest,
   recordBankBalanceFromRequest,
   setAlertSettingsFromRequest,
+  setMeterWorkingSinceFromRequest,
+  setProductKindFromRequest,
   setResponsibleSupervisorFromRequest,
+  updateNozzleFromRequest,
+  updatePumpFromRequest,
   updateSupplierFromRequest,
 } from './commands';
 export { getSetupOverview } from './queries';

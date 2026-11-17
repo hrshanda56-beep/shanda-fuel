@@ -35,12 +35,7 @@ export default async function OperationsReconciliationReviewPage({
     : undefined;
 
   return (
-    <AppShell
-      breadcrumbs={[
-        { label: 'Operations', href: '/operations/daily' },
-        { label: 'Management review' },
-      ]}
-    >
+    <AppShell>
       {context ? (
         <DailyOperationsWorkspace context={context} role="MANAGEMENT" />
       ) : (

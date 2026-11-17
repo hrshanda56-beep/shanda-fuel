@@ -1,0 +1,203 @@
+/* Section cards ---------------------------------------------------------
+ * One white card per topic on Settings-style screens: a title line with an
+ * optional note and action, then flat rows, small fact tiles or a short form.
+ * Rows are separated by hairlines, never boxed, so a long list stays calm.
+ */
+
+.sc {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.sc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  min-width: 0;
+}
+
+.sc-head-text {
+  display: grid;
+  flex: 1 1 14rem;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sc-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* A heading that is only focused by the screen (to say a new card opened) shows no ring. */
+.sc-title[tabindex='-1']:focus {
+  outline: none;
+}
+
+.sc-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  max-width: 46rem;
+}
+
+.sc-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Rows */
+.sc-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.sc-row-main {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sc-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.sc-row-detail {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  overflow-wrap: anywhere;
+}
+
+.sc-row-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* Fact tiles */
+.sc-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.sc-tile {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.sc-tile dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.sc-tile dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.sc-empty {
+  margin: 0;
+  padding: var(--space-2) 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* A short form inside a card: two columns on wide cards, one on narrow ones. */
+.sc-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sc-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-5);
+}
+
+.sc-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sc-message {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.sc-message[data-tone='error'] {
+  color: var(--tone-critical-text);
+}
+
+@media (max-width: 40rem) {
+  .sc {
+    padding: var(--space-4);
+  }
+
+  .sc-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sc-row-side {
+    justify-content: flex-start;
+  }
+
+  .sc-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sc-action {
+    width: 100%;
+  }
+
+  .sc-action > .button {
+    flex: 1 1 auto;
+  }
+}

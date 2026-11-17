@@ -234,6 +234,7 @@ describe('Staff fuel benefit month-end expense (PostgreSQL)', () => {
       {
         productId: ids.product,
         productName: 'Diesel',
+        unit: 'LITRES',
         litres: '50.000',
         soldValue: '75.0000',
         costPerLitre: '0.85000000',

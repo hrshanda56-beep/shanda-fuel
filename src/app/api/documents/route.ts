@@ -5,6 +5,7 @@ import {
   listDocumentsFromRequest,
   uploadDocumentFromRequest,
 } from '../../../modules/documents/documents';
+import { readUploadForm } from '../../../modules/documents/read-upload-form';
 import { AppError } from '../../../platform/errors';
 import { apiErrorResponse, withRequestObservability } from '../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../platform/security';
@@ -54,7 +55,7 @@ export const POST = withRequestObservability(
       await requireAuthenticatedActor(request);
       rejectDeclaredOversize(request);
       const limited = limitedMultipartRequest(request);
-      return json(await uploadDocumentFromRequest(limited, await limited.formData()), 201);
+      return json(await uploadDocumentFromRequest(limited, await readUploadForm(limited)), 201);
     } catch (error) {
       return apiErrorResponse(request, error, {
         includeDetails: true,

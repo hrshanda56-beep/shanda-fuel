@@ -5,6 +5,7 @@ import {
   listExpenseAttachmentsFromRequest,
   uploadExpenseAttachmentFromRequest,
 } from '../../../../modules/expenses/attachments';
+import { readUploadForm } from '../../../../modules/documents/read-upload-form';
 import { AppError } from '../../../../platform/errors';
 import { apiErrorResponse, withRequestObservability } from '../../../../platform/observability';
 import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/security';
@@ -58,7 +59,10 @@ export const POST = withRequestObservability(
       rejectDeclaredOversize(request);
       const limitedRequest = limitedMultipartRequest(request);
       return json(
-        await uploadExpenseAttachmentFromRequest(limitedRequest, await limitedRequest.formData()),
+        await uploadExpenseAttachmentFromRequest(
+          limitedRequest,
+          await readUploadForm(limitedRequest),
+        ),
         201,
       );
     } catch (error) {

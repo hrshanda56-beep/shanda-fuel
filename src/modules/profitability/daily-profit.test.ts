@@ -35,7 +35,7 @@ describe('buildDailyProfit', () => {
       { businessDate: '2026-10-03', classification: 'FIXED_COST', amount: '33.3333' },
       { businessDate: '2026-10-01', classification: 'DIRECT_INVENTORY_COST', amount: '999.0000' },
     ],
-    fuelBenefit: '5.0000',
+    fuelBenefitByDate: [{ businessDate: '2026-10-02', amount: '5.0000' }],
   });
 
   it('splits gross profit per fuel with exact decimals and per litre', () => {
@@ -68,8 +68,30 @@ describe('buildDailyProfit', () => {
     expect(summary.combined.expenses).toBe('20.0000');
     expect(summary.combined.fixedCosts).toBe('100.0000');
     expect(summary.combined.grossProfit).toBe('160.0500');
-    expect(summary.combined.operatingProfit).toBe('40.0500');
+    expect(summary.combined.operatingProfit).toBe('35.0500');
     expect(summary.operatingProfitAfterBenefit).toBe('35.0500');
+    expect(summary.fuelBenefit).toBe('5.0000');
+  });
+
+  it('posts staff fuel on the day it was issued, so the days add up to the period', () => {
+    const second = summary.days.find((d) => d.date === '2026-10-02')!.combined;
+    expect(second.fuelBenefit).toBe('5.0000');
+    expect(second.operatingProfit).toBe('-28.3334');
+    expect(summary.days[0]!.combined.fuelBenefit).toBe('0.0000');
+    const total = summary.days.reduce((sum, day) => sum + Number(day.combined.operatingProfit), 0);
+    expect(total.toFixed(4)).toBe(summary.combined.operatingProfit);
+  });
+
+  it('keeps a day that only has staff fuel, as a loss', () => {
+    const result = buildDailyProfit({
+      sales: [],
+      costs: [],
+      expenses: [],
+      fuelBenefitByDate: [{ businessDate: '2026-10-05', amount: '12.5000' }],
+    });
+    expect(result.days).toHaveLength(1);
+    expect(result.days[0]!.combined.operatingProfit).toBe('-12.5000');
+    expect(result.fuelBenefit).toBe('12.5000');
   });
 
   it('shows unknown, not zero, when a sale has no cost yet', () => {

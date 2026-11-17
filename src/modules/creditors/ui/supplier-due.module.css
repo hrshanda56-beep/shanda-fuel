@@ -1,12 +1,15 @@
-/* What is due to suppliers. A module so it cannot collide with other pages' styles. */
-
+/* The open group's name and total: a band of its own, apart from the table header below. */
 .groupHead {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
 }
 
 .groupTitle {
@@ -18,14 +21,15 @@
 
 .groupTotal {
   color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
-  font-weight: var(--font-weight-medium);
 }
 
 .dueTable :global(.list-head),
 .dueTable :global(.list-row) {
-  grid-template-columns: minmax(12rem, 2fr) minmax(7rem, 1.2fr) minmax(9rem, 1.4fr) minmax(
-      7rem,
+  grid-template-columns: minmax(7rem, 2fr) minmax(4.5rem, 1fr) minmax(6.5rem, 1.2fr) minmax(
+      5.5rem,
       1fr
     );
 }
@@ -42,4 +46,57 @@
   .dueTable :global(.list-row) {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* The chart and the unpaid invoices sit side by side when the page is wide enough. */
+.page {
+  container-type: inline-size;
+}
+
+.split {
+  display: grid;
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+@container (min-width: 64rem) {
+  .split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Both cards are tall enough to feel roomy, and stay the same height as each other. */
+  .split > * {
+    min-height: 28rem;
+  }
+}
+
+/* A half-width card is still wide enough for the table: keep its header and columns. Only a phone stacks. */
+@media (min-width: 40.01rem) {
+  @container record-list (max-width: 48rem) {
+    .dueTable :global(.list-head) {
+      display: grid;
+    }
+
+    .dueTable :global(.list-head),
+    .dueTable :global(.list-row) {
+      grid-template-columns: minmax(7rem, 2fr) minmax(4.5rem, 1fr) minmax(6.5rem, 1.2fr) minmax(
+          5.5rem,
+          1fr
+        );
+      gap: var(--space-2);
+    }
+
+    .dueTable :global(.list-cell)::before {
+      content: none;
+    }
+
+    .dueTable :global(.list-amount) {
+      text-align: right;
+    }
+  }
+}
+
+/* The chart takes whatever height the card has, so the two cards end together. */
+.chartCard {
+  grid-template-rows: auto minmax(0, 1fr);
 }

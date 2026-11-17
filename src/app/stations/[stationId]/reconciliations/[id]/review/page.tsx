@@ -32,15 +32,7 @@ export default async function ReconciliationReviewPage({
         }
       : undefined;
   return (
-    <AppShell
-      breadcrumbs={[
-        {
-          label: 'Reconciliations',
-          href: stationReconciliationsPath(stationId, search.tenantId),
-        },
-        { label: 'Management review' },
-      ]}
-    >
+    <AppShell>
       {productionContext ? (
         <ProductionReconciliationWorkflow context={productionContext} role="MANAGEMENT" />
       ) : (

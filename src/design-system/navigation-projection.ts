@@ -86,8 +86,6 @@ const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly 
     purchasing: ['purchase_order.view'],
     expenses: ['expense.view'],
     profitability: ['report.finance.view'],
-    'daily-profit': ['report.finance.view'],
-    'financial-position': ['report.finance.view'],
     'fuel-deliveries': ['inventory.view'],
     'staff-benefit': ['customer.payment.record'],
     'payments-due': ['supplier.view'],
@@ -148,8 +146,9 @@ export function buildNavigationProjection({
     if (key === 'my-shift')
       return { key, visible: attendantWorkspace, enabled: attendantWorkspace };
     // The Finance overview replaces Today as that person's home, so Today would only bounce back.
+    // Running the day is not finance work, so Daily operations is not offered either.
     const visible =
-      !(key === 'today' && financeWorkspace) &&
+      !((key === 'today' || key === 'daily-operations') && financeWorkspace) &&
       NAVIGATION_PERMISSION_CANDIDATES[key].some((permissionCode) =>
         isPermissionGranted({
           actor,

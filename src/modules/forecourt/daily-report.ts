@@ -8,6 +8,7 @@ import { authorize } from '../../platform/security/permissions';
 import { resolveForecourtCommandContext } from './application';
 import { loadForecourtStation } from './persistence';
 import { buildDailyReport, type DailyReport, type DailyReportInput } from './daily-report-model';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 export const dailyReportQuery = z.object({
   tenantId: z.string().uuid(),
@@ -71,22 +72,21 @@ export async function getDailyReportFromRequest(
     const [people, readings, expenses, dips, cash, drops, mtdProducts, mtdExpenses] =
       await Promise.all([
         transaction.execute<{ id: string; name: string; role: 'SUPERVISOR' | 'ATTENDANT' }>(sql`
-          select m.id, u.name, 'ATTENDANT' as role
+          select m.id, coalesce(m.name, 'Unknown') as name, 'ATTENDANT' as role
           from app.reconciliation_attendants a
-          join app.memberships m on m.tenant_id = a.tenant_id and m.id = a.attendant_id
-          join app.users u on u.id = m.identity_id
+          join app.member_directory(${tenantId}::uuid) m on m.id = a.attendant_id
           where a.tenant_id = ${tenantId} and a.station_id = ${stationId}
             and a.reconciliation_id = ${reconciliationId}
           union all
-          select m.id, u.name, 'SUPERVISOR' as role
-          from app.memberships m
-          join app.users u on u.id = m.identity_id
-          where m.tenant_id = ${tenantId} and m.id = ${header.supervisorId}
+          select m.id, coalesce(m.name, 'Unknown') as name, 'SUPERVISOR' as role
+          from app.member_directory(${tenantId}::uuid) m
+          where m.id = ${header.supervisorId}
           order by name
         `),
         transaction.execute<DailyReportInput['readings'][number]>(sql`
           select p.number as "pumpNumber", n.number as "nozzleNumber",
-                 r.product_id as "productId", pr.name as "productName",
+                 r.product_id as "productId", pr.name as "productName", pr.unit as "fuelUnit",
+                 pr.kind as "productKind", pr.display_order as "productDisplayOrder",
                  r.opening_reading::text as "openingReading", r.closing_reading::text as "closingReading",
                  r.litres_sold::text as "litresSold", r.unit_price::text as "unitPrice",
                  r.sales_value::text as "salesValue"
@@ -107,7 +107,8 @@ export async function getDailyReportFromRequest(
         transaction.execute<
           Omit<DailyReportInput['dips'][number], 'measuredAt'> & { measuredAt: Date | string }
         >(sql`
-          select t.code as "tankCode", pr.name as "productName", d.measured_at as "measuredAt",
+          select t.code as "tankCode", pr.name as "productName", pr.unit as "fuelUnit",
+                 d.measured_at as "measuredAt",
                  d.raw_measurement::text as "rawMeasurement", d.measurement_unit as "measurementUnit",
                  d.physical_litres::text as "physicalLitres"
           from app.reconciliation_dip_refs r
@@ -142,11 +143,12 @@ export async function getDailyReportFromRequest(
         `),
         transaction.execute<{
           productName: string;
+          unit: string;
           litres: string;
           sales: string;
           shifts: number | string;
         }>(sql`
-          select pr.name as "productName", sum(r.litres_sold)::text as litres,
+          select pr.name as "productName", pr.unit as unit, sum(r.litres_sold)::text as litres,
                  sum(r.sales_value)::text as sales, count(distinct c.id) as shifts
           from app.reconciliations c
           join app.station_business_days d
@@ -160,8 +162,8 @@ export async function getDailyReportFromRequest(
               countedStates.map((state) => sql`${state}`),
               sql`, `,
             )}))
-          group by pr.name
-          order by pr.name
+          group by pr.name, pr.unit, pr.display_order, pr.kind
+          order by ${productOrderSql('pr')}
         `),
         transaction.execute<{ total: string | null }>(sql`
           select sum(e.amount)::text as total
@@ -195,8 +197,9 @@ export async function getDailyReportFromRequest(
       drops,
       monthToDate: {
         fromDate: monthStart,
-        products: mtdProducts.map(({ productName, litres, sales }) => ({
+        products: mtdProducts.map(({ productName, unit, litres, sales }) => ({
           productName,
+          unit: unit === 'KILOGRAMS' ? ('KILOGRAMS' as const) : ('LITRES' as const),
           litres,
           sales,
         })),

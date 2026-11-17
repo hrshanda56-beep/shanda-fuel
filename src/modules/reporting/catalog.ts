@@ -24,6 +24,11 @@ export type ReportDefinition = Readonly<{
   exportable: boolean;
   /** Operational reports need only `report.view`; finance reports need `report.finance.view`. */
   audience: 'operational' | 'finance';
+  /**
+   * False for a view that other screens still link to (the finance figures, the shortcuts) but
+   * that is not offered as a report of its own; it stays reachable by its address.
+   */
+  listed?: false;
 }>;
 
 const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
@@ -58,6 +63,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     category: 'sales',
     exportable: true,
     audience: 'finance',
+    listed: false,
   },
   {
     slug: 'cash',
@@ -66,6 +72,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     category: 'cash',
     exportable: true,
     audience: 'finance',
+    listed: false,
   },
   {
     slug: 'providers',
@@ -74,6 +81,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     category: 'payments',
     exportable: true,
     audience: 'finance',
+    listed: false,
   },
   {
     slug: 'commercial',
@@ -82,6 +90,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     category: 'credit',
     exportable: true,
     audience: 'finance',
+    listed: false,
   },
   {
     slug: 'inventory',
@@ -90,6 +99,7 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
     category: 'inventory',
     exportable: true,
     audience: 'finance',
+    listed: false,
   },
 ];
 
@@ -114,11 +124,11 @@ export function categoryLabel(id: ReportCategoryId): string {
   return REPORT_CATEGORIES.find((category) => category.id === id)?.label ?? id;
 }
 
-/** The reports a person may open: finance reports only for someone with the finance permission. */
+/** The reports a person is offered: finance reports only for someone with the finance permission. */
 export function reportsFor(financeReports: boolean): readonly ReportDefinition[] {
-  return financeReports
-    ? REPORT_CATALOG
-    : REPORT_CATALOG.filter((report) => report.audience === 'operational');
+  return REPORT_CATALOG.filter(
+    (report) => report.listed !== false && (financeReports || report.audience === 'operational'),
+  );
 }
 
 export function reportsInCategory(

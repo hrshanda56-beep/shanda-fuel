@@ -32,6 +32,7 @@ export {
   createStaffInvitationFromRequest,
   generateManualStaffActivationFromRequest,
   deactivateStaffMemberFromRequest,
+  removeStaffMemberFromRequest,
   resendStaffInvitationFromRequest,
   revokeStaffInvitationFromRequest,
   signUpFromInvitation,

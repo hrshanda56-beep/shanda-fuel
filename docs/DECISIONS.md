@@ -1,5 +1,28 @@
 # Shanda Fuel — Decision Log
 
+## DEC-052 — Setup items can be changed after they are entered; a supervisor can start a price change
+
+Date: 2026-11-13. **Status:** ACCEPTED, on the explicit instruction of the project lead (answers to
+three questions asked in the working session).
+
+- **Changing setup (Settings > Stations).** Fuel tanks (name, size, reorder level, yellow and red limits),
+  pumps (number, name), nozzles (number) and shifts (name, start time and end time; an end before the start means the next day) can be changed from the
+  guided setup after they were first entered. Who: the people who may add them today — owner and
+  administrator (`station.manage`, `inventory.tank.manage`, `shift.template.manage`). Supervisors do not
+  change the station layout. Each change needs the fresh identity check and writes an audit event
+  (`INVENTORY.TANK_UPDATED`, `SETUP.PUMP_UPDATED`, `SETUP.NOZZLE_UPDATED`; shifts keep their existing audit).
+- **Not changeable:** the fuel in a tank or on a nozzle, and a nozzle's meter. Past dips, deliveries and
+  sales are recorded against them; a different fuel means a new tank or nozzle. A shift schedule on an
+  already-activated station with start times stays refused by the existing rule.
+- **Prices.** A supervisor holds `price.change.request` (migration 0090), so they can start a change for
+  their own station (an area manager, which holds the supervisor's permissions, can do the same over its stations) and, as before, prepare it and take the meter readings. Approving and activating
+  remain with the owner/administrator, and DEC-049 (the requester may not approve unless nobody else
+  could) is unchanged. Prices in use link to the existing Change a price screen (DEC-050).
+- **Supervisors on the setup screen.** The supervisor card adds, moves or removes people only through the
+  existing Staff commands (same permission and fresh identity check). The person in charge of a station
+  cannot be moved or removed until someone else is chosen. Removing a person from their only station is
+  done by deactivating them in Staff.
+
 ## DEC-051 — A delivery needs a purchase order or a reason
 
 Date: 2026-10-26. **Status:** ACCEPTED, on the explicit instruction of the project lead (reason
@@ -14,6 +37,17 @@ Date: 2026-10-26. **Status:** ACCEPTED, on the explicit instruction of the proje
 the earliest `PRICE_CHANGE` meter reading recorded for that change. All pumps are read for the old
 price first, then for the new one; activation is refused if any pump was read after that instant.
 Per-pump meter segments keep each pump's litres exact. Finance at TEI Oils has not yet confirmed this.
+
+## DEC-050 — Local development signs in without Clerk (PROPOSED, project lead chose this in chat, 2026-10-29)
+
+Local development uses a disposable local database and never contacts Clerk. A
+local-only switch (`DEV_AUTH_BYPASS=1`) lets a developer pick an already-provisioned
+identity at `/dev-login`. It is not a second auth provider: the identity is still
+resolved through `app.resolve_auth_identity`, and DEC-043 (Clerk alone in every
+deployed environment) is unchanged. The switch is off unless `APP_ENV` is local,
+`NODE_ENV` is not production, no Vercel/CI variable is set, and the database URLs
+are loopback. Unit tests cover every refusal case. Production and preview builds
+ignore it.
 
 ## DEC-049 — A price's requester may approve it when no one else could
 
@@ -43,6 +77,47 @@ same solo-operator rule already used for purchase orders, expenses, revaluations
   it is removed.
 
 **Not decided:** the rates for the estimate.
+
+## DEC-053 — Organisation slug in page addresses; offline queue not widened yet (slug ACCEPTED by the project lead in chat, 2026-11-02; offline note PROPOSED)
+
+- **Slug addresses.** Page addresses can carry `?org=<slug>` (the organisation's existing
+  `tenants.slug`) instead of `?tenantId=<id>`. The slug is looked up only among the organisations
+  the signed-in person may already select, so it cannot reveal or choose anything outside their list;
+  an unknown slug is refused like a bad id. The proxy turns it into the id for the page, so pages
+  and APIs still work on the id. Old `?tenantId=` links keep working unchanged. The work-context
+  selector now writes the slug form; other links still write the id form until they are moved.
+  Stations keep their ids in addresses (no station slug, no migration). The slug is not served
+  while `CONSOLIDATED_CONTEXT_READS=1` uses migration 0034's snapshot, which does not carry it.
+- **Offline queue.** Not widened. Daily-report saves stay the only queued action (DEC-045). An
+  expense or cash count needs the person's identity on the device (the queue is kept per person so
+  a shared phone cannot replay one person's entry under another's sign-in); those screens do not
+  have it yet, and what to do when a replayed entry needs a fresh identity check is not decided.
+
+## DEC-052 — Report exports use the current sign-in; downloads are real documents (ACCEPTED by the project lead in chat, 2026-11-02)
+
+**Date:** 2026-11-02. **Status:** accepted on the project lead's instruction after manual QA. It
+refines DEC-047 and does not replace it.
+
+**Decision (project lead, in chat):** a person who is already signed in should not be asked to prove
+who they are again just to download a report. Excel and PDF downloads had a separate confirmation
+dialog even straight after sign-in.
+
+**What changes:**
+- When an export is refused for a missing step-up, the browser first asks the server to accept the
+  current sign-in (`POST /api/auth/step-up` with `silent: true`). The server accepts it only when a
+  check is still active or the sign-in is inside the existing reuse window
+  (`STEP_UP_REUSE_MINUTES`, default 15, maximum 60). Silent mode never starts a challenge.
+- If the sign-in is older than that window, the existing confirmation dialog still appears. Nothing
+  is weakened for staff deactivation, closing a business day or payment setup, and the audit event
+  for each accepted check is unchanged.
+- The window itself is not changed here. If a longer window is wanted for exports, raise
+  `STEP_UP_REUSE_MINUTES` (a human decision, since it also covers the other privileged actions).
+- PDF and Excel downloads are now formatted documents (title and period, aligned columns, repeated
+  header row, page numbers; Excel has a frozen header and number formats). Values are written exactly
+  as the CSV carries them. The Print button on report pages is removed; Download PDF replaces it.
+
+**Affected:** `src/modules/identity/step-up.ts`, `src/app/api/auth/step-up/route.ts`,
+`src/modules/reporting/ui/use-report-actions.ts`, `src/modules/reporting/export-documents.ts`.
 
 ## DEC-047 — Run v1 without paid multi-factor sign-in (ACCEPTED by the project lead in chat, 2026-10-24)
 
@@ -1062,3 +1137,67 @@ Status: ACCEPTED. Given in chat by the project lead on 2026-10-27. Implemented b
 - **Not done.** Phone numbers are not stored anywhere for staff, so the station staff list cannot show them. The activity log shows only events whose audit metadata carries a station id; older or organisation-level events are not shown to a supervisor.
 - **Hidden from a supervisor, found in the browser walk.** Regular (recurring) costs on the Expenses page, and the Customers and Staff fuel benefit menu items (customer accounts are read across the organisation, so a station-scoped supervisor was refused when opening them). The Reports station filter names the single station instead of "All stations".
 - **Self-approval (2026-10-27, given in chat).** Only a sole owner may approve their own submission, because the owner is the last resort. With two active owners, each needs the other. Finance and administrators never approve their own and need another finance user, an administrator or an owner. Supervisors and attendants are never counted as the other approver, and never approve their own. Applies to every approval with separation of duties: expenses, purchase orders, price changes, reconciliation (close) and inventory cost revaluations. The approval permission is still required separately.
+
+## Audit follow-up decisions — 2026-11-01
+
+Status: ACCEPTED. Given in chat by the project lead on 2026-11-01 after the QA-tester report was checked against the code and the running app.
+
+- **One cash vocabulary.** Two named figures, used on every screen: "At the station" (cash in a till or safe that no deposit covers) and "Banked, awaiting confirmation" (allocated to a deposit the bank has not confirmed). Cash held by management is shown apart. These are balances as at the end of the report period, not period flows; the report no longer limits them to collections or deposits dated inside the period (`reporting/queries.ts`, `readCash`). "Collected, not yet banked" remains the station plus management total, and the period "collected minus deposited" figure is no longer shown under an "at stations" label.
+- **Shift-report expenses post on approval.** Approving a shift reconciliation creates a posted, already-paid expense for each expense line (`forecourt/shift-expense-posting.ts`), so they reach the Expenses page, daily profit and the income statement. The category typed on the report is matched to an active operating category by name or code, otherwise the line goes to "Other" (created if missing) with the typed text kept in the description. The expense reference `SHIFTREPORT-<business date>-<first 8 of the line id>` makes a second approval a no-op, and these expenses are left out of "cash to collect" because the report's own cash count already includes them. Lines paid by methods other than cash, EcoCash, bank transfer or card are posted unpaid. Not done: reports approved before this change are not backfilled; a revision of an approved report does not change expenses already posted.
+- **Missing fuel cost warns, it does not block.** The approver is told which fuel has no known cost and that profit for the day will be incomplete (`unvaluedFuels` in the reconciliation record). Approval is unchanged.
+- **Permissions untouched.** Supervisors still cannot see bank deposits; the Cash page says so instead of claiming nothing is banked. Finance keeps `reconciliation.approve`.
+- **Payments Due.** Each row opens the supplier with the existing "Submit payment" form ready. It records that a payment was made; there is no bank connection.
+- **Open, not decided:** recording a provider settlement statement (the Match button stays disabled with a reason until a statement exists).
+
+## Audit #2 judgement calls — 2026-10-30
+
+Status: made autonomously while fixing docs/AUDIT2.md, per the brief ("record every judgement call and continue"). Each is small and reversible; the project lead should confirm or reverse.
+
+- **A1, one source of truth for the station.** The saved-selection cookie (`shanda-fuel-context`) already existed and already survived every sidebar link. Options: (a) rebuild context handling, (b) close the two gaps found. Chose (b): a station or "all stations" named in the address is now saved by `GET /api/context`, and a company with one legal entity never has to name it. Rebuilding would risk what already works.
+- **A2, what "missing" means.** A business day from a station's go-live to yesterday (plus the organisation's `report_grace_days`) is missing when any active shift template has no submitted, approved, posted or locked reconciliation. A station with no templates is expected to submit at least one report a day. Today is never missing. The old day-count in `dashboard-snapshot.ts` is deleted.
+- **A3 and B7, one operating profit.** Operating profit is gross profit minus operating expenses, fixed costs and staff and management fuel at selling price (DEC-044), with the fuel posted on the day it was issued. `buildDailyProfit` is the single calculation: every day row is after staff fuel and the period is the sum of the days, so rows add up in every column. The audit's 33.34 gap between the dashboard and Daily Profit was exactly the staff fuel. The Station Daily Report gains a "Fuel given to staff" column.
+- **A6, shift schedule guard.** One shift per template per business day, and no overlap with another running or planned shift at the station, enforced by a trigger (migration 0092) and checked first by `StartShift`. Judged on a shift's real window (a completed shift ends when it was completed; not-operated and cancelled shifts never count). Template-less ad-hoc shifts are exempt from the overlap rule, because real shifts always come from a template and many test fixtures deliberately reuse one window. A trigger rather than a unique index so existing rows can never make the migration fail.
+- **A4, dips at shift close.** The last shift of a business day cannot be submitted until every active tank has a dip linked to that shift's report. "Last" is the template shift with the latest planned end; shifts without a template, cancelled and not-operated shifts are not held to it, for the same reason as A6. A stock difference already needed an explanation at submit, so a red variance was already covered. The dashboard's "tanks measured" counts a tank only when its latest dip is on the report's last day, the same test the shift report uses.
+- **A5, locking a day.** A closed day cannot be locked while any shift report is draft, waiting for approval or sent back, or while an active tank has no dip for the day. The same query drives the disabled button and the server message. Older day-level reports (no shift attached) are not counted, so the earlier lock flow is unchanged.
+- **C8, one "Add a tank" slot.** The brief says remove the duplicate card; you had earlier asked for placeholders so the row is not blank. Kept one placeholder, which satisfies both.
+- **C2 and the lock wording.** "Waiting for management approval"; the lock note now says "Locking is permanent. After it, a change needs a recorded correction." instead of "named compensating workflows" (also C4).
+- **B1, dashboard period.** One period (Today by default, This week from Monday, This month, or a custom range up to today) drives every total on the dashboard. It is kept in the page address, so the server reads the right records and a refresh or a shared link keeps it. The sales chart keeps its own 30-day window. Tiles that are a position right now (stock, cash held, card payments awaiting, owed by customers, owed to suppliers, net position, expenses awaiting approval, reports not submitted) say "As at [time]", in the same Harare business time the dashboard already uses. The old behaviour passed no dates to the daily figures, so they covered the month.
+- **B9, how many decimals.** The database keeps its four decimals. On screen money is cents, in inputs a saved "450.0000" shows as "450.00" (a value with real digits past cents is shown exactly so that saving it again changes nothing), and Excel shows two decimals for money and litres and three for a price per litre while the cell value stays exact. CSV stays at recorded precision because it is the data export that other tools read, and the PDF is generated from it; say if you want both rounded too.
+- **B6, one fixed-cost rule; the manual month step is removed.** Options: (a) keep "Add October 2026" as the one switch both screens respect, or (b) remove it. Chose (b). The report side already counted a regular cost from its start date, so (a) would have taken rent out of profit until someone pressed a button, which is the opposite of what an owner expects. A cost now counts from the day it starts: monthly amount ÷ days in that month for each active day, remainder on the month's last day, ending on its end date. The Expenses page shows regular costs apart from spending with what each has counted so far this month. The older recognition commands still exist in the API and a recorded recognition is honoured (never counted twice), but no screen asks anyone to use them.
+- **B8, standard categories.** Created when the first station is activated, by code, leaving any existing category (and any name the owner changed) alone. Rent and wages are not here: they are regular costs with their own fixed-cost categories.
+- **B4, custody is as at the end date.** The five places for cash are measured as at the report's end date over everything collected up to then, not just collections inside the chosen dates, because "where is the money now" cannot depend on the start date. Period flows (collected in the period, banked in the period) are unchanged and still used for period tiles. Cash in a location of type "transit" is shown as "with a collector"; cash in a collector or management location is "held by management".
+- **B5, confirming a deposit.** Additive migration 0093 (bank_date, confirmation_reason on bank deposits). A reason of at least five characters is required whenever the confirmed amount differs from the deposit, up or down. "Banked with difference" is the new status label; the money still counts as banked only up to what the bank confirmed.
+- **D2, the three new roles.** Auditor = every view permission and nothing else (so it can read all screens and change nothing, and cannot export, since an export is an action). Area manager = the supervisor's permissions plus the finance reports, over the stations assigned to it. Cash collector = receive collections, submit and accept handovers, see deposits. Added as role data (migration 0094) with no new permission code. A baseline mismatch between the code's and the database's permission lists was found and is documented, not changed here (docs/ROLES.md).
+- **A7, Clerk keys.** The "secret key is invalid" error is a local key mismatch, not a code defect: keys must come from the same Clerk instance. Added `clerkEnvProblems` to name the problem in plain words; real keys are never committed or logged.
+
+
+## Open questions found on the TEI Oils data — 2026-10-30
+
+These need the owner's answer before anyone changes the code.
+
+1. **Should cash paid out of the till on a shift (the Expenses step) count as an expense in profit?** Today it only lowers the cash expected. Profit counts recognised expenses only, so TEI Oils shows Expenses USD 0.00 on every day. Counting it is correct accounting, but it must not be counted twice when a formal expense for the same cost is also entered. Recommendation: recognise the shift expense when the report is approved, and let a formal expense link to it instead of duplicating it.
+2. **Should a report page follow the station chosen at the top?** Today, with no station in the page's own filter it shows every station. Recommendation: when one station is chosen at the top and the address names none, start the report on that station, and say so in the filter bar.
+3. **Stock books lag by one day.** Sales reach the books when a report is approved, so between close and approval the Tank page's Difference compares a dip with books that miss that day. The alert now waits; the Tank page does not. Recommendation: show the Tank page difference as "waiting for approval" in the same case.
+
+## Daily Operations smoothing — 2026-11-17
+
+Owner decisions taken on the NOV17 branch after a live "meter not set up" error when closing a shift:
+
+1. **Daily Operations and My Shift are unlocked** for improvement; the UI-lock manifest is re-baselined with each approved change.
+2. **A nozzle added while a shift is open is counted from the start of the earliest open shift.** `meter_installations.created_at` keeps the true time, `effective_from` holds the backdated time, `replacement_reason` says why, and the signed audit event carries both times. No migration.
+3. **The close confirmation stays.** "Close shift" and "close day" are merged (built 2026-11-17) as a second button, "Close shift and end the day", offered only for the last unfinished shift when no scheduled shift is still to come and the person may close the day. It runs close meters, complete shift, then close day, behind its own confirmation, and asks for the usual reason when no figures are approved. The plain "Close Shift" button remains. If a later step fails, the earlier ones stay done and the card shows what is left.
+4. **Close-shift errors lead to a fix button** (reason `METER_NOT_SET_UP` goes to Settings, Stations). A stored "Ask the owner" message was declined for now (it would need a new table).
+5. **Closing a day with no approved figures asks for its reason on the card**, not in a browser pop-up.
+6. **The business day is locked when the owner approves its last report** (decided 2026-11-17, built 2026-11-17). Approving already needs a fresh identity check, and that same check covers the lock, so the owner does one thing instead of two. If the day is not closed, something still blocks the lock (a shift, a dip, a draft report), or the approver cannot lock, the approval stands and the day stays closed with the Lock button as before. An automatic lock 24 hours after approval was considered and **not** built: it would need a signed-out system identity that skips the identity check on a permanent action.
+7. **Only the owner and the administrator can lock a business day** (decided 2026-11-17). The supervisor never could. The Finance role lost `business_day.lock` in the role matrix (`permissions.ts`), so it no longer sees the Lock button or can run the command. The matching Finance row seeded by migration 0003 is removed by migration 0107 (additive-safe, one DELETE, same shape as 0024), so the database never grants more than the code (role-permissions parity test). 0107 has been written but not applied anywhere; like 0106 it needs approval before any real database. Nothing was run against production.
+
+## Fuel measured in litres or kilograms — 2026-11-17
+
+Owner decision on the NOV17 branch (Option A): each fuel has one measuring unit, litres or kilograms (for example LPG), set in setup.
+
+1. **One unit per fuel**, stored on the fuel (`app.products.unit`, default LITRES; migration 0106, additive). It is chosen when a fuel is added and can be changed in setup (`SetProductUnit`, `station.manage`, step-up) **only while the fuel has no deliveries, meter readings, stock movements, opening balances or tank dips**, because recorded quantities would silently change meaning.
+2. **Labels only.** Quantity columns keep their `*_litres` names and no litre-to-kilogram conversion exists: a quantity is in its fuel's own unit everywhere. Only display, form wording and exports follow the unit.
+3. **Mixed totals are not added.** A total that would add litre and kilogram fuels shows "Mixed units" (or no combined figure), and per-litre profit figures show "Not available" when mixed. The dashboard chart sums only the fuels in its main unit and lists each fuel in its own unit.
+4. **Exports.** CSV column names are unchanged so existing spreadsheets keep working. A `unit` column (LITRES, KILOGRAMS or MIXED) is added to the sales, stock, profit and commercial exports. Table reports gain a "Measured in" column and their "(L)" headings become neutral.
+5. **Deliberately litres:** the shift-message checker reads only Petrol and Diesel text from a WhatsApp message, so it stays in litres. Server error messages are worded as "quantity" so they fit either unit. The station daily report shows diesel and petrol each with its own unit, and lists any other fuel (for example LPG) in an "Other fuels sold" column. The purchasing allowance setting is one figure for every fuel and reads "litres or kg". Demo and design-system preview pages are not unit-aware.
+6. **Approval needed:** migration 0106 has been applied only to local development databases. It must be approved before any real database.

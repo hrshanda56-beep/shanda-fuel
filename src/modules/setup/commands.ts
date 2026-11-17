@@ -13,6 +13,8 @@ import {
   type InventoryCommandContext,
 } from '../inventory/application';
 import { assertProductBelongsToTenant } from '../inventory/persistence';
+import { checkMeterWorkingSinceDate } from './meter-working-since';
+import { createProductPayload, setProductKindPayload } from './product-contract';
 
 /**
  * Milestone A owner self-service setup commands. These are the only setup
@@ -30,8 +32,17 @@ const authority = z.object({ tenantId: uuid, stationId: uuid });
 
 export const SETUP_COMMAND_TYPES = [
   'CreateProduct',
+  'RenameProduct',
+  'SetProductUnit',
+  'SetProductStatus',
+  'DeleteProduct',
+  'SetProductKind',
   'CreatePump',
   'CreateNozzle',
+  'CreateCashLocation',
+  'UpdatePump',
+  'UpdateNozzle',
+  'SetMeterWorkingSince',
   'DraftPriceChange',
   'UpdateSupplier',
   'SetResponsibleSupervisor',
@@ -47,19 +58,40 @@ export function assertSetupCommandType(value: unknown): SetupCommandType {
   return value as SetupCommandType;
 }
 
-const createProductPayload = authority.extend({
-  code: z.string().trim().min(1).max(32),
-  name: z.string().trim().min(1).max(120),
+const productRef = authority.extend({ productId: uuid });
+const renameProductPayload = productRef.extend({ name: z.string().trim().min(1).max(120) });
+const setProductUnitPayload = productRef.extend({ unit: z.enum(['LITRES', 'KILOGRAMS']) });
+const setProductStatusPayload = productRef.extend({ status: z.enum(['ACTIVE', 'INACTIVE']) });
+const createCashLocationPayload = authority.extend({
+  name: z.string().trim().min(1).max(80),
+  locationType: z.enum(['STATION_TILL', 'STATION_SAFE']),
 });
 const createPumpPayload = authority.extend({
   number: z.string().trim().min(1).max(16),
   name: z.string().trim().max(80).nullish(),
 });
+const stationDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a date');
 const createNozzlePayload = authority.extend({
   pumpId: uuid,
   number: z.string().trim().min(1).max(16),
   productId: uuid,
   meterSerialNumber: z.string().trim().min(1).max(80),
+  /** The station date the meter was fitted. Omit when it is being fitted now. */
+  meterWorkingSinceDate: stationDate.optional(),
+});
+const setMeterWorkingSincePayload = authority.extend({
+  nozzleId: uuid,
+  /** The station date the meter was fitted. It starts at the beginning of that day, station time. */
+  meterWorkingSinceDate: stationDate,
+});
+const updatePumpPayload = authority.extend({
+  pumpId: uuid,
+  number: z.string().trim().min(1).max(16),
+  name: z.string().trim().max(80).nullish(),
+});
+const updateNozzlePayload = authority.extend({
+  nozzleId: uuid,
+  number: z.string().trim().min(1).max(16),
 });
 const draftPricePayload = authority.extend({
   productId: uuid,
@@ -135,6 +167,29 @@ function contextFor(request: Request, payload: { tenantId: string; stationId: st
 
 type Payload<T extends z.ZodType> = z.infer<T>;
 
+/**
+ * Turns a station date into the start of that day in the station's own timezone, after checking it
+ * is a sensible "meter working since" date (real, not in the future, not more than a year back).
+ * Returns the instant as text for use as a timestamptz.
+ */
+async function resolveMeterWorkingSince(
+  transaction: Parameters<Parameters<typeof executeInventoryCommand>[0]['execute']>[0],
+  context: InventoryCommandContext,
+  date: string,
+): Promise<string> {
+  const rows = await transaction.execute<{ starts_at: string; today: string }>(sql`
+    select ((${date}::date)::timestamp at time zone s.timezone)::text as starts_at,
+      (now() at time zone s.timezone)::date::text as today
+    from app.stations s
+    where s.tenant_id = ${context.tenantId} and s.id = ${context.stationId}
+  `);
+  const row = rows[0];
+  if (!row) throw new AppError('NOT_FOUND', 'The station was not found');
+  const problem = checkMeterWorkingSinceDate(date, row.today);
+  if (problem) throw new AppError('VALIDATION_FAILED', problem);
+  return row.starts_at;
+}
+
 export function createProductCommand(
   context: InventoryCommandContext,
   payload: Payload<typeof createProductPayload>,
@@ -153,10 +208,12 @@ export function createProductCommand(
     },
     execute: async (transaction) => {
       const productId = randomUUID();
+      const blendPercent = payload.kind === 'BLEND' ? (payload.blendPercent ?? null) : null;
       try {
         await transaction.execute(sql`
-          insert into app.products (id, tenant_id, code, name, status)
-          values (${productId}, ${context.tenantId}, ${payload.code}, ${payload.name}, 'ACTIVE')
+          insert into app.products (id, tenant_id, code, name, unit, status, kind, blend_percent)
+          values (${productId}, ${context.tenantId}, ${payload.code}, ${payload.name}, ${payload.unit},
+                  'ACTIVE', ${payload.kind ?? null}, ${blendPercent})
         `);
       } catch (error) {
         if (isUniqueViolation(error)) {
@@ -164,7 +221,327 @@ export function createProductCommand(
         }
         throw error;
       }
-      return { productId, code: payload.code, name: payload.name };
+      return {
+        productId,
+        code: payload.code,
+        name: payload.name,
+        kind: payload.kind ?? null,
+        blendPercent,
+        unit: payload.unit,
+      };
+    },
+  });
+}
+
+export function setProductKindCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setProductKindPayload>,
+  key: string,
+) {
+  const blendPercent = payload.kind === 'BLEND' ? (payload.blendPercent ?? null) : null;
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetProductKind',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_KIND_SET',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{
+          kind: string | null;
+          blend_percent: number | null;
+        }>(sql`
+          select kind, blend_percent from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        const row = rows[0];
+        return row ? { kind: row.kind, blendPercent: row.blend_percent } : null;
+      },
+    },
+    execute: async (transaction) => {
+      // Only the kind and blend percentage change: never the name or code.
+      const updated = await transaction.execute<{ id: string }>(sql`
+        update app.products
+        set kind = ${payload.kind}, blend_percent = ${blendPercent}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        returning id
+      `);
+      if (updated.length === 0) throw new AppError('NOT_FOUND', 'The fuel type was not found');
+      return { productId: payload.productId, kind: payload.kind, blendPercent };
+    },
+  });
+}
+
+function isForeignKeyViolation(error: unknown): boolean {
+  const code = (error as { code?: string })?.code;
+  const causeCode = (error as { cause?: { code?: string } })?.cause?.code;
+  return code === '23503' || causeCode === '23503';
+}
+
+/**
+ * Changes how a fuel is measured. Quantities already recorded would silently change meaning
+ * (500 litres would become 500 kilograms), so this is allowed only while the fuel has no deliveries,
+ * meter readings, stock movements, tank dips, opening balances, purchase orders, supplier bills,
+ * cost records, customer fuel balances or selling prices.
+ */
+export function setProductUnitCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setProductUnitPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetProductUnit',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_UNIT_CHANGED',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ unit: string }>(sql`
+          select unit from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        return rows[0] ? { unit: rows[0].unit } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      // Lock the fuel first: a delivery or meter reading being saved at the same moment needs a share
+      // lock on this row, so it waits for this change and then sees the new unit.
+      await transaction.execute(sql`
+        select id from app.products
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        for update
+      `);
+      const used = await transaction.execute<{ used: boolean }>(sql`
+        select (
+          exists (select 1 from app.fuel_deliveries where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.meter_segments where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.inventory_movements where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.reconciliation_meter_readings where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.opening_balance_lines where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.purchase_order_lines where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.supplier_document_lines where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.inventory_cost_events where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.customer_fuel_authorizations where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.customer_ledger_entries where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.sale_recognition_movements where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.selling_prices where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (
+            select 1 from app.tank_dips d join app.tanks t on t.id = d.tank_id and t.tenant_id = d.tenant_id
+            where d.tenant_id = ${context.tenantId} and t.product_id = ${payload.productId}
+          )
+        ) as used
+      `);
+      const current = await transaction.execute<{ unit: string }>(sql`
+        select unit from app.products
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+      `);
+      if (!current[0]) throw new AppError('NOT_FOUND', 'The fuel was not found');
+      if (current[0].unit === payload.unit)
+        return { productId: payload.productId, unit: payload.unit };
+      if (used[0]?.used) {
+        throw new AppError(
+          'CONFLICT',
+          'This fuel already has deliveries or sales recorded in its current unit, so the unit can no longer be changed.',
+        );
+      }
+      await transaction.execute(sql`
+        update app.products set unit = ${payload.unit}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+      `);
+      return { productId: payload.productId, unit: payload.unit };
+    },
+  });
+}
+
+/** Fuels are shared by every station of the company, so a rename shows everywhere. */
+export function renameProductCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof renameProductPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.RenameProduct',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_RENAMED',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ name: string }>(sql`
+          select name from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        return rows[0] ? { name: rows[0].name } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      const updated = await transaction.execute<{ id: string }>(sql`
+        update app.products set name = ${payload.name}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        returning id
+      `);
+      if (updated.length !== 1) throw new AppError('NOT_FOUND', 'The fuel was not found');
+      return { productId: payload.productId, name: payload.name };
+    },
+  });
+}
+
+/**
+ * Hides a fuel from setup and new entries (INACTIVE) or brings it back. A fuel that still has an
+ * active tank or nozzle cannot be hidden, so nothing that is in use disappears from under a shift.
+ */
+export function setProductStatusCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setProductStatusPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetProductStatus',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_STATUS_CHANGED',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ status: string }>(sql`
+          select status from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        return rows[0] ? { status: rows[0].status } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      if (payload.status === 'INACTIVE') {
+        const inUse = await transaction.execute<{ id: string }>(sql`
+          select id from app.tanks
+          where tenant_id = ${context.tenantId} and product_id = ${payload.productId}
+            and status = 'ACTIVE'
+          union all
+          select id from app.nozzles
+          where tenant_id = ${context.tenantId} and product_id = ${payload.productId}
+            and status = 'ACTIVE'
+          limit 1
+        `);
+        if (inUse.length > 0) {
+          throw new AppError(
+            'CONFLICT',
+            'This fuel still has tanks or nozzles in use. Retire those first.',
+          );
+        }
+      }
+      const updated = await transaction.execute<{ id: string }>(sql`
+        update app.products set status = ${payload.status}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        returning id
+      `);
+      if (updated.length !== 1) throw new AppError('NOT_FOUND', 'The fuel was not found');
+      return { productId: payload.productId, status: payload.status };
+    },
+  });
+}
+
+/**
+ * Removes a fuel that was never used. Anything that refers to it (a tank, a nozzle, a price, a
+ * delivery, a sale) blocks the removal, because those records must keep their fuel.
+ */
+export function deleteProductCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof productRef>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.DeleteProduct',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PRODUCT_DELETED',
+      subjectType: 'Product',
+      subjectId: payload.productId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ code: string; name: string }>(sql`
+          select code, name from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        `);
+        return rows[0] ? { code: rows[0].code, name: rows[0].name } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      let deleted: { id: string }[];
+      try {
+        deleted = await transaction.execute<{ id: string }>(sql`
+          delete from app.products
+          where tenant_id = ${context.tenantId} and id = ${payload.productId}
+          returning id
+        `);
+      } catch (error) {
+        if (isForeignKeyViolation(error)) {
+          throw new AppError(
+            'CONFLICT',
+            'This fuel is already in use, so it cannot be deleted. Hide it instead.',
+          );
+        }
+        throw error;
+      }
+      if (deleted.length !== 1) throw new AppError('NOT_FOUND', 'The fuel was not found');
+      return { productId: payload.productId };
+    },
+  });
+}
+
+export function createCashLocationCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof createCashLocationPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.CreateCashLocation',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.CASH_LOCATION_CREATED',
+      subjectType: 'CashLocation',
+      subjectId: (result) => (result as { locationId: string }).locationId,
+    },
+    execute: async (transaction) => {
+      const locationId = randomUUID();
+      const base =
+        payload.name
+          .toUpperCase()
+          .replace(/[^A-Z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 24) || 'CASH';
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const code = attempt === 0 ? base : `${base}-${attempt + 1}`;
+        const existing = await transaction.execute<{ id: string }>(sql`
+          select id from app.cash_locations
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and code = ${code}
+        `);
+        if (existing[0]) continue;
+        await transaction.execute(sql`
+          insert into app.cash_locations (id, tenant_id, station_id, code, name, location_type, currency, status, version)
+          values (${locationId}, ${context.tenantId}, ${context.stationId}, ${code}, ${payload.name},
+                  ${payload.locationType}, 'USD', 'ACTIVE', 0)
+        `);
+        return { locationId, code, name: payload.name };
+      }
+      throw new AppError('CONFLICT', 'A cash place with this name already exists');
     },
   });
 }
@@ -237,9 +614,17 @@ export function createNozzleCommand(
       if (pumps.length !== 1) {
         throw new AppError('NOT_FOUND', 'The pump was not found at this station');
       }
+      // The date the person gave for when the meter started working, if any. Without one, a nozzle
+      // added while a shift is open is counted from the start of that shift (below).
+      const statedSince = payload.meterWorkingSinceDate
+        ? await resolveMeterWorkingSince(transaction, context, payload.meterWorkingSinceDate)
+        : null;
       const nozzleId = randomUUID();
       const meterId = randomUUID();
       const installationId = randomUUID();
+      let recordedAt = '';
+      let countedFrom = '';
+      let wasBackdated = false;
       try {
         await transaction.execute(sql`
           insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id, status)
@@ -250,12 +635,37 @@ export function createNozzleCommand(
           insert into app.meters (id, tenant_id, serial_number, status)
           values (${meterId}, ${context.tenantId}, ${payload.meterSerialNumber}, 'ACTIVE')
         `);
-        await transaction.execute(sql`
-          insert into app.meter_installations
-            (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
-          values (${installationId}, ${context.tenantId}, ${context.stationId}, ${nozzleId},
-            ${meterId}, now(), ${context.authority.membership.membershipId})
+        // A nozzle added while a shift is open is counted from the start of the earliest open
+        // shift, so that shift can still be closed with a reading for it, unless the person said
+        // when the meter started working. created_at keeps the true time; effective_from holds the
+        // counted-from time; the reason says why it was backdated.
+        const openShifts = await transaction.execute<{ opened_at: Date | string }>(sql`
+          select opened_at from app.shifts
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and state = 'OPEN' and opened_at is not null
+          order by opened_at asc limit 1
         `);
+        const backdatedTo =
+          statedSince === null && openShifts[0]?.opened_at
+            ? new Date(openShifts[0].opened_at).toISOString()
+            : null;
+        const reason = backdatedTo
+          ? `Added while a shift was open; counted from the start of that shift (${backdatedTo}).`
+          : null;
+        const inserted = await transaction.execute<{
+          effective_from: Date | string;
+          created_at: Date | string;
+        }>(sql`
+          insert into app.meter_installations
+            (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by, replacement_reason)
+          values (${installationId}, ${context.tenantId}, ${context.stationId}, ${nozzleId},
+            ${meterId}, coalesce(${statedSince}::timestamptz, ${backdatedTo}::timestamptz, now()),
+            ${context.authority.membership.membershipId}, ${reason})
+          returning effective_from, created_at
+        `);
+        recordedAt = new Date(inserted[0]!.created_at).toISOString();
+        countedFrom = new Date(inserted[0]!.effective_from).toISOString();
+        wasBackdated = backdatedTo !== null;
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw new AppError(
@@ -271,7 +681,216 @@ export function createNozzleCommand(
         installationId,
         pumpId: payload.pumpId,
         number: payload.number,
+        meterWorkingSince: countedFrom,
+        recordedAt,
+        countedFrom,
+        wasBackdated,
       };
+    },
+  });
+}
+
+/**
+ * Sets when a nozzle's meter was really fitted ("Meter working since"), so a nozzle added after a
+ * shift opened can still be closed into that shift. It only moves the start EARLIER, and only
+ * while nothing has been recorded against the meter: it must be the nozzle's one and only meter,
+ * with no readings, sealed pump totals or meter problems linked to it. Once any exist the date is
+ * part of the sales record and can no longer be changed here.
+ */
+export function setMeterWorkingSinceCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof setMeterWorkingSincePayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.SetMeterWorkingSince',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.METER_WORKING_SINCE_SET',
+      subjectType: 'Nozzle',
+      subjectId: payload.nozzleId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ effective_from: string }>(sql`
+          select effective_from::text from app.meter_installations
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and nozzle_id = ${payload.nozzleId}
+          order by effective_from limit 1
+        `);
+        return { meterWorkingSince: rows[0]?.effective_from ?? null };
+      },
+    },
+    execute: async (transaction) => {
+      const nozzles = await transaction.execute<{ id: string }>(sql`
+        select id from app.nozzles
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.nozzleId}
+        for update
+      `);
+      if (nozzles.length !== 1) {
+        throw new AppError('NOT_FOUND', 'The nozzle was not found at this station');
+      }
+      const installations = await transaction.execute<{
+        id: string;
+        effective_from: string;
+        effective_to: string | null;
+      }>(sql`
+        select id, effective_from::text, effective_to::text from app.meter_installations
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and nozzle_id = ${payload.nozzleId}
+        for update
+      `);
+      const only = installations[0];
+      if (installations.length !== 1 || !only || only.effective_to !== null) {
+        throw new AppError(
+          'CONFLICT',
+          'This nozzle has had its meter changed, so the date it started working can no longer be edited',
+        );
+      }
+      const used = await transaction.execute<{ n: number }>(sql`
+        select (
+          (select count(*) from app.meter_boundaries
+             where tenant_id = ${context.tenantId} and meter_installation_id = ${only.id}) +
+          (select count(*) from app.meter_segments
+             where tenant_id = ${context.tenantId} and meter_installation_id = ${only.id}) +
+          (select count(*) from app.meter_exceptions
+             where tenant_id = ${context.tenantId} and meter_installation_id = ${only.id})
+        )::int as n
+      `);
+      if (Number(used[0]?.n ?? 0) > 0) {
+        throw new AppError(
+          'CONFLICT',
+          'Readings have already been recorded for this meter, so the date it started working can no longer be edited',
+        );
+      }
+      const startsAt = await resolveMeterWorkingSince(
+        transaction,
+        context,
+        payload.meterWorkingSinceDate,
+      );
+      const earlier = await transaction.execute<{ ok: boolean }>(sql`
+        select ${startsAt}::timestamptz <= ${only.effective_from}::timestamptz as ok
+      `);
+      if (!earlier[0]?.ok) {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          'The date can only be moved earlier than the one already set',
+        );
+      }
+      await transaction.execute(sql`
+        update app.meter_installations
+        set effective_from = ${startsAt}::timestamptz
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${only.id} and effective_to is null
+      `);
+      return {
+        nozzleId: payload.nozzleId,
+        installationId: only.id,
+        meterWorkingSince: startsAt,
+      };
+    },
+  });
+}
+
+/**
+ * Renames a pump (its number and optional name). The pump's nozzles, meters and past readings are
+ * untouched; they follow the pump by id.
+ */
+export function updatePumpCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof updatePumpPayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.UpdatePump',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PUMP_UPDATED',
+      subjectType: 'Pump',
+      subjectId: payload.pumpId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ number: string; name: string | null }>(sql`
+          select number, name from app.pumps
+          where tenant_id = ${context.tenantId} and id = ${payload.pumpId}
+        `);
+        return rows[0] ? { number: rows[0].number, name: rows[0].name } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      let updated: { id: string }[];
+      try {
+        updated = await transaction.execute<{ id: string }>(sql`
+          update app.pumps set number = ${payload.number}, name = ${payload.name ?? null}
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${payload.pumpId} and status = 'ACTIVE'
+          returning id
+        `);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new AppError('CONFLICT', 'A pump with this number already exists at the station');
+        }
+        throw error;
+      }
+      if (updated.length !== 1) {
+        throw new AppError('NOT_FOUND', 'The pump was not found at this station');
+      }
+      return { pumpId: payload.pumpId, number: payload.number };
+    },
+  });
+}
+
+/**
+ * Renumbers a nozzle. The fuel it sells and its meter are not editable here: sales and readings
+ * are recorded against them, so a different fuel or meter is a new nozzle (or a meter
+ * replacement through the existing meter commands).
+ */
+export function updateNozzleCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof updateNozzlePayload>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.UpdateNozzle',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.NOZZLE_UPDATED',
+      subjectType: 'Nozzle',
+      subjectId: payload.nozzleId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ number: string }>(sql`
+          select number from app.nozzles
+          where tenant_id = ${context.tenantId} and id = ${payload.nozzleId}
+        `);
+        return rows[0] ? { number: rows[0].number } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      let updated: { id: string }[];
+      try {
+        updated = await transaction.execute<{ id: string }>(sql`
+          update app.nozzles set number = ${payload.number}
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${payload.nozzleId} and status = 'ACTIVE'
+          returning id
+        `);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new AppError('CONFLICT', 'This pump already has a nozzle with this number');
+        }
+        throw error;
+      }
+      if (updated.length !== 1) {
+        throw new AppError('NOT_FOUND', 'The nozzle was not found at this station');
+      }
+      return { nozzleId: payload.nozzleId, number: payload.number };
     },
   });
 }
@@ -329,6 +948,34 @@ export async function createProductFromRequest(request: Request, input: unknown)
   const payload = createProductPayload.parse(input);
   return createProductCommand(await contextFor(request, payload), payload, keyOf(request));
 }
+export async function setProductUnitFromRequest(request: Request, input: unknown) {
+  const payload = setProductUnitPayload.parse(input);
+  return setProductUnitCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+export async function renameProductFromRequest(request: Request, input: unknown) {
+  const payload = renameProductPayload.parse(input);
+  return renameProductCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function setProductStatusFromRequest(request: Request, input: unknown) {
+  const payload = setProductStatusPayload.parse(input);
+  return setProductStatusCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function deleteProductFromRequest(request: Request, input: unknown) {
+  const payload = productRef.parse(input);
+  return deleteProductCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function createCashLocationFromRequest(request: Request, input: unknown) {
+  const payload = createCashLocationPayload.parse(input);
+  return createCashLocationCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function setProductKindFromRequest(request: Request, input: unknown) {
+  const payload = setProductKindPayload.parse(input);
+  return setProductKindCommand(await contextFor(request, payload), payload, keyOf(request));
+}
 export async function createPumpFromRequest(request: Request, input: unknown) {
   const payload = createPumpPayload.parse(input);
   return createPumpCommand(await contextFor(request, payload), payload, keyOf(request));
@@ -336,6 +983,20 @@ export async function createPumpFromRequest(request: Request, input: unknown) {
 export async function createNozzleFromRequest(request: Request, input: unknown) {
   const payload = createNozzlePayload.parse(input);
   return createNozzleCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+export async function updatePumpFromRequest(request: Request, input: unknown) {
+  const payload = updatePumpPayload.parse(input);
+  return updatePumpCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function updateNozzleFromRequest(request: Request, input: unknown) {
+  const payload = updateNozzlePayload.parse(input);
+  return updateNozzleCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function setMeterWorkingSinceFromRequest(request: Request, input: unknown) {
+  const payload = setMeterWorkingSincePayload.parse(input);
+  return setMeterWorkingSinceCommand(await contextFor(request, payload), payload, keyOf(request));
 }
 export async function draftPriceChangeFromRequest(request: Request, input: unknown) {
   const payload = draftPricePayload.parse(input);
@@ -433,10 +1094,10 @@ export function setResponsibleSupervisorCommand(
     execute: async (transaction) => {
       if (payload.membershipId) {
         const eligible = await transaction.execute<{ id: string }>(sql`
-          select membership.id from app.memberships membership
+          select membership.id from app.member_directory(${context.tenantId}::uuid) membership
           join app.membership_role_assignments assignment
-            on assignment.tenant_id = membership.tenant_id and assignment.membership_id = membership.id
-          where membership.tenant_id = ${context.tenantId} and membership.id = ${payload.membershipId}
+            on assignment.tenant_id = ${context.tenantId} and assignment.membership_id = membership.id
+          where membership.id = ${payload.membershipId}::uuid
             and membership.status = 'ACTIVE'
             and assignment.role_code = 'SUPERVISOR' and assignment.scope_type = 'STATION'
             and assignment.station_id = ${context.stationId}

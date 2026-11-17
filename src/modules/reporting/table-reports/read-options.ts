@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '../../../platform/db';
 import type { TableReportFilterKey } from './definitions';
 import { PAYMENT_METHOD_OPTIONS } from './narrowing';
+import { productOrderSql } from '../../../platform/domain/product-order-sql';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -30,8 +31,8 @@ export async function loadFilterOptions(
   for (const key of keys) {
     if (key === 'product') {
       out.product = await take(sql`
-        select id, name as label from app.products
-        where tenant_id = ${tenantId} order by name limit ${MAX_OPTIONS}`);
+        select p.id, p.name as label from app.products p
+        where p.tenant_id = ${tenantId} order by ${productOrderSql('p')} limit ${MAX_OPTIONS}`);
     } else if (key === 'supplier') {
       out.supplier = await take(sql`
         select id, legal_name as label from app.suppliers
@@ -42,9 +43,9 @@ export async function loadFilterOptions(
         where tenant_id = ${tenantId} order by display_name limit ${MAX_OPTIONS}`);
     } else if (key === 'employee') {
       out.employee = await take(sql`
-        select m.id, coalesce(nullif(u.name, ''), u.email) as label
-        from app.memberships m join app.users u on u.id = m.identity_id
-        where m.tenant_id = ${tenantId} and m.status = 'ACTIVE'
+        select m.id, coalesce(m.name, 'Unknown') as label
+        from app.member_directory(${tenantId}::uuid) m
+        where m.status = 'ACTIVE'
         order by 2 limit ${MAX_OPTIONS}`);
     } else if (key === 'shift') {
       out.shift = await take(sql`

@@ -6,6 +6,11 @@
  * daily profit screen. The query is in `read-daily-report.ts`.
  */
 import { buildDailyProfit, type FuelProfitLine } from '../../profitability/daily-profit';
+import {
+  combineQuantityUnits,
+  formatQuantity,
+  quantityUnitLabel,
+} from '../../../design-system/formatters';
 import { formatLitres, formatMoney, sumExact } from '../domain';
 import type { TableReportDefinition, TableReportRow } from './definitions';
 
@@ -13,26 +18,30 @@ export const STATION_DAILY_REPORT: TableReportDefinition = {
   slug: 'station-daily-report',
   title: 'Station Daily Report',
   description:
-    'One line per station per day: diesel and petrol litres, sales, cost and gross profit, then expenses, fixed costs and operating profit.',
+    'One line per station per day: diesel and petrol quantities (each in its own unit), sales, cost and gross profit, then expenses, fixed costs and operating profit.',
   category: 'sales',
   scope: 'station',
   emptyMessage: 'No approved sales or expenses were recorded for these dates and stations.',
   columns: [
     { key: 'date', label: 'Date', kind: 'text' },
     { key: 'station', label: 'Station', kind: 'text' },
-    { key: 'dieselLitres', label: 'Diesel litres', kind: 'number' },
+    { key: 'dieselLitres', label: 'Diesel quantity', kind: 'number' },
+    { key: 'dieselUnit', label: 'Diesel measured in', kind: 'text' },
     { key: 'dieselSales', label: 'Diesel sales (USD)', kind: 'number' },
     { key: 'dieselCost', label: 'Diesel cost of fuel sold (USD)', kind: 'number' },
     { key: 'dieselGross', label: 'Diesel gross profit (USD)', kind: 'number' },
-    { key: 'petrolLitres', label: 'Petrol litres', kind: 'number' },
+    { key: 'petrolLitres', label: 'Petrol quantity', kind: 'number' },
+    { key: 'petrolUnit', label: 'Petrol measured in', kind: 'text' },
     { key: 'petrolSales', label: 'Petrol sales (USD)', kind: 'number' },
     { key: 'petrolCost', label: 'Petrol cost of fuel sold (USD)', kind: 'number' },
     { key: 'petrolGross', label: 'Petrol gross profit (USD)', kind: 'number' },
+    { key: 'otherFuels', label: 'Other fuels sold', kind: 'text' },
     { key: 'totalSales', label: 'Total sales (USD)', kind: 'number' },
     { key: 'totalGross', label: 'Total gross profit (USD)', kind: 'number' },
     { key: 'expenses', label: 'Running expenses (USD)', kind: 'number' },
     { key: 'fixedCosts', label: 'Fixed costs for the day (USD)', kind: 'number' },
     { key: 'totalExpenses', label: 'Total expenses (USD)', kind: 'number' },
+    { key: 'staffFuel', label: 'Fuel given to staff (USD)', kind: 'number' },
     { key: 'operatingProfit', label: 'Operating profit (USD)', kind: 'number' },
     { key: 'notes', label: 'Notes', kind: 'text' },
   ],
@@ -46,6 +55,8 @@ export type DailyReportSale = Readonly<{
   productName: string;
   recognizedRevenue: string;
   quantityLitres: string;
+  /** LITRES or KILOGRAMS; litres when not given. */
+  productUnit?: 'LITRES' | 'KILOGRAMS';
 }>;
 
 export type DailyReportCost = Readonly<{
@@ -77,6 +88,7 @@ function fuelCells(prefix: 'diesel' | 'petrol', lines: readonly FuelProfitLine[]
   if (lines.length === 0) {
     return {
       [`${prefix}Litres`]: null,
+      [`${prefix}Unit`]: null,
       [`${prefix}Sales`]: null,
       [`${prefix}Cost`]: null,
       [`${prefix}Gross`]: null,
@@ -86,6 +98,7 @@ function fuelCells(prefix: 'diesel' | 'petrol', lines: readonly FuelProfitLine[]
   const costKnown = lines.every((line) => line.costOfFuelSold !== null);
   return {
     [`${prefix}Litres`]: formatLitres(sumExact(lines.map((line) => line.litres))),
+    [`${prefix}Unit`]: quantityUnitLabel(combineQuantityUnits(lines.map((line) => line.unit))),
     [`${prefix}Sales`]: formatMoney(sumExact(lines.map((line) => line.sales))),
     [`${prefix}Cost`]: costKnown
       ? formatMoney(sumExact(lines.map((line) => line.costOfFuelSold)))
@@ -102,6 +115,8 @@ export function buildStationDailyRows(
     sales: readonly DailyReportSale[];
     costs: readonly DailyReportCost[];
     expenses: readonly DailyReportExpense[];
+    /** Staff and management fuel at selling price, per station and business day. */
+    fuelBenefits?: readonly Readonly<{ stationId: string; businessDate: string; amount: string }>[];
   }>,
 ): TableReportRow[] {
   const stationIds = [
@@ -109,6 +124,7 @@ export function buildStationDailyRows(
       ...input.sales.map((sale) => sale.stationId),
       ...input.costs.map((cost) => cost.stationId),
       ...input.expenses.map((expense) => expense.stationId),
+      ...(input.fuelBenefits ?? []).map((benefit) => benefit.stationId),
     ]),
   ];
   const rows: { date: string; station: string; row: TableReportRow }[] = [];
@@ -118,12 +134,19 @@ export function buildStationDailyRows(
       sales: input.sales.filter((sale) => sale.stationId === stationId),
       costs: input.costs.filter((cost) => cost.stationId === stationId),
       expenses,
+      fuelBenefitByDate: (input.fuelBenefits ?? []).filter(
+        (benefit) => benefit.stationId === stationId,
+      ),
     });
     const station =
       input.stationNames.get(stationId) ?? expenses[0]?.stationName ?? 'Unknown station';
     for (const day of summary.days) {
       const diesel = day.fuels.filter(isDiesel);
       const petrol = day.fuels.filter((fuel) => !isDiesel(fuel) && isPetrol(fuel));
+      const others = day.fuels
+        .filter((fuel) => !isDiesel(fuel) && !isPetrol(fuel))
+        .map((fuel) => `${fuel.productName} ${formatQuantity(fuel.litres, fuel.unit)}`)
+        .join(', ');
       const notes = expenses
         .filter(
           (expense) =>
@@ -142,11 +165,13 @@ export function buildStationDailyRows(
           station,
           ...fuelCells('diesel', diesel),
           ...fuelCells('petrol', petrol),
+          otherFuels: others || null,
           totalSales: day.combined.sales,
           totalGross: day.combined.grossProfit,
           expenses: day.combined.expenses,
           fixedCosts: day.combined.fixedCosts,
           totalExpenses,
+          staffFuel: day.combined.fuelBenefit,
           operatingProfit: day.combined.operatingProfit,
           notes: notes || null,
         },

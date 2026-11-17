@@ -6,6 +6,12 @@
  * recognition date is one day of fixed cost.
  */
 import {
+  asQuantityUnit,
+  combineQuantityUnits,
+  type CombinedUnit,
+  type QuantityUnit,
+} from '../../design-system/formatters';
+import {
   averageRealizedPrice,
   exact,
   formatLitres,
@@ -13,12 +19,16 @@ import {
   subtractExact,
   sumExact,
 } from '../reporting/domain';
+import { compareProducts } from '../../platform/domain/product-order';
 
 export type DailyProfitSale = Readonly<{
   businessDate: string;
   productId: string;
   productCode: string;
   productName: string;
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
+  productUnit?: QuantityUnit;
   recognizedRevenue: string;
   quantityLitres: string;
 }>;
@@ -28,6 +38,8 @@ export type DailyProfitCost = Readonly<{
   productId: string;
   productCode?: string;
   productName?: string;
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
   restatedCogs: string | null;
   valuationStatus: string;
 }>;
@@ -42,8 +54,11 @@ export type DailyProfitInput = Readonly<{
   sales: readonly DailyProfitSale[];
   costs: readonly DailyProfitCost[];
   expenses: readonly DailyProfitExpense[];
-  /** Fuel given to staff and management (DEC-044), known for the period only, not by day. */
-  fuelBenefit?: string;
+  /**
+   * Fuel given to staff and management (DEC-044), at selling price, on the day it was issued.
+   * It is a cost on that day, so every day row and the period total follow one rule.
+   */
+  fuelBenefitByDate?: readonly Readonly<{ businessDate: string; amount: string }>[];
 }>;
 
 /** One fuel on one day, or one fuel over the whole period. */
@@ -51,6 +66,8 @@ export type FuelProfitLine = Readonly<{
   productId: string;
   productCode: string;
   productName: string;
+  /** What this fuel is measured in. */
+  unit: QuantityUnit;
   litres: string;
   sales: string;
   /** Null when any sale of this fuel has no cost yet. */
@@ -61,6 +78,8 @@ export type FuelProfitLine = Readonly<{
 }>;
 
 export type CombinedProfitLine = Readonly<{
+  /** The unit of `litres`; MIXED when litre and kilogram fuels are added together. */
+  unit: CombinedUnit;
   litres: string;
   sales: string;
   costOfFuelSold: string | null;
@@ -68,7 +87,12 @@ export type CombinedProfitLine = Readonly<{
   grossProfitPerLitre: string | null;
   expenses: string;
   fixedCosts: string;
-  /** Gross profit minus expenses minus fixed costs; null when gross profit is unknown. */
+  /** Fuel given to staff and management, counted as a cost (DEC-044). */
+  fuelBenefit: string;
+  /**
+   * Gross profit minus expenses, fixed costs and staff fuel; null when gross profit is unknown.
+   * The one operating-profit figure: the dashboard and every report use this rule.
+   */
   operatingProfit: string | null;
 }>;
 
@@ -82,13 +106,20 @@ export type DailyProfitSummary = Readonly<{
   days: readonly DailyProfitDay[];
   fuels: readonly FuelProfitLine[];
   combined: CombinedProfitLine;
-  /** Fuel given to staff and management, taken off the period result only. */
+  /** Fuel given to staff and management over the period: the sum of the days. */
   fuelBenefit: string;
-  /** Period operating profit after the fuel benefit; null when gross profit is unknown. */
+  /** Same as `combined.operatingProfit`: after staff fuel, null when gross profit is unknown. */
   operatingProfitAfterBenefit: string | null;
 }>;
 
-type Fuel = Readonly<{ productId: string; productCode: string; productName: string }>;
+type Fuel = Readonly<{
+  productId: string;
+  productCode: string;
+  productName: string;
+  productKind?: string | null;
+  productDisplayOrder?: number | null;
+  unit: QuantityUnit;
+}>;
 
 function fuelLine(
   fuel: Fuel,
@@ -118,7 +149,9 @@ function fuelLine(
 function combine(
   fuels: readonly FuelProfitLine[],
   expenses: readonly DailyProfitExpense[],
+  fuelBenefit: string,
 ): CombinedProfitLine {
+  const unit = combineQuantityUnits(fuels.map((fuel) => fuel.unit));
   const litres = formatLitres(sumExact(fuels.map((fuel) => fuel.litres)));
   const sales = formatMoney(sumExact(fuels.map((fuel) => fuel.sales)));
   const known = fuels.every((fuel) => fuel.grossProfit !== null);
@@ -131,15 +164,23 @@ function combine(
     sumExact(expenses.filter((e) => e.classification === 'FIXED_COST').map((e) => e.amount)),
   );
   return {
+    unit,
     litres,
     sales,
     costOfFuelSold: cost,
     grossProfit: gross,
-    grossProfitPerLitre: gross === null ? null : averageRealizedPrice(litres, gross),
+    // A figure per litre across litre and kilogram fuels would mean nothing.
+    grossProfitPerLitre:
+      gross === null || unit === 'MIXED' ? null : averageRealizedPrice(litres, gross),
     expenses: operating,
     fixedCosts: fixed,
+    fuelBenefit,
     operatingProfit:
-      gross === null ? null : formatMoney(subtractExact(subtractExact(gross, operating), fixed)),
+      gross === null
+        ? null
+        : formatMoney(
+            subtractExact(subtractExact(subtractExact(gross, operating), fixed), fuelBenefit),
+          ),
   };
 }
 
@@ -153,6 +194,9 @@ function groupFuels(
       productId: sale.productId,
       productCode: sale.productCode,
       productName: sale.productName,
+      productKind: sale.productKind,
+      productDisplayOrder: sale.productDisplayOrder,
+      unit: asQuantityUnit(sale.productUnit),
     });
   }
   for (const cost of costs) {
@@ -161,12 +205,19 @@ function groupFuels(
         productId: cost.productId,
         productCode: cost.productCode ?? 'UNKNOWN',
         productName: cost.productName ?? 'Unknown fuel',
+        productKind: cost.productKind,
+        productDisplayOrder: cost.productDisplayOrder,
+        unit: 'LITRES',
       });
     }
   }
   return [...fuels.values()]
-    .sort((a, b) =>
-      `${a.productName}\u0000${a.productId}`.localeCompare(`${b.productName}\u0000${b.productId}`),
+    .sort(
+      (a, b) =>
+        compareProducts(
+          { name: a.productName, kind: a.productKind, displayOrder: a.productDisplayOrder },
+          { name: b.productName, kind: b.productKind, displayOrder: b.productDisplayOrder },
+        ) || a.productId.localeCompare(b.productId),
     )
     .map((fuel) =>
       fuelLine(
@@ -180,11 +231,17 @@ function groupFuels(
 /** Daily and period operating profit. Days are the dates that have a sale, a cost or an expense. */
 export function buildDailyProfit(input: DailyProfitInput): DailyProfitSummary {
   const expenses = input.expenses.filter((e) => e.classification !== 'DIRECT_INVENTORY_COST');
+  const benefits = input.fuelBenefitByDate ?? [];
+  const benefitOn = (date: string) =>
+    formatMoney(
+      sumExact(benefits.filter((row) => row.businessDate === date).map((row) => row.amount)),
+    );
   const dates = [
     ...new Set([
       ...input.sales.map((s) => s.businessDate),
       ...input.costs.map((c) => c.businessDate),
       ...expenses.map((e) => e.businessDate),
+      ...benefits.map((row) => row.businessDate),
     ]),
   ].sort();
   const days = dates.map((date) => {
@@ -198,21 +255,20 @@ export function buildDailyProfit(input: DailyProfitInput): DailyProfitSummary {
       combined: combine(
         fuels,
         expenses.filter((e) => e.businessDate === date),
+        benefitOn(date),
       ),
     };
   });
   const fuels = groupFuels(input.sales, input.costs);
-  const combined = combine(fuels, expenses);
-  const fuelBenefit = formatMoney(input.fuelBenefit ?? '0');
+  // The period is the sum of its days: staff fuel is never applied to the total on its own.
+  const fuelBenefit = formatMoney(sumExact(days.map((day) => day.combined.fuelBenefit)));
+  const combined = combine(fuels, expenses, fuelBenefit);
   return {
     days,
     fuels,
     combined,
     fuelBenefit,
-    operatingProfitAfterBenefit:
-      combined.operatingProfit === null
-        ? null
-        : formatMoney(subtractExact(combined.operatingProfit, fuelBenefit)),
+    operatingProfitAfterBenefit: combined.operatingProfit,
   };
 }
 

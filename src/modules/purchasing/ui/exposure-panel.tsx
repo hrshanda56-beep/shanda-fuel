@@ -3,6 +3,7 @@
 import Decimal from 'decimal.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon } from '@/design-system/icons';
+import { InfoTip } from '@/design-system/info-tip';
 import { Checkbox } from '@/design-system/forms';
 import {
   Button,
@@ -83,10 +84,6 @@ export function ExposurePanel({
 
   return (
     <div className={styles.stack}>
-      <p className={styles.intro}>
-        Fuel is often delivered before the supplier sends the invoice. This shows fuel we have
-        received that has not been invoiced yet, so you know what bills are still to come.
-      </p>
       {loading ? <LoadingState label="Loading" /> : null}
       {error ? (
         <ErrorState
@@ -96,31 +93,43 @@ export function ExposurePanel({
       ) : null}
       {data && !loading && !error ? (
         <>
-          <Card as="section" className="panel" aria-labelledby="po-exposure-title">
+          <Card as="section" className="panel profit-panel" aria-labelledby="po-exposure-title">
+            <span className="heading-with-tip">
+              <h2 id="po-exposure-title" className="profit-title">
+                Received But Not Invoiced Yet
+              </h2>
+              <InfoTip text="Fuel is often delivered before the supplier sends the invoice. This is not what you owe yet. It is what the suppliers have still to bill you for." />
+            </span>
             <div className={styles.headline}>
-              <h3 id="po-exposure-title" className={styles.sectionTitle}>
-                Received but not invoiced yet
-              </h3>
-              <p className={styles.headlineValue}>{moneyText(data.totals.unbilledValue)}</p>
+              <p className="profit-hero">{moneyText(data.totals.unbilledValue)}</p>
               <p className={styles.muted}>
-                {litresText(data.totals.unbilledLitres)} across {pendingDeliveries}{' '}
-                {pendingDeliveries === 1 ? 'delivery' : 'deliveries'}, as of {dateText(data.asOf)}.
-                This is not what you owe yet. It is what the suppliers have still to bill you for.
+                {data.totals.unit === 'MIXED'
+                  ? 'Litres and kilograms'
+                  : litresText(data.totals.unbilledLitres, data.totals.unit)}{' '}
+                across {pendingDeliveries} {pendingDeliveries === 1 ? 'delivery' : 'deliveries'}, as
+                of {dateText(data.asOf)}.
               </p>
               {new Decimal(data.totals.unpricedUnbilledLitres).gt(0) ? (
                 <p className={styles.muted}>
-                  Not counted above: {litresText(data.totals.unpricedUnbilledLitres)} that arrived
-                  without a recorded cost, so we cannot put a price on it yet.
+                  Not counted above:{' '}
+                  {data.totals.unit === 'MIXED'
+                    ? 'Some fuel'
+                    : litresText(data.totals.unpricedUnbilledLitres, data.totals.unit)}{' '}
+                  that arrived without a recorded cost, so we cannot put a price on it yet.
                 </p>
               ) : null}
             </div>
           </Card>
 
-          <Card as="section" className="panel" aria-labelledby="po-exposure-list-title">
+          <Card
+            as="section"
+            className="panel profit-panel"
+            aria-labelledby="po-exposure-list-title"
+          >
             <div className={styles.toolbar}>
-              <h3 id="po-exposure-list-title" className={styles.sectionTitle}>
-                By supplier
-              </h3>
+              <h2 id="po-exposure-list-title" className="profit-title">
+                By Supplier
+              </h2>
               <div className={styles.toolbarEnd}>
                 <Checkbox
                   label="Also show deliveries that are fully invoiced"
@@ -175,7 +184,9 @@ export function ExposurePanel({
                             className={`${styles.numeric} ${styles.cell}`}
                             data-label="Not invoiced"
                           >
-                            {litresText(supplier.unbilledLitres)}
+                            {supplier.unit === 'MIXED'
+                              ? 'Mixed units'
+                              : litresText(supplier.unbilledLitres, supplier.unit)}
                           </span>
                           <span
                             className={`${styles.numeric} ${styles.cell}`}
@@ -208,8 +219,12 @@ export function ExposurePanel({
                                     <span>
                                       <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                                     </span>
-                                    <span>Received {litresText(delivery.acceptedLitres)}</span>
-                                    <span>Invoiced {litresText(delivery.netBilledLitres)}</span>
+                                    <span>
+                                      Received {litresText(delivery.acceptedLitres, delivery.unit)}
+                                    </span>
+                                    <span>
+                                      Invoiced {litresText(delivery.netBilledLitres, delivery.unit)}
+                                    </span>
                                     <span>
                                       {delivery.unbilledValue
                                         ? `About ${moneyText(delivery.unbilledValue)}`

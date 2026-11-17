@@ -1,34 +1,57 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
+import { useConfirm } from '../../../design-system/feedback-provider';
 import { Button } from '../../../design-system/primitives';
-import { nextStep, TRAIL, trailActions, type StepAction, type StepOverview } from './next-step';
+import { dailyOperationsProblem } from './daily-operations-state';
+import {
+  canRunShift,
+  nextStep,
+  TRAIL,
+  trailActions,
+  type PrecedingCommand,
+  type StepAction,
+  type StepOverview,
+} from './next-step';
 
-function toLocalInput(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
+/** Said after a step succeeds, so the card never changes without telling the person what happened. */
+const DONE_MESSAGE: Record<string, string> = {
+  OpenBusinessDay: 'Business day opened. Now start the first shift.',
+  StartShift: 'Shift started. Now enter the figures.',
+  CloseMeters: 'Meters closed.',
+  CompleteShift: 'Shift closed.',
+  CloseBusinessDay: 'Business day closed.',
+};
+
+/** The steps shown: closing the day is part of closing the shift, so it is not a step of its own. */
+const SHOWN_STEPS = TRAIL.slice(0, 3);
 
 type Props = Readonly<{
   tenantId: string;
   stationId: string;
   /** Called after a command succeeds, so the page around the card can refresh too. */
   onChanged?: () => void;
+  /** Sits inside another card (the dashboard's Daily operations) instead of being a card of its own. */
+  embedded?: boolean;
 }>;
 
 /**
  * "Quick actions": one clear thing to do, with a button that does it. It reads the
  * same overview as the Daily Operations page and sends the same named commands.
  */
-export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
+export function NextStepCard({ tenantId, stationId, onChanged, embedded = false }: Props) {
+  const confirm = useConfirm();
+  const router = useRouter();
   const [overview, setOverview] = useState<StepOverview | null>(null);
   const [hidden, setHidden] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const [formOpen, setFormOpen] = useState(false);
-  const [startAt, setStartAt] = useState(() => toLocalInput(new Date()));
-  const [hours, setHours] = useState('8');
+  const [notice, setNotice] = useState<string>();
+  // The action that is waiting for the person to say why, and what they have typed so far.
+  const [askingReason, setAskingReason] = useState<StepAction | null>(null);
+  const [reason, setReason] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -53,30 +76,77 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
     return () => clearTimeout(timer);
   }, [load]);
 
-  if (hidden || !overview) return null;
+  if (hidden || !overview || !canRunShift(overview)) return null;
 
   const step = nextStep(overview, { tenantId, stationId }, () => crypto.randomUUID());
   const { action } = step;
   const trail = trailActions(overview, { tenantId, stationId }, () => crypto.randomUUID());
+  // When closing the shift is refused, the usual fix is on the figures: point the way there.
+  const closing =
+    action?.kind === 'command' &&
+    (action.commandType === 'CompleteShift' || action.commandType === 'CloseMeters');
+  const figuresLink = trail[1]?.kind === 'link' ? trail[1] : null;
 
-  async function startNewShift(action: StepAction) {
-    if (action.kind !== 'newShift') return;
-    const start = new Date(startAt);
-    const length = Number(hours);
-    if (Number.isNaN(start.getTime()) || !(length > 0 && length <= 24)) {
-      setError('Enter a start time and a length between 1 and 24 hours.');
-      return;
+  async function run(action: StepAction | null, givenReason?: string) {
+    if (!action || action.kind !== 'command') return;
+    let extra: Record<string, unknown> = {};
+    if (action.askReason) {
+      // The reason is asked on the card itself, never in a browser pop-up.
+      if (givenReason === undefined) {
+        setError(undefined);
+        setAskingReason(action);
+        return;
+      }
+      if (givenReason.trim().length < 5) {
+        setError('Please write at least 5 letters saying why. The day was not closed.');
+        return;
+      }
+      extra = { [action.askReason.field]: givenReason.trim() };
     }
-    await send('StartShift', action.values, 'new-shift', {
-      plannedStartAt: start.toISOString(),
-      plannedEndAt: new Date(start.getTime() + length * 3_600_000).toISOString(),
-    });
+    if (action.confirm) {
+      // The first sentence is the question; anything after it says what will happen.
+      const [question = action.confirm, ...rest] = action.confirm.split(/(?<=\?)\s+/);
+      const agreed = await confirm({
+        title: question,
+        consequence: rest.join(' ') || 'This cannot be undone from here.',
+        confirmLabel: action.label,
+        tone: 'warning',
+      });
+      if (!agreed) return;
+    }
+    setAskingReason(null);
+    setReason('');
+    await send(
+      action.commandType,
+      action.values,
+      action.subjectId,
+      extra,
+      action.before,
+      action.after,
+    );
   }
 
-  async function run(action: StepAction | null) {
-    if (!action || action.kind !== 'command') return;
-    if (action.confirm && !window.confirm(action.confirm)) return;
-    await send(action.commandType, action.values, action.subjectId);
+  async function post(
+    commandType: string,
+    values: Record<string, unknown>,
+    subjectId: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    const response = await fetch('/api/forecourt/commands', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `next-step-${commandType}-${subjectId}-${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({ commandType, ...values, ...extra }),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        code?: string;
+      };
+      throw new Error(dailyOperationsProblem(response.status, body.code, body.message).message);
+    }
   }
 
   async function send(
@@ -84,23 +154,30 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
     values: Record<string, unknown>,
     subjectId: string,
     extra: Record<string, unknown> = {},
+    before?: PrecedingCommand,
+    after?: PrecedingCommand,
   ) {
     setBusy(true);
     setError(undefined);
+    setNotice(undefined);
     try {
-      const response = await fetch('/api/forecourt/commands', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': `next-step-${commandType}-${subjectId}-${crypto.randomUUID()}`,
-        },
-        body: JSON.stringify({ commandType, ...values, ...extra }),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as { message?: string };
-        throw new Error(body.message ?? 'That did not go through. Refresh and try again.');
+      // Opening the day comes first; if the shift then fails, the day stays open and the
+      // refreshed card offers the shift on its own.
+      if (before) await post(before.commandType, before.values, before.subjectId);
+      await post(commandType, values, subjectId, after ? {} : extra);
+      if (after) await post(after.commandType, after.values, after.subjectId, extra);
+      if (commandType === 'StartShift') {
+        // A shift that has just started needs its opening readings, which the page asks for first.
+        const params = new URLSearchParams({
+          tenantId,
+          stationId,
+          businessDayId: String(values.businessDayId),
+          shiftId: String(values.shiftId),
+        });
+        router.push(`/operations/daily?${params.toString()}`);
+        return;
       }
-      setFormOpen(false);
+      setNotice(after ? DONE_MESSAGE[after.commandType] : DONE_MESSAGE[commandType]);
       await load();
       onChanged?.();
     } catch (caught) {
@@ -113,64 +190,60 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
 
   return (
     <section
-      className="next-step"
+      className={embedded ? 'next-step next-step--embedded' : 'next-step'}
       aria-labelledby="next-step-title"
       data-done={step.stage === null || undefined}
     >
-      <p className="eyebrow">Quick actions</p>
+      {embedded ? (
+        step.stage === null ? null : (
+          <p className="next-step-count">
+            Step {Math.min(step.stage, SHOWN_STEPS.length - 1) + 1} of {SHOWN_STEPS.length}
+          </p>
+        )
+      ) : (
+        <p className="eyebrow">Quick actions</p>
+      )}
       <h2 id="next-step-title">{step.title}</h2>
+      {notice ? (
+        <p className="next-step-detail" role="status">
+          ✓ {notice}
+        </p>
+      ) : null}
+      {step.detail && !embedded ? <p className="next-step-detail">{step.detail}</p> : null}
       {error ? (
         <p className="field-error" role="alert">
           {error}
         </p>
+      ) : null}
+      {error && closing && figuresLink ? (
+        <a className="button button-secondary next-step-action" href={figuresLink.href}>
+          Go to the shift figures
+        </a>
       ) : null}
       {action?.kind === 'link' ? (
         <a className="button button-primary next-step-action" href={action.href}>
           {action.label}
         </a>
       ) : null}
-      {action?.kind === 'newShift' ? (
-        formOpen ? (
-          <form
-            className="next-step-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void startNewShift(action);
-            }}
+      {askingReason?.kind === 'command' && askingReason.askReason ? (
+        <div className="field">
+          <label htmlFor="next-step-reason">{askingReason.askReason.question}</label>
+          <textarea
+            id="next-step-reason"
+            rows={3}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <Button
+            variant="primary"
+            className="next-step-action"
+            onClick={() => void run(askingReason, reason)}
+            loading={busy}
           >
-            <label>
-              Shift starts
-              <input
-                type="datetime-local"
-                value={startAt}
-                onChange={(event) => setStartAt(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Length (hours)
-              <input
-                type="number"
-                min="1"
-                max="24"
-                step="0.5"
-                inputMode="decimal"
-                value={hours}
-                onChange={(event) => setHours(event.target.value)}
-                required
-              />
-            </label>
-            <Button type="submit" variant="primary" loading={busy}>
-              Start shift
-            </Button>
-          </form>
-        ) : (
-          <Button variant="primary" className="next-step-action" onClick={() => setFormOpen(true)}>
-            {action.label}
+            {askingReason.label}
           </Button>
-        )
-      ) : null}
-      {action?.kind === 'command' ? (
+        </div>
+      ) : action?.kind === 'command' ? (
         <Button
           variant="primary"
           className="next-step-action"
@@ -180,15 +253,27 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
           {action.label}
         </Button>
       ) : null}
-      <ol className="next-step-trail" aria-label="Quick actions for the day">
-        {TRAIL.map((label, index) => {
+      {!askingReason && step.alternative ? (
+        <Button
+          variant="secondary"
+          className="next-step-action"
+          onClick={() => void run(step.alternative ?? null)}
+          disabled={busy}
+        >
+          {step.alternative.label}
+        </Button>
+      ) : null}
+      <ol
+        className="next-step-trail"
+        aria-label="Quick actions for the day"
+        hidden={embedded || undefined}
+      >
+        {SHOWN_STEPS.map((label, index) => {
+          const stage = step.stage === null ? null : Math.min(step.stage, SHOWN_STEPS.length - 1);
           const state =
-            step.stage === null || index < step.stage
-              ? 'done'
-              : index === step.stage
-                ? 'current'
-                : undefined;
-          const item = trail[index] ?? null;
+            stage === null || index < stage ? 'done' : index === stage ? 'current' : undefined;
+          // Closing the shift and closing the day are one step for the person.
+          const item = trail[index] ?? (index === SHOWN_STEPS.length - 1 ? trail[3] : null) ?? null;
           const content = (
             <>
               <span aria-hidden="true">{state === 'done' ? '✓' : index + 1}</span>
@@ -199,10 +284,6 @@ export function NextStepCard({ tenantId, stationId, onChanged }: Props) {
             <li key={label} data-state={state}>
               {item?.kind === 'link' ? (
                 <a href={item.href}>{content}</a>
-              ) : item?.kind === 'newShift' ? (
-                <button type="button" onClick={() => setFormOpen(true)}>
-                  {content}
-                </button>
               ) : item?.kind === 'command' ? (
                 <button type="button" disabled={busy} onClick={() => void run(item)}>
                   {content}

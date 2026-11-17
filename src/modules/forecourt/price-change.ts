@@ -8,6 +8,7 @@ import { authorize, isPermissionGranted } from '../../platform/security/permissi
 import { resolveForecourtCommandContext, type ForecourtCommandContext } from './application';
 import { loadForecourtStation } from './persistence';
 import type { PriceChangeData } from './price-change-state';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 const uuid = z.string().uuid();
 
@@ -98,26 +99,17 @@ async function loadPriceChange(
   const shift = shiftRows[0];
 
   const attendants = await transaction.execute<{ id: string; name: string }>(sql`
-    select m.id, u.name
-    from app.memberships m
-    join app.users u on u.id = m.identity_id
-    join app.membership_role_assignments a
-      on a.tenant_id = m.tenant_id and a.membership_id = m.id
-    where m.tenant_id = ${context.tenantId}
-      and m.status = 'ACTIVE'
-      and a.scope_type = 'STATION'
-      and a.station_id = ${input.stationId}
-      and a.role_code = 'ATTENDANT'
-      and (a.expires_at is null or a.expires_at > now())
-    order by u.name, m.id
+    select id, name
+    from app.station_attendants(${context.tenantId}::uuid, ${input.stationId}::uuid, now())
   `);
 
   const products = await transaction.execute<{
     id: string;
     name: string;
+    unit: string;
     currentPrice: string | null;
   }>(sql`
-    select p.id, p.name,
+    select p.id, p.name, p.unit,
            (select sp.unit_price::text from app.selling_prices sp
              where sp.tenant_id = p.tenant_id and sp.station_id = ${input.stationId}
                and sp.product_id = p.id and sp.state = 'ACTIVE'
@@ -129,7 +121,7 @@ async function loadPriceChange(
         where n.tenant_id = p.tenant_id and n.station_id = ${input.stationId}
           and n.product_id = p.id and n.status = 'ACTIVE'
       )
-    order by p.name, p.id
+    order by ${productOrderSql('p')}, p.id
   `);
 
   const changes = await transaction.execute<{
@@ -253,6 +245,7 @@ async function loadPriceChange(
       return {
         productId: product.id,
         name: product.name,
+        unit: product.unit === 'KILOGRAMS' ? ('KILOGRAMS' as const) : ('LITRES' as const),
         currentPrice: product.currentPrice,
         change: change
           ? {

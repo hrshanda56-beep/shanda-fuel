@@ -95,9 +95,14 @@ async function loadMyShift(
       on t.tenant_id = s.tenant_id and t.station_id = s.station_id and t.id = s.shift_template_id
     where s.tenant_id = ${context.tenantId}
       and s.station_id = ${input.stationId}
-      and s.planned_end_at > now() - interval '14 hours'
-      and s.planned_start_at < now() + interval '14 hours'
-    order by s.planned_start_at, s.id
+      and (
+        s.state = 'OPEN'
+        or (
+          s.planned_end_at > now() - interval '14 hours'
+          and s.planned_start_at < now() + interval '14 hours'
+        )
+      )
+    order by s.planned_start_at desc, s.id
     limit 12
   `);
 
@@ -124,11 +129,12 @@ async function loadMyShift(
     pumpNumber: string;
     nozzleNumber: string;
     productName: string;
+    unit: string;
     meterInstallationId: string | null;
     previousReading: string | null;
   }>(sql`
     select n.id as "nozzleId", p.number as "pumpNumber", n.number as "nozzleNumber",
-           product.name as "productName", installation.id as "meterInstallationId",
+           product.name as "productName", product.unit as "unit", installation.id as "meterInstallationId",
            previous.reading_value as "previousReading"
     from app.nozzles n
     join app.pumps p
@@ -199,6 +205,7 @@ async function loadMyShift(
     pumpNumber: row.pumpNumber,
     nozzleNumber: row.nozzleNumber,
     productName: row.productName,
+    unit: row.unit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES',
     previousReading: row.previousReading === null ? null : String(row.previousReading),
     opening: boundaryFor(row.nozzleId, 'SHIFT_OPEN'),
     closing: boundaryFor(row.nozzleId, 'SHIFT_CLOSE'),

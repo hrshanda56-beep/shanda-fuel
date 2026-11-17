@@ -19,6 +19,7 @@ export {
   recordDeliveryCompartmentsFromRequest,
   recordDeliveryDriverConfirmationFromRequest,
   recordDeliveryWaterTestFromRequest,
+  setDeliveryNoPurchaseOrderReasonFromRequest,
   setWaterTestRequiredFromRequest,
 } from './commands';
 export { queryDeliveryDetail, queryDeliveryList } from './queries';

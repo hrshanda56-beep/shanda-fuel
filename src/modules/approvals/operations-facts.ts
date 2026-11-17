@@ -1,4 +1,5 @@
 import 'server-only';
+import { asQuantityUnit } from '../../design-system/formatters';
 import { sql } from 'drizzle-orm';
 import type { InventoryCommandContext, InventoryTransaction } from '../inventory/application';
 import { isPermissionGranted } from '../../platform/security/permissions';
@@ -96,6 +97,7 @@ export async function loadOperationsFacts(
       tank_id: string;
       tank_code: string;
       product_name: string;
+      unit: string;
       expected: string;
       physical: string | null;
       variance: string | null;
@@ -105,10 +107,19 @@ export async function loadOperationsFacts(
       reorder: string | null;
       opening_recorded: boolean;
     }>(sql`
-      select t.id as tank_id, t.code as tank_code, p.name as product_name,
+      select t.id as tank_id, t.code as tank_code, p.name as product_name, p.unit as unit,
         coalesce(now_stock.expected, 0)::text as expected,
         d.physical_litres::text as physical,
-        (d.physical_litres - coalesce(at_dip.expected, 0))::text as variance,
+        -- A day's sales reach the books when its report is approved. Until then the dip is ahead of
+        -- the books by that day's sales, which is a report waiting, not a leak, so it is not compared.
+        case when exists (
+          select 1 from app.reconciliations r
+          join app.station_business_days bd
+            on bd.tenant_id = r.tenant_id and bd.station_id = r.station_id and bd.id = r.business_day_id
+          where r.tenant_id = t.tenant_id and r.station_id = t.station_id
+            and r.state = 'SUBMITTED' and bd.business_date <= d.business_date
+        ) then null
+        else (d.physical_litres - coalesce(at_dip.expected, 0))::text end as variance,
         t.acceptable_variance_litres::text as tolerance,
         t.variance_red_litres::text as red,
         sold.litres::text as sold,
@@ -153,6 +164,7 @@ export async function loadOperationsFacts(
       tankId: row.tank_id,
       tankCode: row.tank_code,
       productName: row.product_name,
+      unit: asQuantityUnit(row.unit),
       expectedLitres: row.expected,
       physicalLitres: row.physical,
       varianceAtDipLitres: row.variance,

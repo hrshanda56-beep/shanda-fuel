@@ -20,22 +20,39 @@ function plain(value: Decimal): string {
   return text.includes('.') ? text.replace(/\.?0+$/, '') : text;
 }
 
+function unitWord(unit: 'LITRES' | 'KILOGRAMS'): string {
+  return unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
+}
+
 /** What the driver left against what the note said, in plain words. Null until both are numbers. */
 export function shortageOrExcess(
   noteLitres: string,
   receivedLitres: string,
+  unit: 'LITRES' | 'KILOGRAMS' = 'LITRES',
 ): { kind: 'SHORT' | 'OVER' | 'EXACT'; litres: string; text: string } | null {
   const note = parse(noteLitres);
   const received = parse(receivedLitres);
   if (!note || !received) return null;
   const difference = received.minus(note);
   if (difference.isZero()) {
-    return { kind: 'EXACT', litres: '0', text: 'The litres received match the delivery note.' };
+    return {
+      kind: 'EXACT',
+      litres: '0',
+      text: `The ${unitWord(unit)} received match the delivery note.`,
+    };
   }
   const litres = plain(difference.abs());
   return difference.isNegative()
-    ? { kind: 'SHORT', litres, text: `Shortage of ${litres} litres against the delivery note.` }
-    : { kind: 'OVER', litres, text: `Excess of ${litres} litres against the delivery note.` };
+    ? {
+        kind: 'SHORT',
+        litres,
+        text: `Shortage of ${litres} ${unitWord(unit)} against the delivery note.`,
+      }
+    : {
+        kind: 'OVER',
+        litres,
+        text: `Excess of ${litres} ${unitWord(unit)} against the delivery note.`,
+      };
 }
 
 /**
@@ -46,6 +63,7 @@ export function compartmentSumProblem(
   rows: readonly CompartmentRow[],
   noteLitres: string,
   receivedLitres: string,
+  unit: 'LITRES' | 'KILOGRAMS' = 'LITRES',
 ): string | null {
   const filled = rows.filter((row) => row.noteLitres.trim() || row.receivedLitres.trim());
   if (filled.length === 0) return null;
@@ -58,16 +76,16 @@ export function compartmentSumProblem(
     const rowNote = parse(row.noteLitres);
     const rowReceived = parse(row.receivedLitres);
     if (!rowNote || !rowReceived) {
-      return `Compartment ${row.number} needs litres on the note and litres received, as numbers.`;
+      return `Compartment ${row.number} needs ${unitWord(unit)} on the note and ${unitWord(unit)} received, as numbers.`;
     }
     noteTotal = noteTotal.plus(rowNote);
     receivedTotal = receivedTotal.plus(rowReceived);
   }
   if (!noteTotal.eq(note)) {
-    return `The compartments add up to ${plain(noteTotal)} litres on the note, but the delivery note says ${plain(note)}.`;
+    return `The compartments add up to ${plain(noteTotal)} ${unitWord(unit)} on the note, but the delivery note says ${plain(note)}.`;
   }
   if (!receivedTotal.eq(received)) {
-    return `The compartments add up to ${plain(receivedTotal)} litres received, but you said ${plain(received)} were received.`;
+    return `The compartments add up to ${plain(receivedTotal)} ${unitWord(unit)} received, but you said ${plain(received)} were received.`;
   }
   return null;
 }
