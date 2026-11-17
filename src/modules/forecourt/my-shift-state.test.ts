@@ -210,7 +210,9 @@ describe('overdue open shift', () => {
         meters: [meter({ opening: recorded('1000.000'), closing: recorded('1200.000') })],
       }),
     );
-    expect(view.headline).toBe('Your shift is past its planned end and is still open.');
+    expect(view.headline).toBe(
+      'Your shift time is over. Enter your closing readings; your supervisor will close the shift.',
+    );
     expect(view.phase).toBe('running');
   });
 });

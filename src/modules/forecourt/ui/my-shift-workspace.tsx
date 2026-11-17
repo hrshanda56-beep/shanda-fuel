@@ -238,15 +238,15 @@ export function MyShiftWorkspace({
       {view.meters.length > 0 ? (
         <dl className="my-shift-figures" aria-label="Shift progress">
           <Figure
-            label="Completed"
+            label="Done"
             value={figures.completed}
             caption={`of ${figures.total}`}
             icon="check-circle"
             tone="done"
           />
-          <Figure label="Pending" value={figures.pending} icon="clock" tone="pending" />
+          <Figure label="To do later" value={figures.pending} icon="clock" tone="pending" />
           <Figure
-            label="Due now"
+            label="Do now"
             value={figures.due}
             icon="alert"
             tone="due"
@@ -493,8 +493,7 @@ function Step({ title, step }: { title: string; step: MeterView['opening'] }) {
       <dd>
         {step.value ? <span className="my-shift-value numeric">{step.value}</span> : null}
         <StatusBadge tone={STEP_TONE[step.state]}>
-          {step.state === 'done' ? '✓ ' : ''}
-          {step.text}
+          {step.state === 'done' ? '✓' : step.text}
         </StatusBadge>
       </dd>
     </div>

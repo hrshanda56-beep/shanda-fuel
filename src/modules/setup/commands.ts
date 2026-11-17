@@ -454,6 +454,9 @@ export function createNozzleCommand(
       const nozzleId = randomUUID();
       const meterId = randomUUID();
       const installationId = randomUUID();
+      let recordedAt = '';
+      let countedFrom = '';
+      let wasBackdated = false;
       try {
         await transaction.execute(sql`
           insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id, status)
@@ -464,12 +467,35 @@ export function createNozzleCommand(
           insert into app.meters (id, tenant_id, serial_number, status)
           values (${meterId}, ${context.tenantId}, ${payload.meterSerialNumber}, 'ACTIVE')
         `);
-        await transaction.execute(sql`
-          insert into app.meter_installations
-            (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
-          values (${installationId}, ${context.tenantId}, ${context.stationId}, ${nozzleId},
-            ${meterId}, now(), ${context.authority.membership.membershipId})
+        // A nozzle added while a shift is open is counted from the start of the earliest open
+        // shift, so that shift can still be closed with a reading for it. created_at keeps the
+        // true time; effective_from holds the backdated time; the reason says why.
+        const openShifts = await transaction.execute<{ opened_at: Date | string }>(sql`
+          select opened_at from app.shifts
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and state = 'OPEN' and opened_at is not null
+          order by opened_at asc limit 1
         `);
+        const backdatedTo = openShifts[0]?.opened_at
+          ? new Date(openShifts[0].opened_at).toISOString()
+          : null;
+        const reason = backdatedTo
+          ? `Added while a shift was open; counted from the start of that shift (${backdatedTo}).`
+          : null;
+        const inserted = await transaction.execute<{
+          effective_from: Date | string;
+          created_at: Date | string;
+        }>(sql`
+          insert into app.meter_installations
+            (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by, replacement_reason)
+          values (${installationId}, ${context.tenantId}, ${context.stationId}, ${nozzleId},
+            ${meterId}, coalesce(${backdatedTo}::timestamptz, now()),
+            ${context.authority.membership.membershipId}, ${reason})
+          returning effective_from, created_at
+        `);
+        recordedAt = new Date(inserted[0]!.created_at).toISOString();
+        countedFrom = new Date(inserted[0]!.effective_from).toISOString();
+        wasBackdated = backdatedTo !== null;
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw new AppError(
@@ -485,6 +511,9 @@ export function createNozzleCommand(
         installationId,
         pumpId: payload.pumpId,
         number: payload.number,
+        recordedAt,
+        countedFrom,
+        wasBackdated,
       };
     },
   });

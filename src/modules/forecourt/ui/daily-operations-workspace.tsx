@@ -55,6 +55,7 @@ import {
   dailyOperationsProblem,
   dailyOperationsStatusLabel,
   dailyOperationsStatusTone,
+  dayReadyToLock,
   isEditableDailyOperationsState,
   liveCashFigures,
   liveLitresSold,
@@ -62,6 +63,7 @@ import {
   liveSalesFigures,
   stepTitle,
   type DailyOperationsFix,
+  type LockCheckOverview,
 } from './daily-operations-state';
 import {
   createDraftSaveAttemptId,
@@ -276,7 +278,7 @@ function errorFixFor(message: string, cause: unknown): ErrorFix | undefined {
 
 function errorFromResponse(status: number, body: unknown): OperationsFailure {
   const result = body as { error?: string; message?: string; details?: Record<string, unknown> };
-  const problem = dailyOperationsProblem(status, result.error, result.message);
+  const problem = dailyOperationsProblem(status, result.error, result.message, result.details);
   const failure = new Error(problem.message) as OperationsFailure;
   failure.fix = problem.fix;
   failure.status = status;
@@ -811,6 +813,36 @@ export function DailyOperationsWorkspace({
     }
   }
 
+  /**
+   * The owner's approval also locks the day when the day is closed and nothing blocks it. The
+   * identity check done for the approval covers the lock. Any refusal leaves the day closed, with
+   * the Lock button on Daily Operations as before; the approval itself is never undone.
+   */
+  async function lockDayIfReady(): Promise<boolean> {
+    try {
+      const params = new URLSearchParams({
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: context.businessDayId,
+      });
+      const response = await fetch(`/api/forecourt/operations/overview?${params}`, {
+        cache: 'no-store',
+      });
+      if (!response.ok) return false;
+      const day = dayReadyToLock((await response.json()) as LockCheckOverview);
+      if (!day) return false;
+      await sendCommand('LockBusinessDay', {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: day.id,
+        expectedVersion: day.version,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function transition(
     commandType: string,
     values: Record<string, unknown> = {},
@@ -827,7 +859,7 @@ export function DailyOperationsWorkspace({
       !(await confirm({
         title: 'Approve this reconciliation?',
         consequence:
-          'The sales will be recorded and this report will be locked. Mistakes can only be fixed by a reversal.',
+          'The sales will be recorded and this report will be locked. If this is the last report of a closed day, the business day is locked too. Mistakes can only be fixed by a reversal.',
         confirmLabel: 'Approve reconciliation',
         tone: 'warning',
       }))
@@ -845,7 +877,10 @@ export function DailyOperationsWorkspace({
         ...values,
       });
       await load();
-      const done = TRANSITION_SUCCESS[commandType] ?? 'Workflow state updated.';
+      let done = TRANSITION_SUCCESS[commandType] ?? 'Workflow state updated.';
+      if (commandType === 'ApproveProductionReconciliation' && (await lockDayIfReady())) {
+        done = 'Approved, and the business day is locked.';
+      }
       setNotice(done);
       toast.success(done);
       window.scrollTo({ top: 0, behavior: 'smooth' });

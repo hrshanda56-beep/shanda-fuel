@@ -199,49 +199,38 @@ export function DailyTankDips({
                 </p>
               ) : null}
             </header>
-            {dip ? (
-              <div className="tank-row-readings" data-with-expected={editable ? undefined : ''}>
-                <PumpReadout label="Dip on this sheet" value={formatLitres(dip.physicalLitres)} />
-                {editable ? null : (
+            <div className="tank-row-readings">
+              <PumpReadout
+                label="Expected"
+                value={tank.expectedLitres ? formatLitres(tank.expectedLitres) : '—'}
+              />
+              {dip ? (
+                <>
+                  <PumpReadout label="Dip on this sheet" value={formatLitres(dip.physicalLitres)} />
                   <PumpReadout
-                    label="Expected"
-                    value={tank.expectedLitres ? formatLitres(tank.expectedLitres) : '—'}
+                    label="Difference"
+                    value={
+                      variance !== null
+                        ? `${Number(variance) > 0 ? '+' : ''}${formatLitres(variance)}`
+                        : '—'
+                    }
+                    result
                   />
-                )}
-                <PumpReadout
-                  label="Difference"
-                  value={
-                    dip && variance !== null
-                      ? `${Number(variance) > 0 ? '+' : ''}${formatLitres(variance)}`
-                      : '—'
-                  }
-                  result
-                />
-                <PumpReadout
-                  label="Result"
-                  value={
-                    <span className="tank-result" data-tone={tone}>
-                      {tank.toleranceLitres === null && dip ? 'No allowed difference set' : label}
-                    </span>
-                  }
-                  result
-                />
-              </div>
-            ) : editable ? null : (
-              <div className="tank-row-readings">
-                <PumpReadout
-                  label="Expected"
-                  value={tank.expectedLitres ? formatLitres(tank.expectedLitres) : '—'}
-                />
-              </div>
-            )}
+                  <PumpReadout
+                    label="Result"
+                    value={
+                      <span className="tank-result" data-tone={tone}>
+                        {tank.toleranceLitres === null ? 'No allowed difference set' : label}
+                      </span>
+                    }
+                    result
+                  />
+                </>
+              ) : null}
+            </div>
             {!dip && !editable ? <p className="muted-small">No dip was recorded.</p> : null}
             {editable ? (
               <div className="tank-row-entry">
-                <PumpReadout
-                  label="Expected"
-                  value={tank.expectedLitres ? formatLitres(tank.expectedLitres) : '—'}
-                />
                 <NumericInput
                   id={`dip-${tank.tankId}`}
                   label={

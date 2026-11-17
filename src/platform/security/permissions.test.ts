@@ -223,6 +223,10 @@ describe('permission authorization', () => {
   it('keeps customer lifecycle management with OWNER and ADMINISTRATOR', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.OWNER).toContain('customer.manage');
     expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('customer.manage');
+    // Only the owner and the administrator lock a business day (a permanent step).
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('business_day.lock');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('business_day.lock');
+    expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('business_day.lock');
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.manage');
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.account.manage');
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.account.adjust');

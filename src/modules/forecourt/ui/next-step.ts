@@ -81,9 +81,13 @@ export type NextStep = Readonly<{
         askReason?: { field: string; question: string };
         /** Runs first, and only this action is shown: opening the day is part of starting its first shift. */
         before?: PrecedingCommand;
+        /** Runs last; a reason, if asked for, goes with this command. Used to end the day with the last shift. */
+        after?: PrecedingCommand;
       }>
     | Readonly<{ kind: 'link'; label: string; href: string }>
     | null;
+  /** A second, optional button: close this last shift and the business day in one go. */
+  alternative?: Extract<NonNullable<NextStep['action']>, { kind: 'command' }>;
 }>;
 
 function stationClock(instant: Date, timeZone: string): string {
@@ -135,6 +139,52 @@ function closeShiftAction(
       values: shiftValues(shift),
       subjectId: shift.id,
     },
+  };
+}
+
+/**
+ * "Close shift and end the day": only for the last shift of the day, when no scheduled shift is
+ * still to come. The same confirmation question is asked, and the same reason when no figures
+ * are approved yet.
+ */
+function closeShiftAndDayAction(
+  overview: StepOverview,
+  shift: StepOverview['shifts'][number],
+  shiftValues: (shift: StepOverview['shifts'][number]) => Record<string, unknown>,
+  day: NonNullable<StepOverview['selectedBusinessDay']>,
+  base: Record<string, string>,
+  now: Date,
+): Extract<StepAction, { kind: 'command' }> | undefined {
+  const { actions } = overview;
+  if (!actions.CloseMeters.canExecute || !actions.CompleteShift.canExecute) return undefined;
+  if (!actions.CloseBusinessDay.canExecute) return undefined;
+  if (overview.shifts.some((other) => other.id !== shift.id && other.state !== 'COMPLETED')) {
+    return undefined;
+  }
+  if (dueShift(overview, day.date, now)) return undefined;
+  const approvedFigures = overview.reconciliations.some((item) =>
+    ['APPROVED', 'POSTED', 'LOCKED'].includes(item.state),
+  );
+  const close = closeShiftAction(shift, shiftValues);
+  return {
+    ...close,
+    label: 'Close shift and end the day',
+    confirm:
+      'Close this shift and end the business day? The pump readings become the official meter records, the shift is finished and no more shifts can be opened for today. This cannot be undone from here.',
+    after: {
+      commandType: 'CloseBusinessDay',
+      values: { ...base, businessDayId: day.id, expectedVersion: day.version },
+      subjectId: day.id,
+    },
+    ...(approvedFigures
+      ? {}
+      : {
+          askReason: {
+            field: 'reasonWithoutReconciliation',
+            question:
+              'No figures are approved yet. Why is the day being closed now? The reason is kept in the activity log.',
+          },
+        }),
   };
 }
 
@@ -407,8 +457,8 @@ export function nextStep(
     }
     if (actions.CloseMeters.canExecute) {
       const detail = WAITING.has(reconciliation.state)
-        ? `Figures are with a manager. Close the shift after the last sale.`
-        : `Figures are in. Close the shift after the last sale.`;
+        ? `Everything is entered. Press Close Shift when the last customer has left.`
+        : `Everything is entered. Press Close Shift when the last customer has left.`;
       // One button for the person: the meters are closed, then the shift is completed.
       if (actions.CompleteShift.canExecute) {
         return {
@@ -416,6 +466,7 @@ export function nextStep(
           title: 'Close the shift',
           detail,
           action: closeShiftAction(open, shiftValues),
+          alternative: closeShiftAndDayAction(overview, open, shiftValues, day, base, now),
         };
       }
       return {
