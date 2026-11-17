@@ -1,4 +1,11 @@
 {
   "schemaVersion": 1,
-  "exceptions": []
+  "exceptions": [
+    {
+      "advisoryId": "GHSA-fc5q-39xc-vjpf",
+      "packageName": "picomatch",
+      "severity": "high",
+      "expires": "2026-12-17"
+    }
+  ]
 }
