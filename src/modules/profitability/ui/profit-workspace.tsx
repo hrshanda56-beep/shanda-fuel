@@ -126,7 +126,11 @@ function StationTable({ view }: { view: ProfitView }) {
             <th scope="col">Expenses</th>
             <th scope="col">Profit</th>
             <th scope="col">
-              {view.unit === 'KILOGRAMS' ? 'Profit per kilogram' : 'Profit per litre'}
+              {view.unit === 'KILOGRAMS'
+                ? 'Profit per kilogram'
+                : view.unit === 'LITRES'
+                  ? 'Profit per litre'
+                  : 'Profit per litre or kilogram'}
             </th>
           </tr>
         </thead>
@@ -143,7 +147,7 @@ function StationTable({ view }: { view: ProfitView }) {
               <td data-label="Profit" data-negative={isNegative(station.profit) || undefined}>
                 {moneyOrUnavailable(station.profit)}
               </td>
-              <td data-label="Profit per litre">
+              <td data-label="Profit per unit sold">
                 {formatPerLitre(station.perLitre, station.unit)}
               </td>
             </tr>

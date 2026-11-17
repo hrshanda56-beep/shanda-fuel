@@ -20,11 +20,11 @@ function plain(value: Decimal): string {
   return text.includes('.') ? text.replace(/\.?0+$/, '') : text;
 }
 
-/** What the driver left against what the note said, in plain words. Null until both are numbers. */
 function unitWord(unit: 'LITRES' | 'KILOGRAMS'): string {
   return unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
 }
 
+/** What the driver left against what the note said, in plain words. Null until both are numbers. */
 export function shortageOrExcess(
   noteLitres: string,
   receivedLitres: string,

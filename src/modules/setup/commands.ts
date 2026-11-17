@@ -203,7 +203,8 @@ function isForeignKeyViolation(error: unknown): boolean {
 /**
  * Changes how a fuel is measured. Quantities already recorded would silently change meaning
  * (500 litres would become 500 kilograms), so this is allowed only while the fuel has no deliveries,
- * meter readings, stock movements, tank dips or opening balances.
+ * meter readings, stock movements, tank dips, opening balances, purchase orders, supplier bills,
+ * cost records, customer fuel balances or selling prices.
  */
 export function setProductUnitCommand(
   context: InventoryCommandContext,
@@ -229,6 +230,13 @@ export function setProductUnitCommand(
       },
     },
     execute: async (transaction) => {
+      // Lock the fuel first: a delivery or meter reading being saved at the same moment needs a share
+      // lock on this row, so it waits for this change and then sees the new unit.
+      await transaction.execute(sql`
+        select id from app.products
+        where tenant_id = ${context.tenantId} and id = ${payload.productId}
+        for update
+      `);
       const used = await transaction.execute<{ used: boolean }>(sql`
         select (
           exists (select 1 from app.fuel_deliveries where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
@@ -236,6 +244,13 @@ export function setProductUnitCommand(
           or exists (select 1 from app.inventory_movements where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
           or exists (select 1 from app.reconciliation_meter_readings where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
           or exists (select 1 from app.opening_balance_lines where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.purchase_order_lines where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.supplier_document_lines where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.inventory_cost_events where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.customer_fuel_authorizations where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.customer_ledger_entries where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.sale_recognition_movements where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
+          or exists (select 1 from app.selling_prices where tenant_id = ${context.tenantId} and product_id = ${payload.productId})
           or exists (
             select 1 from app.tank_dips d join app.tanks t on t.id = d.tank_id and t.tenant_id = d.tenant_id
             where d.tenant_id = ${context.tenantId} and t.product_id = ${payload.productId}

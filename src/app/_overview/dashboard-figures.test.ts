@@ -139,6 +139,22 @@ describe('fuels measured in kilograms', () => {
     ]);
   });
 
+  it('has no figure, not zero, for a day with only fuel in the other unit', () => {
+    const buckets = chartBuckets('7D', '2026-10-11').buckets;
+    const mixed = [
+      { businessDate: '2026-10-10', productName: 'Diesel', litres: '100', unit: 'LITRES' as const },
+      {
+        businessDate: '2026-10-11',
+        productName: 'LP Gas',
+        litres: '40',
+        unit: 'KILOGRAMS' as const,
+      },
+    ];
+    const point = litresSeries(mixed, buckets).at(-1);
+    expect(point?.unit).toBe('LITRES');
+    expect(point?.litres).toBeNull();
+  });
+
   it('draws the chart in kilograms when every fuel is sold in kilograms', () => {
     const gasOnly = rows.filter((row) => row.unit === 'KILOGRAMS');
     expect(litresSeries(gasOnly, chartBuckets('7D', '2026-10-11').buckets).at(-1)?.unit).toBe(

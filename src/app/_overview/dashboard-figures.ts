@@ -168,7 +168,10 @@ export function litresSeries(rows: readonly SalesRow[], buckets: readonly Bucket
       label: bucket.label,
       from: bucket.from,
       to: bucket.to,
-      litres: sumExact(inside.filter((row) => rowUnit(row) === unit).map((row) => row.litres)),
+      // A day with only fuel in the other unit has no figure in this chart's unit, which is not zero.
+      litres: inside.some((row) => rowUnit(row) === unit)
+        ? sumExact(inside.filter((row) => rowUnit(row) === unit).map((row) => row.litres))
+        : null,
       unit,
       products: names.map((name) => {
         const own = inside.filter((row) => row.productName === name);
