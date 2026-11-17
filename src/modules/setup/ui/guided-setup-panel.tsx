@@ -55,6 +55,7 @@ import {
 } from '../guided-setup';
 import { EditAccessModal } from '@/modules/settings/ui/staff-panel';
 import type { StaffOverview } from '@/modules/staff/contracts';
+import { planNozzleRenumbering } from '../nozzle-renumber';
 import styles from './setup.module.css';
 import { StepUpDialog } from './step-up-dialog';
 import { useSetupOverview } from './use-setup-overview';
@@ -821,9 +822,8 @@ function PumpEditor({
         );
         if (!saved) return;
       }
-      for (const n of nozzleNumbers) {
-        const before = nozzles.find((x) => x.id === n.id);
-        if (!before || before.number === n.number) continue;
+      // Ordered so a swap (1 and 2) or a rotation never has two nozzles on one number at once.
+      for (const n of planNozzleRenumbering(nozzles, nozzleNumbers)) {
         const saved = await save(
           { commandType: 'UpdateNozzle', ...base, nozzleId: n.id, number: n.number },
           `Nozzle ${n.number} was changed.`,

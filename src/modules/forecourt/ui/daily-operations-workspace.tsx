@@ -860,7 +860,7 @@ export function DailyOperationsWorkspace({
       !(await confirm({
         title: 'Approve this reconciliation?',
         consequence:
-          'The sales will be recorded and this report will be locked. If this is the last report of a closed day, the business day is locked too. Mistakes can only be fixed by a reversal.',
+          'The sales will be recorded and this report will be locked. If this is the last report of a closed day and nothing blocks it, the business day is locked too; otherwise the day stays closed and can be locked separately. Mistakes can only be fixed by a reversal.',
         confirmLabel: 'Approve reconciliation',
         tone: 'warning',
       }))
