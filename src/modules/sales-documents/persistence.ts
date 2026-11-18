@@ -101,8 +101,12 @@ export async function saveSalesDocProfileInTransaction(
     bankDetails: input.bankDetails ?? null,
     defaultTerms: input.defaultTerms ?? null,
     footer: input.footer ?? null,
-    logo: input.logoJpegBase64 ?? null,
-    colour: input.brandColour ?? null,
+    // Leaving these out keeps what is stored; null clears it.
+    logo:
+      input.logoJpegBase64 === undefined
+        ? (existing?.logo_jpeg_base64 ?? null)
+        : input.logoJpegBase64,
+    colour: input.brandColour === undefined ? (existing?.brand_colour ?? null) : input.brandColour,
   };
   if (!existing) {
     const profileId = randomUUID();
@@ -204,6 +208,15 @@ async function insertLines(
   return totals;
 }
 
+async function assertCustomerInCompany(tx: Tx, ctx: Ctx, customerId: string | null | undefined) {
+  if (!customerId) return;
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from app.customers
+    where tenant_id = ${ctx.tenantId} and legal_entity_id = ${ctx.legalEntityId} and id = ${customerId}
+  `);
+  if (!rows[0]) throw new AppError('NOT_FOUND', 'That customer was not found in this company');
+}
+
 export async function saveSalesDocumentDraftInTransaction(
   tx: Tx,
   ctx: Ctx,
@@ -215,6 +228,7 @@ export async function saveSalesDocumentDraftInTransaction(
   if (input.dueDate && input.dueDate < input.issueDate) {
     throw new AppError('VALIDATION_FAILED', 'The due date is before the document date');
   }
+  await assertCustomerInCompany(tx, ctx, input.customerId);
   const totals = computeDocumentTotals(
     input.lines.map((line) => ({
       quantity: line.quantity,

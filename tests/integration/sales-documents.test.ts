@@ -594,6 +594,31 @@ describe('sales documents PostgreSQL persistence (DEC-045)', () => {
     expect(after).toContain('0.102 0.498 0.357');
   });
 
+  it('keeps the stored logo when a save leaves it out, and refuses a customer from elsewhere', async () => {
+    const jpeg = Buffer.from([
+      0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x02, 0x00, 0x03, 0x03, 0x01, 0x11, 0x00,
+      0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xff, 0xd9,
+    ]).toString('base64');
+    const read = () => getSalesDocumentProfileFromRequest(readRequest(tokens.admin), entity);
+    const first = await command(tokens.admin, {
+      ...profile,
+      expectedVersion: (await read())!.version,
+      logoJpegBase64: jpeg,
+      brandColour: '#1a7f5b',
+    });
+    expect(first.status).toBe(200);
+    const omitted = await command(tokens.admin, {
+      ...profile,
+      expectedVersion: first.json.version,
+      displayName: 'Shanda Fuel (Pvt) Ltd',
+    });
+    expect(omitted.status).toBe(200);
+    expect(await read()).toMatchObject({ logoJpegBase64: jpeg, brandColour: '#1a7f5b' });
+
+    const stranger = await command(tokens.finance, draft({ customerId: randomUUID() }));
+    expect(stranger.status).toBe(404);
+  });
+
   it('emails the PDF of an issued document, and only that', async () => {
     const send = (token: string, documentId: string, to = 'buyer@example.com') =>
       sendSalesDocumentEmailFromRequest(readRequest(token), { ...entity, documentId, to });

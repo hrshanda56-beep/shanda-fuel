@@ -72,6 +72,14 @@ export async function sendSalesDocumentEmailFromRequest(
     }
     throw new AppError('CONFLICT', 'The email could not be sent. Please try again in a moment.');
   }
-  await recordSalesDocumentEvent(rendered, 'SALES_DOCUMENT.EMAILED');
+  // The email has already gone. If the log write fails, say so honestly in the server log but do
+  // not report a failure: a retry would send the customer the same document twice.
+  try {
+    await recordSalesDocumentEvent(rendered, 'SALES_DOCUMENT.EMAILED');
+  } catch {
+    console.error('sales-documents: email sent but the audit event could not be written', {
+      documentId: doc.id,
+    });
+  }
   return { sent: true };
 }

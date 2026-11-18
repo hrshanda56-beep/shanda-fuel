@@ -1,5 +1,6 @@
 import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { ContextRequiredState, LoadingState } from '@/design-system/primitives';
+import { businessToday } from '@/modules/reporting/period';
 import {
   getSalesDocumentCapabilitiesFromRequest,
   getSalesDocumentCustomersFromRequest,
@@ -76,7 +77,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
           mode,
           newType,
           detail,
-          today: new Date().toISOString().slice(0, 10),
+          today: businessToday(),
           stationId: current.stationId && !current.allStations ? current.stationId : null,
         };
       }}
