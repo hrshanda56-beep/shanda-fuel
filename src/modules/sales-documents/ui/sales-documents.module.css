@@ -202,3 +202,20 @@
 .listCard {
   padding: var(--space-1) 0;
 }
+
+.more {
+  position: relative;
+}
+
+.moreMenu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+  min-width: 12rem;
+  padding: var(--space-2, 0.5rem);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #d8dee0);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
+}

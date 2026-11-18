@@ -15,6 +15,11 @@ export function formatAmount(value: string, places = 2, minPlaces = places): str
   return negative && scaled !== 0n ? `-${out}` : out;
 }
 
+/** Editable plain figure: no thousands separators, at least two decimals ("1225.0000" -> "1225.00"). */
+export function plainAmount(value: string): string {
+  return formatAmount(value, 4, 2).replace(/,/g, '');
+}
+
 export const isZero = (value: string): boolean => /^0*\.?0*$/.test(value.replace('-', ''));
 
 export const DOC_LABELS = {
@@ -57,5 +62,7 @@ export function friendlyError(message: string | null | undefined, fallback: stri
     [/exceeds|more than.*(owed|balance)/i, 'That is more than what is still owed on this invoice.'],
   ];
   for (const [pattern, reply] of rules) if (pattern.test(text)) return reply;
-  return text.length > 200 ? fallback : text;
+  // Never show raw four-decimal figures such as 1225.0000.
+  const clean = text.replace(/-?\d+\.\d{4}\b/g, (n) => formatAmount(n, 2));
+  return clean.length > 200 ? fallback : clean;
 }

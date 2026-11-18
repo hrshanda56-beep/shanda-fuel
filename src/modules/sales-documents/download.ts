@@ -8,7 +8,11 @@ import { appendSecurityEvent } from '../audit/contracts';
 import type { AuthenticatedActorContext } from '../identity';
 import { buildSalesDocumentPdf } from './pdf';
 import { resolveSalesDocumentReadContext } from './read-context';
-import { getSalesDocumentFromRequest, salesDocumentDetailQuerySchema } from './queries';
+import {
+  getSalesDocumentFromRequest,
+  getSalesDocumentProfileFromRequest,
+  salesDocumentDetailQuerySchema,
+} from './queries';
 
 /**
  * The PDF of one document, built from the stored snapshot. Same authorisation as viewing; the
@@ -33,7 +37,31 @@ export async function downloadSalesDocumentPdfFromRequest(
     permissionCode: 'sales_document.view',
     requestedScope: context.scope,
   });
-  const pdf = buildSalesDocumentPdf(doc);
+  // A draft has no letterhead copy yet, so the preview uses the company details as they are now.
+  let printable = doc;
+  if (!doc.letterhead) {
+    const profile = await getSalesDocumentProfileFromRequest(
+      request,
+      { tenantId: input.tenantId, legalEntityId: input.legalEntityId },
+      actor,
+    );
+    if (profile) {
+      printable = {
+        ...doc,
+        letterhead: {
+          displayName: profile.displayName,
+          address: profile.address,
+          phone: profile.phone,
+          email: profile.email,
+          taxLabel: profile.taxLabel,
+          taxNumber: profile.taxNumber,
+          bankDetails: profile.bankDetails,
+          footer: profile.footer,
+        },
+      };
+    }
+  }
+  const pdf = buildSalesDocumentPdf(printable);
   await withTenantTransaction(context.authority.transaction, async (transaction) => {
     await appendSecurityEvent(
       {

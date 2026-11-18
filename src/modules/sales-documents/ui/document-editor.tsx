@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Button, Card, ErrorState, Field, NumericInput } from '@/design-system/primitives';
 import { Select } from '@/design-system/forms';
 import { todayInBusinessTime } from '@/modules/expenses/ui/expense-format';
 import { MAX_DOCUMENT_LINES } from '../contracts';
-import { computeDocumentTotals } from '../domain';
+import { computeDocumentTotals, lineGross } from '../domain';
 import { DOC_LABELS, addDays, formatAmount } from '../format';
 import type {
   SalesDocumentDetail,
@@ -38,6 +38,15 @@ const blankLine = (taxRate: string): Line => ({
   taxRate,
 });
 
+const lineAmount = (line: Line): string => {
+  try {
+    if (!/^\d+(\.\d+)?$/.test(line.quantity) || !/^\d+(\.\d+)?$/.test(line.unitPrice)) return '';
+    return formatAmount(lineGross(line.quantity, line.unitPrice));
+  } catch {
+    return '';
+  }
+};
+
 const trimZeros = (value: string): string =>
   value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value;
 
@@ -49,6 +58,7 @@ export function DocumentEditor({
   profile,
   customers,
   fuels,
+  stationId,
   onSaved,
   onCancel,
 }: {
@@ -59,6 +69,7 @@ export function DocumentEditor({
   profile: SalesDocumentProfileView;
   customers: { customerId: string; name: string }[];
   fuels: SalesDocumentFuelOption[];
+  stationId: string | null;
   onSaved: (documentId: string) => void;
   onCancel: () => void;
 }) {
@@ -96,23 +107,43 @@ export function DocumentEditor({
       : [blankLine(trimZeros(profile.defaultTaxRate))],
   );
   const [problem, setProblem] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const currency = existing?.currency ?? 'USD';
+  const lastFocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusId || focusId === lastFocus.current) return;
+    lastFocus.current = focusId;
+    const element = document.getElementById(focusId);
+    element?.focus();
+    element?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setFocusId(null);
+    lastFocus.current = null;
+  }, [focusId]);
 
   const fuelChoices = useMemo(
     () =>
-      fuels.flatMap((fuel) =>
-        fuel.prices.length === 0
-          ? [{ value: `${fuel.productId}|`, label: fuel.name, fuel, price: '' }]
-          : fuel.prices.map((price) => ({
-              value: `${fuel.productId}|${price.stationId}`,
-              label:
-                fuel.prices.length > 1
-                  ? `${fuel.name} - ${price.stationName} (${formatAmount(price.unitPrice, 4, 2)})`
-                  : `${fuel.name} (${formatAmount(price.unitPrice, 4, 2)})`,
-              fuel,
-              price: price.unitPrice,
-            })),
-      ),
-    [fuels],
+      fuels.flatMap((fuel) => {
+        const here = stationId ? fuel.prices.filter((price) => price.stationId === stationId) : [];
+        const prices = here.length > 0 ? here : fuel.prices;
+        const scoped = here.length > 0;
+        if (prices.length === 0) {
+          return [{ value: `${fuel.productId}|`, label: fuel.name, fuel, price: '', suffix: '' }];
+        }
+        return prices.map((price) => {
+          const many = !scoped && prices.length > 1;
+          return {
+            value: `${fuel.productId}|${price.stationId}`,
+            label: many
+              ? `${fuel.name} - ${price.stationName} (${formatAmount(price.unitPrice, 4, 2)})`
+              : `${fuel.name} (${formatAmount(price.unitPrice, 4, 2)})`,
+            fuel,
+            price: price.unitPrice,
+            suffix: many ? ` - ${price.stationName}` : '',
+          };
+        });
+      }),
+    [fuels, stationId],
   );
 
   const totals = useMemo(() => {
@@ -145,12 +176,68 @@ export function DocumentEditor({
       {
         ...blankLine(trimZeros(profile.defaultTaxRate)),
         productId: choice.fuel.productId,
-        description: choice.fuel.name,
+        description: `${choice.fuel.name}${choice.suffix}`,
         unitLabel: choice.fuel.unit === 'KILOGRAMS' ? 'kg' : 'L',
         unitPrice: trimZeros(choice.price),
         quantity: '',
       },
     ]);
+  }
+
+  function addBlankLine() {
+    const line = blankLine(trimZeros(profile.defaultTaxRate));
+    setLines((current) => [...current, line]);
+    setFocusId(`sd-desc-${line.key}`);
+  }
+
+  function duplicateLine(key: number) {
+    setLines((current) => {
+      const index = current.findIndex((line) => line.key === key);
+      if (index < 0 || current.length >= MAX_DOCUMENT_LINES) return current;
+      const copy = { ...current[index]!, key: nextKey++ };
+      return [...current.slice(0, index + 1), copy, ...current.slice(index + 1)];
+    });
+  }
+
+  function validate(): { found: Record<string, string>; first: string | null } {
+    const found: Record<string, string> = {};
+    const order: string[] = [];
+    const flag = (id: string, message: string) => {
+      if (!found[id]) order.push(id);
+      found[id] = message;
+    };
+    if (!name.trim()) flag('sd-name', `Who is this ${label} for? Add a name.`);
+    const amountOk = (value: string) => /^\d+(\.\d+)?$/.test(value.trim());
+    for (const line of lines) {
+      if (!line.description.trim()) flag(`sd-desc-${line.key}`, 'Describe this item.');
+      if (!amountOk(line.quantity) || Number(line.quantity) <= 0) {
+        flag(`sd-qty-${line.key}`, 'Enter a quantity above zero.');
+      }
+      if (!amountOk(line.unitPrice)) flag(`sd-price-${line.key}`, 'Enter the price each.');
+      if (line.discountAmount && !amountOk(line.discountAmount)) {
+        flag(`sd-disc-${line.key}`, 'Enter the discount as an amount, or 0.');
+      }
+      if (line.taxRate && (!amountOk(line.taxRate) || Number(line.taxRate) > 100)) {
+        flag(`sd-rate-${line.key}`, 'Enter a percentage from 0 to 100.');
+      }
+      if (!found[`sd-qty-${line.key}`] && !found[`sd-price-${line.key}`]) {
+        try {
+          computeDocumentTotals([
+            {
+              quantity: line.quantity,
+              unitPrice: line.unitPrice,
+              discountAmount: line.discountAmount || '0',
+              taxRate: line.taxRate || '0',
+            },
+          ]);
+        } catch {
+          if (!found[`sd-disc-${line.key}`] && !found[`sd-rate-${line.key}`]) {
+            flag(`sd-disc-${line.key}`, 'The discount cannot be more than this item costs.');
+          }
+        }
+      }
+    }
+    return { found, first: order[0] ?? null };
   }
 
   function pickCustomer(id: string) {
@@ -162,9 +249,11 @@ export function DocumentEditor({
   function submit(event: FormEvent) {
     event.preventDefault();
     setProblem(null);
-    if (!name.trim()) return setProblem(`Who is this ${label} for? Add a name.`);
-    if (lines.some((line) => !line.description.trim() || !line.quantity || line.unitPrice === '')) {
-      return setProblem('Every line needs a description, a quantity and a price.');
+    const { found, first } = validate();
+    setErrors(found);
+    if (first) {
+      setProblem('Some details need attention. They are marked below.');
+      return setFocusId(first);
     }
     if (!totals) return setProblem('Check the numbers on your lines. One of them is not valid.');
     void command.send(
@@ -217,7 +306,7 @@ export function DocumentEditor({
               />
             </Field>
           ) : null}
-          <Field id="sd-name" label="Name" required>
+          <Field id="sd-name" label="Name" required error={errors['sd-name']}>
             <input
               id="sd-name"
               value={name}
@@ -293,7 +382,12 @@ export function DocumentEditor({
         <div className={styles.page}>
           {lines.map((line, index) => (
             <div key={line.key} className={styles.lineCard}>
-              <Field id={`sd-desc-${line.key}`} label={`Item ${index + 1}`} required>
+              <Field
+                id={`sd-desc-${line.key}`}
+                label={`Item ${index + 1}`}
+                required
+                error={errors[`sd-desc-${line.key}`]}
+              >
                 <input
                   id={`sd-desc-${line.key}`}
                   value={line.description}
@@ -307,6 +401,7 @@ export function DocumentEditor({
                   id={`sd-qty-${line.key}`}
                   label="Quantity"
                   required
+                  error={errors[`sd-qty-${line.key}`]}
                   value={line.quantity}
                   onChange={(e) => patch(line.key, { quantity: e.target.value })}
                 />
@@ -323,13 +418,15 @@ export function DocumentEditor({
                   id={`sd-price-${line.key}`}
                   label="Price each"
                   required
+                  error={errors[`sd-price-${line.key}`]}
                   value={line.unitPrice}
                   onChange={(e) => patch(line.key, { unitPrice: e.target.value })}
                 />
                 <NumericInput
                   id={`sd-disc-${line.key}`}
-                  label="Discount"
+                  label={`Discount (${currency}, not %)`}
                   optional
+                  error={errors[`sd-disc-${line.key}`]}
                   value={line.discountAmount}
                   onChange={(e) => patch(line.key, { discountAmount: e.target.value })}
                 />
@@ -337,23 +434,35 @@ export function DocumentEditor({
                   id={`sd-rate-${line.key}`}
                   label={`${taxLabel || 'Tax'} %`}
                   optional
+                  error={errors[`sd-rate-${line.key}`]}
                   value={line.taxRate}
                   onChange={(e) => patch(line.key, { taxRate: e.target.value })}
                 />
               </div>
               <div className={styles.lineFoot}>
                 <span className={styles.muted}>
-                  {line.productId ? 'A fuel from your system. You can change the price.' : ''}
+                  {lineAmount(line) ? `Line total: ${currency} ${lineAmount(line)}` : ''}
+                  {line.productId ? ' · A fuel from your system. You can change the price.' : ''}
                 </span>
-                {lines.length > 1 ? (
+                <span className={styles.actions}>
                   <Button
                     variant="quiet"
                     size="sm"
-                    onClick={() => setLines((c) => c.filter((l) => l.key !== line.key))}
+                    disabled={lines.length >= MAX_DOCUMENT_LINES}
+                    onClick={() => duplicateLine(line.key)}
                   >
-                    Remove
+                    Duplicate
                   </Button>
-                ) : null}
+                  {lines.length > 1 ? (
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      onClick={() => setLines((c) => c.filter((l) => l.key !== line.key))}
+                    >
+                      Remove
+                    </Button>
+                  ) : null}
+                </span>
               </div>
             </div>
           ))}
@@ -361,7 +470,7 @@ export function DocumentEditor({
             <Button
               variant="secondary"
               disabled={lines.length >= MAX_DOCUMENT_LINES}
-              onClick={() => setLines((c) => [...c, blankLine(trimZeros(profile.defaultTaxRate))])}
+              onClick={addBlankLine}
             >
               Add an item
             </Button>
@@ -399,7 +508,7 @@ export function DocumentEditor({
                   </div>
                 ) : null}
                 <div className={`${styles.totalRow} ${styles.totalStrong}`}>
-                  <span>Total</span>
+                  <span>Total ({currency})</span>
                   <span>{formatAmount(totals.total)}</span>
                 </div>
               </>
