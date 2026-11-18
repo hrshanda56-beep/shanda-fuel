@@ -652,6 +652,13 @@
       "when": 1793200108000,
       "tag": "0108_product_kind_order",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1793200109000,
+      "tag": "0109_sales_doc_branding",
+      "breakpoints": true
     }
   ]
 }

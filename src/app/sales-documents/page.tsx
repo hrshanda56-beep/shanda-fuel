@@ -76,6 +76,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
           mode,
           newType,
           detail,
+          today: new Date().toISOString().slice(0, 10),
           stationId: current.stationId && !current.allStations ? current.stationId : null,
         };
       }}

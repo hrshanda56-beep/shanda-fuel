@@ -31,6 +31,8 @@ export type SalesDocumentsInitial = {
   detail: SalesDocumentDetail | null;
   /** The station being worked in, if one is chosen; fuel prices come from it. */
   stationId: string | null;
+  /** The business date (YYYY-MM-DD) as the server sees it; used to tell what is overdue. */
+  today: string;
 };
 
 const BASE = '/sales-documents';
@@ -110,7 +112,14 @@ export function SalesDocumentsWorkspace({ initial }: { initial: SalesDocumentsIn
 
       {initial.mode === 'list' ? (
         profile ? (
-          <DocumentList rows={initial.rows} onOpen={(id) => go(`doc=${id}`)} />
+          <DocumentList
+            rows={initial.rows}
+            today={initial.today}
+            tenantId={tenantId}
+            legalEntityId={legalEntityId}
+            canConvert={capabilities.create}
+            onOpen={(id) => go(`doc=${id}`)}
+          />
         ) : (
           <EmptyState
             title="Set up your company details"
@@ -157,6 +166,7 @@ export function SalesDocumentsWorkspace({ initial }: { initial: SalesDocumentsIn
           tenantId={tenantId}
           legalEntityId={legalEntityId}
           doc={initial.detail}
+          today={initial.today}
           capabilities={capabilities}
           onOpen={(id) => go(`doc=${id}`)}
           onEdit={() => go(`edit=${initial.detail!.id}`)}

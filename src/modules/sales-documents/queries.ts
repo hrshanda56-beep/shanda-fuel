@@ -62,6 +62,8 @@ export type SalesDocumentListRow = {
   /** Invoices only. */
   paymentState: PaymentState | null;
   balance: string | null;
+  /** Quotations only: an invoice that is not cancelled was already made from it. */
+  hasInvoice: boolean;
 };
 
 export async function listSalesDocumentsFromRequest(
@@ -85,8 +87,13 @@ export async function listSalesDocumentsFromRequest(
       currency: string;
       version: number;
       receipts: string[] | null;
+      has_invoice: boolean;
     }>(sql`
       select d.id, d.doc_type, d.status, d.doc_number, d.recipient_name,
+             (d.doc_type = 'QUOTATION' and exists (
+                select 1 from app.sales_documents i
+                where i.tenant_id = d.tenant_id and i.source_document_id = d.id
+                  and i.doc_type = 'INVOICE' and i.status <> 'VOIDED')) as has_invoice,
              d.issue_date::text as issue_date, d.valid_until::text as valid_until,
              d.due_date::text as due_date, d.total::text as total, d.currency, d.version,
              case when d.doc_type = 'INVOICE' then
@@ -118,12 +125,13 @@ export async function listSalesDocumentsFromRequest(
         version: Number(row.version),
         paymentState: isLiveInvoice ? paymentState(row.total, receipts) : null,
         balance: isLiveInvoice ? invoiceBalance(row.total, receipts) : null,
+        hasInvoice: row.has_invoice === true,
       };
     });
   });
 }
 
-export type SalesDocumentDetail = SalesDocumentListRow & {
+export type SalesDocumentDetail = Omit<SalesDocumentListRow, 'hasInvoice'> & {
   revision: number;
   recipientAddress: string | null;
   recipientTaxNumber: string | null;
@@ -321,6 +329,8 @@ export type SalesDocumentProfileView = {
   bankDetails: string | null;
   defaultTerms: string | null;
   footer: string | null;
+  logoJpegBase64: string | null;
+  brandColour: string | null;
   quotationPrefix: string;
   invoicePrefix: string;
   receiptPrefix: string;
@@ -350,6 +360,8 @@ export async function getSalesDocumentProfileFromRequest(
       bank_details: string | null;
       default_terms: string | null;
       footer: string | null;
+      logo_jpeg_base64: string | null;
+      brand_colour: string | null;
       quotation_prefix: string;
       invoice_prefix: string;
       receipt_prefix: string;
@@ -358,7 +370,7 @@ export async function getSalesDocumentProfileFromRequest(
     }>(sql`
       select id, version, display_name, address, phone, email, tax_label, tax_number,
              default_tax_rate::text as default_tax_rate, bank_details, default_terms, footer,
-             quotation_prefix, invoice_prefix, receipt_prefix, default_valid_days, default_due_days
+             logo_jpeg_base64, brand_colour, quotation_prefix, invoice_prefix, receipt_prefix, default_valid_days, default_due_days
       from app.sales_doc_profiles
       where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
     `);
@@ -377,6 +389,8 @@ export async function getSalesDocumentProfileFromRequest(
       bankDetails: row.bank_details,
       defaultTerms: row.default_terms,
       footer: row.footer,
+      logoJpegBase64: row.logo_jpeg_base64,
+      brandColour: row.brand_colour,
       quotationPrefix: row.quotation_prefix,
       invoicePrefix: row.invoice_prefix,
       receiptPrefix: row.receipt_prefix,

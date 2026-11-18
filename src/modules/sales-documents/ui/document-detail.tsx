@@ -17,10 +17,11 @@ import { lineGross } from '../domain';
 import { DOC_LABELS, formatAmount, friendlyDate, plainAmount } from '../format';
 import type { SalesDocumentCapabilities, SalesDocumentDetail } from '../queries';
 import styles from './sales-documents.module.css';
+import { SendDialog } from './send-dialog';
 import { statusView } from './status';
 import { useSalesCommand } from './use-sales-command';
 
-type Dialog = 'receipt' | 'void' | null;
+type Dialog = 'receipt' | 'void' | 'send' | null;
 
 export function DocumentDetail({
   tenantId,
@@ -30,7 +31,9 @@ export function DocumentDetail({
   onChanged,
   onOpen,
   onEdit,
+  today,
 }: {
+  today: string;
   tenantId: string;
   legalEntityId: string;
   doc: SalesDocumentDetail;
@@ -50,7 +53,7 @@ export function DocumentDetail({
   const [moreOpen, setMoreOpen] = useState(false);
 
   const label = DOC_LABELS[doc.docType].one;
-  const view = statusView(doc);
+  const view = statusView(doc, today);
   const scope = { tenantId, legalEntityId };
   const pdfHref = `/api/sales-documents/pdf?${new URLSearchParams({
     ...scope,
@@ -173,6 +176,11 @@ export function DocumentDetail({
               }
             >
               Make an invoice
+            </Button>
+          ) : null}
+          {isLive && capabilities.issue ? (
+            <Button variant="secondary" onClick={() => setDialog('send')}>
+              Send
             </Button>
           ) : null}
           {doc.docType === 'INVOICE' && doc.status === 'ISSUED' && capabilities.issue ? (
@@ -345,6 +353,20 @@ export function DocumentDetail({
           ) : null}
         </Card>
       ) : null}
+
+      <SendDialog
+        key={`send-${doc.id}`}
+        open={dialog === 'send'}
+        tenantId={tenantId}
+        legalEntityId={legalEntityId}
+        doc={doc}
+        pdfHref={pdfHref}
+        onClose={() => setDialog(null)}
+        onSent={(message) => {
+          setDialog(null);
+          onChanged(message);
+        }}
+      />
 
       <Modal
         open={dialog === 'receipt'}

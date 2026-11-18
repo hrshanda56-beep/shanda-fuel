@@ -69,6 +69,18 @@ export const saveSalesDocProfileSchema = z.object({
   bankDetails: optionalText(1000),
   defaultTerms: optionalText(2000),
   footer: optionalText(500),
+  /** A small JPEG (the screen shrinks it first), as base64. `null` removes the logo. */
+  logoJpegBase64: z
+    .string()
+    .max(300000)
+    .regex(/^\/9j\/[A-Za-z0-9+/]+=*$/, 'The logo must be a JPEG picture')
+    .nullable()
+    .optional(),
+  brandColour: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, 'Choose a colour')
+    .nullable()
+    .optional(),
   quotationPrefix: prefix.default('QT'),
   invoicePrefix: prefix.default('INV'),
   receiptPrefix: prefix.default('RC'),

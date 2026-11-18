@@ -20,12 +20,30 @@ generated PDFs were opened and read. A "Quotes & invoices" entry now sits in the
 card that opens the Company details panel (`/sales-documents?company=1`); the UI-lock manifest was
 re-baselined for the three locked files edited (`navigation.ts`, `navigation-projection.ts`,
 `settings-workspace.tsx`) and 10 new entries were added. Full unit suite 2115 pass, lint and format
-clean. Not done: a logo on the letterhead (needs PDF image embedding) and the repository e2e and
-accessibility suites (need Clerk test secrets). The integration suite runs as a superuser, so the
-runtime role's grants were checked by hand and by `runtime-role-row-locks`.
+clean. Not done: the repository e2e and accessibility suites (need Clerk test secrets). The
+integration suite runs as a superuser, so the runtime role's grants were checked by hand and by
+`runtime-role-row-locks`.
 
-Migrations 0107 (Finance day-lock revoke, from NOV17) and 0108 (sales documents) exist but are NOT
-applied to production; the owner will apply all migrations together at the end (after 0106).
+Review round 1 (2026-11-18): line amounts show gross with the discount once below the subtotal;
+draft PDFs carry the company letterhead; per-field form errors; fuel list scoped to the station;
+payment method is a fixed list; Cancel moved under "More".
+
+Review round 2 (2026-11-18): list search, status filter and an "owed / overdue" strip; an Overdue
+status for issued invoices past their due date (worked out from the server's date, exact decimals,
+no stored state); "Make invoice" shortcut on quotation rows; Send dialog on issued documents (email
+with the PDF attached through the existing Resend sender, needs `RESEND_API_KEY` and
+`RESEND_FROM_EMAIL`, permission `sales_document.issue`, audit event `SALES_DOCUMENT.EMAILED`; or a
+WhatsApp click-to-chat message the person finishes by hand); company logo (JPEG, shrunk in the
+browser, embedded in the PDF) and brand colour, kept in the letterhead snapshot so issued documents
+never change. New migration `0109_sales_doc_branding` (two nullable columns plus checks). Checked:
+full unit suite 2120 pass, `tsc`, eslint, prettier, UI-lock manifest re-baselined for the
+sales-documents screens only, browser run on the cloned demo database. Not checked: a real email
+send (no provider configured locally; the "not set up" message was checked) and the integration
+suite for 0109.
+
+Migrations 0107 (Finance day-lock revoke, from NOV17), 0108 (sales documents) and 0109 (document
+logo and colour) exist but are NOT applied to production; the owner will apply all migrations
+together at the end (after 0106).
 
 ## Manual QA issue list — 2026-11-02 (branch `codex/qa-issue-list-20261102`, PR #213)
 

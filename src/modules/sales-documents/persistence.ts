@@ -39,6 +39,8 @@ type ProfileRow = {
   bank_details: string | null;
   default_terms: string | null;
   footer: string | null;
+  logo_jpeg_base64: string | null;
+  brand_colour: string | null;
   quotation_prefix: string;
   invoice_prefix: string;
   receipt_prefix: string;
@@ -50,8 +52,8 @@ type ProfileRow = {
 async function loadProfile(tx: Tx, ctx: Ctx): Promise<ProfileRow | undefined> {
   const rows = await tx.execute<ProfileRow>(sql`
     select id, display_name, address, phone, email, tax_label, tax_number, default_tax_rate,
-           bank_details, default_terms, footer, quotation_prefix, invoice_prefix, receipt_prefix,
-           default_valid_days, default_due_days, version
+           bank_details, default_terms, footer, logo_jpeg_base64, brand_colour, quotation_prefix,
+           invoice_prefix, receipt_prefix, default_valid_days, default_due_days, version
     from app.sales_doc_profiles
     where tenant_id = ${ctx.tenantId} and legal_entity_id = ${ctx.legalEntityId}
   `);
@@ -80,6 +82,8 @@ function letterheadSnapshot(profile: ProfileRow) {
     taxNumber: profile.tax_number,
     bankDetails: profile.bank_details,
     footer: profile.footer,
+    logoJpegBase64: profile.logo_jpeg_base64,
+    brandColour: profile.brand_colour,
   };
 }
 
@@ -97,19 +101,21 @@ export async function saveSalesDocProfileInTransaction(
     bankDetails: input.bankDetails ?? null,
     defaultTerms: input.defaultTerms ?? null,
     footer: input.footer ?? null,
+    logo: input.logoJpegBase64 ?? null,
+    colour: input.brandColour ?? null,
   };
   if (!existing) {
     const profileId = randomUUID();
     await tx.execute(sql`
       insert into app.sales_doc_profiles (
         id, tenant_id, legal_entity_id, display_name, address, phone, email, tax_label, tax_number,
-        default_tax_rate, bank_details, default_terms, footer, quotation_prefix, invoice_prefix,
-        receipt_prefix, default_valid_days, default_due_days, version, updated_by
+        default_tax_rate, bank_details, default_terms, footer, logo_jpeg_base64, brand_colour,
+        quotation_prefix, invoice_prefix, receipt_prefix, default_valid_days, default_due_days, version, updated_by
       ) values (
         ${profileId}, ${ctx.tenantId}, ${ctx.legalEntityId}, ${input.displayName}, ${values.address},
         ${values.phone}, ${values.email}, ${input.taxLabel}, ${values.taxNumber},
         ${input.defaultTaxRate}, ${values.bankDetails}, ${values.defaultTerms}, ${values.footer},
-        ${input.quotationPrefix}, ${input.invoicePrefix}, ${input.receiptPrefix},
+        ${values.logo}, ${values.colour}, ${input.quotationPrefix}, ${input.invoicePrefix}, ${input.receiptPrefix},
         ${input.defaultValidDays}, ${input.defaultDueDays}, 0, ${actorId(ctx)}
       )
     `);
@@ -122,6 +128,7 @@ export async function saveSalesDocProfileInTransaction(
       email = ${values.email}, tax_label = ${input.taxLabel}, tax_number = ${values.taxNumber},
       default_tax_rate = ${input.defaultTaxRate}, bank_details = ${values.bankDetails},
       default_terms = ${values.defaultTerms}, footer = ${values.footer},
+      logo_jpeg_base64 = ${values.logo}, brand_colour = ${values.colour},
       quotation_prefix = ${input.quotationPrefix}, invoice_prefix = ${input.invoicePrefix},
       receipt_prefix = ${input.receiptPrefix}, default_valid_days = ${input.defaultValidDays},
       default_due_days = ${input.defaultDueDays}, version = version + 1,

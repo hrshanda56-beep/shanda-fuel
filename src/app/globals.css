@@ -5524,11 +5524,16 @@ h3,
   margin: 0;
 }
 
+.supplier-portfolio-table .list-head,
+.supplier-portfolio-table .list-row {
+  grid-template-columns: minmax(0, 2fr) minmax(8rem, 1fr);
+}
+
 /* Customers list: the essentials on the row, everything else under it. */
 .customer-table .list-head,
 .customer-row {
   grid-template-columns:
-    minmax(12rem, 1.4fr) minmax(7rem, 0.8fr) minmax(6rem, 0.6fr) minmax(0, 1.8fr)
+    minmax(12rem, 1.4fr) minmax(7rem, 1fr) minmax(7rem, 1fr) minmax(0, 1.8fr)
     2rem;
 }
 
@@ -6572,6 +6577,14 @@ h3,
 .deliveries-card .table-scroll-region,
 .deliveries-card .deliveries-empty {
   margin-top: var(--space-4);
+}
+.deliveries-card .deliveries-toolbar {
+  margin-top: var(--space-4);
+}
+.deliveries-card .list-filters {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: var(--space-3);
 }
 .deliveries-empty {
   margin: 0;
