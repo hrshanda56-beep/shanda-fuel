@@ -3,7 +3,7 @@ import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   buildContextHref,
   contextRoutePolicy,
@@ -23,6 +23,7 @@ import {
   SuccessState,
 } from '@/design-system/primitives';
 import { useToast } from '@/design-system/feedback-provider';
+import { FloatingMenuList } from '@/design-system/floating-menu-list';
 import { Modal } from '@/design-system/modal';
 import { NotchedCard } from '@/design-system/notched-card';
 import { Icon } from '@/design-system/icons';
@@ -117,11 +118,14 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
   const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLElement | null>(null);
+  const dismiss = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!open) return;
     function onPointer(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !listRef.current?.contains(target)) setOpen(false);
     }
     function onKey(event: KeyboardEvent) {
       if (event.key !== 'Escape') return;
@@ -166,7 +170,15 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
         <Icon name="more" />
       </button>
       {open ? (
-        <div className="row-menu-list" role="menu">
+        <FloatingMenuList
+          anchorRef={triggerRef}
+          onElement={(node) => {
+            listRef.current = node;
+          }}
+          onDismiss={dismiss}
+          className="row-menu-list"
+          role="menu"
+        >
           <Link
             role="menuitem"
             className="row-menu-item"
@@ -190,7 +202,7 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
             <Icon name={copied ? 'check' : 'tag'} />
             {copied ? 'Copied' : 'Copy supplier code'}
           </button>
-        </div>
+        </FloatingMenuList>
       ) : null}
     </div>
   );

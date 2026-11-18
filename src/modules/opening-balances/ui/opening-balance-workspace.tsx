@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Card, EmptyState, StatusBadge } from '@/design-system/primitives';
 import { useContextFetch } from '@/modules/context/client-context';
+import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { OpeningBalanceState } from '../domain';
 
 type Batch = Readonly<{
@@ -32,6 +33,16 @@ function commandKey(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
+/** True when the server wants a fresh identity check before it will make this change. */
+async function needsStepUp(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false;
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => ({}))) as { code?: string };
+  return body.code === 'STEP_UP_REQUIRED';
+}
+
 async function readApiError(response: Response): Promise<string> {
   const body = (await response.json().catch(() => ({}))) as ApiError;
   if (typeof body.message === 'string') return body.message;
@@ -57,6 +68,8 @@ export function OpeningBalanceWorkspace({
   const [batches, setBatches] = useState<readonly Batch[]>(initialBatches);
   const [busy, setBusy] = useState<'preview' | 'create' | string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const stepUpRetry = useRef<(() => void) | null>(null);
 
   const loadBatches = useCallback(async () => {
     const response = await contextFetch(
@@ -118,6 +131,11 @@ export function OpeningBalanceWorkspace({
           csv: await file.text(),
         }),
       });
+      if (await needsStepUp(response)) {
+        stepUpRetry.current = () => void createBatch();
+        setStepUpOpen(true);
+        return;
+      }
       if (!response.ok) throw new Error(await readApiError(response));
       setMessage('Opening balances imported as a draft. Review it before approval.');
       setPreview(null);
@@ -148,6 +166,11 @@ export function OpeningBalanceWorkspace({
           expectedVersion: batch.version,
         }),
       });
+      if (await needsStepUp(response)) {
+        stepUpRetry.current = () => void transition(batch, commandType);
+        setStepUpOpen(true);
+        return;
+      }
       if (!response.ok) throw new Error(await readApiError(response));
       setMessage(
         commandType.startsWith('Approve')
@@ -318,6 +341,22 @@ export function OpeningBalanceWorkspace({
           </div>
         )}
       </Card>
+      <StepUpDialog
+        open={stepUpOpen}
+        tenantId={tenantId}
+        description="Changing opening balances needs a fresh identity check. Nothing is changed until you confirm."
+        confirmLabel="Confirm and continue"
+        onCancel={() => {
+          stepUpRetry.current = null;
+          setStepUpOpen(false);
+        }}
+        onVerified={() => {
+          const retry = stepUpRetry.current;
+          stepUpRetry.current = null;
+          setStepUpOpen(false);
+          retry?.();
+        }}
+      />
     </div>
   );
 }

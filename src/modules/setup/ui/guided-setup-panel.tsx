@@ -4,13 +4,17 @@ import { useReverification } from '@clerk/nextjs';
 import Link from 'next/link';
 import {
   Fragment,
+  createContext,
   useCallback,
+  useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Icon } from '@/design-system/icons';
 import { BottomNotchCard } from '@/design-system/bottom-notch-card';
@@ -68,12 +72,27 @@ import {
 import { EditAccessModal } from '@/modules/settings/ui/staff-panel';
 import type { StaffOverview } from '@/modules/staff/contracts';
 import { planNozzleRenumbering } from '../nozzle-renumber';
+import {
+  addStaged,
+  applyStaged,
+  describeStaged,
+  discardStaged,
+  isStandIn,
+  resolveStandIns,
+  saveAllStaged,
+  type StagedChange,
+} from '../staged-changes';
 import styles from './setup.module.css';
 import { StepUpDialog } from './step-up-dialog';
 import { useSetupOverview } from './use-setup-overview';
 
 type Ready = Extract<SetupOverview, { status: 'ready' }>;
 type Outcome = { kind: 'success' | 'error'; message: string };
+
+/** While present, every setup save joins a waiting list instead of being sent straight away. */
+const StagingContext = createContext<{
+  stage: (url: string, body: Record<string, unknown>) => void;
+} | null>(null);
 type Gate = (save: () => Promise<void>) => void;
 
 const STEP_UP_REUSE_MS = 5 * 60_000;
@@ -130,8 +149,18 @@ function useSaver(url: string, onSaved: () => void, onDenied: () => void) {
   const keys = useRef(new Map<string, string>());
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>();
+  const staging = useContext(StagingContext);
 
   async function save(body: Record<string, unknown>, success: string): Promise<boolean> {
+    if (staging) {
+      // Nothing is sent here. The change joins the list that is saved once, at the end.
+      staging.stage(url, body);
+      setOutcome({
+        kind: 'success',
+        message: 'Added to your changes. Review and save when you are done.',
+      });
+      return true;
+    }
     const logical = JSON.stringify(body);
     const key = keys.current.get(logical) ?? `guided-setup-${crypto.randomUUID()}`;
     keys.current.set(logical, key);
@@ -188,6 +217,8 @@ type FormContext = {
   data: ConfigurationSetupOverview;
   refresh: () => void;
   gate: Gate;
+  /** The real identity check, for the few actions that cannot wait for the review step. */
+  confirm: Gate;
   onDenied: () => void;
   /** Present only for people who may manage staff: lets the supervisor card add, move or remove people. */
   staff?: StaffOverview;
@@ -310,11 +341,11 @@ function FuelKindRow({
   );
   const [errors, setErrors] = useState<Errors>({});
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const checked = validateFuelKind({ kind, blendPercent });
+  function commit(nextKind: string, nextBlend: string) {
+    const checked = validateFuelKind({ kind: nextKind, blendPercent: nextBlend });
     if (!checked.ok) {
-      setErrors(checked.errors);
+      // A blend still needs its percentage; that is not an error yet.
+      setErrors(nextKind === 'BLEND' && !nextBlend ? {} : checked.errors);
       return;
     }
     setErrors({});
@@ -333,6 +364,11 @@ function FuelKindRow({
       );
       if (saved) setEditing(false);
     });
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    commit(kind, blendPercent);
   }
 
   if (current && !editing) {
@@ -369,8 +405,10 @@ function FuelKindRow({
             placeholder="Choose the type of fuel"
             options={PRODUCT_KINDS.map((value) => ({ value, label: PRODUCT_KIND_LABELS[value] }))}
             onChange={(event) => {
-              setKind(event.target.value);
-              if (event.target.value !== 'BLEND') setBlendPercent('');
+              const next = event.target.value;
+              setKind(next);
+              if (next !== 'BLEND') setBlendPercent('');
+              commit(next, next === 'BLEND' ? blendPercent : '');
             }}
           />
         </Field>
@@ -390,14 +428,15 @@ function FuelKindRow({
                 value: String(value),
                 label: `${value}%`,
               }))}
-              onChange={(event) => setBlendPercent(event.target.value)}
+              onChange={(event) => {
+                setBlendPercent(event.target.value);
+                commit(kind, event.target.value);
+              }}
             />
           </Field>
         ) : null}
         <div className={styles.formActions}>
-          <Button type="submit" loading={busy}>
-            Save
-          </Button>
+          {busy ? <Message outcome={{ kind: 'success', message: 'Saving…' }} /> : null}
           {current ? (
             <Button type="button" variant="quiet" onClick={() => setEditing(false)}>
               Cancel
@@ -582,6 +621,15 @@ function FuelStep({
   );
 }
 
+/** One more than the biggest number found in the list, for pre-filling the next pump or tank. */
+function nextNumber(existing: string[]): string {
+  const biggest = existing.reduce((max, value) => {
+    const n = Number.parseInt(value, 10);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  return String(biggest + 1);
+}
+
 function PriceStep({ ctx, productId: onlyProductId }: { ctx: FormContext; productId?: string }) {
   const { save, busy, outcome } = useSaver('/api/setup/commands', ctx.refresh, ctx.onDenied);
   const [errors, setErrors] = useState<Errors>({});
@@ -594,12 +642,30 @@ function PriceStep({ ctx, productId: onlyProductId }: { ctx: FormContext; produc
   const advanceKeys = useRef(new Map<string, string>());
   const [advancing, setAdvancing] = useState<string | null>(null);
   const [advanceOutcome, setAdvanceOutcome] = useState<Outcome>();
+  const staging = useContext(StagingContext);
 
   /** Runs each step the person may take, one after another, and stops at the first refusal. */
   function advance(price: (typeof prices)[number]) {
     const { commands } = planPriceAdvance(price.state, ctx.data.capabilities);
     if (commands.length === 0) return;
-    ctx.gate(async () => {
+    if (staging) {
+      // Approving and starting a price waits with the rest, and happens at the one review step.
+      staging.stage('/api/forecourt/commands', {
+        commandType: 'AdvancePrice',
+        tenantId: ctx.tenantId,
+        stationId: ctx.stationId,
+        priceId: price.id,
+        steps: commands,
+        expectedVersion: price.version,
+      });
+      setAdvanceOutcome({
+        kind: 'success',
+        message: 'Added to your changes. Review and save when you are done.',
+      });
+      return;
+    }
+    if (isStandIn(price.id)) return;
+    ctx.confirm(async () => {
       setAdvancing(price.id);
       setAdvanceOutcome(undefined);
       let version = price.version;
@@ -782,12 +848,29 @@ function PriceStep({ ctx, productId: onlyProductId }: { ctx: FormContext; produc
             error={errors.price}
             required
           >
-            <input id={`${idp}price-amount`} name="price" inputMode="decimal" autoComplete="off" />
+            <input
+              id={`${idp}price-amount`}
+              name="price"
+              inputMode="decimal"
+              autoComplete="off"
+              onBlur={
+                onlyProductId
+                  ? (event) => {
+                      // Saved as soon as the person leaves the box, so there is no button to press.
+                      if (event.currentTarget.value.trim() && !busy) {
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }
+                  : undefined
+              }
+            />
           </Field>
           <div className={styles.formActions}>
-            <Button type="submit" loading={busy}>
-              Save price
-            </Button>
+            {onlyProductId ? null : (
+              <Button type="submit" loading={busy}>
+                Save price
+              </Button>
+            )}
             <Message outcome={outcome} />
           </div>
         </form>
@@ -1272,6 +1355,8 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
                 autoComplete="off"
                 maxLength={32}
                 placeholder="Tank 1"
+                defaultValue={`Tank ${nextNumber((ctx.data.tanks ?? []).map((t) => t.code.replace(/\D+/g, '')))}`}
+                autoFocus
               />
             </Field>
             {onlyProductId ? null : (
@@ -1459,6 +1544,14 @@ function PumpStep({
         setAddingNozzle(false);
       }
     });
+  }
+
+  /** Saves the date as soon as both the nozzle and the day are chosen, so there is no button. */
+  function saveSinceWhenComplete() {
+    const form = sinceForm.current;
+    if (!form || sinceSaver.busy) return;
+    const data = new FormData(form);
+    if (text(data, 'nozzleId') && text(data, 'since')) form.requestSubmit();
   }
 
   function setMeterSince(event: FormEvent<HTMLFormElement>) {
@@ -1654,7 +1747,14 @@ function PumpStep({
                 error={pumpErrors.number}
                 required
               >
-                <input id={`${idp}pump-number`} name="number" autoComplete="off" maxLength={16} />
+                <input
+                  id={`${idp}pump-number`}
+                  name="number"
+                  autoComplete="off"
+                  maxLength={16}
+                  defaultValue={nextNumber(allPumps.map((p) => p.number))}
+                  autoFocus
+                />
               </Field>
               <Field
                 id={`${idp}pump-name`}
@@ -1701,6 +1801,7 @@ function PumpStep({
                   name="nozzleId"
                   defaultValue=""
                   placeholder="Choose the nozzle"
+                  onChange={() => saveSinceWhenComplete()}
                   options={editableNozzles.map((n) => {
                     const pump = pumpOf(n.pumpId);
                     return {
@@ -1716,12 +1817,14 @@ function PumpStep({
                 error={sinceErrors.since}
                 required
               >
-                <input id={`${idp}since-date`} name="since" type="date" />
+                <input
+                  id={`${idp}since-date`}
+                  name="since"
+                  type="date"
+                  onChange={() => saveSinceWhenComplete()}
+                />
               </Field>
               <div className={styles.formActions}>
-                <Button type="submit" loading={sinceSaver.busy}>
-                  Save date
-                </Button>
                 <Message outcome={sinceSaver.outcome} />
               </div>
             </form>
@@ -2172,16 +2275,214 @@ export function StationSetupGuide({
     );
   }
   return (
-    <GuideSteps
+    <StagingHost
       tenantId={tenantId}
       stationId={stationId}
       stationName={stationName}
-      data={state.data}
+      serverData={state.data}
       refresh={refresh}
       staff={staff}
       onOpenStaff={onOpenStaff}
       focus={focus}
     />
+  );
+}
+
+/**
+ * Holds every setup change on the screen and saves them together. This is the one place the
+ * "Confirm it is you" check and the save button appear: the person fills things in freely, then
+ * reviews a plain list of what will change and confirms once.
+ */
+function StagingHost({
+  tenantId,
+  stationId,
+  stationName,
+  serverData,
+  refresh,
+  staff,
+  onOpenStaff,
+  focus,
+}: {
+  tenantId: string;
+  stationId: string;
+  stationName: string;
+  serverData: ConfigurationSetupOverview;
+  refresh: () => void;
+  staff?: StaffOverview;
+  onOpenStaff?: () => void;
+  focus?: 'meter-start';
+}) {
+  const [queue, setQueue] = useState<StagedChange[]>([]);
+  const realIds = useRef(new Map<string, string>());
+  const confirmedUntil = useRef(0);
+  const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
+  // After a save the screen keeps showing the saved items until the fresh read arrives.
+  const [settleTo, setSettleTo] = useState<StagedChange[] | null>(null);
+
+  const data = useMemo(() => applyStaged(serverData, queue), [serverData, queue]);
+  const staging = useMemo(
+    () => ({
+      stage: (url: string, body: Record<string, unknown>) => {
+        setProblem(undefined);
+        setQueue((current) => addStaged(current, url, body));
+      },
+    }),
+    [],
+  );
+
+  // Only a fresh read from the server settles the list (adjusting state while rendering, as React
+  // documents for state that follows a prop).
+  const [seenData, setSeenData] = useState(serverData);
+  if (seenData !== serverData) {
+    setSeenData(serverData);
+    if (settleTo !== null) {
+      setQueue(settleTo);
+      setSettleTo(null);
+    }
+  }
+
+  useEffect(() => {
+    if (queue.length === 0) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [queue.length]);
+
+  const confirm: Gate = (save) => {
+    // Runs only from event handlers, never during render.
+    if (Date.now() < confirmedUntil.current) void save();
+    else setPending(() => save);
+  };
+  const onDenied = () => {
+    confirmedUntil.current = 0;
+  };
+
+  async function saveAll() {
+    const sending = queue;
+    setSaving(true);
+    setProblem(undefined);
+    const result = await saveAllStaged(sending, realIds.current);
+    setSaving(false);
+    if (result.kind === 'saved') {
+      setReviewing(false);
+      setSettleTo([]);
+      refresh();
+      return;
+    }
+    // Whatever was saved before the problem stays saved; the rest waits so it can be fixed.
+    const remaining = result.remaining.map((c) => ({
+      ...c,
+      body: resolveStandIns(c.body, realIds.current),
+    }));
+    if (remaining.length < sending.length || remaining[0]?.body !== sending[0]?.body) {
+      setSettleTo(remaining);
+      refresh();
+    }
+    if (result.kind === 'offline') {
+      setProblem(
+        'That could not be saved. Check your connection and try again. Nothing after this point was saved.',
+      );
+      return;
+    }
+    if (result.status === 403) onDenied();
+    const failed = describeStaged(result.remaining[0]!, data).title;
+    setProblem(
+      `${failed} could not be saved. ${friendlySetupError(result.status, result.message)}${
+        remaining.length < sending.length ? ' Everything before it was saved.' : ''
+      }`,
+    );
+  }
+
+  const lines = queue.map((change) => ({ change, ...describeStaged(change, data) }));
+  const count = queue.length;
+
+  return (
+    <StagingContext.Provider value={staging}>
+      <GuideSteps
+        tenantId={tenantId}
+        stationId={stationId}
+        stationName={stationName}
+        data={data}
+        refresh={refresh}
+        confirm={confirm}
+        onDenied={onDenied}
+        staff={staff}
+        onOpenStaff={onOpenStaff}
+        focus={focus}
+      />
+      {count > 0 ? (
+        <div className={styles.reviewBar} role="region" aria-label="Changes waiting to be saved">
+          <span className={styles.reviewBarText}>
+            {count === 1 ? '1 change is waiting.' : `${count} changes are waiting.`} Nothing is
+            saved yet.
+          </span>
+          <Button onClick={() => setReviewing(true)}>Review and save</Button>
+        </div>
+      ) : null}
+      <Modal
+        open={reviewing && pending === null}
+        onClose={() => !saving && setReviewing(false)}
+        title="Review your changes"
+        description="This is everything that will be saved. Nothing is saved until you confirm."
+        size="md"
+        dismissible={!saving}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setReviewing(false)} disabled={saving}>
+              Keep editing
+            </Button>
+            <Button loading={saving} disabled={count === 0} onClick={() => confirm(saveAll)}>
+              {count === 1 ? 'Save this change' : `Save ${count} changes`}
+            </Button>
+          </>
+        }
+      >
+        {lines.length === 0 ? (
+          <p className={styles.note}>There is nothing waiting to be saved.</p>
+        ) : (
+          <ul className={styles.reviewList} aria-label="Changes to save">
+            {lines.map((line) => (
+              <li key={line.change.id} className={styles.reviewItem}>
+                <span className={styles.stepText}>
+                  <span className={styles.rowTitle}>{line.title}</span>
+                  {line.detail ? <span className={styles.rowDetail}>{line.detail}</span> : null}
+                </span>
+                <Button
+                  variant="secondary"
+                  disabled={saving}
+                  aria-label={`Remove: ${line.title}`}
+                  onClick={() => setQueue((current) => discardStaged(current, line.change.id))}
+                >
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {problem ? (
+          <p className={styles.messageError} role="alert">
+            {problem}
+          </p>
+        ) : null}
+      </Modal>
+      <StepUpDialog
+        open={pending !== null}
+        tenantId={tenantId}
+        description="Saving your changes needs a fresh identity check. Nothing is saved until you confirm."
+        onCancel={() => setPending(null)}
+        onVerified={() => {
+          confirmedUntil.current = Date.now() + STEP_UP_REUSE_MS;
+          const save = pending;
+          setPending(null);
+          if (save) void save();
+        }}
+      />
+    </StagingContext.Provider>
   );
 }
 
@@ -2218,10 +2519,42 @@ function FuelMenu({
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLUListElement>(null);
+  // The list is drawn on the page itself, positioned from its button, so no card around it can cut it off.
+  const [place, setPlace] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = root.current?.getBoundingClientRect();
+    if (rect) {
+      const below = window.innerHeight - rect.bottom;
+      const right = Math.max(8, window.innerWidth - rect.right);
+      // Needs about 3rem per option; open upwards when there is not room below.
+      setPlace(
+        below < options.length * 48 + 16 && rect.top > below
+          ? { bottom: window.innerHeight - rect.top + 4, right }
+          : { top: rect.bottom + 4, right },
+      );
+    }
+    setOpen(true);
+  }
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const away = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!root.current?.contains(target) && !list.current?.contains(target)) setOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
@@ -2243,7 +2576,7 @@ function FuelMenu({
           aria-label={label}
           aria-haspopup="menu"
           aria-expanded={open}
-          onClick={() => setOpen(!open)}
+          onClick={toggle}
         >
           {triggerText}
         </Button>
@@ -2255,30 +2588,44 @@ function FuelMenu({
           title="More actions"
           aria-haspopup="menu"
           aria-expanded={open}
-          onClick={() => setOpen(!open)}
+          onClick={toggle}
         >
           <Icon name="more" />
         </button>
       )}
-      {open ? (
-        <ul className={styles.menuList} role="menu">
-          {options.map((option) => (
-            <li key={option.value} role="none">
-              <button
-                type="button"
-                role="menuitem"
-                className={styles.menuItem}
-                onClick={() => {
-                  setOpen(false);
-                  onChoose(option.value);
-                }}
-              >
-                {option.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {open && place
+        ? createPortal(
+            <ul
+              className={styles.menuList}
+              role="menu"
+              ref={list}
+              style={{
+                position: 'fixed',
+                top: place.top,
+                bottom: place.bottom,
+                right: place.right,
+                left: 'auto',
+              }}
+            >
+              {options.map((option) => (
+                <li key={option.value} role="none">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={styles.menuItem}
+                    onClick={() => {
+                      setOpen(false);
+                      onChoose(option.value);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                </li>
+              ))}
+            </ul>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -2292,6 +2639,7 @@ function FuelSteps({
   overlay,
   bodyId,
   focusMeterStart,
+  onDone,
 }: {
   ctx: FormContext;
   productId: string;
@@ -2299,6 +2647,7 @@ function FuelSteps({
   overlay: ReactNode;
   bodyId: string;
   focusMeterStart?: boolean;
+  onDone: () => void;
 }) {
   const { data } = ctx;
   const parts = [
@@ -2334,13 +2683,17 @@ function FuelSteps({
           Back
         </Button>
       ) : null}
-      {last ? null : <Button onClick={() => setIndex(index + 1)}>Next</Button>}
+      {last ? (
+        <Button onClick={onDone}>Done</Button>
+      ) : (
+        <Button onClick={() => setIndex(index + 1)}>Next</Button>
+      )}
     </>
   );
   return (
     <BottomNotchCard
       actions={index === 0 && last ? undefined : footer}
-      actionCount={index > 0 && !last ? 2 : 1}
+      actionCount={index > 0 ? 2 : 1}
       overlay={overlay}
       surfaceClassName={styles.fuelSurface}
     >
@@ -2382,6 +2735,8 @@ function GuideSteps({
   stationName,
   data,
   refresh,
+  confirm,
+  onDenied,
   staff,
   onOpenStaff,
   focus,
@@ -2391,6 +2746,8 @@ function GuideSteps({
   stationName: string;
   data: ConfigurationSetupOverview;
   refresh: () => void;
+  confirm: Gate;
+  onDenied: () => void;
   staff?: StaffOverview;
   onOpenStaff?: () => void;
   focus?: 'meter-start';
@@ -2472,27 +2829,18 @@ function GuideSteps({
     name: string;
     unit: FuelUnitChoice;
   } | null>(null);
-  const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
-  const confirmedUntil = useRef(0);
-  const fuelActions = useSaver('/api/setup/commands', refresh, () => {
-    confirmedUntil.current = 0;
-  });
+  const fuelActions = useSaver('/api/setup/commands', refresh, onDenied);
   const { done, total } = progress(steps);
-  const gate: Gate = (save) => {
-    // Runs only from event handlers, never during render.
-    // eslint-disable-next-line react-hooks/purity
-    if (Date.now() < confirmedUntil.current) void save();
-    else setPending(() => save);
-  };
+  // Saves wait on the screen until the review step, so there is nothing to confirm per entry.
+  const gate: Gate = (save) => void save();
   const ctx: FormContext = {
     tenantId,
     stationId,
     data,
     refresh,
     gate,
-    onDenied: () => {
-      confirmedUntil.current = 0;
-    },
+    confirm,
+    onDenied,
     staff,
     onOpenStaff,
   };
@@ -2663,6 +3011,7 @@ function GuideSteps({
             overlay={cardActions}
             bodyId={bodyId}
             focusMeterStart={section.key === meterFocusKey}
+            onDone={() => setOpen(null)}
           />
         </li>
       );
@@ -2917,18 +3266,6 @@ function GuideSteps({
           </Link>
         </div>
       ) : null}
-      <StepUpDialog
-        open={pending !== null}
-        tenantId={tenantId}
-        description="Saving this setup needs a fresh identity check. Nothing is saved until you confirm."
-        onCancel={() => setPending(null)}
-        onVerified={() => {
-          confirmedUntil.current = Date.now() + STEP_UP_REUSE_MS;
-          const save = pending;
-          setPending(null);
-          if (save) void save();
-        }}
-      />
     </div>
   );
 }

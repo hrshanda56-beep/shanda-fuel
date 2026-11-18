@@ -2,7 +2,7 @@ import 'server-only';
 
 import { sql } from 'drizzle-orm';
 import { withTenantTransaction } from '../../platform/db/transaction';
-import { authorizeOpeningBalanceCommand, resolveOpeningBalanceCommandContext } from './application';
+import { authorizeOpeningBalanceRead, resolveOpeningBalanceCommandContext } from './application';
 import type { OpeningBalanceState } from './domain';
 
 export async function listOpeningBalanceBatchesFromRequest(request: Request, tenantId: string) {
@@ -10,7 +10,7 @@ export async function listOpeningBalanceBatchesFromRequest(request: Request, ten
     request,
     requestedTenantId: tenantId,
   });
-  authorizeOpeningBalanceCommand(context);
+  authorizeOpeningBalanceRead(context);
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const batches = await transaction.execute<{
       id: string;
@@ -54,7 +54,7 @@ export async function getOpeningBalanceBatchFromRequest(
     request,
     requestedTenantId: tenantId,
   });
-  authorizeOpeningBalanceCommand(context);
+  authorizeOpeningBalanceRead(context);
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const batches = await transaction.execute<{
       id: string;
