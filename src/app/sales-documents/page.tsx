@@ -76,6 +76,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
           mode,
           newType,
           detail,
+          stationId: current.stationId && !current.allStations ? current.stationId : null,
         };
       }}
       render={(data, resolution) =>

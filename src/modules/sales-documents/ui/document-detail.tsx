@@ -9,9 +9,12 @@ import {
   NumericInput,
   StatusBadge,
 } from '@/design-system/primitives';
+import { Select } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
 import { todayInBusinessTime } from '@/modules/expenses/ui/expense-format';
-import { DOC_LABELS, formatAmount, friendlyDate } from '../format';
+import { PAYMENT_METHODS } from '../contracts';
+import { lineGross } from '../domain';
+import { DOC_LABELS, formatAmount, friendlyDate, plainAmount } from '../format';
 import type { SalesDocumentCapabilities, SalesDocumentDetail } from '../queries';
 import styles from './sales-documents.module.css';
 import { statusView } from './status';
@@ -39,11 +42,12 @@ export function DocumentDetail({
 }) {
   const command = useSalesCommand(tenantId);
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [amount, setAmount] = useState(doc.balance ?? '');
+  const [amount, setAmount] = useState(plainAmount(doc.balance ?? ''));
   const [method, setMethod] = useState('Cash');
   const [reference, setReference] = useState('');
   const [paidOn, setPaidOn] = useState(todayInBusinessTime());
   const [reason, setReason] = useState('');
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const label = DOC_LABELS[doc.docType].one;
   const view = statusView(doc);
@@ -175,14 +179,33 @@ export function DocumentDetail({
             <Button onClick={() => setDialog('receipt')}>Record a payment</Button>
           ) : null}
           {isLive && capabilities.void ? (
-            <Button variant="danger" onClick={() => setDialog('void')}>
-              Cancel {label.toLowerCase()}
-            </Button>
+            <div className={styles.more}>
+              <Button
+                variant="quiet"
+                aria-expanded={moreOpen}
+                onClick={() => setMoreOpen((open) => !open)}
+              >
+                More ▾
+              </Button>
+              {moreOpen ? (
+                <div className={styles.moreMenu}>
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setDialog('void');
+                    }}
+                  >
+                    Cancel {label.toLowerCase()}…
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
 
-      {command.error ? (
+      {command.error && dialog === null ? (
         <ErrorState title="That did not go through" message={command.error} />
       ) : null}
 
@@ -245,7 +268,7 @@ export function DocumentDetail({
                       {formatAmount(line.unitPrice, 4, 2)}
                     </div>
                   </div>
-                  <strong>{formatAmount(line.netAmount)}</strong>
+                  <strong>{formatAmount(lineGross(line.quantity, line.unitPrice))}</strong>
                 </div>
               ))}
             </div>
@@ -349,11 +372,11 @@ export function DocumentDetail({
             onChange={(e) => setAmount(e.target.value)}
           />
           <Field id="sd-rc-method" label="How was it paid?" required>
-            <input
+            <Select
               id="sd-rc-method"
               value={method}
-              maxLength={60}
               onChange={(e) => setMethod(e.target.value)}
+              options={PAYMENT_METHODS.map((m) => ({ value: m, label: m }))}
             />
           </Field>
           <Field id="sd-rc-ref" label="Reference" optional>

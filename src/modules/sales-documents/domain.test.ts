@@ -3,8 +3,16 @@ import {
   computeDocumentTotals,
   formatDocumentNumber,
   invoiceBalance,
+  lineGross,
   paymentState,
 } from './domain';
+
+describe('lineGross', () => {
+  it('is quantity times price before discount, exact', () => {
+    expect(lineGross('1000', '1.45')).toBe('1450.0000');
+    expect(lineGross('0.1', '0.3')).toBe('0.0300');
+  });
+});
 
 const line = (over: Partial<Parameters<typeof computeDocumentTotals>[0][number]> = {}) => ({
   quantity: '1',

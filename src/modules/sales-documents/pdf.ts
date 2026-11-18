@@ -1,4 +1,5 @@
 import { fitText, pdfText, textUnits } from '../reporting/export-documents';
+import { lineGross } from './domain';
 import { formatAmount, isZero } from './format';
 import type { SalesDocumentDetail } from './queries';
 
@@ -312,7 +313,7 @@ function drawLines(p: Pages, doc: SalesDocumentDetail): void {
     if (showTax) {
       p.right(xTaxR - 2, baseline, isZero(line.taxRate) ? '' : formatAmount(line.taxRate, 2, 0), 9);
     }
-    p.right(xAmtR, baseline, money2(line.netAmount), 9);
+    p.right(xAmtR, baseline, money2(lineGross(line.quantity, line.unitPrice)), 9);
     p.y -= height;
   });
   p.line(M, p.y + 2, W - M);

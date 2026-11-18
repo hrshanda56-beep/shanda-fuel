@@ -38,6 +38,11 @@ function fixed(value: ExactDecimal): string {
   return money(value).value.toFixed(DECIMAL_POLICIES.money.scale);
 }
 
+/** Quantity times price for one line, before any discount or tax. Exact, four decimals. */
+export function lineGross(quantity: string, unitPrice: string): string {
+  return fixed(new ExactDecimal(quantity).multiply(new ExactDecimal(unitPrice)));
+}
+
 /**
  * Each line is worked out and rounded to four decimals on its own (gross, then discount, then
  * tax), and the document totals are the sums of those rounded lines, so every figure on the

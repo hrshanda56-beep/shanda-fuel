@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
 import { ExactDecimal } from '../../platform/domain/primitives';
 import type { SalesDocumentContext, SalesDocumentTransaction } from './application';
+import { formatAmount } from './format';
 import type { SalesDocumentCommandInput, SalesDocumentLineInput } from './contracts';
 import {
   computeDocumentTotals,
@@ -498,7 +499,7 @@ export async function recordSalesReceiptInTransaction(
   if (new ExactDecimal(input.amount).value.gt(new ExactDecimal(balance).value)) {
     throw new AppError(
       'INVARIANT_VIOLATION',
-      `The amount is more than what is still owed on this invoice (${balance})`,
+      `That is more than what is still owed on this invoice (${formatAmount(balance, 2)} left).`,
     );
   }
   const profile = await requireProfile(tx, ctx);

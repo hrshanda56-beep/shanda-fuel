@@ -29,6 +29,8 @@ export type SalesDocumentsInitial = {
   mode: 'list' | 'new' | 'edit' | 'view';
   newType: 'QUOTATION' | 'INVOICE';
   detail: SalesDocumentDetail | null;
+  /** The station being worked in, if one is chosen; fuel prices come from it. */
+  stationId: string | null;
 };
 
 const BASE = '/sales-documents';
@@ -46,6 +48,7 @@ export function SalesDocumentsWorkspace({ initial }: { initial: SalesDocumentsIn
   const wantsCompany = params.get('company') === '1';
   // Opened after the page has loaded, so the server and browser render the same thing first.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: open after hydration
     if (wantsCompany) setCompanyOpen(true);
   }, [wantsCompany]);
   const { capabilities, profile, tenantId, legalEntityId } = initial;
@@ -139,6 +142,7 @@ export function SalesDocumentsWorkspace({ initial }: { initial: SalesDocumentsIn
           profile={profile}
           customers={initial.customers}
           fuels={initial.fuels}
+          stationId={initial.stationId}
           onSaved={(id) => {
             setNotice('Saved as a draft. Check it, then issue it when it is ready.');
             go(`doc=${id}`);
