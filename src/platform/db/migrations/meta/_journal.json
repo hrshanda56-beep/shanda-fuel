@@ -657,7 +657,14 @@
       "idx": 93,
       "version": "7",
       "when": 1793200109000,
-      "tag": "0109_sales_doc_branding",
+      "tag": "0109_sales_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1793200110000,
+      "tag": "0110_sales_doc_branding",
       "breakpoints": true
     }
   ]
