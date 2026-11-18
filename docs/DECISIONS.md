@@ -1201,3 +1201,16 @@ Owner decision on the NOV17 branch (Option A): each fuel has one measuring unit,
 4. **Exports.** CSV column names are unchanged so existing spreadsheets keep working. A `unit` column (LITRES, KILOGRAMS or MIXED) is added to the sales, stock, profit and commercial exports. Table reports gain a "Measured in" column and their "(L)" headings become neutral.
 5. **Deliberately litres:** the shift-message checker reads only Petrol and Diesel text from a WhatsApp message, so it stays in litres. Server error messages are worded as "quantity" so they fit either unit. The station daily report shows diesel and petrol each with its own unit, and lists any other fuel (for example LPG) in an "Other fuels sold" column. The purchasing allowance setting is one figure for every fuel and reads "litres or kg". Demo and design-system preview pages are not unit-aware.
 6. **Approval needed:** migration 0106 has been applied only to local development databases. It must be approved before any real database.
+
+## DEC-045 — Quotations, invoices and receipts as a standalone Sales documents module
+
+Date: 2026-11-18. Explicit human instruction (client request relayed by the owner). **Status:** ACCEPTED for build on branch `feat/sales-documents` (from NOV17). Not approved for any real database or deploy.
+
+1. **Scope.** A customizable generator for quotations, invoices and receipts, usable by any business type, not only fuel. This is outside DEC-044 and is recorded here as a new scope item.
+2. **Standalone.** Documents do **not** post to the customer ledger, profit, cash or any report. They are issued, numbered, kept and downloadable. Linking invoices to customer accounts is a separate future decision that needs accounting rules from the human.
+3. **Adjustable.** Per company: letterhead (name, address, phone, email, tax label and number, bank details, default terms and footer), numbering prefixes, default tax rate. Per document: free-form lines (fuels from the system as defaults, or anything typed), discount, optional tax, notes, validity or due date, a saved customer or a one-off recipient.
+4. **Numbers.** Gap-free per company, document type and year. An issued document is never edited; it can be voided with a reason and keeps its number. Quote to invoice and invoice to receipt keep a link.
+5. **PDF.** Produced by extending the existing hand-written PDF writer (no new dependency). The first version has a text letterhead; a logo image is deferred.
+6. **Not a fiscal or tax-authority invoice.** No ZIMRA or other fiscal compliance is claimed. Tax is a plain per-company rate the user sets.
+7. **Schema.** Migration 0108 (after 0107), additive, local development databases only until approved.
+8. **Needs owner approval before landing:** the navigation entry (it touches UI-locked navigation files and needs a manifest re-baseline) and migration 0108 for any real database.

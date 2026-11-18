@@ -1246,3 +1246,14 @@ When a required domain decision is missing, mark the task blocked with `TODO —
 ### Unified expense integration — 2026-10-19
 
 Unify expenses before integrating the dirty operational work: retain incoming IDs/finance workflow; version facts and add shift context; verify corrections and exact-source integrity; prepare explicit category/payment/history conversion; integrate reconciliation manifests; rerun combined finance/operational gates. No drop, checksum rewrite or remote conversion is authorized.
+
+### Quotations, invoices and receipts — 2026-11-18 (DEC-045)
+
+Built on branch `feat/sales-documents` (from NOV17): migration 0108, `sales-documents` module,
+PDF, download route, `/sales-documents` screen, a Finance menu entry ("Quotes & invoices") and a
+Settings > Organisation link to the Company details panel (owner approved 2026-11-18; UI-lock
+re-baselined). The stale FINANCE `business_day.lock` grant is revoked by 0107 on NOV17. Remaining: apply
+migrations 0107 and 0108 together at the end, after 0106 (owner decision; nothing applied to
+production), logo on the letterhead (PDF image embedding), e2e and accessibility coverage once
+Clerk test secrets are available, and a decision on whether these documents should later post to
+the customer ledger. Rebase on main before any merge (main has the draft keeper; NOV17 does not).
