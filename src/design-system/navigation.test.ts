@@ -48,6 +48,7 @@ describe('navigation projection', () => {
       entry.key === 'cash' ||
       entry.key === 'settlements' ||
       entry.key === 'expenses' ||
+      entry.key === 'sales-documents' ||
       entry.key === 'profitability' ||
       entry.key === 'customers' ||
       entry.key === 'staff-benefit'
@@ -122,6 +123,7 @@ describe('navigation destinations', () => {
       'Cash & Banking',
       'Provider payouts',
       'Expenses',
+      'Quotes & invoices',
       'Profits',
       'Customers',
       'Staff fuel benefit',

@@ -85,6 +85,7 @@ const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly 
     suppliers: ['supplier.view'],
     purchasing: ['purchase_order.view'],
     expenses: ['expense.view'],
+    'sales-documents': ['sales_document.view'],
     profitability: ['report.finance.view'],
     'fuel-deliveries': ['inventory.view'],
     'staff-benefit': ['customer.payment.record'],

@@ -1,5 +1,32 @@
 # Shanda Fuel — Current Status
 
+## Quotations, invoices and receipts — 2026-11-18 (branch `feat/sales-documents`, from NOV17)
+
+DEC-045. Built: migration `0108_sales_documents` (letterhead and numbering settings, gap-free
+counters, documents, append-only lines; five permissions), the Drizzle schema, the
+`sales-documents` module (contracts, commands, queries, totals logic), `POST
+/api/sales-documents/commands`, a portrait A4 PDF (`pdf.ts`, reusing the report writer's text
+helpers) served by `GET /api/sales-documents/pdf` (authorised read, signed audit event, no-store),
+and the screen at `/sales-documents` (list, new or edit draft with live totals and a fuel picker
+that suggests the station price, detail with issue, accept, make invoice, record payment, cancel,
+and a "Company details" panel for the letterhead and numbering). Documents are standalone:
+nothing posts to the customer ledger, cash, profit or any report. Checked: unit tests (full
+suite 2113 pass once the UI-lock manifest was updated), `tsc`, `pnpm lint`, `pnpm format:check`,
+`pnpm build`, `tests/integration/sales-documents.test.ts` (14 tests) on a scratch database, and a
+Playwright walk-through on a cloned demo database at 1440 and 390 wide (company details, quotation,
+issue, PDF download, invoice, payment, list; no horizontal overflow, no console errors); the
+generated PDFs were opened and read. A "Quotes & invoices" entry now sits in the Finance menu
+(permission `sales_document.view`), and Settings > Organisation has a "Quotations and invoices"
+card that opens the Company details panel (`/sales-documents?company=1`); the UI-lock manifest was
+re-baselined for the three locked files edited (`navigation.ts`, `navigation-projection.ts`,
+`settings-workspace.tsx`) and 10 new entries were added. Full unit suite 2115 pass, lint and format
+clean. Not done: a logo on the letterhead (needs PDF image embedding) and the repository e2e and
+accessibility suites (need Clerk test secrets). The integration suite runs as a superuser, so the
+runtime role's grants were checked by hand and by `runtime-role-row-locks`.
+
+Migrations 0107 (Finance day-lock revoke, from NOV17) and 0108 (sales documents) exist but are NOT
+applied to production; the owner will apply all migrations together at the end (after 0106).
+
 ## Manual QA issue list — 2026-11-02 (branch `codex/qa-issue-list-20261102`, PR #213)
 
 Fixed from the owner's manual QA report: real PDF and styled Excel report downloads (DEC-052),
@@ -53,7 +80,7 @@ real application code, station-level actors) and a change-access case in
 `staff-invitation-runtime.test.ts`. Still reading memberships directly, by design (owner or
 administrator screens): the staff list/management commands in `src/modules/staff`.
 
-## Settings screens polish — 2026-11-01 (branch `ui/profits-page`, uncommitted)
+## Settings screens polish — 2026-11-01 (branch `ui/profits-page`)
 
 Owner asked for the Settings screens to match the rest of the site and feel less overwhelming. UI
 only: no schema, auth, permission or API change, and no new commands.
@@ -72,7 +99,7 @@ only: no schema, auth, permission or API change, and no new commands.
   e2e specs were updated by reading and were not run here (no Clerk test keys). The setup-guide and
   v1-panels specs and an axe scan of every section (light/dark, phone/desktop) did run locally.
 
-## Hardening pass — 2026-10-29 (branch `fixtures`, from `main` 81168380, uncommitted)
+## Hardening pass — 2026-10-29 (branch `fixtures`, from `main` 81168380)
 
 Code-verified audit of the existing features, with no new builds: see `docs/STATE_OF_PLAY.md` for
 the evidence table, candidate defects and the "not built, needs a decision" list. One defect fixed
@@ -102,7 +129,7 @@ Browser Clerk/E2E replay remains unavailable in this worktree because no dedicat
 configuration is present. Vercel preview checks for two auxiliary projects remain account-gated by
 `build-rate-limit`; this is external CI capacity, not a local application result.
 
-## Pilot-blocker audit work — 2026-10-26 (branch `halfway`, brought level with `main` f4acdf4, uncommitted)
+## Pilot-blocker audit work — 2026-10-26 (branch `halfway`, brought level with `main` f4acdf4)
 
 Checked against the 2026-10-25 platform audit. Production was not contacted; nothing was committed,
 pushed, merged or deployed. Migrations 0078 and 0079 are applied only to local test databases.
@@ -147,7 +174,7 @@ The audit-fixes and selling-unblock work was merged with `main` after main moved
 - **Migrations renumbered.** Main already held `0071_alert_email` and `0072_bank_balance_statements`, so this work's migrations are now `0073_supplier_contact_and_terms`, `0074_customer_credit_days`, `0075_supplier_document_returned`, `0076_supplier_invoice_station_and_line_type` and `0077_expense_payment_mobile_money`. Older sections below use the numbers from before the merge (0071 supplier contact, 0073 credit days, 0074 return, 0075 station and line type, 0076 mobile money). None of these has been applied to production.
 - **One bank balance feature, not two.** Audit-fixes had its own `bank_account_balances` table; main's `bank_balance_statements` (Settings > Payments) is kept and the duplicate was removed. The financial position keeps main's behaviour (bank statement balance when every account has one, otherwise recorded deposits) and still adds the "Fuel received, not yet invoiced" line.
 
-## Getting to the first sale — 2026-10-26 (branch `codex/v1-selling-unblock-20261026`, from `codex/v1-audit-fixes-20261025`, uncommitted)
+## Getting to the first sale — 2026-10-26 (branch `codex/v1-selling-unblock-20261026`, from `codex/v1-audit-fixes-20261025`)
 
 Response to the audit retest blockers that stopped any station from selling. Production was not contacted. Nothing was committed, pushed, merged or deployed. Decisions: DECISIONS.md, "Getting a station to its first sale" (PROPOSED).
 
@@ -187,7 +214,7 @@ Still open from the retest (not done here): approvals inbox does not yet count p
 - **Could not reproduce:** the "Open supplier" and "Open full account" links (code is correct; probably a symptom of the exhaustion). Not seen in a browser.
 - Open items for a decision are in `docs/v1-audit-followups-proposed.md`.
 
-## Audit fixes — 2026-10-25 (branch `codex/v1-audit-fixes-20261025`, from `main` 2a110f5, uncommitted)
+## Audit fixes — 2026-10-25 (branch `codex/v1-audit-fixes-20261025`, from `main` 2a110f5)
 
 Response to the external audit of the live site. Production was not contacted. Nothing was committed, pushed, merged or deployed. Decisions are in DECISIONS.md ("Business structure, bank balance and audit fixes", PROPOSED). The audit was run on the live site, not this branch, so several of its claims did not hold here; each was checked in code first.
 

@@ -409,12 +409,12 @@ function pdfChars(value: string): string {
   return out;
 }
 
-function pdfText(value: string): string {
+export function pdfText(value: string): string {
   return pdfChars(value).replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
 }
 
 /** Width of text in 1/1000 em units. */
-function textUnits(value: string, bold = false): number {
+export function textUnits(value: string, bold = false): number {
   let units = 0;
   for (const character of pdfChars(value)) {
     const code = character.charCodeAt(0);
@@ -424,7 +424,7 @@ function textUnits(value: string, bold = false): number {
 }
 
 /** Shortens text with "..." so that it fits the given width in points. */
-function fitText(value: string, width: number, size: number, bold = false): string {
+export function fitText(value: string, width: number, size: number, bold = false): string {
   const clean = pdfChars(value);
   const fits = (candidate: string) => (textUnits(candidate, bold) / 1000) * size <= width;
   if (fits(clean)) return clean;
