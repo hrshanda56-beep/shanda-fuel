@@ -25,6 +25,7 @@ export type NavigationKey =
   | 'suppliers'
   | 'purchasing'
   | 'expenses'
+  | 'sales-documents'
   | 'profitability'
   | 'fuel-deliveries'
   | 'payments-due'
@@ -189,6 +190,15 @@ export const navigationSections: readonly NavigationSection[] = [
         destination: { kind: 'route', path: '/expenses' },
         availability: 'active',
         match: [/^\/expenses(\/|$)/],
+      },
+      {
+        key: 'sales-documents',
+        label: 'Quotes & invoices',
+        searchLabel: 'Quotes & invoices',
+        icon: 'receipt',
+        destination: { kind: 'route', path: '/sales-documents' },
+        availability: 'active',
+        match: [/^\/sales-documents(\/|$)/],
       },
       {
         key: 'profitability',

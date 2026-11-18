@@ -430,6 +430,21 @@ export function SettingsWorkspace({
                   <CardEmpty>No companies are available to you.</CardEmpty>
                 )}
               </SectionCard>
+              {view.access?.canManageCompanies ? (
+                <SectionCard id="document-details" title="Quotations and invoices">
+                  <CardRows label="Quotations and invoices">
+                    <CardRow
+                      title="Company details for documents"
+                      detail="The name, address, tax number and bank details printed at the top of your quotations, invoices and receipts."
+                      aside={
+                        <a className="button button-secondary" href="/sales-documents?company=1">
+                          Edit details
+                        </a>
+                      }
+                    />
+                  </CardRows>
+                </SectionCard>
+              ) : null}
             </>
           ) : null}
 

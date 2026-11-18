@@ -17,6 +17,7 @@ export type EmailMessage = {
   subject: string;
   text?: string;
   html?: string;
+  attachments?: { filename: string; content: Buffer }[];
 };
 
 export type EmailReceipt = { messageId: string };
@@ -31,6 +32,7 @@ type Send = (input: {
   subject: string;
   text?: string;
   html?: string;
+  attachments?: { filename: string; content: Buffer }[];
 }) => Promise<{ data: { id: string } | null; error: unknown | null }>;
 
 export function createResendEmailSender(env: ServerEnv = getServerEnv(), send?: Send): EmailSender {
@@ -50,6 +52,7 @@ export function createResendEmailSender(env: ServerEnv = getServerEnv(), send?: 
           subject: message.subject,
           ...(message.text === undefined ? {} : { text: message.text }),
           ...(message.html === undefined ? {} : { html: message.html }),
+          ...(message.attachments === undefined ? {} : { attachments: message.attachments }),
         };
         const result = await sendEmail(providerPayload);
         if (result.error || !result.data?.id) throw new EmailError('provider');

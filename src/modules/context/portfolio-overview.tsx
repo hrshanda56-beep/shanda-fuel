@@ -256,17 +256,30 @@ async function EntitySuppliers({
   }
   if (!rows.length) return <p>No suppliers available.</p>;
   return (
-    <ul>
-      {rows.map((row) => (
-        <li key={row.supplierId}>
-          <Link
-            href={`/suppliers/${row.supplierId}?${new URLSearchParams({ tenantId, legalEntityId: entityId, allStations: 'true' })}`}
-          >
-            {row.legalName}
-          </Link>{' '}
-          · {row.currency} {formatDecimal(row.total)}
-        </li>
-      ))}
-    </ul>
+    <div className="list-table supplier-portfolio-table">
+      <div className="list-head" aria-hidden="true">
+        <span>Supplier</span>
+        <span>Balance</span>
+      </div>
+      <ul className="list-rows" aria-label="Suppliers">
+        {rows.map((row) => (
+          <li key={row.supplierId}>
+            <Link
+              className="list-row"
+              href={`/suppliers/${row.supplierId}?${new URLSearchParams({ tenantId, legalEntityId: entityId, allStations: 'true' })}`}
+            >
+              <span className="list-name">
+                <span>
+                  <strong>{row.legalName}</strong>
+                </span>
+              </span>
+              <span className="list-cell">
+                {row.currency} {formatDecimal(row.total)}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

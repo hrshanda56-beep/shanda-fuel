@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Icon } from '@/design-system/icons';
 import { Notice } from '@/design-system/feedback';
 import { useToast } from '@/design-system/feedback-provider';
 import { Checkbox } from '@/design-system/forms';
@@ -63,7 +64,23 @@ export function DeliveriesList({
 
   const { deliveries } = initialData;
   const [recording, setRecording] = useState(false);
-  const page = usePagination(deliveries);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<'ALL' | 'CONFIRMED' | 'DRAFT' | 'CANCELLED'>('ALL');
+  const searched = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return deliveries;
+    return deliveries.filter((delivery) =>
+      [delivery.deliveryNoteNumber, delivery.productName, delivery.supplierName ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [deliveries, search]);
+  const visible = useMemo(
+    () => (status === 'ALL' ? searched : searched.filter((delivery) => delivery.status === status)),
+    [searched, status],
+  );
+  const page = usePagination(visible, { resetKey: `${search}|${status}` });
   const missing = (delivery: (typeof deliveries)[number]) =>
     [
       delivery.compartmentCount === 0 ? 'truck compartments' : null,
@@ -102,6 +119,47 @@ export function DeliveriesList({
           </p>
         ) : (
           <>
+            <div className="deliveries-toolbar">
+              <label className="list-search">
+                <Icon name="search" />
+                <input
+                  type="search"
+                  aria-label="Search deliveries"
+                  placeholder="Search deliveries"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  autoComplete="off"
+                />
+              </label>
+              <div className="list-filters" role="group" aria-label="Filter deliveries">
+                {(
+                  [
+                    ['ALL', 'All'],
+                    ['CONFIRMED', 'Confirmed'],
+                    ['DRAFT', 'Not confirmed yet'],
+                    ['CANCELLED', 'Cancelled'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="list-filter"
+                    aria-pressed={status === value}
+                    onClick={() => setStatus(value)}
+                  >
+                    {label}
+                    <span>
+                      {value === 'ALL'
+                        ? searched.length
+                        : searched.filter((delivery) => delivery.status === value).length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {visible.length === 0 ? (
+              <p className="deliveries-empty table-secondary">No deliveries match.</p>
+            ) : null}
             <TableScrollRegion label="Fuel deliveries">
               <table className="data-table">
                 <caption className="visually-hidden">Fuel deliveries</caption>

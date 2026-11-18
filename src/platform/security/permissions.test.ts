@@ -220,6 +220,49 @@ describe('permission authorization', () => {
     ).toBe(true);
   });
 
+  it('gives quotations, invoices and receipts to the office roles only (DEC-045)', () => {
+    for (const role of ['OWNER', 'ADMINISTRATOR', 'FINANCE'] as const) {
+      expect(DEFAULT_ROLE_PERMISSIONS[role]).toContain('sales_document.view');
+      expect(DEFAULT_ROLE_PERMISSIONS[role]).toContain('sales_document.create');
+      expect(DEFAULT_ROLE_PERMISSIONS[role]).toContain('sales_document.issue');
+    }
+    // Voiding and the company letterhead stay with the owner and the administrator.
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('sales_document.void');
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('sales_document.profile.manage');
+    expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('sales_document.void');
+    expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('sales_document.profile.manage');
+    // The auditor can read them but not make or change any.
+    expect(DEFAULT_ROLE_PERMISSIONS.AUDITOR).toContain('sales_document.view');
+    expect(DEFAULT_ROLE_PERMISSIONS.AUDITOR).not.toContain('sales_document.issue');
+    for (const role of ['SUPERVISOR', 'ATTENDANT', 'CASH_COLLECTOR', 'AREA_MANAGER'] as const) {
+      expect(
+        DEFAULT_ROLE_PERMISSIONS[role].some((code) => code.startsWith('sales_document.')),
+      ).toBe(false);
+    }
+  });
+
+  it('needs a fresh identity check to void a document', () => {
+    const owner: AuthorizationActor = {
+      ...actor,
+      strongAuthenticationVerified: false,
+      roleAssignments: [{ roleCode: 'OWNER', tenantId, scopeType: 'TENANT' }],
+    };
+    expect(() =>
+      authorize({
+        actor: owner,
+        permissionCode: 'sales_document.void',
+        requestedScope: { tenantId, scopeType: 'LEGAL_ENTITY', legalEntityId },
+      }),
+    ).toThrow();
+    expect(
+      isPermissionGranted({
+        actor: owner,
+        permissionCode: 'sales_document.void',
+        requestedScope: { tenantId, scopeType: 'LEGAL_ENTITY', legalEntityId },
+      }),
+    ).toBe(true);
+  });
+
   it('keeps customer lifecycle management with OWNER and ADMINISTRATOR', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.OWNER).toContain('customer.manage');
     expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('customer.manage');

@@ -1,8 +1,10 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-11-01** for `main` at `6e4bb214`: 93 migrations, 0000 to 0108 (no 0104) (0098 to 0102 added 2026-11-02, 0103 on 2026-11-11, 0105 to 0108 on 2026-11-16/17). Production's own count is not known from the repository: read it first (section 4, step 2).
+**Updated 2026-11-01** for `main` at `6e4bb214`: 95 migrations, 0000 to 0110 (no 0104) (0098 to 0102 added 2026-11-02, 0103 on 2026-11-11, 0105 to 0108 on 2026-11-16/17, 0109 and 0110 on 2026-11-18 with the sales-documents module). Production's own count is not known from the repository: read it first (section 4, step 2).
 
 > **Production state, read 2026-11-17** (read-only queries run by the project owner in the Neon console; no connection from this repository): **90 migrations applied, ending at 0105**. Migration table ids 85 to 90 carry exactly the SHA-256 hashes of 0099, 0100, 0101, 0102, 0103 and 0105 (section 6). `app.products.unit` does not exist yet. **Pending, in this order: 0106, then 0107, then 0108** (0104 does not exist). This replaces the 2026-11-01 note that 0084 to 0102 were unapplied. None of 0106 to 0108 has been approved for a real database; each needs the human's explicit go, a restore point and a maintenance window (section 4). After applying all three, production should show **93 rows** and the newest hash `7fb5098b…` (0108).
+
+> **Sales documents (added 2026-11-18, not applied anywhere but a local demo database).** Two more migrations follow, **0109 then 0110**, and they are applied **after** 0106 to 0108 and **before** the web app that uses them goes live. They only add new tables, columns, grants and permission rows, so the app already in production ignores them. The reverse order is the risk: the new screens would fail until the migrations run. After all five, production should show **95 rows** and the newest hash `042ff5b6…` (0110). Neither has been approved for a real database; each needs the human's explicit go, as above.
 
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
@@ -105,8 +107,10 @@ that was reviewed.
 | 0106 | product_unit | Adds `unit text NOT NULL DEFAULT 'LITRES'` to `app.products` with check `products_unit_check` (LITRES or KILOGRAMS). Existing rows take the default; RLS/grants/triggers unchanged | Not applied to production. Merged in PR #234 |
 | 0107 | finance_no_day_lock | Deletes the FINANCE `business_day.lock` row seeded by 0003 from `platform.role_permissions`, matching `permissions.ts`. Data only | Not applied to production. Merged in PR #234 |
 | 0108 | product_kind_order | Adds nullable `kind`, `blend_percent`, `display_order` to `app.products` with three check constraints, so fuels list Diesel, Petrol/Blend, Gas. Existing rows stay NULL; no backfill, RLS/grants/triggers unchanged | Not applied to production. Additive nullable columns |
+| 0109 | sales_documents | Quotations, invoices and receipts: new tables `sales_doc_profiles`, `sales_doc_counters`, `sales_documents`, `sales_document_lines`, a state-guard trigger and an append-only trigger on lines, Force RLS with tenant-context policies, grants to `app_runtime`, ownership to `migration_owner`. Inserts five `sales_document.*` permission definitions and grants them to OWNER, ADMINISTRATOR, FINANCE (no void or profile edit) and AUDITOR (view only), with `ON CONFLICT DO NOTHING` | Not applied to production. New tables and permission rows only; no existing table is changed |
+| 0110 | sales_doc_branding | Adds nullable `logo_jpeg_base64` and `brand_colour` to `app.sales_doc_profiles` with two check constraints (`sales_doc_profiles_logo_ck`, `sales_doc_profiles_colour_ck`). Existing rows stay NULL | Not applied to production. Additive nullable columns on a table created by 0109 |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 93 entries, 0000 to 0108 (no 0104) (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 95 entries, 0000 to 0110 (no 0104) (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -282,6 +286,8 @@ f789ca29da899a2037ae6175554a5305ddb9e250d3e9fd6f4de0827980916081  0102_staff_rem
 1bc24c23449ec2422f137e6fe217d40ae518b91e7b8a4d1504c1f3d929ee692b  0106_product_unit.sql
 9cd5e961060d24a604af90405de3907a2cac45e9c531ecfa36a3d983b0c51e41  0107_finance_no_day_lock.sql
 7fb5098b54d2e5bf78886bcc99f78b5ebbee289d4a84778d00e0d340232dcad4  0108_product_kind_order.sql
+b1f651a7403372aabe7adf85a0f41a49bf0137a97edff3681fb121e5e0b2be6a  0109_sales_documents.sql
+042ff5b6b38d26cc6ca5600b480c2693f338a778c3bf53f443aff96688777dd2  0110_sales_doc_branding.sql
 ```
 
 ## 7. Release record (copy this and fill it in)

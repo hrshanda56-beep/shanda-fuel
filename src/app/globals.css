@@ -2494,6 +2494,11 @@ h3,
   margin-left: auto;
 }
 
+/* Type/status chips sit on the right of the search row in every list. */
+.list-toolbar .list-filters {
+  margin-left: auto;
+}
+
 @media (max-width: 48rem) {
   .list-search {
     flex-basis: 100%;
@@ -5524,12 +5529,15 @@ h3,
   margin: 0;
 }
 
+.supplier-portfolio-table .list-head,
+.supplier-portfolio-table .list-row {
+  grid-template-columns: minmax(0, 2fr) minmax(8rem, 1fr);
+}
+
 /* Customers list: the essentials on the row, everything else under it. */
 .customer-table .list-head,
 .customer-row {
-  grid-template-columns:
-    minmax(12rem, 1.4fr) minmax(7rem, 0.8fr) minmax(6rem, 0.6fr) minmax(0, 1.8fr)
-    2rem;
+  grid-template-columns: minmax(0, 1.4fr) 7rem 6.5rem minmax(0, 1fr) 2rem;
 }
 
 .customer-row::after {
@@ -6572,6 +6580,18 @@ h3,
 .deliveries-card .table-scroll-region,
 .deliveries-card .deliveries-empty {
   margin-top: var(--space-4);
+}
+.deliveries-card .deliveries-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.deliveries-card .list-filters {
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
 }
 .deliveries-empty {
   margin: 0;

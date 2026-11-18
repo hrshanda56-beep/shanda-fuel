@@ -232,6 +232,7 @@ describe('server navigation projection', () => {
       'suppliers',
       'purchasing',
       'expenses',
+      'sales-documents',
       'profitability',
       'fuel-deliveries',
       'staff-benefit',
