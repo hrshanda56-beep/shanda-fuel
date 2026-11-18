@@ -182,29 +182,28 @@ export function DocumentList({
                 </div>
               ) : null}
             </div>
-          </div>
-
-          <div
-            className={`list-filters ${styles.chips}`}
-            role="group"
-            aria-label="Show document types"
-          >
-            {FILTERS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className="list-filter"
-                aria-pressed={filter === item.key}
-                onClick={() => setFilter(item.key)}
-              >
-                {item.label}
-                <span>
-                  {item.key === 'ALL'
-                    ? base.length
-                    : base.filter((row) => row.docType === item.key).length}
-                </span>
-              </button>
-            ))}
+            <div
+              className={`list-filters ${styles.chips}`}
+              role="group"
+              aria-label="Show document types"
+            >
+              {FILTERS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className="list-filter"
+                  aria-pressed={filter === item.key}
+                  onClick={() => setFilter(item.key)}
+                >
+                  {item.label}
+                  <span>
+                    {item.key === 'ALL'
+                      ? base.length
+                      : base.filter((row) => row.docType === item.key).length}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         </>
       ) : null}

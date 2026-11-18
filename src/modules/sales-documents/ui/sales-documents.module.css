@@ -229,12 +229,12 @@
 .chips {
   width: fit-content;
   max-width: 100%;
-  margin-top: var(--space-3);
+  margin-left: auto;
 }
 
 .table {
   display: grid;
-  margin: var(--space-3) 0 0;
+  margin: var(--space-4) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -266,13 +266,14 @@
 .tableHead,
 .tableRow {
   display: grid;
-  grid-template-columns: 7.5rem minmax(0, 2fr) minmax(8rem, 1fr) minmax(8rem, 1fr) 1.5rem;
+  grid-template-columns: 7.5rem minmax(0, 27rem) 8.5rem 7.5rem minmax(1.5rem, 1fr);
   align-items: center;
   gap: var(--space-4);
 }
 
 .tableHead {
-  padding: var(--space-2);
+  /* The rows sit in a wrapper with a quick-action gap on the right; match it so heads line up. */
+  padding: var(--space-2) calc(var(--space-2) * 3) var(--space-2) var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -319,11 +320,12 @@
 }
 
 .amount {
-  text-align: right;
+  text-align: left;
   font-variant-numeric: tabular-nums;
 }
 
 .chevron {
+  justify-self: end;
   color: var(--text-secondary);
 }
 

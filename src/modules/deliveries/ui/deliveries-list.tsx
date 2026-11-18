@@ -131,31 +131,31 @@ export function DeliveriesList({
                   autoComplete="off"
                 />
               </label>
-            </div>
-            <div className="list-filters" role="group" aria-label="Filter deliveries">
-              {(
-                [
-                  ['ALL', 'All'],
-                  ['CONFIRMED', 'Confirmed'],
-                  ['DRAFT', 'Not confirmed yet'],
-                  ['CANCELLED', 'Cancelled'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className="list-filter"
-                  aria-pressed={status === value}
-                  onClick={() => setStatus(value)}
-                >
-                  {label}
-                  <span>
-                    {value === 'ALL'
-                      ? searched.length
-                      : searched.filter((delivery) => delivery.status === value).length}
-                  </span>
-                </button>
-              ))}
+              <div className="list-filters" role="group" aria-label="Filter deliveries">
+                {(
+                  [
+                    ['ALL', 'All'],
+                    ['CONFIRMED', 'Confirmed'],
+                    ['DRAFT', 'Not confirmed yet'],
+                    ['CANCELLED', 'Cancelled'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="list-filter"
+                    aria-pressed={status === value}
+                    onClick={() => setStatus(value)}
+                  >
+                    {label}
+                    <span>
+                      {value === 'ALL'
+                        ? searched.length
+                        : searched.filter((delivery) => delivery.status === value).length}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
             {visible.length === 0 ? (
               <p className="deliveries-empty table-secondary">No deliveries match.</p>
