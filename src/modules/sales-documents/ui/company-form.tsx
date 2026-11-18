@@ -44,6 +44,40 @@ export function CompanyForm({
   const [rc, setRc] = useState(profile?.receiptPrefix ?? 'RC');
   const [validDays, setValidDays] = useState(String(profile?.defaultValidDays ?? 30));
   const [dueDays, setDueDays] = useState(String(profile?.defaultDueDays ?? 30));
+  const [logo, setLogo] = useState<string | null>(profile?.logoJpegBase64 ?? null);
+  const [colour, setColour] = useState<string | null>(profile?.brandColour ?? null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+
+  /** Shrinks any picture to a small JPEG on a white background, so it prints cleanly and stays light. */
+  async function pickLogo(file: File | undefined) {
+    setLogoError(null);
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Choose a picture file (PNG or JPG).');
+      return;
+    }
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 480 / bitmap.width, 240 / bitmap.height);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('no canvas');
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const url = canvas.toDataURL('image/jpeg', 0.85);
+      const data = url.slice(url.indexOf(',') + 1);
+      if (data.length > 250000) {
+        setLogoError('That picture is too large. Try a smaller one.');
+        return;
+      }
+      setLogo(data);
+    } catch {
+      setLogoError('That picture could not be read. Try a PNG or JPG file.');
+    }
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -63,6 +97,8 @@ export function CompanyForm({
         bankDetails: bank,
         defaultTerms: terms,
         footer,
+        logoJpegBase64: logo,
+        brandColour: colour,
         quotationPrefix: qt,
         invoicePrefix: inv,
         receiptPrefix: rc,
@@ -99,6 +135,57 @@ export function CompanyForm({
             maxLength={200}
             onChange={(e) => setDisplayName(e.target.value)}
           />
+        </Field>
+        <Field
+          id="sd-c-logo"
+          label="Logo"
+          hint="Printed at the top left. A PNG or JPG; it is shrunk for you."
+          optional
+        >
+          <div className={styles.logoRow}>
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element -- a small inline preview of the chosen picture
+              <img
+                className={styles.logoPreview}
+                src={`data:image/jpeg;base64,${logo}`}
+                alt="Your logo"
+              />
+            ) : null}
+            <input
+              id="sd-c-logo"
+              type="file"
+              accept="image/png,image/jpeg"
+              onChange={(e) => void pickLogo(e.target.files?.[0])}
+            />
+            {logo ? (
+              <Button variant="quiet" onClick={() => setLogo(null)}>
+                Remove logo
+              </Button>
+            ) : null}
+          </div>
+          {logoError ? <p role="alert">{logoError}</p> : null}
+        </Field>
+        <Field
+          id="sd-c-colour"
+          label="Brand colour"
+          hint="Used for the title and lines on printed documents."
+          optional
+        >
+          <div className={styles.logoRow}>
+            <input
+              id="sd-c-colour"
+              type="color"
+              value={colour ?? '#000000'}
+              onChange={(e) => setColour(e.target.value)}
+            />
+            {colour ? (
+              <Button variant="quiet" onClick={() => setColour(null)}>
+                Use plain black
+              </Button>
+            ) : (
+              <span className={styles.muted}>Plain black</span>
+            )}
+          </div>
         </Field>
         <Field id="sd-c-address" label="Address" optional>
           <textarea

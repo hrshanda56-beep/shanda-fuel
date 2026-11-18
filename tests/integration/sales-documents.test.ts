@@ -4,11 +4,32 @@ import {
   setFixtureStrongAuthentication,
   clerkHeaders,
 } from './auth-session-fixtures';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import postgres, { type Sql } from 'postgres';
 import { POST as commandPost } from '../../src/app/api/sales-documents/commands/route';
 import { downloadSalesDocumentPdfFromRequest } from '../../src/modules/sales-documents/download';
+import { sendSalesDocumentEmailFromRequest } from '../../src/modules/sales-documents/send';
+
+// The real sender would call Resend. Everything else in the send path runs for real.
+const sentEmails = vi.hoisted(() => ({
+  calls: [] as { to: string; subject: string; text: string; attachments?: { content: Buffer }[] }[],
+  failWith: null as null | 'configuration' | 'provider',
+}));
+vi.mock('../../src/platform/email', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/platform/email')>();
+  return {
+    ...original,
+    createResendEmailSender: () => ({
+      send: async (message: (typeof sentEmails.calls)[number]) => {
+        if (sentEmails.failWith === 'configuration') throw new original.EmailError('configuration');
+        if (sentEmails.failWith === 'provider') throw new Error('provider down');
+        sentEmails.calls.push(message);
+        return { messageId: 'test-message' };
+      },
+    }),
+  };
+});
 import {
   getSalesDocumentCapabilitiesFromRequest,
   getSalesDocumentCustomersFromRequest,
@@ -367,6 +388,11 @@ describe('sales documents PostgreSQL persistence (DEC-045)', () => {
       expectedVersion: quote.version,
     });
     expect(accepted.status).toBe(200);
+    const flag = async () =>
+      (await listSalesDocumentsFromRequest(readRequest(tokens.finance), entity)).find(
+        (row) => row.id === quote.documentId,
+      )?.hasInvoice;
+    expect(await flag()).toBe(false);
     const converted = await command(tokens.finance, {
       ...entity,
       commandType: 'ConvertQuotationToInvoice',
@@ -375,6 +401,7 @@ describe('sales documents PostgreSQL persistence (DEC-045)', () => {
     });
     expect(converted.status).toBe(201);
     expect(converted.json.total).toBe('172.5000');
+    expect(await flag()).toBe(true);
     const twice = await command(tokens.finance, {
       ...entity,
       commandType: 'ConvertQuotationToInvoice',
@@ -522,6 +549,102 @@ describe('sales documents PostgreSQL persistence (DEC-045)', () => {
         documentId: issued.id,
       }),
     ).rejects.toThrow();
+  });
+
+  it('keeps the logo and colour an invoice was issued with, and refuses bad ones', async () => {
+    // A tiny but well-formed colour JPEG: start, frame header (3 components), end.
+    const jpeg = Buffer.from([
+      0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x02, 0x00, 0x03, 0x03, 0x01, 0x11, 0x00,
+      0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xff, 0xd9,
+    ]).toString('base64');
+    const current = await getSalesDocumentProfileFromRequest(readRequest(tokens.admin), entity);
+    const save = (over: Json) =>
+      command(tokens.admin, { ...profile, expectedVersion: current!.version, ...over });
+
+    expect((await save({ brandColour: 'red' })).status).toBe(400);
+    expect((await save({ logoJpegBase64: 'AAAA' })).status).toBe(400);
+    expect((await save({ logoJpegBase64: '/9j/not base64 !!' })).status).toBe(400);
+    expect((await command(tokens.finance, { ...profile, logoJpegBase64: jpeg })).status).toBe(403);
+
+    const withLogo = await save({ logoJpegBase64: jpeg, brandColour: '#1a7f5b' });
+    expect(withLogo.status).toBe(200);
+    const stored = await getSalesDocumentProfileFromRequest(readRequest(tokens.finance), entity);
+    expect(stored).toMatchObject({ logoJpegBase64: jpeg, brandColour: '#1a7f5b' });
+
+    const invoice = await issued('INVOICE');
+    const download = () =>
+      downloadSalesDocumentPdfFromRequest(readRequest(tokens.finance), {
+        ...entity,
+        documentId: invoice.documentId,
+      });
+    const before = (await download()).pdf.toString('latin1');
+    expect(before).toContain('/Subtype /Image');
+    expect(before).toContain('0.102 0.498 0.357');
+
+    // Removing the logo later must not change a document that is already issued.
+    const removed = await command(tokens.admin, {
+      ...profile,
+      expectedVersion: withLogo.json.version,
+      logoJpegBase64: null,
+      brandColour: null,
+    });
+    expect(removed.status).toBe(200);
+    const after = (await download()).pdf.toString('latin1');
+    expect(after).toContain('/Subtype /Image');
+    expect(after).toContain('0.102 0.498 0.357');
+  });
+
+  it('emails the PDF of an issued document, and only that', async () => {
+    const send = (token: string, documentId: string, to = 'buyer@example.com') =>
+      sendSalesDocumentEmailFromRequest(readRequest(token), { ...entity, documentId, to });
+    const invoice = await issued('INVOICE');
+    sentEmails.calls.length = 0;
+    sentEmails.failWith = null;
+
+    await expect(send(tokens.finance, invoice.documentId)).resolves.toEqual({ sent: true });
+    expect(sentEmails.calls).toHaveLength(1);
+    const mail = sentEmails.calls[0]!;
+    expect(mail.to).toBe('buyer@example.com');
+    expect(mail.subject).toMatch(/^Invoice INV-/);
+    expect(mail.attachments?.[0]?.content.subarray(0, 8).toString('latin1')).toBe('%PDF-1.4');
+    const [event] = await client`
+      select e::text as row from platform.security_events e
+      where tenant_id = ${ids.tenant} and event_code = 'SALES_DOCUMENT.EMAILED'
+      order by occurred_at desc limit 1`;
+    expect(event).toBeTruthy();
+    expect(event!.row).not.toContain('buyer@example.com');
+
+    // A bad address, a draft, a role without the issue permission and another company's
+    // user are all refused, and nothing is sent.
+    await expect(send(tokens.finance, invoice.documentId, 'not-an-address')).rejects.toThrow();
+    const saved = await command(tokens.finance, draft());
+    await expect(send(tokens.finance, saved.json.documentId)).rejects.toThrow(/Only an issued/);
+    await expect(send(tokens.supervisor, invoice.documentId)).rejects.toThrow();
+    await expect(
+      sendSalesDocumentEmailFromRequest(readRequest(tokens.financeB), {
+        tenantId: ids.tenantB,
+        legalEntityId: ids.legalB,
+        documentId: invoice.documentId,
+        to: 'buyer@example.com',
+      }),
+    ).rejects.toThrow();
+    expect(sentEmails.calls).toHaveLength(1);
+
+    // When email is not set up, or the provider is down, the person is told plainly and no
+    // "emailed" entry is written.
+    const countEvents = async () =>
+      (
+        await client`
+          select count(*)::int as n from platform.security_events
+          where tenant_id = ${ids.tenant} and event_code = 'SALES_DOCUMENT.EMAILED'`
+      )[0]!.n as number;
+    const before = await countEvents();
+    sentEmails.failWith = 'configuration';
+    await expect(send(tokens.finance, invoice.documentId)).rejects.toThrow(/not set up yet/);
+    sentEmails.failWith = 'provider';
+    await expect(send(tokens.finance, invoice.documentId)).rejects.toThrow(/could not be sent/);
+    sentEmails.failWith = null;
+    expect(await countEvents()).toBe(before);
   });
 
   it('tells each role what it may do, and lists saved customers', async () => {

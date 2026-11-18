@@ -9,7 +9,8 @@ export { formatAmount };
  * Portrait A4 quotation / invoice / receipt, drawn with the same hand-written PDF writer helpers
  * as the report downloads (standard Helvetica, no new dependency). Everything printed comes from
  * the stored document and its letterhead snapshot, so a later change to the company profile never
- * alters an issued document. A text letterhead only: a logo needs image embedding (deferred).
+ * alters an issued document. The letterhead may carry a small JPEG logo (embedded as-is, no image
+ * library) and a brand colour used for the title and rules.
  */
 
 const W = 595;
@@ -72,6 +73,49 @@ const dateText = (iso: string | null): string => {
   return `${Number(d)} ${months[Number(m) - 1] ?? ''} ${y}`;
 };
 
+type Logo = { data: Buffer; width: number; height: number };
+
+/** Reads a baseline or progressive RGB JPEG's size from its header; null if not usable. */
+export function readJpeg(base64: string | null | undefined): Logo | null {
+  if (!base64) return null;
+  const data = Buffer.from(base64, 'base64');
+  if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < data.length) {
+    if (data[i] !== 0xff) {
+      i += 1;
+      continue;
+    }
+    const marker = data[i + 1]!;
+    if (marker === 0xff) {
+      i += 1;
+      continue;
+    }
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+      i += 2;
+      continue;
+    }
+    const length = data.readUInt16BE(i + 2);
+    const isFrame = marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker);
+    if (isFrame) {
+      const height = data.readUInt16BE(i + 5);
+      const width = data.readUInt16BE(i + 7);
+      const components = data[i + 9];
+      if (!width || !height || components !== 3) return null;
+      return { data, width, height };
+    }
+    i += 2 + length;
+  }
+  return null;
+}
+
+/** "#1A7F5A" becomes the PDF colour triple "0.102 0.498 0.353"; anything else is ignored. */
+function accentOf(hex: string | null | undefined): string | null {
+  if (!hex || !/^#[0-9A-Fa-f]{6}$/.test(hex)) return null;
+  const channel = (at: number) => (parseInt(hex.slice(at, at + 2), 16) / 255).toFixed(3);
+  return `${channel(1)} ${channel(3)} ${channel(5)}`;
+}
+
 class Pages {
   readonly pages: string[][] = [];
   y = 0;
@@ -110,6 +154,10 @@ class Pages {
     this.text(xRight - width(value, size, opts.bold), y, value, size, opts);
   }
 
+  image(x: number, y: number, w: number, h: number): void {
+    this.ops.push(`q ${round(w)} 0 0 ${round(h)} ${round(x)} ${round(y)} cm /Im1 Do Q`);
+  }
+
   rect(x: number, y: number, w: number, h: number, color: string): void {
     this.ops.push(`${color} rg ${round(x)} ${round(y)} ${round(w)} ${round(h)} re f`);
   }
@@ -136,20 +184,33 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
   // ---- Letterhead (left) and document title + numbers (right) ----
   const companyName = lh?.displayName ?? '';
   const top = p.y;
-  p.text(M, top - 14, fitText(companyName, USABLE * 0.55, 16, true), 16, { bold: true });
+  const logo = readJpeg(lh?.logoJpegBase64);
+  const accent = accentOf(lh?.brandColour);
+  let textX = M;
+  let logoBottom = top;
+  if (logo) {
+    const scale = Math.min(150 / logo.width, 50 / logo.height);
+    const lw = logo.width * scale;
+    const lhh = logo.height * scale;
+    p.image(M, top - lhh, lw, lhh);
+    textX = M + lw + 12;
+    logoBottom = top - lhh - 6;
+  }
+  const textWidth = USABLE * 0.55 - (textX - M);
+  p.text(textX, top - 14, fitText(companyName, textWidth, 16, true), 16, { bold: true });
   let leftY = top - 30;
   const companyLines = [
-    ...(lh?.address ? wrap(lh.address, USABLE * 0.55, 9) : []),
+    ...(lh?.address ? wrap(lh.address, textWidth, 9) : []),
     lh?.phone ? `Tel: ${lh.phone}` : '',
     lh?.email ?? '',
     lh?.taxNumber ? `${lh.taxLabel ?? 'Tax no.'}: ${lh.taxNumber}` : '',
   ].filter(Boolean);
   for (const text of companyLines) {
-    p.text(M, leftY, text, 9, { color: MUTED });
+    p.text(textX, leftY, text, 9, { color: MUTED });
     leftY -= 12;
   }
 
-  p.right(W - M, top - 18, title, 22, { bold: true });
+  p.right(W - M, top - 18, title, 22, { bold: true, color: accent ?? INK });
   let rightY = top - 38;
   const status =
     doc.status === 'DRAFT' ? 'DRAFT - not issued' : doc.status === 'VOIDED' ? 'VOID' : '';
@@ -175,8 +236,8 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
     rightY -= 12;
   }
 
-  p.y = Math.min(leftY, rightY) - 10;
-  p.line(M, p.y, W - M);
+  p.y = Math.min(leftY, rightY, logoBottom) - 10;
+  p.line(M, p.y, W - M, accent ?? '0.48 0.54 0.56');
   p.y -= 18;
 
   // ---- Recipient ----
@@ -251,7 +312,7 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
     }
   }
 
-  return assemble(p.pages, doc.docNumber ?? title);
+  return assemble(p.pages, doc.docNumber ?? title, logo);
 }
 
 function drawLines(p: Pages, doc: SalesDocumentDetail): void {
@@ -357,7 +418,11 @@ function subtract(a: string, b: string): string {
   return `${diff < 0n ? '-' : ''}${digits.slice(0, -4)}.${digits.slice(-4)}`;
 }
 
-function assemble(pages: readonly (readonly string[])[], titleText: string): Buffer {
+function assemble(
+  pages: readonly (readonly string[])[],
+  titleText: string,
+  logo: Logo | null,
+): Buffer {
   const count = pages.length;
   const objects: Buffer[] = [
     Buffer.from('<< /Type /Catalog /Pages 2 0 R >>', 'latin1'),
@@ -371,6 +436,18 @@ function assemble(pages: readonly (readonly string[])[], titleText: string): Buf
       'latin1',
     ),
   ];
+  if (logo) {
+    objects.push(
+      Buffer.concat([
+        Buffer.from(
+          `<< /Type /XObject /Subtype /Image /Width ${logo.width} /Height ${logo.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logo.data.length} >>\nstream\n`,
+          'latin1',
+        ),
+        logo.data,
+        Buffer.from('\nendstream', 'latin1'),
+      ]),
+    );
+  }
   const refs: string[] = [];
   pages.forEach((ops, index) => {
     const pageObject = objects.length + 1;
@@ -386,7 +463,7 @@ function assemble(pages: readonly (readonly string[])[], titleText: string): Buf
     );
     objects.push(
       Buffer.from(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${pageObject + 1} 0 R >>`,
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${logo ? ' /XObject << /Im1 5 0 R >>' : ''} >> /Contents ${pageObject + 1} 0 R >>`,
         'latin1',
       ),
       Buffer.concat([

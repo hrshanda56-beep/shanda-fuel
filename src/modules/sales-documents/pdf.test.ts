@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSalesDocumentPdf, formatAmount } from './pdf';
+import { buildSalesDocumentPdf, formatAmount, readJpeg } from './pdf';
 import type { SalesDocumentDetail } from './queries';
 
 const base: SalesDocumentDetail = {
@@ -94,5 +94,34 @@ describe('buildSalesDocumentPdf', () => {
     for (const over of variants) {
       expect(buildSalesDocumentPdf({ ...base, ...over }).length).toBeGreaterThan(500);
     }
+  });
+});
+
+describe('logo and brand colour', () => {
+  // A minimal JPEG header: SOI, then a start-of-frame for a 64 x 32 RGB picture.
+  const jpeg = Buffer.from([
+    0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x20, 0x00, 0x40, 0x03, 1, 0x22, 0, 2, 0x11, 1,
+    3, 0x11, 1, 0xff, 0xd9,
+  ]).toString('base64');
+
+  it('reads a JPEG size and rejects anything else', () => {
+    expect(readJpeg(jpeg)).toMatchObject({ width: 64, height: 32 });
+    expect(readJpeg(Buffer.from('not a picture').toString('base64'))).toBeNull();
+    expect(readJpeg(null)).toBeNull();
+  });
+
+  it('embeds the logo and uses the brand colour', () => {
+    const doc = {
+      ...base,
+      letterhead: { ...base.letterhead, logoJpegBase64: jpeg, brandColour: '#1A7F5A' },
+    } as SalesDocumentDetail;
+    const text = buildSalesDocumentPdf(doc).toString('latin1');
+    expect(text).toContain('/Subtype /Image');
+    expect(text).toContain('/Im1 Do');
+    expect(text).toContain('0.102 0.498 0.353 rg');
+  });
+
+  it('prints without a logo exactly as before', () => {
+    expect(buildSalesDocumentPdf(base).toString('latin1')).not.toContain('/Subtype /Image');
   });
 });
