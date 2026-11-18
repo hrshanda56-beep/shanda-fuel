@@ -23,6 +23,7 @@ import {
 } from './domain';
 import {
   authorizeOpeningBalanceCommand,
+  authorizeOpeningBalanceRead,
   executeOpeningBalanceCommand,
   requestHash,
   resolveOpeningBalanceCommandContext,
@@ -391,7 +392,7 @@ export async function previewOpeningBalanceImportFromRequest(request: Request, b
     request,
     requestedTenantId: input.tenantId,
   });
-  authorizeOpeningBalanceCommand(context);
+  authorizeOpeningBalanceRead(context);
   const parsed = parseOpeningBalanceCsv(input.csv);
   const sourceHash = createHash('sha256').update(input.csv).digest('hex');
   return withTenantTransaction(context.authority.transaction, async (transaction) => {

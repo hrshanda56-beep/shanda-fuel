@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { FloatingMenuList } from '../../../design-system/floating-menu-list';
 import { Icon } from '../../../design-system/icons';
 
 type Item =
@@ -25,13 +26,16 @@ export function ReportActionMenu({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLElement | null>(null);
   const menuId = useId();
 
   function focusItem(index: number) {
-    const nodes = rootRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
+    const nodes = listRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
     if (!nodes?.length) return;
     nodes[(index + nodes.length) % nodes.length]?.focus();
   }
+
+  const dismiss = useCallback(() => setOpen(false), []);
 
   function close(returnFocus: boolean) {
     setOpen(false);
@@ -42,7 +46,8 @@ export function ReportActionMenu({
     if (!open) return;
     focusItem(0);
     function onPointer(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !listRef.current?.contains(target)) setOpen(false);
     }
     document.addEventListener('mousedown', onPointer);
     return () => document.removeEventListener('mousedown', onPointer);
@@ -50,7 +55,7 @@ export function ReportActionMenu({
 
   function onMenuKeyDown(event: React.KeyboardEvent<HTMLUListElement>) {
     const nodes = Array.from(
-      rootRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+      listRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
     );
     const index = nodes.indexOf(document.activeElement as HTMLElement);
     if (event.key === 'Escape') {
@@ -95,7 +100,18 @@ export function ReportActionMenu({
         <Icon name="more" />
       </button>
       {open ? (
-        <ul className="action-menu-list" role="menu" id={menuId} onKeyDown={onMenuKeyDown}>
+        <FloatingMenuList
+          as="ul"
+          anchorRef={buttonRef}
+          onElement={(node) => {
+            listRef.current = node;
+          }}
+          onDismiss={dismiss}
+          className="action-menu-list"
+          role="menu"
+          id={menuId}
+          onKeyDown={onMenuKeyDown as never}
+        >
           {items.map((item) => (
             <li role="none" key={item.label}>
               {item.kind === 'link' ? (
@@ -124,7 +140,7 @@ export function ReportActionMenu({
               )}
             </li>
           ))}
-        </ul>
+        </FloatingMenuList>
       ) : null}
     </div>
   );
