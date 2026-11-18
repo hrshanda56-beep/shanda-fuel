@@ -157,7 +157,9 @@ export function addStaged(
       return next;
     }
   }
-  if (['SetProductKind', 'RenameProduct', 'SetProductUnit', 'SetProductStatus'].includes(commandType)) {
+  if (
+    ['SetProductKind', 'RenameProduct', 'SetProductUnit', 'SetProductStatus'].includes(commandType)
+  ) {
     const standIn = targetOf('productId');
     if (standIn) {
       const { productId: _productId, ...rest } = fields;
@@ -185,7 +187,9 @@ export function addStaged(
 
   // Taking a price further (send, approve, start using) adds steps to the one entry for that price.
   if (commandType === 'AdvancePrice') {
-    const index = next.findIndex((c) => type(c) === 'AdvancePrice' && c.body.priceId === body.priceId);
+    const index = next.findIndex(
+      (c) => type(c) === 'AdvancePrice' && c.body.priceId === body.priceId,
+    );
     if (index >= 0) {
       const first = next[index]!;
       const have = Array.isArray(first.body.steps) ? (first.body.steps as string[]) : [];
@@ -317,7 +321,8 @@ export function applyStaged(
           productId: str(b.productId),
           capacityLitres: str(b.capacityLitres),
           reorderLevelLitres: (b.reorderLevelLitres as string | null | undefined) ?? null,
-          acceptableVarianceLitres: (b.acceptableVarianceLitres as string | null | undefined) ?? null,
+          acceptableVarianceLitres:
+            (b.acceptableVarianceLitres as string | null | undefined) ?? null,
           varianceRedLitres: (b.varianceRedLitres as string | null | undefined) ?? null,
           status: 'ACTIVE',
         });
@@ -327,7 +332,8 @@ export function applyStaged(
           code: str(b.code),
           capacityLitres: str(b.capacityLitres),
           reorderLevelLitres: (b.reorderLevelLitres as string | null | undefined) ?? null,
-          acceptableVarianceLitres: (b.acceptableVarianceLitres as string | null | undefined) ?? null,
+          acceptableVarianceLitres:
+            (b.acceptableVarianceLitres as string | null | undefined) ?? null,
           varianceRedLitres: (b.varianceRedLitres as string | null | undefined) ?? null,
         });
         break;
@@ -512,7 +518,13 @@ function fingerprint(text: string): string {
 
 export type SaveAllResult =
   | { kind: 'saved' }
-  | { kind: 'stopped'; failedId: string; status: number; message?: string; remaining: StagedChange[] }
+  | {
+      kind: 'stopped';
+      failedId: string;
+      status: number;
+      message?: string;
+      remaining: StagedChange[];
+    }
   | { kind: 'offline'; remaining: StagedChange[] };
 
 /**
@@ -589,7 +601,8 @@ export async function saveAllStaged(
       const field = createdIdField(type(change));
       if (change.standIn && field) {
         const answer = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-        const created = answer && typeof answer[field] === 'string' ? (answer[field] as string) : null;
+        const created =
+          answer && typeof answer[field] === 'string' ? (answer[field] as string) : null;
         if (created) real.set(change.standIn, created);
       }
     }
