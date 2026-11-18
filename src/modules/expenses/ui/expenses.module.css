@@ -127,7 +127,7 @@
 }
 
 .amount {
-  text-align: right;
+  text-align: left;
   font-variant-numeric: tabular-nums;
 }
 
@@ -183,7 +183,16 @@
 .chips {
   width: fit-content;
   max-width: 100%;
-  margin-top: var(--space-3);
+  margin-left: auto;
+}
+
+/* Six chips plus search and Filters: tighten so they share one row on a laptop. */
+.toolbar :global(.list-search) {
+  flex-basis: 14rem;
+}
+
+.chips :global(.list-filter) {
+  padding: 0 var(--space-2);
 }
 
 .list {
@@ -221,7 +230,7 @@
 .head,
 .row {
   display: grid;
-  grid-template-columns: 7.5rem minmax(0, 2fr) minmax(8rem, 1fr) minmax(8rem, 1fr) 1.5rem;
+  grid-template-columns: 7.5rem minmax(0, 27rem) 8.5rem 7.5rem minmax(1.5rem, 1fr);
   align-items: center;
   gap: var(--space-4);
 }
@@ -274,6 +283,7 @@
 }
 
 .chevron {
+  justify-self: end;
   color: var(--text-secondary);
   transition: transform 0.15s ease;
 }

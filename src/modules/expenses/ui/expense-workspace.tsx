@@ -1030,28 +1030,28 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                   </div>
                 </>
               ) : null}
-            </div>
 
-            {items.length > 0 ? (
-              <div
-                className={`list-filters ${styles.chips}`}
-                role="group"
-                aria-label="Filter expenses"
-              >
-                {EXPENSE_FILTERS.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    className="list-filter"
-                    aria-pressed={filter === item.value}
-                    onClick={() => setFilter(item.value)}
-                  >
-                    {item.label}
-                    <span>{base.filter((row) => matchesFilter(row, item.value)).length}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
+              {items.length > 0 ? (
+                <div
+                  className={`list-filters ${styles.chips}`}
+                  role="group"
+                  aria-label="Filter expenses"
+                >
+                  {EXPENSE_FILTERS.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      className="list-filter"
+                      aria-pressed={filter === item.value}
+                      onClick={() => setFilter(item.value)}
+                    >
+                      {item.label}
+                      <span>{base.filter((row) => matchesFilter(row, item.value)).length}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
 
             {refreshing && items.length === 0 ? <LoadingState label="Loading expenses" /> : null}
             {items.length === 0 && !refreshing ? (
