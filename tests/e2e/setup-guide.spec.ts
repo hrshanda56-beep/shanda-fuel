@@ -78,6 +78,16 @@ async function mockApi(page: Page, products: Product[] = []) {
   return { commands, state };
 }
 
+/** The one place the identity check appears: the review step, after pressing Save. */
+async function openReviewAndSave(page: Page) {
+  await page.getByRole('button', { name: 'Review and save' }).click();
+  await page
+    .getByRole('dialog', { name: 'Review your changes' })
+    .getByRole('button', { name: /^Save (this|\d+) change/ })
+    .click();
+  await expect(page.getByText('Confirm it is you').first()).toBeVisible();
+}
+
 test.describe('Guided station setup', () => {
   test('walks an owner from an empty station to adding the first fuel in plain language', async ({
     page,
@@ -99,12 +109,15 @@ test.describe('Guided station setup', () => {
     await form.getByLabel('Type of fuel').selectOption('GAS');
     await expect(form.getByLabel('Measured in')).toHaveValue('KILOGRAMS');
 
-    // Every setup save asks for the identity check first; nothing is sent until it is confirmed.
+    // Entries wait on the screen. The identity check and the save happen once, at the review step.
     await form.getByLabel('Type of fuel').selectOption('OTHER');
     await expect(form.getByLabel('Measured in')).toHaveValue('LITRES');
     await form.getByLabel('Fuel name').fill('Unleaded 95');
     await form.getByRole('button', { name: 'Add fuel type' }).click();
-    await expect(page.getByText('Confirm it is you').first()).toBeVisible();
+    await expect(page.getByText('1 change is waiting.')).toBeVisible();
+    await expect(page.getByText('Confirm it is you')).toHaveCount(0);
+    expect(commands).toHaveLength(0);
+    await openReviewAndSave(page);
     expect(commands).toHaveLength(0);
   });
 
@@ -134,7 +147,10 @@ test.describe('Guided station setup', () => {
       .getByLabel('Tendai Moyo')
       .check();
     await save.click();
-    await expect(page.getByText('Confirm it is you').first()).toBeVisible();
+    await expect(page.getByText('1 change is waiting.')).toBeVisible();
+    await expect(page.getByText('Confirm it is you')).toHaveCount(0);
+    expect(commands).toHaveLength(0);
+    await openReviewAndSave(page);
     expect(commands).toHaveLength(0);
   });
 
