@@ -2922,3 +2922,33 @@ tr:has(.row-link):active {
   text-align: left;
   pointer-events: none;
 }
+
+/* A guided flow that replaces the page body: one centred card under a "← All ..." link. */
+#main-content[data-wizard-page] > :not(.wizard-page) {
+  display: none;
+}
+.wizard-page {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.wizard-page-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: 600;
+}
+.wizard-page-card .dialog-footer {
+  flex-direction: row;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+}
+.wizard-page-card .dialog-footer .button {
+  width: auto;
+}
+.wizard-page-card {
+  box-sizing: border-box;
+  width: min(100%, 40rem);
+  margin-inline: auto;
+  padding: var(--space-6) var(--space-5);
+  min-width: 0;
+}

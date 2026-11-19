@@ -1,0 +1,304 @@
+'use client';
+
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Button, Card } from './primitives';
+import styles from './wizard.module.css';
+
+/**
+ * One question per screen, shared by every guided flow.
+ *
+ * `useWizard` owns where the person is (a step, plus an optional index for a step that repeats,
+ * such as "item 2"), the way back, field errors and moving focus. The screen decides what each
+ * step asks and how it is checked. Nothing here saves anything.
+ */
+
+export type WizardErrors = Record<string, string>;
+
+export function useWizard<S extends string>({
+  start,
+  sequence,
+  onCancel,
+}: {
+  start: S;
+  /** The steps in order, as they apply right now. Used for "Step 2 of 7". */
+  sequence: readonly S[];
+  /** Called when Back is pressed on the first screen. */
+  onCancel: () => void;
+}) {
+  const [step, setStep] = useState<S>(start);
+  const [index, setIndex] = useState(0);
+  const [trail, setTrail] = useState<{ step: S; index: number }[]>([]);
+  const [fromReview, setFromReview] = useState(false);
+  const [errors, setErrors] = useState<WizardErrors>({});
+  const [problem, setProblem] = useState<string | null>(null);
+  const focusRef = useRef<string | null>(null);
+  const [focusTick, setFocusTick] = useState(0);
+  // A callback ref held in state, so the question can be focused when the step changes.
+  const [headingEl, captureHeading] = useState<HTMLHeadingElement | null>(null);
+  const firstRender = useRef(true);
+
+  /** Moves the cursor to a field once the next render has drawn it. */
+  const setFocusId = (id: string) => {
+    focusRef.current = id;
+    setFocusTick((tick) => tick + 1);
+  };
+
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    headingEl?.focus();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step, index, headingEl]);
+
+  useEffect(() => {
+    const focusId = focusRef.current;
+    if (!focusId) return;
+    focusRef.current = null;
+    const element = document.getElementById(focusId);
+    element?.focus();
+    element?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [focusTick, step]);
+
+  /** Goes to a screen and remembers the one being left, so Back returns to it. */
+  function go(to: S, toIndex = index) {
+    setTrail((current) => [...current, { step, index }]);
+    setStep(to);
+    setIndex(toIndex);
+    setErrors({});
+    setProblem(null);
+  }
+
+  /** Jumps without adding to the trail, for example to the screen holding a mistake. */
+  function show(to: S, toIndex = 0) {
+    setStep(to);
+    setIndex(toIndex);
+  }
+
+  function back() {
+    setErrors({});
+    setProblem(null);
+    const previous = trail[trail.length - 1];
+    if (!previous) return onCancel();
+    setStep(previous.step);
+    setIndex(previous.index);
+    setTrail(trail.slice(0, -1));
+    if (previous.step === sequence[sequence.length - 1]) setFromReview(false);
+  }
+
+  /** From the summary: change one answer, then come straight back to the summary. */
+  function change(to: S, toIndex = index) {
+    setFromReview(true);
+    go(to, toIndex);
+  }
+
+  /**
+   * Finishes a question. With mistakes it shows them and puts the cursor on the first one.
+   * Otherwise it moves on, or back to the summary when the person came from there
+   * (`returnTo`; leave it out for a step that must always continue forward).
+   */
+  function advance(found: WizardErrors, to: S, returnTo?: S) {
+    setErrors(found);
+    const first = Object.keys(found)[0];
+    if (first) {
+      setFocusId(first);
+      return false;
+    }
+    if (fromReview && returnTo) {
+      setFromReview(false);
+      go(returnTo);
+      return true;
+    }
+    go(to);
+    return true;
+  }
+
+  const position = Math.max(1, sequence.indexOf(step) + 1);
+
+  return {
+    step,
+    index,
+    trail,
+    errors,
+    setErrors,
+    problem,
+    setProblem,
+    setFocusId,
+    captureHeading,
+    position,
+    total: sequence.length,
+    atStart: trail.length === 0,
+    go,
+    show,
+    back,
+    change,
+    advance,
+  };
+}
+
+export type Wizard<S extends string = string> = ReturnType<typeof useWizard<S>>;
+
+/** The line under every "Check ..." screen, so they all read the same. */
+export const WIZARD_REVIEW_HINT = 'Nothing is saved until you press the button below.';
+
+/** The white card every step sits in. */
+export function WizardCard({ children }: { children: ReactNode }) {
+  return <Card className={styles.wizard}>{children}</Card>;
+}
+
+/** One screen: "Step 2 of 7", the question, an optional hint, then the answers. */
+export function WizardStep({
+  wizard,
+  title,
+  hint,
+  children,
+}: {
+  wizard: Pick<Wizard, 'position' | 'total' | 'captureHeading'>;
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={styles.page}>
+      <WizardHeading
+        position={wizard.position}
+        total={wizard.total}
+        onHeading={wizard.captureHeading}
+        title={title}
+        hint={hint}
+      />
+      {children}
+    </div>
+  );
+}
+
+/** "Step 2 of 7", the question and an optional hint, for screens that lay out their own body. */
+export function WizardHeading({
+  position,
+  total,
+  onHeading,
+  title,
+  hint,
+}: {
+  position: number;
+  total: number;
+  onHeading: (element: HTMLHeadingElement | null) => void;
+  title: string;
+  hint?: string;
+}) {
+  return (
+    <>
+      <p className={styles.stepCount}>
+        Step {position} of {total}
+      </p>
+      <h2 ref={onHeading} tabIndex={-1} className={styles.question}>
+        {title}
+      </h2>
+      {hint ? <p className={styles.hint}>{hint}</p> : null}
+    </>
+  );
+}
+
+/** The two buttons under every question. */
+export function WizardActions({
+  wizard,
+  onContinue,
+  continueLabel = 'Continue',
+  busy = false,
+  extra,
+}: {
+  wizard: Pick<Wizard, 'atStart' | 'back'>;
+  onContinue: () => void;
+  continueLabel?: string;
+  busy?: boolean;
+  /** An extra button after Back, for example "Skip for now". */
+  extra?: ReactNode;
+}) {
+  return (
+    <div className={styles.actions}>
+      <Button type="button" onClick={onContinue} loading={busy}>
+        {continueLabel}
+      </Button>
+      <Button type="button" variant="secondary" onClick={wizard.back} disabled={busy}>
+        {wizard.atStart ? 'Cancel' : 'Back'}
+      </Button>
+      {extra}
+    </div>
+  );
+}
+
+export function WizardChoices({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={styles.choices} role="radiogroup" aria-label={label}>
+      {children}
+    </div>
+  );
+}
+
+/** One big, easy-to-tap answer. */
+export function WizardChoice({
+  id,
+  name,
+  checked,
+  onPick,
+  children,
+  detail,
+}: {
+  id?: string;
+  name?: string;
+  checked: boolean;
+  onPick: () => void;
+  children: ReactNode;
+  detail?: ReactNode;
+}) {
+  return (
+    <label className={styles.choice} htmlFor={id}>
+      <input id={id} name={name} type="radio" checked={checked} onChange={onPick} />
+      <span className={styles.choiceText}>
+        <span>{children}</span>
+        {detail ? <span className={styles.choiceDetail}>{detail}</span> : null}
+      </span>
+    </label>
+  );
+}
+
+/** The "check your answers" list. Each row has a Change button. */
+export function WizardSummary({ children }: { children: ReactNode }) {
+  return <div className={styles.summary}>{children}</div>;
+}
+
+export function WizardSummaryRow({
+  label,
+  onChange,
+  changeLabel = 'Change',
+  children,
+}: {
+  label: string;
+  onChange?: () => void;
+  changeLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={styles.summaryRow}>
+      <span>
+        <small className={styles.summaryLabel}>{label}</small>
+        {children}
+      </span>
+      {onChange ? (
+        <Button type="button" variant="quiet" size="sm" onClick={onChange}>
+          {changeLabel}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+export function WizardNotice({ children }: { children: ReactNode }) {
+  return <p className={styles.notice}>{children}</p>;
+}
+
+/** Two short fields side by side, one under the other on a phone. */
+export function WizardPair({ children }: { children: ReactNode }) {
+  return <div className={styles.grid2}>{children}</div>;
+}

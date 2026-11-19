@@ -1,17 +1,10 @@
 'use client';
 
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState } from 'react';
 import type { ContextSelection } from '@/modules/context';
-import { Select } from '../../../design-system/forms';
 import { useToast } from '../../../design-system/feedback-provider';
 import { Modal } from '../../../design-system/modal';
-import {
-  Button,
-  EmptyState,
-  Field,
-  NumericInput,
-  StatusBadge,
-} from '../../../design-system/primitives';
+import { Button, EmptyState, Field, StatusBadge } from '../../../design-system/primitives';
 import { formatTileMoney } from '../../reporting/format';
 import styles from './cash-handover.module.css';
 import {
@@ -21,7 +14,7 @@ import {
   handoverTone,
   type HandoverAction,
 } from '../handover-view';
-import { InfoTip } from '@/design-system/info-tip';
+import { CashHandoverWizard, type CashHandoverValue } from './cash-handover-wizard';
 
 export type HandoverSummary = {
   handoverId: string;
@@ -71,13 +64,10 @@ export function CashHandoverSheet(props: Props) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const [counted, setCounted] = useState('');
-  const [expected, setExpected] = useState('');
   const [settling, setSettling] = useState<string | null>(null);
   const keys = useRef(new Map<string, string>());
   const name = (id: string) => locations.find((l) => l.locationId === id)?.name ?? 'Unknown place';
   const money = (value: string) => (props.hidden ? '••••••' : formatTileMoney(value));
-  const mismatch = counted !== '' && expected !== '' && Number(counted) !== Number(expected);
 
   async function send(payload: Record<string, unknown>, done: string): Promise<boolean> {
     const signature = JSON.stringify(payload);
@@ -113,26 +103,19 @@ export function CashHandoverSheet(props: Props) {
     }
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const reason = String(data.get('reason') ?? '').trim();
+  async function submit(value: CashHandoverValue) {
     const ok = await send(
       {
         commandType: 'SubmitCashHandover',
-        fromLocationId: String(data.get('fromLocationId')),
-        toLocationId: String(data.get('toLocationId')),
-        expectedAmount: String(data.get('expectedAmount')),
-        countedAmount: String(data.get('countedAmount')),
-        ...(reason ? { reason } : {}),
+        fromLocationId: value.fromLocationId,
+        toLocationId: value.toLocationId,
+        expectedAmount: value.expectedAmount,
+        countedAmount: value.countedAmount,
+        ...(value.reason ? { reason: value.reason } : {}),
       },
       'Cash handed over. The other person now needs to accept it.',
     );
     if (ok) {
-      form.reset();
-      setCounted('');
-      setExpected('');
       toast.success('Cash handed over. The other person now needs to accept it.');
       props.onClose();
     }
@@ -168,7 +151,8 @@ export function CashHandoverSheet(props: Props) {
       open={props.open}
       onClose={props.onClose}
       title={props.canSubmit ? 'Hand over cash' : 'Cash handovers'}
-      presentation="side"
+      presentation="page"
+      backLabel="Cash"
       dismissible={!busy}
       className="cash-sheet"
     >
@@ -178,70 +162,14 @@ export function CashHandoverSheet(props: Props) {
         </p>
       ) : null}
 
-      {props.canSubmit ? (
-        <form onSubmit={submit} className={styles.form}>
-          <InfoTip>
-            Hand cash from one place to another. The person receiving it has to accept it.
-          </InfoTip>
-          <div className={styles.route}>
-            <Field id="handover-from" label="Cash is coming from" required>
-              <Select
-                id="handover-from"
-                name="fromLocationId"
-                defaultValue=""
-                placeholder="Choose where the cash is now"
-                options={locations.map((l) => ({ value: l.locationId, label: l.name }))}
-              />
-            </Field>
-            <span className={styles.arrow} aria-hidden="true">
-              →
-            </span>
-            <Field id="handover-to" label="Handing it to" required>
-              <Select
-                id="handover-to"
-                name="toLocationId"
-                defaultValue=""
-                placeholder="Choose where it is going"
-                options={locations.map((l) => ({ value: l.locationId, label: l.name }))}
-              />
-            </Field>
-          </div>
-          <div className={styles.amounts}>
-            <NumericInput
-              id="handover-expected"
-              name="expectedAmount"
-              label="Amount that should be handed over"
-              required
-              inputMode="decimal"
-              value={expected}
-              onChange={(event) => setExpected(event.target.value)}
-            />
-            <NumericInput
-              id="handover-counted"
-              name="countedAmount"
-              label="Amount you actually counted"
-              required
-              inputMode="decimal"
-              value={counted}
-              onChange={(event) => setCounted(event.target.value)}
-            />
-          </div>
-          {mismatch ? (
-            <Field
-              id="handover-reason"
-              label="Why is it different?"
-              hint="The person receiving the cash will see this."
-              required
-            >
-              <textarea id="handover-reason" name="reason" rows={2} maxLength={500} />
-            </Field>
-          ) : null}
-          <div className={styles.actions}>
-            <Button type="submit" disabled={busy}>
-              Hand over cash
-            </Button>
-          </div>
-        </form>
+      {props.canSubmit && props.open ? (
+        <CashHandoverWizard
+          locations={locations}
+          busy={busy}
+          money={money}
+          onCancel={props.onClose}
+          onSubmit={(value) => void submit(value)}
+        />
       ) : null}
 
       <section className={styles.waiting} aria-label="Waiting for action">

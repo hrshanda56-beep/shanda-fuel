@@ -9,13 +9,14 @@ import {
   NumericInput,
   StatusBadge,
 } from '@/design-system/primitives';
-import { Select } from '@/design-system/forms';
+import { OTHER_VALUE, SelectWithOther } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
 import { todayInBusinessTime } from '@/modules/expenses/ui/expense-format';
-import { PAYMENT_METHODS } from '../contracts';
+import { OTHER_PAYMENT_PREFIX, PAYMENT_METHODS } from '../contracts';
 import { lineGross } from '../domain';
 import { DOC_LABELS, formatAmount, friendlyDate, plainAmount } from '../format';
 import type { SalesDocumentCapabilities, SalesDocumentDetail } from '../queries';
+import { PrintPanel } from './print-preview';
 import styles from './sales-documents.module.css';
 import { SendDialog } from './send-dialog';
 import { statusView } from './status';
@@ -47,6 +48,8 @@ export function DocumentDetail({
   const [dialog, setDialog] = useState<Dialog>(null);
   const [amount, setAmount] = useState(plainAmount(doc.balance ?? ''));
   const [method, setMethod] = useState('Cash');
+  const [otherMethod, setOtherMethod] = useState('');
+  const [otherError, setOtherError] = useState('');
   const [reference, setReference] = useState('');
   const [paidOn, setPaidOn] = useState(todayInBusinessTime());
   const [reason, setReason] = useState('');
@@ -76,12 +79,18 @@ export function DocumentDetail({
 
   function submitReceipt(event: FormEvent) {
     event.preventDefault();
+    if (method === OTHER_VALUE && !otherMethod.trim()) {
+      setOtherError('Say how it was paid.');
+      return;
+    }
+    setOtherError('');
     run(
       {
         commandType: 'RecordSalesReceipt',
         invoiceId: doc.id,
         amount,
-        paymentMethod: method,
+        paymentMethod:
+          method === OTHER_VALUE ? `${OTHER_PAYMENT_PREFIX}${otherMethod.trim()}` : method,
         paymentReference: reference,
         paidOn,
       },
@@ -116,9 +125,6 @@ export function DocumentDetail({
           </p>
         </div>
         <div className={styles.actions}>
-          <a className="button button-secondary" href={pdfHref} download>
-            Download PDF
-          </a>
           {isDraft && capabilities.create ? (
             <Button variant="secondary" onClick={onEdit}>
               Edit
@@ -141,62 +147,79 @@ export function DocumentDetail({
               Issue {label.toLowerCase()}
             </Button>
           ) : null}
-          {doc.docType === 'QUOTATION' && doc.status === 'ISSUED' && capabilities.issue ? (
-            <Button
-              variant="secondary"
-              loading={command.busy}
-              onClick={() =>
-                run(
-                  {
-                    commandType: 'AcceptQuotation',
-                    documentId: doc.id,
-                    expectedVersion: doc.version,
-                  },
-                  'Marked as accepted by the customer.',
-                )
-              }
-            >
-              Mark accepted
-            </Button>
-          ) : null}
-          {doc.docType === 'QUOTATION' && isLive && capabilities.create ? (
-            <Button
-              variant="secondary"
-              loading={command.busy}
-              onClick={() =>
-                run(
-                  {
-                    commandType: 'ConvertQuotationToInvoice',
-                    quotationId: doc.id,
-                    issueDate: todayInBusinessTime(),
-                  },
-                  'An invoice draft was made from this quotation. Check it, then issue it.',
-                  (result) => String(result.documentId),
-                )
-              }
-            >
-              Make an invoice
-            </Button>
-          ) : null}
-          {isLive && capabilities.issue ? (
-            <Button variant="secondary" onClick={() => setDialog('send')}>
-              Send
-            </Button>
-          ) : null}
           {doc.docType === 'INVOICE' && doc.status === 'ISSUED' && capabilities.issue ? (
             <Button onClick={() => setDialog('receipt')}>Record a payment</Button>
           ) : null}
-          {isLive && capabilities.void ? (
-            <div className={styles.more}>
-              <Button
-                variant="quiet"
-                aria-expanded={moreOpen}
-                onClick={() => setMoreOpen((open) => !open)}
-              >
-                More ▾
-              </Button>
-              {moreOpen ? (
-                <div className={styles.moreMenu}>
+          <div className={styles.more}>
+            <Button
+              variant="secondary"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((open) => !open)}
+            >
+              More ▾
+            </Button>
+            {moreOpen ? (
+              <div className={styles.moreMenu}>
+                <a
+                  className="button button-quiet"
+                  href={pdfHref}
+                  download
+                  onClick={() => setMoreOpen(false)}
+                >
+                  Download PDF
+                </a>
+                {doc.docType === 'QUOTATION' && doc.status === 'ISSUED' && capabilities.issue ? (
+                  <Button
+                    variant="quiet"
+                    loading={command.busy}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      run(
+                        {
+                          commandType: 'AcceptQuotation',
+                          documentId: doc.id,
+                          expectedVersion: doc.version,
+                        },
+                        'Marked as accepted by the customer.',
+                      );
+                    }}
+                  >
+                    Mark accepted
+                  </Button>
+                ) : null}
+                {doc.docType === 'QUOTATION' && isLive && capabilities.create ? (
+                  <Button
+                    variant="quiet"
+                    loading={command.busy}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      run(
+                        {
+                          commandType: 'ConvertQuotationToInvoice',
+                          quotationId: doc.id,
+                          issueDate: todayInBusinessTime(),
+                        },
+                        'An invoice draft was made from this quotation. Check it, then issue it.',
+                        (result) => String(result.documentId),
+                      );
+                    }}
+                  >
+                    Make an invoice
+                  </Button>
+                ) : null}
+                {isLive && capabilities.issue ? (
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setDialog('send');
+                    }}
+                  >
+                    Send
+                  </Button>
+                ) : null}
+                {isLive && capabilities.void ? (
                   <Button
                     variant="quiet"
                     onClick={() => {
@@ -206,10 +229,10 @@ export function DocumentDetail({
                   >
                     Cancel {label.toLowerCase()}…
                   </Button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -217,142 +240,147 @@ export function DocumentDetail({
         <ErrorState title="That did not go through" message={command.error} />
       ) : null}
 
-      {doc.status === 'VOIDED' ? (
-        <div className={styles.notice} role="status">
-          Cancelled{doc.voidReason ? `: ${doc.voidReason}` : '.'}
-        </div>
-      ) : null}
-      {isDraft ? (
-        <div className={styles.notice} role="status">
-          This is a draft. It has no number yet, and nothing is final until you issue it.
-        </div>
-      ) : null}
-
-      {doc.docType === 'INVOICE' && doc.status === 'ISSUED' ? (
-        <Card className={styles.card}>
-          <div className={styles.totalRow}>
-            <span>Paid so far</span>
-            <strong>
-              {doc.currency} {formatAmount(subtract(doc.total, doc.balance ?? doc.total))}
-            </strong>
-          </div>
-          <div className={styles.totalRow}>
-            <span>Still owed</span>
-            <strong>
-              {doc.currency} {formatAmount(doc.balance ?? doc.total)}
-            </strong>
-          </div>
-        </Card>
-      ) : null}
-
-      <Card className={styles.card}>
-        <h3 className={styles.sectionTitle}>Items</h3>
-        {doc.docType === 'RECEIPT' ? (
-          <p>
-            Payment of {doc.currency} {formatAmount(doc.total)}
-            {doc.paymentMethod ? ` by ${doc.paymentMethod}` : ''}
-            {doc.paymentReference ? ` (ref ${doc.paymentReference})` : ''}
-            {doc.paidOn ? ` on ${friendlyDate(doc.paidOn)}` : ''}.
-            {doc.sourceDocumentId ? (
-              <>
-                {' '}
-                For{' '}
-                <Button variant="quiet" size="sm" onClick={() => onOpen(doc.sourceDocumentId!)}>
-                  invoice {doc.sourceDocNumber}
-                </Button>
-              </>
-            ) : null}
-          </p>
-        ) : (
-          <>
-            <div className={styles.detailTable}>
-              {doc.lines.map((line) => (
-                <div key={line.lineNo} className={styles.detailLine}>
-                  <div>
-                    <div>{line.description}</div>
-                    <div className={`${styles.muted} ${styles.rowMeta}`}>
-                      {formatAmount(line.quantity, 3, 0)}
-                      {line.unitLabel ? ` ${line.unitLabel}` : ''} ×{' '}
-                      {formatAmount(line.unitPrice, 4, 2)}
-                    </div>
-                  </div>
-                  <strong>{formatAmount(lineGross(line.quantity, line.unitPrice))}</strong>
-                </div>
-              ))}
+      <div className={styles.detailLayout}>
+        <div className={styles.detailMain}>
+          {doc.status === 'VOIDED' ? (
+            <div className={styles.notice} role="status">
+              Cancelled{doc.voidReason ? `: ${doc.voidReason}` : '.'}
             </div>
-            <div className={styles.totals}>
-              {Number(doc.discountTotal) > 0 || Number(doc.taxTotal) > 0 ? (
-                <div className={styles.totalRow}>
-                  <span>Subtotal</span>
-                  <span>{formatAmount(doc.subtotal)}</span>
-                </div>
-              ) : null}
-              {Number(doc.discountTotal) > 0 ? (
-                <div className={styles.totalRow}>
-                  <span>Discount</span>
-                  <span>-{formatAmount(doc.discountTotal)}</span>
-                </div>
-              ) : null}
-              {Number(doc.taxTotal) > 0 ? (
-                <div className={styles.totalRow}>
-                  <span>{doc.taxLabel}</span>
-                  <span>{formatAmount(doc.taxTotal)}</span>
-                </div>
-              ) : null}
-              <div className={`${styles.totalRow} ${styles.totalStrong}`}>
-                <span>Total ({doc.currency})</span>
-                <span>{formatAmount(doc.total)}</span>
+          ) : null}
+          {isDraft ? (
+            <div className={styles.notice} role="status">
+              This is a draft. It has no number yet, and nothing is final until you issue it.
+            </div>
+          ) : null}
+
+          {doc.docType === 'INVOICE' && doc.status === 'ISSUED' ? (
+            <Card className={styles.card}>
+              <div className={styles.totalRow}>
+                <span>Paid so far</span>
+                <strong>
+                  {doc.currency} {formatAmount(subtract(doc.total, doc.balance ?? doc.total))}
+                </strong>
               </div>
-            </div>
-          </>
-        )}
-      </Card>
-
-      {doc.receipts.length > 0 ? (
-        <Card className={styles.card}>
-          <h3 className={styles.sectionTitle}>Payments received</h3>
-          <div className={styles.detailTable}>
-            {doc.receipts.map((receipt) => (
-              <button
-                key={receipt.id}
-                type="button"
-                className={styles.row}
-                onClick={() => onOpen(receipt.id)}
-              >
-                <span className={styles.rowTitle}>{receipt.docNumber}</span>
-                <span className={styles.rowAmount}>{formatAmount(receipt.total)}</span>
-                <span className={styles.rowMeta}>{friendlyDate(receipt.paidOn)}</span>
-              </button>
-            ))}
-          </div>
-        </Card>
-      ) : null}
-
-      {doc.sourceDocNumber && doc.docType === 'INVOICE' && doc.sourceDocumentId ? (
-        <p className={styles.muted}>
-          Made from quotation{' '}
-          <Button variant="quiet" size="sm" onClick={() => onOpen(doc.sourceDocumentId!)}>
-            {doc.sourceDocNumber}
-          </Button>
-        </p>
-      ) : null}
-
-      {doc.notes || doc.terms ? (
-        <Card className={styles.card}>
-          {doc.notes ? (
-            <>
-              <h3 className={styles.sectionTitle}>Note</h3>
-              <p className={styles.pre}>{doc.notes}</p>
-            </>
+              <div className={styles.totalRow}>
+                <span>Still owed</span>
+                <strong>
+                  {doc.currency} {formatAmount(doc.balance ?? doc.total)}
+                </strong>
+              </div>
+            </Card>
           ) : null}
-          {doc.terms ? (
-            <>
-              <h3 className={styles.sectionTitle}>Terms</h3>
-              <p className={styles.pre}>{doc.terms}</p>
-            </>
+
+          <Card className={styles.card}>
+            <h3 className={styles.sectionTitle}>Items</h3>
+            {doc.docType === 'RECEIPT' ? (
+              <p>
+                Payment of {doc.currency} {formatAmount(doc.total)}
+                {doc.paymentMethod ? ` by ${doc.paymentMethod}` : ''}
+                {doc.paymentReference ? ` (ref ${doc.paymentReference})` : ''}
+                {doc.paidOn ? ` on ${friendlyDate(doc.paidOn)}` : ''}.
+                {doc.sourceDocumentId ? (
+                  <>
+                    {' '}
+                    For{' '}
+                    <Button variant="quiet" size="sm" onClick={() => onOpen(doc.sourceDocumentId!)}>
+                      invoice {doc.sourceDocNumber}
+                    </Button>
+                  </>
+                ) : null}
+              </p>
+            ) : (
+              <>
+                <div className={styles.detailTable}>
+                  {doc.lines.map((line) => (
+                    <div key={line.lineNo} className={styles.detailLine}>
+                      <div>
+                        <div>{line.description}</div>
+                        <div className={`${styles.muted} ${styles.rowMeta}`}>
+                          {formatAmount(line.quantity, 3, 0)}
+                          {line.unitLabel ? ` ${line.unitLabel}` : ''} ×{' '}
+                          {formatAmount(line.unitPrice, 4, 2)}
+                        </div>
+                      </div>
+                      <strong>{formatAmount(lineGross(line.quantity, line.unitPrice))}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className={styles.totals}>
+                  {Number(doc.discountTotal) > 0 || Number(doc.taxTotal) > 0 ? (
+                    <div className={styles.totalRow}>
+                      <span>Subtotal</span>
+                      <span>{formatAmount(doc.subtotal)}</span>
+                    </div>
+                  ) : null}
+                  {Number(doc.discountTotal) > 0 ? (
+                    <div className={styles.totalRow}>
+                      <span>Discount</span>
+                      <span>-{formatAmount(doc.discountTotal)}</span>
+                    </div>
+                  ) : null}
+                  {Number(doc.taxTotal) > 0 ? (
+                    <div className={styles.totalRow}>
+                      <span>{doc.taxLabel}</span>
+                      <span>{formatAmount(doc.taxTotal)}</span>
+                    </div>
+                  ) : null}
+                  <div className={`${styles.totalRow} ${styles.totalStrong}`}>
+                    <span>Total ({doc.currency})</span>
+                    <span>{formatAmount(doc.total)}</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </Card>
+
+          {doc.receipts.length > 0 ? (
+            <Card className={styles.card}>
+              <h3 className={styles.sectionTitle}>Payments received</h3>
+              <div className={styles.detailTable}>
+                {doc.receipts.map((receipt) => (
+                  <button
+                    key={receipt.id}
+                    type="button"
+                    className={styles.row}
+                    onClick={() => onOpen(receipt.id)}
+                  >
+                    <span className={styles.rowTitle}>{receipt.docNumber}</span>
+                    <span className={styles.rowAmount}>{formatAmount(receipt.total)}</span>
+                    <span className={styles.rowMeta}>{friendlyDate(receipt.paidOn)}</span>
+                  </button>
+                ))}
+              </div>
+            </Card>
           ) : null}
-        </Card>
-      ) : null}
+
+          {doc.sourceDocNumber && doc.docType === 'INVOICE' && doc.sourceDocumentId ? (
+            <p className={styles.muted}>
+              Made from quotation{' '}
+              <Button variant="quiet" size="sm" onClick={() => onOpen(doc.sourceDocumentId!)}>
+                {doc.sourceDocNumber}
+              </Button>
+            </p>
+          ) : null}
+
+          {doc.notes || doc.terms ? (
+            <Card className={styles.card}>
+              {doc.notes ? (
+                <>
+                  <h3 className={styles.sectionTitle}>Note</h3>
+                  <p className={styles.pre}>{doc.notes}</p>
+                </>
+              ) : null}
+              {doc.terms ? (
+                <>
+                  <h3 className={styles.sectionTitle}>Terms</h3>
+                  <p className={styles.pre}>{doc.terms}</p>
+                </>
+              ) : null}
+            </Card>
+          ) : null}
+        </div>
+        <PrintPanel href={pdfHref} label={label.toLowerCase()} />
+      </div>
 
       <SendDialog
         key={`send-${doc.id}`}
@@ -394,10 +422,15 @@ export function DocumentDetail({
             onChange={(e) => setAmount(e.target.value)}
           />
           <Field id="sd-rc-method" label="How was it paid?" required>
-            <Select
+            <SelectWithOther
               id="sd-rc-method"
-              value={method}
-              onChange={(e) => setMethod(e.target.value)}
+              choice={method}
+              onChoice={setMethod}
+              detail={otherMethod}
+              onDetail={setOtherMethod}
+              detailLabel="How was it paid?"
+              detailError={otherError}
+              detailMaxLength={60}
               options={PAYMENT_METHODS.map((m) => ({ value: m, label: m }))}
             />
           </Field>

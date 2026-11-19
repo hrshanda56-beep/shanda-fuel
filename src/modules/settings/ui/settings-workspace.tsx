@@ -11,7 +11,7 @@ import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
 import { StaffPanel } from './staff-panel';
 import { AuditPanel } from '../../audit/ui/audit-panel';
-import { StationSetupGuide } from '../../setup/ui/guided-setup-panel';
+import { StationDetail, StationList } from '../../setup/ui/station-detail';
 import { AlertSettingsPanel } from '../../setup/ui/alert-settings-panel';
 import { PaymentsPanel } from '../../setup/ui/payments-panel';
 import { ReadinessPanel } from '../../setup/ui/readiness-panel';
@@ -30,7 +30,7 @@ type Tab =
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
-  { value: 'stations', label: 'Stations', icon: 'fuel' },
+  { value: 'stations', label: 'Stations', icon: 'station' },
   { value: 'readiness', label: 'Readiness', icon: 'check-circle' },
   { value: 'payments', label: 'Payments', icon: 'card' },
   { value: 'staff', label: 'Staff', icon: 'users' },
@@ -168,17 +168,25 @@ export function SettingsStations({
   return (
     <SectionCard
       id="stations"
-      title={context.selectedStation ? 'Station details' : 'Stations'}
+      title="Stations"
       note={
         canEdit && context.legalEntities.length === 0
           ? 'Add a company under Organisation before adding a station.'
           : undefined
       }
       action={
-        canEdit ? <AddStation tenantId={tenantId!} companies={context.legalEntities} /> : undefined
+        canEdit ? (
+          <AddStation
+            tenantId={tenantId!}
+            companies={context.legalEntities}
+            takenCodes={(context.stations ?? []).map((station) => station.code)}
+          />
+        ) : undefined
       }
     >
-      {stations.length ? (
+      {stations.length && onSetup ? (
+        <StationList stations={stations} canSeeReadiness onOpen={onSetup} />
+      ) : stations.length ? (
         <CardRows label="Stations">
           {stations.map((station) => {
             const settingUp = station.status === 'ONBOARDING';
@@ -192,21 +200,7 @@ export function SettingsStations({
                   </StatusBadge>
                 }
                 detail={`${station.code} · ${station.timezone}`}
-                aside={
-                  <>
-                    {onSetup ? (
-                      <Button
-                        variant={settingUp ? 'primary' : 'secondary'}
-                        size="sm"
-                        aria-label={`Station setup for ${station.name}`}
-                        onClick={() => onSetup(station.id)}
-                      >
-                        Station setup
-                      </Button>
-                    ) : null}
-                    {canEdit ? <EditStation tenantId={tenantId!} station={station} /> : null}
-                  </>
-                }
+                aside={canEdit ? <EditStation tenantId={tenantId!} station={station} /> : null}
               />
             );
           })}
@@ -278,6 +272,10 @@ export function SettingsWorkspace({
         null)
       : null,
   );
+  // A link from the readiness list or a blocked shift close opens the setup steps straight away.
+  const [openedByLink, setOpenedByLink] = useState(
+    () => initialTab === 'setup' || Boolean(initialSetupStation) || Boolean(initialFocus),
+  );
   const content = useRef<HTMLDivElement>(null);
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
 
@@ -334,6 +332,7 @@ export function SettingsWorkspace({
 
   // The section lives in the address, so a refresh or a shared link returns to it.
   function chooseSetup(id: string | null) {
+    setOpenedByLink(false);
     setSetupStationId(id);
     try {
       const url = new URL(window.location.href);
@@ -409,7 +408,12 @@ export function SettingsWorkspace({
                 id="companies"
                 title="Companies"
                 action={
-                  view.access?.canManageCompanies ? <AddCompany tenantId={organisation.id} /> : null
+                  view.access?.canManageCompanies ? (
+                    <AddCompany
+                      tenantId={organisation.id}
+                      takenNames={legalEntities.map((company) => company.name)}
+                    />
+                  ) : null
                 }
               >
                 {legalEntities.length > 0 ? (
@@ -449,20 +453,25 @@ export function SettingsWorkspace({
           ) : null}
 
           {shown === 'stations' && setupStation ? (
-            <SectionCard id="station-setup" title={`Station setup: ${setupStation.name}`}>
-              <StationSetupGuide
-                key={setupStation.id}
-                tenantId={organisation.id}
-                stationId={setupStation.id}
-                stationName={setupStation.name}
-                focus={initialFocus}
-                staff={view.staff?.canManage ? view.staff : undefined}
-                onOpenStaff={() => {
-                  choose('staff');
-                  askForFocus();
-                }}
-              />
-            </SectionCard>
+            <StationDetail
+              key={setupStation.id}
+              tenantId={organisation.id}
+              station={setupStation}
+              canSetUp={canSetUp}
+              canEditDetails={Boolean(view.access?.canManageStations)}
+              startEditing={openedByLink}
+              focus={initialFocus}
+              staff={view.staff?.canManage ? view.staff : undefined}
+              onBack={() => {
+                chooseSetup(null);
+                askForFocus();
+              }}
+              onOpenStaff={() => {
+                choose('staff');
+                askForFocus();
+              }}
+              onOpenReadiness={() => choose('readiness')}
+            />
           ) : null}
 
           {shown === 'stations' && !setupStation ? (

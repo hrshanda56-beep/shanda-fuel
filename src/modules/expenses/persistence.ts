@@ -319,11 +319,11 @@ export async function submitExpenseInTransaction(
   await transaction.execute(sql`
     insert into app.expenses (
       id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description,
-      payee, reference, payment_method, currency, amount, state, version, required_approvals, submitted_by, shift_id, observed_at
+      payee, reference, payment_method, payment_method_other, currency, amount, state, version, required_approvals, submitted_by, shift_id, observed_at
     ) values (
       ${expenseId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
       ${input.categoryId}, ${validated.expenseDate}, ${validated.description},
-      ${validated.payee}, ${validated.reference}, ${input.paymentMethod ?? null}, 'USD', ${validated.amount.amount.toString()},
+      ${validated.payee}, ${validated.reference}, ${input.paymentMethod ?? null}, ${input.paymentMethod === 'OTHER' ? (input.paymentMethodOther ?? null) : null}, 'USD', ${validated.amount.amount.toString()},
       'SUBMITTED', 0, ${approvalsRequired}, ${actorId(context)}, ${input.shiftId ?? null}, ${input.observedAt ?? null}::timestamptz
     )
   `);

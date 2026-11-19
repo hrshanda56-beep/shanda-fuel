@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { PermissionCode } from '../../platform/security/permissions';
 import {
   EXPENSE_CATEGORY_CLASSIFICATIONS,
-  EXPENSE_PAYMENT_METHODS,
+  EXPENSE_ENTRY_PAYMENT_METHODS,
   SETTLEMENT_SOURCES,
 } from './domain';
 
@@ -65,9 +65,15 @@ export const submitExpenseSchema = stationBase
     reference: z.string().trim().max(120).optional(),
     amount: decimal,
     /** Optional: how it was paid. Station cash is taken off the cash available for collection. */
-    paymentMethod: z.enum(EXPENSE_PAYMENT_METHODS).optional(),
+    paymentMethod: z.enum(EXPENSE_ENTRY_PAYMENT_METHODS).optional(),
+    /** Required when paymentMethod is OTHER: what it was. */
+    paymentMethodOther: z.string().trim().min(1).max(60).optional(),
   })
   .strict()
+  .refine((value) => (value.paymentMethod === 'OTHER') === Boolean(value.paymentMethodOther), {
+    message: 'Say how it was paid when you choose Other',
+    path: ['paymentMethodOther'],
+  })
   .refine((value) => Boolean(value.shiftId) === Boolean(value.observedAt), {
     message: 'Shift expense requires an observation time',
     path: ['observedAt'],

@@ -34,6 +34,20 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // The two sales-document PDF routes may be shown inside our own pages (the "as printed"
+        // preview). Only our own site may frame them; every other route stays unframeable.
+        source: '/api/sales-documents/:file(pdf|preview)',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            // Only the framing rule is changed; a `sandbox` or `object-src` rule here would stop
+            // the browser's own PDF viewer from drawing the file.
+            value: "frame-ancestors 'self'",
+          },
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+        ],
+      },
+      {
         // A changed worker must be picked up on the next visit, never served from an old cache.
         source: '/sw.js',
         headers: [

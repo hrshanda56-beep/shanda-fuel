@@ -187,7 +187,7 @@ export function DailyProfitWorkspace({
                     layout="block"
                     title="No fuel sold"
                     message="Fuel appears here once a day's sales are closed and checked."
-                    icon="fuel"
+                    icon="drop"
                   />
                 ) : (
                   <table className="data-table profit-table">

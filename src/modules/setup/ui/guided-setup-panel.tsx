@@ -3,7 +3,6 @@
 import { useReverification } from '@clerk/nextjs';
 import Link from 'next/link';
 import {
-  Fragment,
   createContext,
   useCallback,
   useContext,
@@ -17,8 +16,8 @@ import {
 import { createPortal } from 'react-dom';
 
 import { Icon } from '@/design-system/icons';
-import { BottomNotchCard } from '@/design-system/bottom-notch-card';
 import { Modal } from '@/design-system/modal';
+import { CardEmpty, CardRow, CardRows, SectionCard } from '@/design-system/section-card';
 import {
   BLEND_PERCENTS,
   PRODUCT_KINDS,
@@ -27,7 +26,7 @@ import {
   type ProductKind,
 } from '@/platform/domain/product-order';
 import { Radio, Select } from '@/design-system/forms';
-import { formatMoney } from '@/design-system/formatters';
+import { formatMoney, formatUnitPrice } from '@/design-system/formatters';
 import {
   AccessDeniedState,
   Button,
@@ -83,7 +82,9 @@ import {
   type StagedChange,
 } from '../staged-changes';
 import styles from './setup.module.css';
+import hub from './setup-hub.module.css';
 import { StepUpDialog } from './step-up-dialog';
+import { StationSetupWizard } from './station-setup-wizard';
 import { useSetupOverview } from './use-setup-overview';
 
 type Ready = Extract<SetupOverview, { status: 'ready' }>;
@@ -104,7 +105,7 @@ type ConfigState =
   | { kind: 'ready'; data: ConfigurationSetupOverview };
 
 /** Reads one station's configuration. `refresh` re-reads without replacing the screen. */
-function useStationConfig(tenantId: string, stationId: string) {
+export function useStationConfig(tenantId: string, stationId: string) {
   const [state, setState] = useState<ConfigState>({ kind: 'loading' });
   const [nonce, setNonce] = useState(0);
 
@@ -766,10 +767,14 @@ function PriceStep({ ctx, productId: onlyProductId }: { ctx: FormContext; produc
               <div key={p.id} className={styles.priceCard}>
                 <div className={styles.priceText}>
                   <span className={styles.priceAmount}>
-                    {formatMoney(p.unitPrice)}
+                    {
+                      formatUnitPrice(
+                        p.unitPrice,
+                        priceWord(ctx.data, p.productId) === 'kilogram' ? 'kg' : 'L',
+                      ).amount
+                    }
                     <span className={styles.priceUnit}>
-                      {' '}
-                      per {priceWord(ctx.data, p.productId)}
+                      {priceWord(ctx.data, p.productId) === 'kilogram' ? '/kg' : '/L'}
                     </span>
                   </span>
                   <span className={styles.priceState} data-state={p.state}>
@@ -1597,7 +1602,7 @@ function PumpStep({
   return (
     <>
       <div className={styles.headingRow}>
-        <h4 className={styles.subTitle}>Pumps and nozzles</h4>
+        <h4 className={styles.subTitle}>Pumps & Nozzles</h4>
         {canEdit ? (
           allPumps.length === 0 ? (
             <Button
@@ -2239,9 +2244,6 @@ function SupervisorStep({ ctx, onBusy }: { ctx: FormContext; onBusy?: (busy: boo
   );
 }
 
-const TONE = { done: 'positive', todo: 'warning', blocked: 'neutral' } as const;
-const LABEL = { done: 'Done', todo: 'To do', blocked: 'Not yet' } as const;
-
 /** One station's setup steps, from fuel types to the person in charge. */
 export function StationSetupGuide({
   tenantId,
@@ -2250,6 +2252,7 @@ export function StationSetupGuide({
   staff,
   onOpenStaff,
   focus,
+  openPart,
 }: {
   tenantId: string;
   stationId: string;
@@ -2259,6 +2262,8 @@ export function StationSetupGuide({
   onOpenStaff?: () => void;
   /** Opens straight on the form for correcting when a meter started working. */
   focus?: 'meter-start';
+  /** Opens straight on one part of one fuel, e.g. its price. */
+  openPart?: { kind: 'price' | 'tanks' | 'pumps'; productId: string };
 }) {
   const { state, refresh, reload } = useStationConfig(tenantId, stationId);
   if (state.kind === 'loading') return <LoadingState label="Loading station setup" />;
@@ -2284,6 +2289,7 @@ export function StationSetupGuide({
       staff={staff}
       onOpenStaff={onOpenStaff}
       focus={focus}
+      openPart={openPart}
     />
   );
 }
@@ -2302,6 +2308,7 @@ function StagingHost({
   staff,
   onOpenStaff,
   focus,
+  openPart,
 }: {
   tenantId: string;
   stationId: string;
@@ -2311,12 +2318,16 @@ function StagingHost({
   staff?: StaffOverview;
   onOpenStaff?: () => void;
   focus?: 'meter-start';
+  /** Opens straight on one part of one fuel, e.g. its price. */
+  openPart?: { kind: 'price' | 'tanks' | 'pumps'; productId: string };
 }) {
   const [queue, setQueue] = useState<StagedChange[]>([]);
   const realIds = useRef(new Map<string, string>());
   const confirmedUntil = useRef(0);
   const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  // The one-question-at-a-time guide replaces the checklist while it is open.
+  const [guiding, setGuiding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string>();
   // After a save the screen keeps showing the saved items until the fresh read arrives.
@@ -2403,19 +2414,50 @@ function StagingHost({
 
   return (
     <StagingContext.Provider value={staging}>
-      <GuideSteps
-        tenantId={tenantId}
-        stationId={stationId}
-        stationName={stationName}
-        data={data}
-        refresh={refresh}
-        confirm={confirm}
-        onDenied={onDenied}
-        staff={staff}
-        onOpenStaff={onOpenStaff}
-        focus={focus}
-      />
-      {count > 0 ? (
+      {guiding ? (
+        <StationSetupWizard
+          tenantId={tenantId}
+          stationId={stationId}
+          stationName={stationName}
+          data={data}
+          onCancel={() => setGuiding(false)}
+          onDone={(changes) => {
+            setProblem(undefined);
+            setQueue((current) => [...current, ...changes]);
+            setGuiding(false);
+            setReviewing(true);
+          }}
+        />
+      ) : (
+        <>
+          {data.capabilities.products && activeProducts(data).length === 0 ? (
+            <SectionCard
+              id="setup-guide"
+              title="New station? Set it up one question at a time."
+              note="We ask one thing per screen. Nothing is saved until you review it."
+              action={
+                <Button variant="primary" onClick={() => setGuiding(true)}>
+                  Start
+                </Button>
+              }
+            />
+          ) : null}
+          <GuideSteps
+            tenantId={tenantId}
+            stationId={stationId}
+            stationName={stationName}
+            data={data}
+            refresh={refresh}
+            confirm={confirm}
+            onDenied={onDenied}
+            staff={staff}
+            onOpenStaff={onOpenStaff}
+            focus={focus}
+            openPart={openPart}
+          />
+        </>
+      )}
+      {count > 0 && !guiding ? (
         <div className={styles.reviewBar} role="region" aria-label="Changes waiting to be saved">
           <span className={styles.reviewBarText}>
             {count === 1 ? '1 change is waiting.' : `${count} changes are waiting.`} Nothing is
@@ -2483,24 +2525,6 @@ function StagingHost({
         }}
       />
     </StagingContext.Provider>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg
-      width="18"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5 7h14M9.5 7V5.2c0-.7.5-1.2 1.2-1.2h2.6c.7 0 1.2.5 1.2 1.2V7M6.8 7l.7 11.6c.1 1 .9 1.8 1.9 1.8h5.2c1 0 1.8-.8 1.9-1.8L17.2 7M10 11v5.5M14 11v5.5" />
-    </svg>
   );
 }
 
@@ -2630,109 +2654,25 @@ function FuelMenu({
   );
 }
 
-/** One fuel, set up a part at a time: price, then tanks, then pumps and nozzles. Any part can be
- *  reopened later from the row of steps, so nothing is locked once passed. */
-function FuelSteps({
-  ctx,
-  productId,
-  header,
-  overlay,
-  bodyId,
-  focusMeterStart,
-  onDone,
-}: {
-  ctx: FormContext;
-  productId: string;
-  header: ReactNode;
-  overlay: ReactNode;
-  bodyId: string;
-  focusMeterStart?: boolean;
-  onDone: () => void;
-}) {
-  const { data } = ctx;
-  const parts = [
-    {
-      id: 'price',
-      title: 'Price',
-      done: (data.prices ?? []).some((p) => p.productId === productId && p.state === 'ACTIVE'),
-    },
-    {
-      id: 'tanks',
-      title: 'Tanks',
-      done: (data.tanks ?? []).some(
-        (t) => t.productId === productId && t.status === 'ACTIVE' && t.acceptableVarianceLitres,
-      ),
-    },
-    {
-      id: 'pumps',
-      title: 'Pumps and nozzles',
-      done: (data.nozzles ?? []).some((n) => n.productId === productId && n.status === 'ACTIVE'),
-    },
-  ];
-  const [index, setIndex] = useState(() => {
-    if (focusMeterStart) return parts.findIndex((part) => part.id === 'pumps');
-    const first = parts.findIndex((part) => !part.done);
-    return first === -1 ? 0 : first;
-  });
-  const part = parts[index]!;
-  const last = index === parts.length - 1;
-  const footer = (
-    <>
-      {index > 0 ? (
-        <Button variant="secondary" onClick={() => setIndex(index - 1)}>
-          Back
-        </Button>
-      ) : null}
-      {last ? (
-        <Button onClick={onDone}>Done</Button>
-      ) : (
-        <Button onClick={() => setIndex(index + 1)}>Next</Button>
-      )}
-    </>
-  );
-  return (
-    <BottomNotchCard
-      actions={index === 0 && last ? undefined : footer}
-      actionCount={index > 0 ? 2 : 1}
-      overlay={overlay}
-      surfaceClassName={styles.fuelSurface}
-    >
-      {header}
-      <div id={bodyId} className={styles.stepBody}>
-        <ol className={styles.partList} aria-label="Parts of this fuel">
-          {parts.map((item, position) => (
-            <li key={item.id}>
-              <button
-                type="button"
-                className={styles.partTab}
-                data-current={position === index || undefined}
-                data-done={item.done || undefined}
-                aria-current={position === index ? 'step' : undefined}
-                onClick={() => setIndex(position)}
-              >
-                <span className={styles.partNumber}>
-                  {item.done ? <Icon name="check-circle" /> : position + 1}
-                </span>
-                {item.title}
-              </button>
-            </li>
-          ))}
-        </ol>
-        <FuelKind ctx={ctx} productId={productId} />
-        {part.id === 'price' ? <PriceStep ctx={ctx} productId={productId} /> : null}
-        {part.id === 'tanks' ? <TankStep ctx={ctx} productId={productId} /> : null}
-        {part.id === 'pumps' ? (
-          <PumpStep ctx={ctx} productId={productId} focusMeterStart={focusMeterStart} />
-        ) : null}
-      </div>
-    </BottomNotchCard>
-  );
-}
+type Part =
+  | { kind: 'price' | 'tanks' | 'pumps' | 'type'; productId: string }
+  | { kind: 'shifts' | 'supervisor' };
 
+const PART_TITLES = {
+  price: 'Price',
+  tanks: 'Tanks',
+  pumps: 'Pumps & Nozzles',
+  type: 'Type of fuel',
+} as const;
+
+/**
+ * The editing screen. Fuels are a flat list; each part of a fuel (price, tanks, pumps & nozzles)
+ * opens as its own small dialog, so one thing is asked at a time. Everything still joins the list
+ * of waiting changes that is reviewed and confirmed once.
+ */
 function GuideSteps({
   tenantId,
   stationId,
-  stationName,
   data,
   refresh,
   confirm,
@@ -2740,6 +2680,7 @@ function GuideSteps({
   staff,
   onOpenStaff,
   focus,
+  openPart,
 }: {
   tenantId: string;
   stationId: string;
@@ -2751,71 +2692,23 @@ function GuideSteps({
   staff?: StaffOverview;
   onOpenStaff?: () => void;
   focus?: 'meter-start';
+  /** Opens straight on one part of one fuel, e.g. its price. */
+  openPart?: { kind: 'price' | 'tanks' | 'pumps'; productId: string };
 }) {
   const steps = buildGuidedSteps(data);
   const fuelCards = buildFuelCards(data);
   const stepById = (id: GuidedStepId) => steps.find((s) => s.id === id)!;
-
-  // The screen is a list of sections: fuel types, then one card per fuel (its price, tanks, pumps
-  // and nozzles together), then the parts that belong to the whole station.
-  type Section = {
-    key: string;
-    title: string;
-    detail: string;
-    status: 'done' | 'todo' | 'blocked';
-    badge?: string;
-    purpose: string;
-    noAccess?: boolean;
-    blocked?: boolean;
-  };
-  const sections: Section[] = [];
   const fuelStep = stepById('fuel');
-  sections.push({
-    key: 'fuel',
-    title: fuelStep.title,
-    detail: fuelStep.summary,
-    status: fuelStep.status,
-    purpose: `${fuelStep.purpose} Add each fuel here, then set up its price, tanks, pumps and nozzles in its own card below.`,
-    noAccess: !fuelStep.canEdit && fuelStep.status !== 'done',
-  });
-  for (const card of fuelCards) {
-    sections.push({
-      key: `fuel:${card.productId}`,
-      title: card.name,
-      detail: card.summary,
-      status: card.status,
-      badge: card.status === 'done' ? 'Ready' : 'To do',
-      purpose: `Everything for ${card.name}: what you charge, the tanks that hold it, and the pumps and nozzles that sell it.`,
-    });
-  }
-  for (const id of ['shifts', 'supervisor'] as const) {
-    const step = stepById(id);
-    sections.push({
-      key: id,
-      title: step.title,
-      detail: step.status === 'blocked' ? (step.blockedReason ?? step.summary) : step.summary,
-      status: step.status,
-      purpose: step.purpose,
-      noAccess: !step.canEdit && step.status !== 'done',
-      blocked: step.status === 'blocked',
-    });
-  }
+  const shiftsStep = stepById('shifts');
+  const supervisorStep = stepById('supervisor');
 
-  // The section opened on first load stays open after saving, so its confirmation is not lost;
-  // the person moves on with the "Next" button.
-  // Coming from a blocked shift close, open the first fuel that has a nozzle whose start date can
-  // still be corrected, so the form is already on screen.
-  const meterFocusKey = (() => {
+  // Coming from a blocked shift close, the pumps & nozzles of the fuel whose meter start date can
+  // still be corrected open straight away.
+  const [part, setPart] = useState<Part | null>(() => {
+    if (openPart) return openPart;
     if (focus !== 'meter-start') return null;
     const nozzle = (data.nozzles ?? []).find((n) => n.meterWorkingSinceEditable);
-    return nozzle ? `fuel:${nozzle.productId}` : null;
-  })();
-  const [open, setOpen] = useState<string | null>(() => {
-    if (meterFocusKey && sections.some((section) => section.key === meterFocusKey)) {
-      return meterFocusKey;
-    }
-    const first = sections.find((section) => section.key !== 'fuel' && section.status === 'todo');
-    return first ? first.key : null;
+    return nozzle ? { kind: 'pumps', productId: nozzle.productId } : null;
   });
   const [addingFuel, setAddingFuel] = useState(false);
   const [addingShift, setAddingShift] = useState(false);
@@ -2881,14 +2774,17 @@ function GuideSteps({
   }
 
   function chooseFuelAction(productId: string, name: string, action: string) {
-    if (action === 'open') setOpen(open === `fuel:${productId}` ? null : `fuel:${productId}`);
-    else if (action === 'rename') {
+    if (action === 'rename') {
       setRenameText(name);
       setRenameError(undefined);
       setRenaming({ id: productId, name });
+    } else if (action === 'type') {
+      setPart({ kind: 'type', productId });
     } else if (action === 'unit') {
       const product = (data.products ?? []).find((p) => p.id === productId);
       setChangingUnit({ id: productId, name, unit: product?.unit ?? 'LITRES' });
+    } else if (action === 'delete') {
+      setDeleting({ id: productId, name });
     } else if (action === 'hide') {
       runFuelCommand(
         { commandType: 'SetProductStatus', productId, status: 'INACTIVE' },
@@ -2897,246 +2793,213 @@ function GuideSteps({
     }
   }
 
-  function renderBody(key: string): ReactNode {
-    if (key === 'shifts') {
-      return <ShiftStep ctx={ctx} open={addingShift} onClose={() => setAddingShift(false)} />;
-    }
-    if (key === 'supervisor') return <SupervisorStep ctx={ctx} onBusy={setSupervisorBusy} />;
-    return null;
-  }
-
-  function renderSection(section: Section, number: number) {
-    const expanded = open === section.key;
-    const bodyId = `step-body-${section.key.replace(':', '-')}`;
-    const next = sections[sections.indexOf(section) + 1];
-    const goesToStaff = section.key === 'supervisor' && section.blocked && !!onOpenStaff;
-    const isFuel = section.key.startsWith('fuel:');
-    const header = (
-      <button
-        type="button"
-        className={styles.stepHeader}
-        data-status={section.status}
-        aria-expanded={expanded}
-        aria-controls={bodyId}
-        disabled={section.blocked && !goesToStaff}
-        onClick={() => (goesToStaff ? onOpenStaff?.() : setOpen(expanded ? null : section.key))}
-      >
-        <span
-          className={styles.stepNumber}
-          role="img"
-          aria-label={section.status === 'done' ? 'Done' : 'In progress'}
-        >
-          {section.status === 'done' ? <Icon name="check-circle" /> : number}
-        </span>
-        <span className={styles.stepText}>
-          <span className={styles.rowTitle}>{section.title}</span>
-          {expanded && section.key === 'supervisor' ? null : (
-            <span className={styles.rowDetail} title={isFuel ? section.detail : undefined}>
-              {section.detail}
-            </span>
-          )}
-        </span>
-        {goesToStaff ? (
-          <span className={styles.stepBadge}>
-            <StatusBadge tone={TONE[section.status]}>Go to Staff</StatusBadge>
-          </span>
-        ) : section.blocked ? null : (
-          <span className={styles.chevron} aria-hidden="true">
-            <Icon name="chevron-down" />
-          </span>
-        )}
-      </button>
-    );
-    const cardActions =
-      isFuel && fuelStep.canEdit ? (
-        <div className={styles.cardActions}>
-          {section.status !== 'done' ? (
-            <button
-              type="button"
-              className={`${styles.iconButton} ${styles.iconButtonDanger}`}
-              aria-label={`Delete ${section.title}`}
-              title="Delete"
-              onClick={() => setDeleting({ id: section.key.slice(5), name: section.title })}
-            >
-              <TrashIcon />
-            </button>
-          ) : null}
-          <FuelMenu
-            label={`More actions for ${section.title}`}
-            options={[
-              { value: 'open', label: expanded ? 'Close details' : 'Open details' },
-              { value: 'rename', label: 'Rename fuel' },
-              { value: 'unit', label: 'Change unit' },
-              { value: 'hide', label: 'Hide fuel' },
-            ]}
-            onChoose={(action) => chooseFuelAction(section.key.slice(5), section.title, action)}
-          />
-        </div>
-      ) : null;
-    const supervisorActions =
-      section.key === 'supervisor' && expanded && staff && onOpenStaff ? (
-        <div className={styles.cardActions}>
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-label="Add a supervisor in Staff"
-            onClick={onOpenStaff}
-          >
-            Add
-          </Button>
-        </div>
-      ) : null;
-    const shiftActions =
-      section.key === 'shifts' && expanded && ctx.data.capabilities.shiftTemplates ? (
-        <div className={styles.cardActions}>
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-haspopup="dialog"
-            aria-label="Add a shift"
-            onClick={() => setAddingShift(true)}
-          >
-            Add
-          </Button>
-        </div>
-      ) : null;
-    const extraActions = shiftActions ?? supervisorActions;
-    if (isFuel && expanded && fuelStep.canEdit && !section.noAccess) {
-      return (
-        <li key={section.key} className={styles.step} data-has-actions data-expanded>
-          <FuelSteps
-            ctx={ctx}
-            productId={section.key.slice('fuel:'.length)}
-            header={header}
-            overlay={cardActions}
-            bodyId={bodyId}
-            focusMeterStart={section.key === meterFocusKey}
-            onDone={() => setOpen(null)}
-          />
-        </li>
-      );
-    }
-    const body = expanded ? (
-      <div id={bodyId} className={styles.stepBody}>
-        {section.key.startsWith('fuel:') ||
-        section.key === 'shifts' ||
-        section.key === 'supervisor' ? null : (
-          <p className={styles.note}>{section.purpose}</p>
-        )}
-        {section.noAccess ? (
-          <p className={styles.note}>
-            You can see this step but you do not have permission to change it.
-          </p>
-        ) : (
-          renderBody(section.key)
-        )}
-      </div>
-    ) : null;
-    // When there is a next step, the card gives up its corner to a "Next" button, like the fuel cards.
-    const saveSupervisor =
-      section.key === 'supervisor' &&
-      ctx.data.capabilities.forecourt &&
-      !section.noAccess &&
-      (ctx.data.supervisors ?? []).length > 0;
-    const nextShown = section.status === 'done' && next && next.status !== 'blocked';
-    if (expanded && (nextShown || saveSupervisor)) {
-      return (
-        <li
-          key={section.key}
-          className={styles.step}
-          data-expanded
-          data-has-actions={extraActions ? true : undefined}
-        >
-          <BottomNotchCard
-            actions={
-              nextShown && next ? (
-                <Button aria-label={`Next: ${next.title}`} onClick={() => setOpen(next.key)}>
-                  Next
-                </Button>
-              ) : (
-                <Button type="submit" form="supervisor-form" loading={supervisorBusy}>
-                  Save
-                </Button>
-              )
-            }
-            actionCount={1}
-            overlay={
-              <>
-                {cardActions}
-                {extraActions}
-              </>
-            }
-            surfaceClassName={styles.fuelSurface}
-          >
-            {header}
-            {body}
-          </BottomNotchCard>
-        </li>
-      );
-    }
-    return (
-      <li
-        key={section.key}
-        className={styles.step}
-        data-has-actions={isFuel || extraActions ? true : undefined}
-        data-open={extraActions ? true : undefined}
-      >
-        {header}
-        {cardActions}
-        {extraActions}
-        {body}
-      </li>
-    );
-  }
+  const partProduct =
+    part && 'productId' in part ? (data.products ?? []).find((p) => p.id === part.productId) : null;
+  const partTitle = !part
+    ? ''
+    : part.kind === 'shifts'
+      ? 'Shifts'
+      : part.kind === 'supervisor'
+        ? 'Who is in charge'
+        : `${partProduct?.name ?? 'Fuel'}: ${PART_TITLES[part.kind]}`;
 
   return (
     <div className={styles.stack}>
-      <div className={styles.headingRow}>
-        <h3 className={styles.subTitle}>Fuel types</h3>
-        {fuelStep.canEdit ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-haspopup="dialog"
-            aria-label="Add a fuel type"
-            onClick={() => setAddingFuel(true)}
-          >
-            Add
-          </Button>
-        ) : null}
-      </div>
-      {fuelCards.length > 0 ? (
-        <ol className={`${styles.stepList} ${styles.fuelGrid}`}>
-          {sections
-            .filter((section) => section.key.startsWith('fuel:'))
-            .map((section, position) => renderSection(section, position + 1))}
-        </ol>
-      ) : (
-        <p className={styles.note}>No fuel types yet. Add the first one to begin.</p>
-      )}
-      <Message outcome={fuelActions.outcome} />
-      {hiddenFuels.length > 0 && fuelStep.canEdit ? (
-        <ul className={styles.itemList} aria-label="Hidden fuel types">
-          {hiddenFuels.map((p) => (
-            <li key={p.id} className={styles.hiddenFuel}>
-              <span>{p.name} is hidden.</span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  runFuelCommand(
-                    { commandType: 'SetProductStatus', productId: p.id, status: 'ACTIVE' },
-                    `${p.name} is back.`,
-                  )
+      <SectionCard
+        id="setup-fuels"
+        title="Fuel types"
+        action={
+          fuelStep.canEdit ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-haspopup="dialog"
+              aria-label="Add a fuel type"
+              onClick={() => setAddingFuel(true)}
+            >
+              Add
+            </Button>
+          ) : null
+        }
+      >
+        {fuelCards.length > 0 ? (
+          <CardRows label="Fuel types">
+            {fuelCards.map((card) => (
+              <CardRow
+                key={card.productId}
+                title={card.name}
+                badge={
+                  <StatusBadge tone={card.status === 'done' ? 'positive' : 'warning'}>
+                    {card.status === 'done' ? 'Ready' : 'To do'}
+                  </StatusBadge>
                 }
-              >
-                Show again
-              </Button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+                detail={card.summary}
+                aside={
+                  fuelStep.canEdit ? (
+                    <div className={hub.parts} role="group" aria-label={`Change ${card.name}`}>
+                      {(['price', 'tanks', 'pumps'] as const).map((kind) => (
+                        <Button
+                          key={kind}
+                          variant="secondary"
+                          size="sm"
+                          aria-haspopup="dialog"
+                          aria-label={`${card.name}: ${PART_TITLES[kind]}`}
+                          onClick={() => setPart({ kind, productId: card.productId })}
+                        >
+                          {PART_TITLES[kind]}
+                        </Button>
+                      ))}
+                      <FuelMenu
+                        label={`More actions for ${card.name}`}
+                        options={[
+                          { value: 'rename', label: 'Rename fuel' },
+                          { value: 'type', label: 'Change type of fuel' },
+                          { value: 'unit', label: 'Change unit' },
+                          { value: 'hide', label: 'Hide fuel' },
+                          ...(card.status !== 'done'
+                            ? [{ value: 'delete', label: 'Delete fuel' }]
+                            : []),
+                        ]}
+                        onChoose={(action) => chooseFuelAction(card.productId, card.name, action)}
+                      />
+                    </div>
+                  ) : null
+                }
+              />
+            ))}
+          </CardRows>
+        ) : (
+          <CardEmpty>No fuel types yet. Add the first one to begin.</CardEmpty>
+        )}
+        <Message outcome={fuelActions.outcome} />
+        {hiddenFuels.length > 0 && fuelStep.canEdit ? (
+          <CardRows label="Hidden fuel types">
+            {hiddenFuels.map((p) => (
+              <CardRow
+                key={p.id}
+                title={p.name}
+                detail="Hidden. It is not offered for sale."
+                aside={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      runFuelCommand(
+                        { commandType: 'SetProductStatus', productId: p.id, status: 'ACTIVE' },
+                        `${p.name} is back.`,
+                      )
+                    }
+                  >
+                    Show again
+                  </Button>
+                }
+              />
+            ))}
+          </CardRows>
+        ) : null}
+      </SectionCard>
       <FuelStep ctx={ctx} open={addingFuel} onClose={() => setAddingFuel(false)} />
+
+      <SectionCard id="setup-station" title="The whole station">
+        <CardRows label="The whole station">
+          <CardRow
+            title="Shifts"
+            detail={shiftsStep.summary}
+            aside={
+              shiftsStep.canEdit ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-haspopup="dialog"
+                  aria-label="Change shifts"
+                  onClick={() => setPart({ kind: 'shifts' })}
+                >
+                  Change shifts
+                </Button>
+              ) : null
+            }
+          />
+          <CardRow
+            title="Who is in charge"
+            detail={
+              supervisorStep.status === 'blocked'
+                ? (supervisorStep.blockedReason ?? supervisorStep.summary)
+                : supervisorStep.summary
+            }
+            aside={
+              supervisorStep.status === 'blocked' ? (
+                onOpenStaff ? (
+                  <Button variant="secondary" size="sm" onClick={onOpenStaff}>
+                    Go to Staff
+                  </Button>
+                ) : null
+              ) : supervisorStep.canEdit ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-haspopup="dialog"
+                  aria-label="Change who is in charge"
+                  onClick={() => setPart({ kind: 'supervisor' })}
+                >
+                  Change
+                </Button>
+              ) : null
+            }
+          />
+        </CardRows>
+      </SectionCard>
+
+      <Modal
+        open={part !== null}
+        onClose={() => setPart(null)}
+        title={partTitle}
+        presentation="page"
+        size="md"
+        footer={
+          <>
+            {part?.kind === 'shifts' && ctx.data.capabilities.shiftTemplates ? (
+              <Button variant="secondary" onClick={() => setAddingShift(true)}>
+                Add a shift
+              </Button>
+            ) : null}
+            {part?.kind === 'supervisor' &&
+            ctx.data.capabilities.forecourt &&
+            (ctx.data.supervisors ?? []).length > 0 ? (
+              <Button type="submit" form="supervisor-form" loading={supervisorBusy}>
+                Save
+              </Button>
+            ) : null}
+            <Button
+              variant={part?.kind === 'supervisor' ? 'secondary' : 'primary'}
+              onClick={() => setPart(null)}
+            >
+              Done
+            </Button>
+          </>
+        }
+      >
+        <h2 className="wizard-page-title">{partTitle}</h2>
+        {part && 'productId' in part ? (
+          <>
+            {part.kind === 'price' ? <PriceStep ctx={ctx} productId={part.productId} /> : null}
+            {part.kind === 'tanks' ? <TankStep ctx={ctx} productId={part.productId} /> : null}
+            {part.kind === 'pumps' ? (
+              <PumpStep
+                ctx={ctx}
+                productId={part.productId}
+                focusMeterStart={focus === 'meter-start'}
+              />
+            ) : null}
+            {part.kind === 'type' ? <FuelKind ctx={ctx} productId={part.productId} /> : null}
+          </>
+        ) : null}
+        {part?.kind === 'shifts' ? (
+          <ShiftStep ctx={ctx} open={addingShift} onClose={() => setAddingShift(false)} />
+        ) : null}
+        {part?.kind === 'supervisor' ? (
+          <SupervisorStep ctx={ctx} onBusy={setSupervisorBusy} />
+        ) : null}
+      </Modal>
       <Modal
         open={renaming !== null}
         onClose={() => !fuelActions.busy && setRenaming(null)}
@@ -3252,12 +3115,6 @@ function GuideSteps({
         </p>
         <Message outcome={fuelActions.outcome} />
       </Modal>
-      <h3 className={`${styles.subTitle} ${styles.sectionBreak}`}>The whole station</h3>
-      <ol className={`${styles.stepList} ${styles.wholeGrid}`}>
-        {sections
-          .filter((section) => !section.key.startsWith('fuel'))
-          .map((section, position) => renderSection(section, position + 1))}
-      </ol>
       {done === total ? (
         <div className={styles.formActions}>
           <p className={styles.note}>Setup is finished. Next, enter what the station has today.</p>

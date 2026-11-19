@@ -29,6 +29,13 @@ export const EXPENSE_PAYMENT_METHOD_LABELS: Readonly<Record<ExpensePaymentMethod
   CARD: 'Card',
 };
 
+/** Entering an expense also allows Other (then the person says how). Supplier payments do not. */
+export const EXPENSE_ENTRY_PAYMENT_METHODS = [...EXPENSE_PAYMENT_METHODS, 'OTHER'] as const;
+export type ExpenseEntryPaymentMethod = (typeof EXPENSE_ENTRY_PAYMENT_METHODS)[number];
+export const EXPENSE_ENTRY_PAYMENT_METHOD_LABELS: Readonly<
+  Record<ExpenseEntryPaymentMethod, string>
+> = { ...EXPENSE_PAYMENT_METHOD_LABELS, OTHER: 'Other' };
+
 /** The month-end staff fuel benefit category. It is posted only through the staff benefit account. */
 export const STAFF_FUEL_CATEGORY_CODE = 'STAFF_FUEL_BENEFIT';
 

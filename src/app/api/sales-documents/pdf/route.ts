@@ -17,7 +17,10 @@ export const GET = withRequestObservability(
         status: 200,
         headers: {
           'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="${filename}"`,
+          // `inline=1` lets the page show the PDF in a frame instead of saving it.
+          'Content-Disposition': `${
+            new URL(request.url).searchParams.get('inline') === '1' ? 'inline' : 'attachment'
+          }; filename="${filename}"`,
           'Cache-Control': 'no-store',
           'X-Content-Type-Options': 'nosniff',
         },

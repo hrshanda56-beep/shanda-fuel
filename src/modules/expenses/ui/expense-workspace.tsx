@@ -21,13 +21,14 @@ import { Checkbox } from '@/design-system/forms';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { CashDonut } from '@/modules/cash/ui/cash-visuals';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
-import {
-  EXPENSE_PAYMENT_METHODS,
-  EXPENSE_PAYMENT_METHOD_LABELS,
-  isStaffFuelCategory,
-  type ExpensePaymentMethod,
-} from '../domain';
+import { isStaffFuelCategory } from '../domain';
 import styles from './expenses.module.css';
+import {
+  ExpenseWizard,
+  RegularCostWizard,
+  type NewExpenseValue,
+  type NewRegularCostValue,
+} from './expense-wizards';
 import {
   EXPENSE_FILTERS,
   PERIODS,
@@ -256,21 +257,17 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
 
   // Form fields, reset whenever a sheet opens.
-  const [categoryId, setCategoryId] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
-  const [payee, setPayee] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<ExpensePaymentMethod>('STATION_CASH');
-  const [description, setDescription] = useState('');
-  const [receipt, setReceipt] = useState('');
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [stationId, setStationId] = useState('');
+  // The guides for a new expense and a regular cost keep their own fields. These hold what they
+  // start with, and what was entered once it is sent (so it survives the identity check).
+  const [expenseSeed, setExpenseSeed] = useState<NewExpenseValue | null>(null);
+  const [regularSeed, setRegularSeed] = useState<NewRegularCostValue | null>(null);
   const [reason, setReason] = useState('');
   const [paySource, setPaySource] = useState<'BANK' | 'MOBILE_MONEY' | 'REIMBURSEMENT'>('BANK');
   const [payRef, setPayRef] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [newCategoryFixed, setNewCategoryFixed] = useState(false);
-  const [endDate, setEndDate] = useState('');
   const [approvalLimit, setApprovalLimit] = useState('');
   const [secondLimit, setSecondLimit] = useState('');
   const [supervisorLimit, setSupervisorLimit] = useState('');
@@ -289,6 +286,12 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     return (entity?.stations ?? []).map((station) => ({ id: station.id, name: station.name }));
   }, [initial, current]);
   const stationName = (id: string) => stations.find((station) => station.id === id)?.name ?? '';
+  const stationIsFixed = Boolean(current?.stationId && !current.allStations);
+  const startingStationId = stationIsFixed
+    ? (current?.stationId ?? '')
+    : stations.length === 1
+      ? (stations[0]?.id ?? '')
+      : '';
 
   const activeCategories = (reference?.categories ?? []).filter(
     (category) =>
@@ -386,21 +389,18 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     setNotice(null);
     attempt.current = null;
     if (next.kind === 'new') {
-      setCategoryId(activeCategories.length === 1 ? (activeCategories[0]?.categoryId ?? '') : '');
-      setAmount('');
-      setDate(today);
-      setPayee('');
-      setPaymentMethod('STATION_CASH');
-      setDescription('');
-      setReceipt('');
-      setReceiptFile(null);
-      setStationId(
-        current?.stationId && !current.allStations
-          ? current.stationId
-          : stations.length === 1
-            ? (stations[0]?.id ?? '')
-            : '',
-      );
+      setExpenseSeed({
+        categoryId: activeCategories.length === 1 ? (activeCategories[0]?.categoryId ?? '') : '',
+        description: '',
+        amount: '',
+        date: today,
+        stationId: startingStationId,
+        paymentMethod: 'STATION_CASH',
+        paymentMethodOther: '',
+        payee: '',
+        receipt: '',
+        receiptFile: null,
+      });
     }
     if (next.kind === 'pay') {
       setAmount(amountForInput(next.expense.outstanding));
@@ -413,18 +413,17 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       setNewCategoryFixed(false);
     }
     if (next.kind === 'regular') {
-      setCategoryId(activeCategories.length === 1 ? (activeCategories[0]?.categoryId ?? '') : '');
-      setAmount('');
-      setDescription('');
-      setDate(month.from);
-      setEndDate('');
-      setStationId(
-        current?.stationId && !current.allStations
-          ? current.stationId
-          : stations.length === 1
-            ? (stations[0]?.id ?? '')
+      setRegularSeed({
+        name: '',
+        categoryId:
+          activeRecurringCategories.length === 1
+            ? (activeRecurringCategories[0]?.categoryId ?? '')
             : '',
-      );
+        stationId: startingStationId,
+        amount: '',
+        start: month.from,
+        end: '',
+      });
     }
     if (next.kind === 'limits') {
       setApprovalLimit(reference?.policy?.stepUpThreshold ?? '');
@@ -522,61 +521,81 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     return { tenantId, stationId: station };
   }
 
-  async function submitSheet(event: FormEvent) {
-    event.preventDefault();
-    if (!sheet) return;
-    setFormError(null);
-
-    if (sheet.kind === 'new') {
-      const value = parseAmount(amount);
-      if (!categoryId) return setFormError('Choose what kind of expense this is.');
-      if (!value) return setFormError('Enter the amount spent, for example 25.50.');
-      if (!stationId) return setFormError('Choose the station that spent the money.');
-      if (!description.trim()) return setFormError('Say what the money was spent on.');
-      if (!date) return setFormError('Choose the date the money was spent.');
-      const file = receiptFile;
-      const uploadStation = stationId;
-      return send(
-        {
-          commandType: 'SubmitExpense',
-          ...scope(stationId),
-          categoryId,
-          expenseDate: date,
-          description: description.trim(),
-          amount: value,
-          paymentMethod,
-          ...(payee.trim() ? { payee: payee.trim() } : {}),
-          ...(receipt.trim() ? { reference: receipt.trim() } : {}),
-        },
-        'Expense entered. It now waits for approval.',
-        false,
-        false,
-        file
-          ? async (result) => {
-              const expenseId = (result as { expenseId?: string }).expenseId;
-              if (!expenseId) return null;
-              const form = new FormData();
-              form.set('tenantId', tenantId);
-              form.set('stationId', uploadStation);
-              form.set('expenseId', expenseId);
-              form.set('file', file);
-              try {
-                const uploaded = await fetch('/api/expenses/attachments', {
-                  method: 'POST',
-                  credentials: 'same-origin',
-                  body: form,
-                });
-                if (!uploaded.ok) {
-                  return 'The receipt photo could not be attached. Open the expense and try again.';
-                }
-                return 'The receipt photo was attached.';
-              } catch {
+  /** Sends a new expense from its guide. The value is kept so the guide can reopen after an identity check. */
+  function submitExpense(value: NewExpenseValue) {
+    setExpenseSeed(value);
+    const amountValue = parseAmount(value.amount);
+    if (!amountValue) return;
+    const file = value.receiptFile;
+    const uploadStation = value.stationId;
+    void send(
+      {
+        commandType: 'SubmitExpense',
+        ...scope(value.stationId),
+        categoryId: value.categoryId,
+        expenseDate: value.date,
+        description: value.description.trim(),
+        amount: amountValue,
+        paymentMethod: value.paymentMethod,
+        ...(value.paymentMethod === 'OTHER'
+          ? { paymentMethodOther: value.paymentMethodOther.trim() }
+          : {}),
+        ...(value.payee.trim() ? { payee: value.payee.trim() } : {}),
+        ...(value.receipt.trim() ? { reference: value.receipt.trim() } : {}),
+      },
+      'Expense entered. It now waits for approval.',
+      false,
+      false,
+      file
+        ? async (result) => {
+            const expenseId = (result as { expenseId?: string }).expenseId;
+            if (!expenseId) return null;
+            const form = new FormData();
+            form.set('tenantId', tenantId);
+            form.set('stationId', uploadStation);
+            form.set('expenseId', expenseId);
+            form.set('file', file);
+            try {
+              const uploaded = await fetch('/api/expenses/attachments', {
+                method: 'POST',
+                credentials: 'same-origin',
+                body: form,
+              });
+              if (!uploaded.ok) {
                 return 'The receipt photo could not be attached. Open the expense and try again.';
               }
+              return 'The receipt photo was attached.';
+            } catch {
+              return 'The receipt photo could not be attached. Open the expense and try again.';
             }
-          : undefined,
-      );
-    }
+          }
+        : undefined,
+    );
+  }
+
+  function submitRegular(value: NewRegularCostValue) {
+    setRegularSeed(value);
+    const amountValue = parseAmount(value.amount);
+    if (!amountValue) return;
+    void send(
+      {
+        commandType: 'CreateRecurringCostTemplate',
+        ...scope(value.stationId),
+        categoryId: value.categoryId,
+        name: value.name.trim(),
+        amount: amountValue,
+        startDate: value.start,
+        ...(value.end ? { endDate: value.end } : {}),
+      },
+      'Regular cost added. It is spread across every day automatically.',
+    );
+  }
+
+  async function submitSheet(event: FormEvent) {
+    event.preventDefault();
+    // A new expense and a regular cost are saved by their guides, not by this form.
+    if (!sheet || sheet.kind === 'new' || sheet.kind === 'regular') return;
+    setFormError(null);
 
     if (sheet.kind === 'categories') {
       const name = newCategory.trim();
@@ -596,26 +615,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       ).then(() => setNewCategory(''));
     }
 
-    if (sheet.kind === 'regular') {
-      const value = parseAmount(amount);
-      if (!description.trim()) return setFormError('Name the cost, for example Rent.');
-      if (!categoryId) return setFormError('Choose what kind of expense this is.');
-      if (!stationId) return setFormError('Choose the station that pays this cost.');
-      if (!value) return setFormError('Enter the monthly amount, for example 450.');
-      if (!date) return setFormError('Choose the date it starts.');
-      return send(
-        {
-          commandType: 'CreateRecurringCostTemplate',
-          ...scope(stationId),
-          categoryId,
-          name: description.trim(),
-          amount: value,
-          startDate: date,
-          ...(endDate ? { endDate } : {}),
-        },
-        'Regular cost added. It is spread across every day automatically.',
-      );
-    }
     if (sheet.kind === 'limits') {
       const first = approvalLimit.trim() === '' ? null : parseAmount(approvalLimit);
       const second = secondLimit.trim() === '' ? null : parseAmount(secondLimit);
@@ -751,6 +750,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const { total: spent, shares } = categoryShares(summary.byCategory);
   const waitingTotal = sumAmounts(waiting.map((row) => row.amount));
   const showRegularTab = Boolean(caps?.manageRecurring || (reference.templates ?? []).length > 0);
+  const guided = sheet?.kind === 'new' || sheet?.kind === 'regular';
   const canAddExpense = Boolean(caps?.submit || caps?.manageRecurring);
 
   return (
@@ -1218,10 +1218,12 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
         open={sheet !== null && stepUpRetry === null}
         onClose={closeSheet}
         title={sheetTitle(sheet)}
-        description={sheetDescription(sheet)}
+        presentation="page"
+        backLabel="Expenses"
+        description={guided ? undefined : sheetDescription(sheet)}
         dismissible={!busy}
         footer={
-          sheet?.kind === 'categories' ? (
+          guided ? undefined : sheet?.kind === 'categories' ? (
             <Button variant="secondary" onClick={closeSheet}>
               Done
             </Button>
@@ -1246,369 +1248,234 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           )
         }
       >
-        {formError ? <ErrorState message={formError} /> : null}
-        <form
-          id="expense-sheet-form"
-          className="stack"
-          onSubmit={(event) => void submitSheet(event)}
-        >
-          {sheet?.kind === 'new' ? (
-            <>
-              {activeCategories.length === 0 ? (
-                <p className={styles.hint}>
-                  No kinds yet.{' '}
-                  {caps?.manageCategories ? (
-                    <>
-                      <Button variant="secondary" size="sm" onClick={() => void addUsualKinds()}>
-                        Add the usual kinds
-                      </Button>{' '}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => openSheet({ kind: 'categories' })}
-                      >
-                        Add one
-                      </Button>
-                    </>
-                  ) : (
-                    'Ask a manager to add one.'
-                  )}
-                </p>
-              ) : null}
-              <Field id="expense-category" label="Kind of expense" required>
-                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-                  <option value="">Choose…</option>
-                  {activeCategories.map((category) => (
-                    <option key={category.categoryId} value={category.categoryId}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field id="expense-description" label="What was it for?" required>
-                <input
-                  value={description}
-                  maxLength={500}
-                  onChange={(event) => setDescription(event.target.value)}
-                  placeholder="e.g. Replaced pump hose"
-                  autoComplete="off"
-                />
-              </Field>
-              <div className={styles.pair}>
-                <Field id="expense-amount" label="Amount (USD)" required>
-                  <input
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={(event) => setAmount(event.target.value)}
-                    placeholder="0.00"
-                    autoComplete="off"
-                  />
-                </Field>
-                <Field id="expense-date" label="Date" required>
-                  <input
-                    type="date"
-                    value={date}
-                    max={today}
-                    onChange={(event) => setDate(event.target.value)}
-                  />
-                </Field>
-              </div>
-              {stations.length > 1 ? (
-                current.stationId && !current.allStations ? (
-                  <p className={styles.muted}>
-                    Recording this for <strong>{stationName(stationId)}</strong>.
-                  </p>
-                ) : (
-                  <Field id="expense-station" label="Which station is this for?" required>
-                    <select
-                      value={stationId}
-                      onChange={(event) => setStationId(event.target.value)}
+        {sheet?.kind === 'new' && expenseSeed ? (
+          <ExpenseWizard
+            categories={activeCategories.map((category) => ({
+              id: category.categoryId,
+              name: category.name,
+            }))}
+            stations={stations}
+            stationLocked={stationIsFixed}
+            today={today}
+            initial={expenseSeed}
+            kindsHint={
+              <p className={styles.hint}>
+                No kinds yet.{' '}
+                {caps?.manageCategories ? (
+                  <>
+                    <Button variant="secondary" size="sm" onClick={() => void addUsualKinds()}>
+                      Add the usual kinds
+                    </Button>{' '}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openSheet({ kind: 'categories' })}
                     >
-                      <option value="">Choose a station…</option>
-                      {stations.map((station) => (
-                        <option key={station.id} value={station.id}>
-                          {station.name}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                )
-              ) : null}
-              <Field
-                id="expense-payment-method"
-                label="Paid with"
-                hint="Cash paid out of the station's cash is taken off the cash to collect."
-                required
-              >
-                <select
-                  value={paymentMethod}
-                  onChange={(event) => setPaymentMethod(event.target.value as ExpensePaymentMethod)}
-                >
-                  {EXPENSE_PAYMENT_METHODS.map((method) => (
-                    <option key={method} value={method}>
-                      {EXPENSE_PAYMENT_METHOD_LABELS[method]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field id="expense-payee" label="Paid to" optional>
-                <input
-                  value={payee}
-                  maxLength={160}
-                  onChange={(event) => setPayee(event.target.value)}
-                  placeholder="Shop or person"
-                  autoComplete="off"
-                />
-              </Field>
-              <Field id="expense-receipt" label="Receipt number" optional>
-                <input
-                  value={receipt}
-                  maxLength={120}
-                  onChange={(event) => setReceipt(event.target.value)}
-                  autoComplete="off"
-                />
-              </Field>
-              <Field
-                id="expense-receipt-photo"
-                label="Photo of the receipt"
-                hint="A photo or PDF, up to 10 MB."
-                optional
-              >
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
-                  capture="environment"
-                  onChange={(event) => setReceiptFile(event.target.files?.[0] ?? null)}
-                />
-              </Field>
-            </>
-          ) : null}
-
-          {sheet?.kind === 'regular' ? (
-            <>
-              <Field id="regular-name" label="Name" required>
-                <input
-                  value={description}
-                  maxLength={160}
-                  onChange={(event) => setDescription(event.target.value)}
-                  placeholder="e.g. Rent"
-                  autoComplete="off"
-                />
-              </Field>
-              <Field id="regular-category" label="Kind of expense" required>
-                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-                  <option value="">Choose…</option>
-                  {activeRecurringCategories.map((category) => (
-                    <option key={category.categoryId} value={category.categoryId}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field id="regular-station" label="Which station is this for?" required>
-                <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
-                  <option value="">Choose a station…</option>
-                  {stations.map((station) => (
-                    <option key={station.id} value={station.id}>
-                      {station.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <div className={styles.pair}>
-                <Field id="regular-amount" label="Each month (USD)" required>
-                  <input
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={(event) => setAmount(event.target.value)}
-                    placeholder="0.00"
-                    autoComplete="off"
-                  />
-                </Field>
-                <Field id="regular-start" label="Starts on" required>
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(event) => setDate(event.target.value)}
-                  />
-                </Field>
-              </div>
-              <Field id="regular-end" label="Stops on" optional>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                />
-              </Field>
-            </>
-          ) : null}
-
-          {sheet?.kind === 'limits' ? (
-            <>
-              <Field
-                id="limit-first"
-                label="Needs an extra identity check above (USD)"
-                hint="The person approving must confirm it is really them."
-                optional
-              >
-                <input
-                  inputMode="decimal"
-                  value={approvalLimit}
-                  onChange={(event) => setApprovalLimit(event.target.value)}
-                  placeholder="No limit"
-                  autoComplete="off"
-                />
-              </Field>
-              <Field
-                id="limit-second"
-                label="Needs a second person to approve above (USD)"
-                optional
-              >
-                <input
-                  inputMode="decimal"
-                  value={secondLimit}
-                  onChange={(event) => setSecondLimit(event.target.value)}
-                  placeholder="No limit"
-                  autoComplete="off"
-                />
-              </Field>
-              <Field
-                id="limit-supervisor"
-                label="A supervisor can approve up to (USD)"
-                hint="Anything above this goes to finance or the owner. Leave empty and supervisors cannot approve expenses."
-                optional
-              >
-                <input
-                  inputMode="decimal"
-                  value={supervisorLimit}
-                  onChange={(event) => setSupervisorLimit(event.target.value)}
-                  placeholder="None"
-                  autoComplete="off"
-                />
-              </Field>
-            </>
-          ) : null}
-
-          {sheet?.kind === 'categories' ? (
-            <>
-              {reference.categories.length === 0 ? (
-                <p className={styles.hint}>
-                  No kinds of expense have been set up yet. Add the first one below.
-                </p>
-              ) : (
-                <ul className={styles.categoryList} aria-label="Expense kinds">
-                  {reference.categories.map((category) => (
-                    <li key={category.categoryId}>
-                      <span>{category.name}</span>
-                      <span className={styles.muted}>
-                        {category.status !== 'ACTIVE'
-                          ? 'Switched off'
-                          : category.classification === 'OPERATING'
-                            ? ''
-                            : 'Not for manual entry'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <Field
-                id="new-category"
-                label="Add a kind of expense"
-                hint="Short and clear, for example Repairs or Staff meals."
-              >
-                <input
-                  value={newCategory}
-                  maxLength={160}
-                  onChange={(event) => setNewCategory(event.target.value)}
-                  autoComplete="off"
-                />
-              </Field>
-              <Checkbox
-                checked={newCategoryFixed}
-                onChange={(event) => setNewCategoryFixed(event.target.checked)}
-                label="Fixed monthly cost"
-                hint="Use this kind for costs such as rent, salaries or insurance."
-              />
-              <div>
-                <Button type="submit" loading={busy}>
-                  Add
-                </Button>
-              </div>
-            </>
-          ) : null}
-
-          {sheet &&
-          (sheet.kind === 'reject' || sheet.kind === 'reverse' || sheet.kind === 'undoPay') ? (
-            <Field
-              id="expense-reason"
-              label={sheet.kind === 'reject' ? 'Why is it being rejected?' : 'Why?'}
-              required
+                      Add one
+                    </Button>
+                  </>
+                ) : (
+                  'Ask a manager to add one.'
+                )}
+              </p>
+            }
+            busy={busy}
+            error={formError}
+            onCancel={closeSheet}
+            onSubmit={submitExpense}
+          />
+        ) : null}
+        {sheet?.kind === 'regular' && regularSeed ? (
+          <RegularCostWizard
+            categories={activeRecurringCategories.map((category) => ({
+              id: category.categoryId,
+              name: category.name,
+            }))}
+            stations={stations}
+            initial={regularSeed}
+            busy={busy}
+            error={formError}
+            onCancel={closeSheet}
+            onSubmit={submitRegular}
+          />
+        ) : null}
+        {guided ? null : (
+          <>
+            {formError ? <ErrorState message={formError} /> : null}
+            <form
+              id="expense-sheet-form"
+              className="stack"
+              onSubmit={(event) => void submitSheet(event)}
             >
-              <textarea
-                rows={3}
-                value={reason}
-                maxLength={500}
-                onChange={(event) => setReason(event.target.value)}
-              />
-            </Field>
-          ) : null}
-
-          {sheet?.kind === 'pay' ? (
-            <>
-              <div className={styles.pair}>
-                <Field id="pay-amount" label="Amount paid (USD)" required>
-                  <input
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={(event) => setAmount(event.target.value)}
-                    autoComplete="off"
-                  />
-                </Field>
-                <Field id="pay-date" label="Date paid" required>
-                  <input
-                    type="date"
-                    value={date}
-                    max={today}
-                    onChange={(event) => setDate(event.target.value)}
-                  />
-                </Field>
-              </div>
-              <fieldset className={styles.choices}>
-                <legend>How was it paid?</legend>
-                {PAY_SOURCES.map((source) => (
-                  <label key={source.value} className={styles.choice}>
+              {sheet?.kind === 'limits' ? (
+                <>
+                  <Field
+                    id="limit-first"
+                    label="Needs an extra identity check above (USD)"
+                    hint="The person approving must confirm it is really them."
+                    optional
+                  >
                     <input
-                      type="radio"
-                      name="pay-source"
-                      checked={paySource === source.value}
-                      onChange={() => setPaySource(source.value)}
+                      inputMode="decimal"
+                      value={approvalLimit}
+                      onChange={(event) => setApprovalLimit(event.target.value)}
+                      placeholder="No limit"
+                      autoComplete="off"
                     />
-                    <span>{source.label}</span>
-                  </label>
-                ))}
-                <label className={styles.choice} data-disabled="true">
-                  <input type="radio" name="pay-source" disabled />
-                  <span>Paid from the till (not available here yet)</span>
-                </label>
-              </fieldset>
-              <Field
-                id="pay-reference"
-                label={
-                  PAY_SOURCES.find((source) => source.value === paySource)?.refLabel ?? 'Reference'
-                }
-                hint={PAY_SOURCES.find((source) => source.value === paySource)?.hint}
-                required
-              >
-                <input
-                  value={payRef}
-                  maxLength={160}
-                  onChange={(event) => setPayRef(event.target.value)}
-                  autoComplete="off"
-                />
-              </Field>
-            </>
-          ) : null}
-        </form>
+                  </Field>
+                  <Field
+                    id="limit-second"
+                    label="Needs a second person to approve above (USD)"
+                    optional
+                  >
+                    <input
+                      inputMode="decimal"
+                      value={secondLimit}
+                      onChange={(event) => setSecondLimit(event.target.value)}
+                      placeholder="No limit"
+                      autoComplete="off"
+                    />
+                  </Field>
+                  <Field
+                    id="limit-supervisor"
+                    label="A supervisor can approve up to (USD)"
+                    hint="Anything above this goes to finance or the owner. Leave empty and supervisors cannot approve expenses."
+                    optional
+                  >
+                    <input
+                      inputMode="decimal"
+                      value={supervisorLimit}
+                      onChange={(event) => setSupervisorLimit(event.target.value)}
+                      placeholder="None"
+                      autoComplete="off"
+                    />
+                  </Field>
+                </>
+              ) : null}
+
+              {sheet?.kind === 'categories' ? (
+                <>
+                  {reference.categories.length === 0 ? (
+                    <p className={styles.hint}>
+                      No kinds of expense have been set up yet. Add the first one below.
+                    </p>
+                  ) : (
+                    <ul className={styles.categoryList} aria-label="Expense kinds">
+                      {reference.categories.map((category) => (
+                        <li key={category.categoryId}>
+                          <span>{category.name}</span>
+                          <span className={styles.muted}>
+                            {category.status !== 'ACTIVE'
+                              ? 'Switched off'
+                              : category.classification === 'OPERATING'
+                                ? ''
+                                : 'Not for manual entry'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <Field
+                    id="new-category"
+                    label="Add a kind of expense"
+                    hint="Short and clear, for example Repairs or Staff meals."
+                  >
+                    <input
+                      value={newCategory}
+                      maxLength={160}
+                      onChange={(event) => setNewCategory(event.target.value)}
+                      autoComplete="off"
+                    />
+                  </Field>
+                  <Checkbox
+                    checked={newCategoryFixed}
+                    onChange={(event) => setNewCategoryFixed(event.target.checked)}
+                    label="Fixed monthly cost"
+                    hint="Use this kind for costs such as rent, salaries or insurance."
+                  />
+                  <div>
+                    <Button type="submit" loading={busy}>
+                      Add
+                    </Button>
+                  </div>
+                </>
+              ) : null}
+
+              {sheet &&
+              (sheet.kind === 'reject' || sheet.kind === 'reverse' || sheet.kind === 'undoPay') ? (
+                <Field
+                  id="expense-reason"
+                  label={sheet.kind === 'reject' ? 'Why is it being rejected?' : 'Why?'}
+                  required
+                >
+                  <textarea
+                    rows={3}
+                    value={reason}
+                    maxLength={500}
+                    onChange={(event) => setReason(event.target.value)}
+                  />
+                </Field>
+              ) : null}
+
+              {sheet?.kind === 'pay' ? (
+                <>
+                  <div className={styles.pair}>
+                    <Field id="pay-amount" label="Amount paid (USD)" required>
+                      <input
+                        inputMode="decimal"
+                        value={amount}
+                        onChange={(event) => setAmount(event.target.value)}
+                        autoComplete="off"
+                      />
+                    </Field>
+                    <Field id="pay-date" label="Date paid" required>
+                      <input
+                        type="date"
+                        value={date}
+                        max={today}
+                        onChange={(event) => setDate(event.target.value)}
+                      />
+                    </Field>
+                  </div>
+                  <fieldset className={styles.choices}>
+                    <legend>How was it paid?</legend>
+                    {PAY_SOURCES.map((source) => (
+                      <label key={source.value} className={styles.choice}>
+                        <input
+                          type="radio"
+                          name="pay-source"
+                          checked={paySource === source.value}
+                          onChange={() => setPaySource(source.value)}
+                        />
+                        <span>{source.label}</span>
+                      </label>
+                    ))}
+                    <label className={styles.choice} data-disabled="true">
+                      <input type="radio" name="pay-source" disabled />
+                      <span>Paid from the till (not available here yet)</span>
+                    </label>
+                  </fieldset>
+                  <Field
+                    id="pay-reference"
+                    label={
+                      PAY_SOURCES.find((source) => source.value === paySource)?.refLabel ??
+                      'Reference'
+                    }
+                    hint={PAY_SOURCES.find((source) => source.value === paySource)?.hint}
+                    required
+                  >
+                    <input
+                      value={payRef}
+                      maxLength={160}
+                      onChange={(event) => setPayRef(event.target.value)}
+                      autoComplete="off"
+                    />
+                  </Field>
+                </>
+              ) : null}
+            </form>
+          </>
+        )}
       </Modal>
 
       <StepUpDialog

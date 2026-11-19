@@ -22,6 +22,12 @@ export function formatMoney(value: string, currency = 'USD'): string {
   );
 }
 
+/** A unit price split for display: "US$1.65" and "/L". Unit is "L" or "kg". */
+export function formatUnitPrice(value: string, unit: 'L' | 'kg'): { amount: string; unit: string } {
+  const money = formatMoney(value);
+  return { amount: money === '—' ? money : money.replace(/^USD /, 'US$'), unit: `/${unit}` };
+}
+
 /**
  * A saved money value as it should appear in an input box: "450.0000" becomes "450.00". Only zeros
  * past the cents are dropped, so the value is never changed and saving it again changes nothing.

@@ -21,6 +21,7 @@ import {
   stepUpFailureMessage,
 } from './staff-step-up-diagnostics';
 import { InfoTip } from '@/design-system/info-tip';
+import { StaffInviteWizard, type StaffInviteValue } from './staff-invite-wizard';
 
 type StaffOverview = NonNullable<SettingsView['staff']>;
 type Role = Exclude<RoleCode, 'OWNER'> | 'OWNER';
@@ -253,13 +254,6 @@ export function StaffPanel({
   const [query, setQuery] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string>();
-  const [role, setRole] = useState<Role>('ATTENDANT');
-  const [scopeType, setScopeType] = useState<'TENANT' | 'LEGAL_ENTITY' | 'STATION'>(
-    defaultScope('ATTENDANT'),
-  );
-  const [legalEntityId, setLegalEntityId] = useState('');
-  const [stationIds, setStationIds] = useState<string[]>([]);
-  const [deliveryMethod, setDeliveryMethod] = useState<'EMAIL' | 'MANUAL'>('MANUAL');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [manualActivation, setManualActivation] = useState<{
@@ -274,21 +268,6 @@ export function StaffPanel({
   const [deactivationOutcome, setDeactivationOutcome] = useState<DeactivationOutcome>();
   const deactivationInFlight = useRef(false);
   const toast = useToast();
-
-  const legalEntity = useMemo(
-    () => overview.scopeOptions.find((option) => option.id === legalEntityId),
-    [legalEntityId, overview.scopeOptions],
-  );
-
-  function changeRole(nextRole: Role) {
-    setRole(nextRole);
-    const nextScope = defaultScope(nextRole) as 'TENANT' | 'LEGAL_ENTITY' | 'STATION';
-    setScopeType(nextScope);
-    if (nextScope === 'TENANT') {
-      setLegalEntityId('');
-      setStationIds([]);
-    }
-  }
 
   async function command(body: Record<string, unknown>, reload = true) {
     setBusy(true);
@@ -320,20 +299,18 @@ export function StaffPanel({
     }
   }
 
-  async function submitInvite(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
+  async function submitInvite(value: StaffInviteValue) {
     const result = await command(
       {
         commandType: 'CreateStaffInvitation',
-        invitedName: String(form.get('name') ?? ''),
-        ...(deliveryMethod === 'EMAIL'
-          ? { invitedEmail: String(form.get('email') ?? ''), deliveryMethod }
-          : { deliveryMethod, staffNumber: String(form.get('staffNumber') ?? '').trim() }),
-        assignedRole: role,
-        scopeType,
-        ...(legalEntityId ? { legalEntityId } : {}),
-        stationIds,
+        invitedName: value.name,
+        ...(value.deliveryMethod === 'EMAIL'
+          ? { invitedEmail: value.email, deliveryMethod: value.deliveryMethod }
+          : { deliveryMethod: value.deliveryMethod, staffNumber: value.staffNumber }),
+        assignedRole: value.role,
+        scopeType: value.scopeType,
+        ...(value.legalEntityId ? { legalEntityId: value.legalEntityId } : {}),
+        stationIds: value.stationIds,
       },
       false,
     );
@@ -352,7 +329,7 @@ export function StaffPanel({
       setInviteOpen(false);
     } else if (result) {
       const email = typeof result === 'object' ? (result as { delivery?: string }) : {};
-      const address = String(form.get('email') ?? '').trim();
+      const address = value.email;
       // The toast is carried across the reload that shows the new invite.
       if (email.delivery === 'failed') {
         toast.error(
@@ -403,14 +380,6 @@ export function StaffPanel({
     if (!response.ok && !body.clerk_error) throw new Error('Security verification required');
     return body;
   });
-
-  function toggleStation(stationId: string) {
-    setStationIds((current) =>
-      current.includes(stationId)
-        ? current.filter((id) => id !== stationId)
-        : [...current, stationId],
-    );
-  }
 
   function openDeactivation(member: StaffMember) {
     setDeactivationTarget(member);
@@ -886,121 +855,19 @@ export function StaffPanel({
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         title="Invite staff"
+        presentation="page"
+        backLabel="Staff"
         description="Invitations expire after 72 hours and can be resent or revoked."
-        presentation="side"
       >
-        <form className={styles.staffForm} onSubmit={submitInvite}>
-          <label>
-            <span>Name</span>
-            <input name="name" required maxLength={160} />
-          </label>
-          <label>
-            <span>Invite using</span>
-            <select
-              value={deliveryMethod}
-              onChange={(event) => setDeliveryMethod(event.target.value as 'EMAIL' | 'MANUAL')}
-            >
-              <option value="MANUAL">Staff number</option>
-              <option value="EMAIL">Email</option>
-            </select>
-          </label>
-          {deliveryMethod === 'EMAIL' ? (
-            <label>
-              <span>Email</span>
-              <input name="email" type="email" required maxLength={320} />
-            </label>
-          ) : (
-            <label>
-              <span>Staff number (optional)</span>
-              <input
-                name="staffNumber"
-                maxLength={32}
-                minLength={4}
-                autoCapitalize="characters"
-                aria-describedby="staff-number-help"
-              />
-              <small id="staff-number-help">
-                Leave blank to generate a staff number automatically. Use 4–32 letters, numbers,
-                hyphens or underscores. This is their login username.
-              </small>
-            </label>
-          )}
-          <label>
-            <span>Role</span>
-            <select value={role} onChange={(event) => changeRole(event.target.value as Role)}>
-              {(Object.keys(ROLE_LABELS) as Role[])
-                .filter((item) => item !== 'OWNER' || overview.canInviteOwner)
-                .map((item) => (
-                  <option key={item} value={item}>
-                    {ROLE_LABELS[item]}
-                  </option>
-                ))}
-            </select>
-          </label>
-          {scopeChoicesForRole(role).length > 1 ? (
-            <label>
-              <span>Scope</span>
-              <select
-                value={scopeType}
-                onChange={(event) => {
-                  const next = event.target.value as 'LEGAL_ENTITY' | 'STATION';
-                  setScopeType(next);
-                  setStationIds([]);
-                }}
-              >
-                {scopeChoicesForRole(role).includes('LEGAL_ENTITY') ? (
-                  <option value="LEGAL_ENTITY">Legal entity</option>
-                ) : null}
-                <option value="STATION">Selected stations</option>
-              </select>
-            </label>
-          ) : null}
-          {scopeType !== 'TENANT' ? (
-            <label>
-              <span>Legal entity</span>
-              <select
-                required
-                value={legalEntityId}
-                onChange={(event) => {
-                  setLegalEntityId(event.target.value);
-                  setStationIds([]);
-                }}
-              >
-                <option value="">Choose a legal entity</option>
-                {overview.scopeOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {scopeType === 'STATION' ? (
-            <fieldset className={styles.staffStations}>
-              <legend>Stations</legend>
-              {legalEntity?.stations.length ? (
-                legalEntity.stations.map((station) => (
-                  <label key={station.id} className={styles.staffCheck}>
-                    <input
-                      type="checkbox"
-                      checked={stationIds.includes(station.id)}
-                      onChange={() => toggleStation(station.id)}
-                    />
-                    <span>
-                      {station.name} <small>{station.code}</small>
-                      {station.setup ? <small> · Setting up</small> : null}
-                    </span>
-                  </label>
-                ))
-              ) : (
-                <p className={styles.note}>Choose a legal entity to see stations.</p>
-              )}
-            </fieldset>
-          ) : null}
-          <Button type="submit" variant="primary" loading={busy}>
-            {deliveryMethod === 'EMAIL' ? 'Send invitation' : 'Generate manual activation'}
-          </Button>
-        </form>
+        {inviteOpen ? (
+          <StaffInviteWizard
+            overview={overview}
+            roleLabels={ROLE_LABELS}
+            busy={busy}
+            onCancel={() => setInviteOpen(false)}
+            onSubmit={(value) => void submitInvite(value)}
+          />
+        ) : null}
       </Modal>
 
       <EditAccessModal
