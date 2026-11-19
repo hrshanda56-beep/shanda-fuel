@@ -1,8 +1,27 @@
 # Shanda Fuel — Decision Log
 
-## DEC-054 — A delivery loss is worked out by the system and explained by the person (PROPOSED, from the project lead's answers in chat, 2026-11-19)
+## DEC-055 — Recovering a delivery loss: the project lead's answers, design still to confirm (PROPOSED, 2026-11-20)
 
-**Status:** PROPOSED until the project lead confirms the wording.
+**Status:** PROPOSED. These are the project lead's answers in chat; nothing is built and no accounting
+posting exists yet. The accounting treatment below is a proposal and needs the project lead (and
+Finance) to confirm before any ledger posting is written.
+
+- **The company bears the loss first, until it is repaid.** The project lead wants a special
+  treatment, because the fuel is gone now but is expected to be paid back.
+- **Who is repaid, and how, is decided case by case** and must be customisable. It is not a fixed rule.
+- **A write-off is a loss (an expense).**
+- **Permissions and checks.** Recording a settlement needs the fresh identity check. A supervisor and
+  above may record it; the administrator and the owner approve it.
+- **Money.** USD for now, but other currencies may come, so the currency stays on each claim. The
+  amount is typed by the person, never calculated.
+- **Proposed (not agreed):** while a claim is open, show the loss as an amount expected back (a
+  receivable) beside the stock loss, so the books show both the loss and the expected repayment, rather
+  than hiding the loss. Settling turns it into money received or a reduction of what is owed to the
+  transporter or supplier, chosen per case; writing it off moves it to loss expense.
+
+## DEC-054 — A delivery loss is worked out by the system and explained by the person (ACCEPTED, 2026-11-20)
+
+**Status:** ACCEPTED on the explicit instruction of the project lead ("accept DEC-054", 2026-11-20), from their answers in chat on 2026-11-19.
 
 - **The tank is credited with the litres that actually arrived**, never the litres on the delivery note (unchanged).
 - **The gap is calculated, not typed.** Note against received, and, when both tank dips are given, what the dips say went into the tank against received. The allowance comes from the existing purchasing policy (shortage and over-receipt tolerances); the dip check reuses the shortage allowance until the project lead sets a separate one.
