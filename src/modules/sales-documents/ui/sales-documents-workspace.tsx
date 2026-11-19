@@ -46,6 +46,14 @@ export function SalesDocumentsWorkspace({ initial }: { initial: SalesDocumentsIn
   const router = useRouter();
   const params = useSearchParams();
   const [notice, setNotice] = useState<string | null>(null);
+  // Set by the editor after a save. It rides in the address because the screen is rebuilt when it
+  // moves to the saved document, which would lose a message kept only in memory.
+  const justSaved = initial.mode === 'view' && params.get('saved') === '1';
+  const shownNotice =
+    notice ??
+    (justSaved && initial.detail
+      ? `Saved. Your ${initial.detail.docType.toLowerCase()} is saved as a draft. Check it, then issue it when it is ready.`
+      : null);
   const [companyOpen, setCompanyOpen] = useState(false);
   const wantsCompany = params.get('company') === '1';
   // Opened after the page has loaded, so the server and browser render the same thing first.
@@ -108,7 +116,7 @@ export function SalesDocumentsWorkspace({ initial }: { initial: SalesDocumentsIn
   return (
     <div className={styles.page}>
       {head}
-      {notice ? <SuccessState title="Done" message={notice} /> : null}
+      {shownNotice ? <SuccessState title="Done" message={shownNotice} /> : null}
 
       {initial.mode === 'list' ? (
         profile ? (
@@ -153,8 +161,8 @@ export function SalesDocumentsWorkspace({ initial }: { initial: SalesDocumentsIn
           fuels={initial.fuels}
           stationId={initial.stationId}
           onSaved={(id) => {
-            setNotice('Saved as a draft. Check it, then issue it when it is ready.');
-            go(`doc=${id}`);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            go(`doc=${id}&saved=1`);
           }}
           onCancel={() => (initial.detail ? go(`doc=${initial.detail.id}`) : go(''))}
         />

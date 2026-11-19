@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { PurchaseOrderChoice } from './purchase-order-choice';
 import { RecordDelivery, type DeliveryEdit } from './record-delivery';
 
 vi.mock('next/navigation', () => ({
@@ -21,22 +22,71 @@ const render = (edit?: DeliveryEdit) =>
     createElement(RecordDelivery, { tenantId: 't', stationId: 's', tanks, framed: false, edit }),
   );
 
-describe('RecordDelivery purchase order question', () => {
-  it('asks the question as a visible required choice in the delivery section, not a folded one', () => {
+const renderChoice = () =>
+  renderToStaticMarkup(
+    createElement(PurchaseOrderChoice, {
+      id: 'rd-po',
+      tenantId: 't',
+      stationId: 's',
+      supplierId: '',
+      productId: 'p1',
+      value: '',
+      note: '',
+      onChange: () => undefined,
+    }),
+  );
+
+const editing: DeliveryEdit = {
+  deliveryId: 'd1',
+  productId: 'p1',
+  start: {
+    supplierId: 's1',
+    tankId: 'tk1',
+    deliveryNote: 'DN-1',
+    deliveredAt: '2026-10-20T08:00:00.000Z',
+    noteLitres: '1000',
+    receivedLitres: '1000',
+    transporter: '',
+    driver: '',
+    truck: '',
+    compartments: [],
+    water: '',
+    waterMm: '',
+    driverConfirmed: false,
+    noPo: '',
+    noPoNote: '',
+    linkedOrder: 'PO-0007',
+  },
+  onSaved: () => undefined,
+};
+
+describe('RecordDelivery guide', () => {
+  it('starts a new delivery with one question, who delivered the fuel', () => {
     const html = render();
-    const delivery = html.indexOf('The delivery');
-    const question = html.indexOf('Is there a purchase order for this delivery?');
-    const litres = html.indexOf('id="rd-h-litres"');
-    expect(question).toBeGreaterThan(delivery);
-    expect(question).toBeLessThan(litres);
+    expect(html).toContain('Step 1 of 9');
+    expect(html).toContain('Who delivered the fuel?');
+    // Only one tank, so the tank question is left out, and nothing later is on screen yet.
+    expect(html).not.toContain('Which fuel, and which tank?');
+    expect(html).not.toContain('What does the delivery note say?');
+  });
+
+  it('keeps the whole form for changing a delivery that is already recorded', () => {
+    const html = render(editing);
+    expect(html).not.toContain('Step 1 of');
+    expect(html).toContain('The delivery');
+    expect(html).toContain('Truck and driver');
+  });
+});
+
+describe('RecordDelivery purchase order question', () => {
+  it('asks the question as a visible required choice', () => {
+    const html = renderChoice();
+    expect(html).toContain('Is there a purchase order for this delivery?');
     expect(html).toContain('id="rd-po-choice"');
-    expect(html).toMatch(/<select[^>]*id="rd-po-choice"[^>]*required/);
-    // It no longer hides inside an optional, collapsed section.
-    expect(html).not.toContain('<span class="rd-section-title">Purchase order</span>');
   });
 
   it('offers every no-order reason in plain words, and starts unanswered', () => {
-    const html = render();
+    const html = renderChoice();
     for (const label of [
       'Emergency purchase',
       'Bought for cash',
@@ -50,29 +100,6 @@ describe('RecordDelivery purchase order question', () => {
   });
 
   it('keeps an already linked order as a valid answer when editing', () => {
-    const html = render({
-      deliveryId: 'd1',
-      productId: 'p1',
-      start: {
-        supplierId: 's1',
-        tankId: 'tk1',
-        deliveryNote: 'DN-1',
-        deliveredAt: '2026-10-20T08:00:00.000Z',
-        noteLitres: '1000',
-        receivedLitres: '1000',
-        transporter: '',
-        driver: '',
-        truck: '',
-        compartments: [],
-        water: '',
-        waterMm: '',
-        driverConfirmed: false,
-        noPo: '',
-        noPoNote: '',
-        linkedOrder: 'PO-0007',
-      },
-      onSaved: () => undefined,
-    });
-    expect(html).toContain('Order PO-0007 (already linked)');
+    expect(render(editing)).toContain('Order PO-0007 (already linked)');
   });
 });

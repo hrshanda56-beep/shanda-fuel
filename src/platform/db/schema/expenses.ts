@@ -112,6 +112,8 @@ export const expenses = appSchema.table(
     reference: text('reference'),
     /** How it was paid, said when entered: STATION_CASH, ECOCASH, BANK or CARD. Null on older rows. */
     paymentMethod: text('payment_method'),
+    /** What "Other" was, when paymentMethod is OTHER. Null otherwise. */
+    paymentMethodOther: text('payment_method_other'),
     currency: text('currency').notNull().default('USD'),
     amount: money('amount').notNull(),
     state: text('state').notNull().default('SUBMITTED'),

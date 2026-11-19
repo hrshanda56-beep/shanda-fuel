@@ -7,8 +7,8 @@
 export function meterNotWorkingForShiftMessage(labels: string | readonly string[]): string {
   const list = typeof labels === 'string' ? [labels] : labels;
   if (list.length <= 1) {
-    return `the meter for ${list[0] ?? 'one of the pumps'} is not set up as working for this shift. Ask the owner to open Setup, go to the pumps and nozzles, and set the "Meter working since" date for that nozzle to the day the meter was fitted. Then press Close Shift again.`;
+    return `the meter for ${list[0] ?? 'one of the pumps'} is not set up as working for this shift. Ask the owner to open Setup, go to the pumps & nozzles, and set the "Meter working since" date for that nozzle to the day the meter was fitted. Then press Close Shift again.`;
   }
   const names = `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
-  return `the meters for ${names} are not set up as working for this shift. Ask the owner to open Setup, go to the pumps and nozzles, and set the "Meter working since" date for each of those nozzles to the day its meter was fitted. Then press Close Shift again.`;
+  return `the meters for ${names} are not set up as working for this shift. Ask the owner to open Setup, go to the pumps & nozzles, and set the "Meter working since" date for each of those nozzles to the day its meter was fitted. Then press Close Shift again.`;
 }

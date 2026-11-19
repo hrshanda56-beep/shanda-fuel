@@ -147,7 +147,9 @@ export const convertQuotationToInvoiceSchema = z.object({
 
 /** A receipt is issued straight away against an issued invoice; it is never a draft. */
 /** The ways a customer can pay. Kept short so reports stay clean. */
-export const PAYMENT_METHODS = ['Cash', 'EcoCash', 'Bank transfer', 'Swipe', 'Other'] as const;
+export const PAYMENT_METHODS = ['Cash', 'EcoCash', 'Bank transfer', 'Swipe'] as const;
+/** Anything else is stored as "Other: <what they typed>". */
+export const OTHER_PAYMENT_PREFIX = 'Other: ';
 
 export const recordSalesReceiptSchema = z.object({
   commandType: z.literal('RecordSalesReceipt'),
@@ -155,7 +157,16 @@ export const recordSalesReceiptSchema = z.object({
   legalEntityId: uuid,
   invoiceId: uuid,
   amount: money.refine((value) => Number(value) > 0, 'The amount must be more than zero'),
-  paymentMethod: z.enum(PAYMENT_METHODS, { message: 'Choose how it was paid' }),
+  paymentMethod: z
+    .string()
+    .trim()
+    .max(80)
+    .refine(
+      (value) =>
+        (PAYMENT_METHODS as readonly string[]).includes(value) ||
+        (value.startsWith(OTHER_PAYMENT_PREFIX) && value.length > OTHER_PAYMENT_PREFIX.length),
+      'Choose how it was paid, or say what the other way was',
+    ),
   paymentReference: optionalText(120),
   paidOn: date,
 });

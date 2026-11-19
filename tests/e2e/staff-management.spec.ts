@@ -302,8 +302,16 @@ test.describe('authenticated Staff lifecycle', () => {
     await expect(staffButton).toBeVisible();
     await staffButton.click();
     await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
-    // The staff list has its own "All roles" filter that lists every role, so look only inside the invite form.
-    const inviteForm = page.locator('form').filter({ has: page.locator('input[name="name"]') });
+    // The invite is a wizard: name, how they sign in, contact, then the role. The staff list has its own
+    // "All roles" filter that lists every role, so look only inside the invite form.
+    // The name field only exists on the first step, so find the form by its Continue button instead.
+    const inviteForm = page
+      .locator('form')
+      .filter({ has: page.getByRole('button', { name: 'Continue' }) });
+    await inviteForm.getByLabel('Full name').fill('Administrator scope check');
+    for (let step = 0; step < 3; step += 1) {
+      await inviteForm.getByRole('button', { name: 'Continue' }).click();
+    }
     const inviteRoles = inviteForm.getByLabel('Role').locator('option');
     await expect(inviteRoles.filter({ hasText: 'Finance' })).toHaveCount(1);
     await expect(inviteRoles.filter({ hasText: 'Owner' })).toHaveCount(0);

@@ -123,7 +123,7 @@ export function buildGuidedSteps(data: Data): readonly GuidedStep[] {
     products.length === 0
       ? {
           id: 'pumps',
-          title: 'Pumps and nozzles',
+          title: 'Pumps & Nozzles',
           purpose: 'The pumps on the forecourt, and the nozzle and meter on each.',
           status: 'blocked',
           summary: 'Pumps come after fuel types.',
@@ -132,7 +132,7 @@ export function buildGuidedSteps(data: Data): readonly GuidedStep[] {
         }
       : {
           id: 'pumps',
-          title: 'Pumps and nozzles',
+          title: 'Pumps & Nozzles',
           purpose: 'The pumps on the forecourt, and the nozzle and meter on each.',
           status: nozzles.length > 0 && pumpsWithoutNozzle.length === 0 ? 'done' : 'todo',
           summary:
@@ -239,7 +239,7 @@ export function buildFuelCards(data: Data): readonly FuelCardStatus[] {
         status: needed.length === 0 ? ('done' as const) : ('todo' as const),
         summary:
           needed.length === 0
-            ? `Price in use, ${count(ownTanks.length, 'tank')}, ${count(ownNozzles.length, 'nozzle')}. Sold in ${product.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'}.`
+            ? `${count(ownTanks.length, 'tank')} · ${count(ownNozzles.length, 'nozzle')}${product.unit === 'KILOGRAMS' ? ' · sold in kilograms' : ''}`
             : `Needs ${needed.join(', ')}.`,
       };
     });

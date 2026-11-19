@@ -101,7 +101,7 @@ function pumpsArea(facts: StationSetupFacts): ReadinessArea {
   if (facts.activePumps === 0) {
     return {
       code: 'PUMPS',
-      label: 'Pumps and nozzles',
+      label: 'Pumps & Nozzles',
       status: 'NOT_ENTERED',
       detail: 'No pumps have been entered.',
       blocks,
@@ -110,7 +110,7 @@ function pumpsArea(facts: StationSetupFacts): ReadinessArea {
   if (facts.activeNozzles === 0) {
     return {
       code: 'PUMPS',
-      label: 'Pumps and nozzles',
+      label: 'Pumps & Nozzles',
       status: 'NOT_ENTERED',
       detail: 'Nozzles not entered.',
       blocks,
@@ -119,7 +119,7 @@ function pumpsArea(facts: StationSetupFacts): ReadinessArea {
   if (facts.pumpsWithoutNozzle > 0) {
     return {
       code: 'PUMPS',
-      label: 'Pumps and nozzles',
+      label: 'Pumps & Nozzles',
       status: 'PARTIAL',
       detail: `${plural(facts.activePumps, 'pump')} entered; ${plural(facts.pumpsWithoutNozzle, 'pump')} without a nozzle.`,
       blocks,
@@ -127,7 +127,7 @@ function pumpsArea(facts: StationSetupFacts): ReadinessArea {
   }
   return {
     code: 'PUMPS',
-    label: 'Pumps and nozzles',
+    label: 'Pumps & Nozzles',
     status: 'READY',
     detail: `${plural(facts.activePumps, 'pump')} and ${plural(facts.activeNozzles, 'nozzle')} entered.`,
     blocks,
@@ -225,7 +225,7 @@ export function activationMissing(facts: StationSetupFacts): ActivationMissing[]
   }
   const pumps = pumpsArea(facts);
   if (pumps.status !== 'READY') {
-    missing.push({ code: 'PUMPS', label: 'Pumps and nozzles', detail: pumps.detail, tab: 'setup' });
+    missing.push({ code: 'PUMPS', label: 'Pumps & Nozzles', detail: pumps.detail, tab: 'setup' });
   }
   if (facts.activeShiftTemplates === 0) {
     missing.push({

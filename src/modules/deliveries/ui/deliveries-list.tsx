@@ -255,7 +255,8 @@ export function DeliveriesList({
         open={recording}
         onClose={() => setRecording(false)}
         title="Record delivery"
-        presentation="side"
+        presentation="page"
+        backLabel="Deliveries"
         size="lg"
       >
         <RecordDelivery
@@ -263,6 +264,7 @@ export function DeliveriesList({
           tenantId={context.tenantId}
           stationId={context.stationId}
           tanks={initialData.tanks}
+          onCancel={() => setRecording(false)}
         />
       </Modal>
     </div>

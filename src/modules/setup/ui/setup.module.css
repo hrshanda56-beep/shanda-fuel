@@ -54,6 +54,30 @@
 }
 
 /* Optional fields stay out of the way until they are wanted. */
+.wizardForm {
+  display: block;
+  min-width: 0;
+}
+
+.guideInvite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.guideInviteText {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .more {
   display: grid;
   gap: var(--space-4);

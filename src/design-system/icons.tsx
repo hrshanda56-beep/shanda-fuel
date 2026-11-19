@@ -92,6 +92,26 @@ const paths = {
       <path d="M14 8h2a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V9l-3-3" />
     </>
   ),
+  tank: (
+    <>
+      <rect x="2.5" y="7" width="19" height="10" rx="5" />
+      <path d="M8 7v10M16 7v10M12 4v3M10 4h4M6 17v3M18 17v3" />
+    </>
+  ),
+  nozzle: (
+    <>
+      <path d="M3 20h9M5 20V9a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v11M5 11h7" />
+      <path d="M12 9h2.5a2 2 0 0 1 2 2v4.5a1.5 1.5 0 0 0 3 0V8.5L17.5 6" />
+    </>
+  ),
+  station: (
+    <>
+      <rect x="2.5" y="4" width="19" height="4" rx="1" />
+      <path d="M19 8v12M2.5 20h19" />
+      <rect x="5.5" y="11" width="6" height="9" rx="1" />
+      <path d="M7.5 13.8h2M11.5 13h1.8a1.2 1.2 0 0 1 1.2 1.2v2.6a1 1 0 0 0 2 0V13" />
+    </>
+  ),
   wallet: (
     <>
       <rect x="3" y="6" width="18" height="14" rx="2" />

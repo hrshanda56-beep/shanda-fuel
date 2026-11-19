@@ -979,7 +979,8 @@ export function DeliveryDetails({
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title="Edit delivery"
-        presentation="side"
+        presentation="page"
+        backLabel="Deliveries"
         size="lg"
       >
         {canEditForm && delivery.tankId ? (

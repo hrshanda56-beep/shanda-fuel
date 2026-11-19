@@ -244,7 +244,9 @@ test.describe('Setup readiness and payment setup', () => {
     await expect(
       bankForm.getByText('Do not enter the full bank account number.').first(),
     ).toBeVisible();
-    await expect(bankForm.getByRole('button', { name: 'Save bank account' })).toBeVisible();
+    // The form is a short wizard; saving comes on the last step, after the owner checks the details.
+    await expect(bankForm.getByRole('button', { name: 'Continue' })).toBeVisible();
+    await expect(bankForm.getByRole('button', { name: 'Save bank account' })).toHaveCount(0);
   });
 
   for (const width of WIDTHS) {

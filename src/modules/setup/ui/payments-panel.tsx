@@ -1,15 +1,13 @@
 'use client';
 
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState } from 'react';
 
 import { useToast } from '@/design-system/feedback-provider';
-import { Select } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
 import {
   AccessDeniedState,
   Button,
   ErrorState,
-  Field,
   LoadingState,
   StatusBadge,
 } from '@/design-system/primitives';
@@ -17,6 +15,14 @@ import { CardEmpty, CardRow, CardRows, SectionCard } from '@/design-system/secti
 
 import type { PaymentProviderRow, SetupOverview } from '../contracts';
 import { BankBalancePanel } from './bank-balance-panel';
+import {
+  AccountWizard,
+  BankWizard,
+  ProviderWizard,
+  type AccountValue,
+  type BankValue,
+  type ProviderValue,
+} from './payment-wizards';
 import styles from './setup.module.css';
 import { StepUpDialog } from './step-up-dialog';
 import { useSetupOverview } from './use-setup-overview';
@@ -91,11 +97,6 @@ function useCommand(onDone: () => void, onDenied: () => void) {
   return { run, busy, outcome, clear: () => setOutcome(undefined) };
 }
 
-function OutcomeMessage({ outcome }: { outcome?: Outcome }) {
-  if (!outcome) return null;
-  return <ErrorState title="This could not be saved" message={outcome.message} />;
-}
-
 function StatusLabel({ status }: { status: 'ACTIVE' | 'INACTIVE' | string }) {
   return (
     <StatusBadge tone={status === 'ACTIVE' ? 'positive' : 'neutral'}>
@@ -116,36 +117,23 @@ type SectionProps = {
 function ProviderSection({ overview, reload, gate, onDenied, checking }: SectionProps) {
   const { run, busy, outcome, clear } = useCommand(reload, onDenied);
   const [open, setOpen] = useState(false);
-  const [errors, setErrors] = useState<{ code?: string; name?: string; type?: string }>({});
   const station = overview.stationOptions[0];
   const canAdd = overview.canManagePayments && Boolean(station);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function submit(value: ProviderValue) {
     if (!station) return;
-    const data = new FormData(event.currentTarget);
-    const code = String(data.get('code') ?? '').trim();
-    const name = String(data.get('name') ?? '').trim();
-    const providerType = String(data.get('providerType') ?? '');
-    const next = {
-      code: code ? undefined : 'Enter a short code, for example ECOCASH.',
-      name: name ? undefined : 'Enter the provider name.',
-      type: TYPE_LABEL.has(providerType) ? undefined : 'Choose the provider type.',
-    };
-    setErrors(next);
-    if (next.code || next.name || next.type) return;
     gate(async () => {
       const saved = await run(
         {
           commandType: 'CreatePaymentProvider',
           tenantId: overview.tenantId,
           stationId: station.id,
-          code,
-          name,
-          providerType,
+          code: value.code,
+          name: value.name,
+          providerType: value.type,
           metadata: {},
         },
-        `${name} was added.`,
+        `${value.name} was added.`,
       );
       if (saved) setOpen(false);
     });
@@ -162,7 +150,6 @@ function ProviderSection({ overview, reload, gate, onDenied, checking }: Section
             aria-haspopup="dialog"
             onClick={() => {
               clear();
-              setErrors({});
               setOpen(true);
             }}
           >
@@ -194,47 +181,20 @@ function ProviderSection({ overview, reload, gate, onDenied, checking }: Section
         open={open}
         onClose={() => !busy && setOpen(false)}
         title="Add a payment provider"
-        presentation="side"
+        presentation="page"
+        backLabel="Payments"
         size="sm"
         dismissible={!busy && !checking}
       >
-        <form className="form-stack" onSubmit={submit} noValidate aria-label="Add payment provider">
-          <OutcomeMessage outcome={outcome} />
-          <Field id="provider-name" label="Provider name" error={errors.name} required>
-            <input id="provider-name" name="name" autoComplete="off" maxLength={160} />
-          </Field>
-          <Field
-            id="provider-code"
-            label="Provider code"
-            hint="A short unique code used in records."
-            error={errors.code}
-            required
-          >
-            <input id="provider-code" name="code" autoComplete="off" maxLength={80} />
-          </Field>
-          <Field id="provider-type" label="Provider type" error={errors.type} required>
-            <Select
-              id="provider-type"
-              name="providerType"
-              defaultValue=""
-              placeholder="Choose a type"
-              options={PROVIDER_TYPES}
-            />
-          </Field>
-          <div className="form-actions">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={busy}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" loading={busy}>
-              Save provider
-            </Button>
-          </div>
-        </form>
+        {open ? (
+          <ProviderWizard
+            types={PROVIDER_TYPES}
+            busy={busy}
+            error={outcome?.message ?? null}
+            onCancel={() => setOpen(false)}
+            onSubmit={submit}
+          />
+        ) : null}
       </Modal>
     </SectionCard>
   );
@@ -243,58 +203,30 @@ function ProviderSection({ overview, reload, gate, onDenied, checking }: Section
 function AccountSection({ overview, reload, gate, onDenied, checking }: SectionProps) {
   const { run, busy, outcome, clear } = useCommand(reload, onDenied);
   const [open, setOpen] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const activeProviders = overview.providers.filter((provider) => provider.status === 'ACTIVE');
   const stationName = new Map(overview.stationOptions.map((s) => [s.id, `${s.name} (${s.code})`]));
   const ready = activeProviders.length > 0 && overview.stationOptions.length > 0;
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const providerId = String(data.get('providerId') ?? '');
-    const stationId = String(data.get('stationId') ?? '');
-    const displayName = String(data.get('displayName') ?? '').trim();
-    const accountReference = String(data.get('accountReference') ?? '').trim();
-    const currency = String(data.get('currency') ?? '')
-      .trim()
-      .toUpperCase();
-    const station = overview.stationOptions.find((option) => option.id === stationId);
-    const feePercent = String(data.get('feePercent') ?? '').trim();
-    const feeFixed = String(data.get('feeFixed') ?? '').trim();
-    const next = {
-      feePercent:
-        feePercent === '' || (/^\d+(?:\.\d{1,4})?$/.test(feePercent) && Number(feePercent) <= 100)
-          ? undefined
-          : 'Enter a percentage from 0 to 100, for example 1.5, or leave it empty.',
-      feeFixed:
-        feeFixed === '' || /^\d+(?:\.\d{1,4})?$/.test(feeFixed)
-          ? undefined
-          : 'Enter an amount, for example 0.10, or leave it empty.',
-      providerId: providerId ? undefined : 'Choose a provider.',
-      stationId: station ? undefined : 'Choose a station.',
-      displayName: displayName ? undefined : 'Enter a name for this account.',
-      accountReference: accountReference ? undefined : 'Enter the merchant or terminal reference.',
-      currency: /^[A-Z]{3}$/.test(currency) ? undefined : 'Enter a three-letter currency code.',
-    };
-    setErrors(next);
-    if (Object.values(next).some(Boolean) || !station) return;
+  function submit(value: AccountValue) {
+    const station = overview.stationOptions.find((option) => option.id === value.stationId);
+    if (!station) return;
     gate(async () => {
       const saved = await run(
         {
           commandType: 'ConfigureProviderAccount',
           tenantId: overview.tenantId,
           stationId: station.id,
-          providerId,
-          accountReference,
-          displayName,
-          currency,
+          providerId: value.providerId,
+          accountReference: value.reference,
+          displayName: value.name,
+          currency: value.currency,
           accountStationId: station.id,
           legalEntityId: station.legalEntityId,
-          feePercent: feePercent || null,
-          feeFixed: feeFixed || null,
+          feePercent: value.feePercent || null,
+          feeFixed: value.feeFixed || null,
           metadata: {},
         },
-        `${displayName} was added for ${station.name}.`,
+        `${value.name} was added for ${station.name}.`,
       );
       if (saved) setOpen(false);
     });
@@ -312,7 +244,6 @@ function AccountSection({ overview, reload, gate, onDenied, checking }: SectionP
             disabled={!ready}
             onClick={() => {
               clear();
-              setErrors({});
               setOpen(true);
             }}
           >
@@ -356,111 +287,24 @@ function AccountSection({ overview, reload, gate, onDenied, checking }: SectionP
         open={open}
         onClose={() => !busy && setOpen(false)}
         title="Add a provider account"
-        presentation="side"
+        presentation="page"
+        backLabel="Payments"
         size="sm"
         dismissible={!busy && !checking}
       >
-        <form className="form-stack" onSubmit={submit} noValidate aria-label="Add provider account">
-          <OutcomeMessage outcome={outcome} />
-          <Field id="account-station" label="Station" error={errors.stationId} required>
-            <Select
-              id="account-station"
-              name="stationId"
-              defaultValue={
-                overview.stationOptions.length === 1 ? overview.stationOptions[0]!.id : ''
-              }
-              placeholder="Choose a station"
-              options={overview.stationOptions.map((s) => ({
-                value: s.id,
-                label: `${s.name} (${s.code})`,
-              }))}
-            />
-          </Field>
-          <Field id="account-provider" label="Provider" error={errors.providerId} required>
-            <Select
-              id="account-provider"
-              name="providerId"
-              defaultValue={activeProviders.length === 1 ? activeProviders[0]!.id : ''}
-              placeholder="Choose a provider"
-              options={activeProviders.map((p) => ({ value: p.id, label: p.name }))}
-            />
-          </Field>
-          <Field id="account-name" label="Account name" error={errors.displayName} required>
-            <input id="account-name" name="displayName" autoComplete="off" maxLength={160} />
-          </Field>
-          <Field
-            id="account-reference"
-            label="Merchant or terminal reference"
-            error={errors.accountReference}
-            required
-          >
-            <input
-              id="account-reference"
-              name="accountReference"
-              autoComplete="off"
-              maxLength={160}
-            />
-          </Field>
-          <Field
-            id="account-currency"
-            label="Currency"
-            hint="Three-letter code, for example USD."
-            error={errors.currency}
-            required
-          >
-            <input
-              id="account-currency"
-              name="currency"
-              autoComplete="off"
-              maxLength={3}
-              defaultValue="USD"
-            />
-          </Field>
-          <details className={styles.more}>
-            <summary>Charges the provider keeps (optional)</summary>
-            <Field
-              id="account-fee-percent"
-              label="Charge as a percentage (%)"
-              hint="What the provider keeps from each settlement, for example 1 for EcoCash at 1%. Leave empty if there is none."
-              error={errors.feePercent}
-              optional
-            >
-              <input
-                id="account-fee-percent"
-                name="feePercent"
-                inputMode="decimal"
-                autoComplete="off"
-              />
-            </Field>
-            <Field
-              id="account-fee-fixed"
-              label="Fixed charge each time"
-              hint="A flat amount the provider keeps on top, if any."
-              error={errors.feeFixed}
-              optional
-            >
-              <input
-                id="account-fee-fixed"
-                name="feeFixed"
-                inputMode="decimal"
-                autoComplete="off"
-              />
-            </Field>
-          </details>
-          <div className="form-actions">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={busy}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" loading={busy}>
-              Save account
-            </Button>
-          </div>
-        </form>
+        {open ? (
+          <AccountWizard
+            stations={overview.stationOptions.map((s) => ({
+              value: s.id,
+              label: `${s.name} (${s.code})`,
+            }))}
+            providers={activeProviders.map((p) => ({ value: p.id, label: p.name }))}
+            busy={busy}
+            error={outcome?.message ?? null}
+            onCancel={() => setOpen(false)}
+            onSubmit={submit}
+          />
+        ) : null}
       </Modal>
     </SectionCard>
   );
@@ -469,7 +313,6 @@ function AccountSection({ overview, reload, gate, onDenied, checking }: SectionP
 function BankSection({ overview, reload, gate, onDenied, checking }: SectionProps) {
   const { run, busy, outcome, clear } = useCommand(reload, onDenied);
   const [open, setOpen] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   // A bank account belongs to the company, not to a station: every station of the company uses it.
   // Any one of the company's stations is only needed to prove the person may act for it.
   const companies = [
@@ -486,25 +329,10 @@ function BankSection({ overview, reload, gate, onDenied, checking }: SectionProp
   ];
   const companyName = new Map(companies.map((company) => [company.id, company.name]));
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const companyId = String(data.get('companyId') ?? '');
-    const company = companies.find((option) => option.id === companyId);
+  function submit(value: BankValue) {
+    const company = companies.find((option) => option.id === value.companyId);
     const station = overview.stationOptions.find((option) => option.id === company?.stationId);
-    const name = String(data.get('name') ?? '').trim();
-    const bankName = String(data.get('bankName') ?? '').trim();
-    const accountReferenceMasked = String(data.get('accountReferenceMasked') ?? '').trim();
-    const next = {
-      companyId: company ? undefined : 'Choose the company this account belongs to.',
-      name: name ? undefined : 'Enter an account name.',
-      bankName: bankName ? undefined : 'Enter the bank name.',
-      accountReferenceMasked: accountReferenceMasked
-        ? undefined
-        : 'Enter the masked account reference only.',
-    };
-    setErrors(next);
-    if (Object.values(next).some(Boolean) || !station) return;
+    if (!station) return;
     gate(async () => {
       const saved = await run(
         {
@@ -512,12 +340,12 @@ function BankSection({ overview, reload, gate, onDenied, checking }: SectionProp
           tenantId: overview.tenantId,
           stationId: station.id,
           legalEntityId: station.legalEntityId,
-          name,
-          bankName,
-          accountReferenceMasked,
+          name: value.name,
+          bankName: value.bankName,
+          accountReferenceMasked: value.masked,
           currency: 'USD',
         },
-        `${name} was added to ${company?.name ?? 'the company'}. All its stations can use it.`,
+        `${value.name} was added to ${company?.name ?? 'the company'}. All its stations can use it.`,
       );
       if (saved) setOpen(false);
     });
@@ -535,7 +363,6 @@ function BankSection({ overview, reload, gate, onDenied, checking }: SectionProp
             disabled={overview.stationOptions.length === 0}
             onClick={() => {
               clear();
-              setErrors({});
               setOpen(true);
             }}
           >
@@ -562,64 +389,20 @@ function BankSection({ overview, reload, gate, onDenied, checking }: SectionProp
         open={open}
         onClose={() => !busy && setOpen(false)}
         title="Add a bank account"
-        presentation="side"
+        presentation="page"
+        backLabel="Payments"
         size="sm"
         dismissible={!busy && !checking}
       >
-        <form className="form-stack" onSubmit={submit} noValidate aria-label="Add bank account">
-          <OutcomeMessage outcome={outcome} />
-          <Field
-            id="bank-company"
-            label="Company"
-            hint="The account belongs to the company. All its stations use it."
-            error={errors.companyId}
-            required
-          >
-            <Select
-              id="bank-company"
-              name="companyId"
-              defaultValue={companies.length === 1 ? (companies[0]?.id ?? '') : ''}
-              placeholder="Choose a company"
-              options={companies.map((company) => ({ value: company.id, label: company.name }))}
-            />
-          </Field>
-          <Field id="bank-account-name" label="Account name" error={errors.name} required>
-            <input id="bank-account-name" name="name" autoComplete="off" maxLength={160} />
-          </Field>
-          <Field id="bank-name" label="Bank name" error={errors.bankName} required>
-            <input id="bank-name" name="bankName" autoComplete="off" maxLength={160} />
-          </Field>
-          <Field
-            id="bank-reference-masked"
-            label="Masked account reference"
-            hint="Do not enter the full bank account number."
-            error={errors.accountReferenceMasked}
-            required
-          >
-            <input
-              id="bank-reference-masked"
-              name="accountReferenceMasked"
-              autoComplete="off"
-              maxLength={160}
-            />
-          </Field>
-          <Field id="bank-currency" label="Currency">
-            <input id="bank-currency" value="USD" readOnly aria-readonly="true" />
-          </Field>
-          <div className="form-actions">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={busy}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" loading={busy}>
-              Save bank account
-            </Button>
-          </div>
-        </form>
+        {open ? (
+          <BankWizard
+            companies={companies.map((company) => ({ value: company.id, label: company.name }))}
+            busy={busy}
+            error={outcome?.message ?? null}
+            onCancel={() => setOpen(false)}
+            onSubmit={submit}
+          />
+        ) : null}
       </Modal>
     </SectionCard>
   );

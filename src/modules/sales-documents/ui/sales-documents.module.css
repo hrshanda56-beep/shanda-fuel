@@ -153,6 +153,146 @@
   font-size: 1rem;
 }
 
+.linkButton {
+  all: unset;
+  cursor: pointer;
+  text-decoration: underline;
+  color: inherit;
+  font-weight: 600;
+}
+
+.linkButton:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.previewBox {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.previewFrame {
+  width: 100%;
+  height: min(80vh, 60rem);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+
+/* Phones cannot draw a PDF inside a page, so only the "new tab" button is offered there. */
+@media (max-width: 40rem) {
+  .frameOnly,
+  .previewFrame {
+    display: none !important;
+  }
+}
+
+/* Details on the left, the printed document on the right. */
+.detailLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.detailMain {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.panelColumn {
+  position: sticky;
+  top: var(--space-4);
+  min-width: 0;
+}
+
+/* The slot keeps its place in the page; the panel inside grows out of it on hover. */
+.panelSlot {
+  position: relative;
+  height: 34rem;
+}
+
+.panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  transition:
+    width 0.2s ease,
+    height 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.panelSlot:hover .panel,
+.panel:focus-within {
+  z-index: 30;
+  width: min(52rem, 72vw);
+  height: min(88vh, 62rem);
+  box-shadow: var(--shadow-lg);
+  transition-delay: 0.15s;
+}
+
+.panelHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panelFrame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.phoneOnly {
+  display: none !important;
+}
+
+@media (max-width: 64rem) {
+  .detailLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panelColumn {
+    position: static;
+    order: -1;
+  }
+
+  .panelSlot {
+    height: 24rem;
+  }
+
+  .panelSlot:hover .panel,
+  .panel:focus-within {
+    width: min(52rem, calc(100vw - 4rem));
+  }
+}
+
+/* Phones cannot draw a PDF inside a page, so only a link to a new tab is offered. */
+@media (max-width: 40rem) {
+  .panelSlot {
+    display: none;
+  }
+
+  .phoneOnly {
+    display: inline-flex !important;
+  }
+}
+
 .notice {
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-subtle);
@@ -174,6 +314,10 @@
   top: 100%;
   z-index: 5;
   min-width: 12rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   padding: var(--space-2, 0.5rem);
   background: var(--surface, #fff);
   border: 1px solid var(--border, #d8dee0);
@@ -392,4 +536,83 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm, 4px);
   background: #fff;
+}
+
+/* One question per screen */
+.wizard {
+  width: min(100%, 40rem);
+  margin-inline: auto;
+  padding: var(--space-6) var(--space-5);
+}
+
+.stepCount {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.question {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.25;
+  outline: none;
+}
+
+.choices {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  cursor: pointer;
+}
+
+.choice input {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--accent);
+}
+
+.choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.summary {
+  display: grid;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.summaryRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.summaryRow > span:first-child {
+  display: grid;
+  flex: 1;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.summaryRow + .summaryRow {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.summaryLine {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-variant-numeric: tabular-nums;
 }

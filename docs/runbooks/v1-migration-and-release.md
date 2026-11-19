@@ -2,6 +2,8 @@
 
 **Updated 2026-11-01** for `main` at `6e4bb214`: 95 migrations, 0000 to 0110 (no 0104) (0098 to 0102 added 2026-11-02, 0103 on 2026-11-11, 0105 to 0108 on 2026-11-16/17, 0109 and 0110 on 2026-11-18 with the sales-documents module). Production's own count is not known from the repository: read it first (section 4, step 2).
 
+> **Update 2026-11-19: 0111 is applied, production is at 96 migrations (see the 0111 record in section 7).**
+>
 > **Production state, reported 2026-11-18** by the project owner after running the migrations themselves (this repository has no connection to production, and the row count and hashes below were not read back by the assistant): **0106 to 0110 are applied, so production is at 95 migrations, ending at 0110**. Before that run it was at 90, ending at 0105 (read 2026-11-17, Neon console; ids 85 to 90 carried the hashes of 0099, 0100, 0101, 0102, 0103 and 0105). Release record: section 7 should hold the restore point, the times and the verified count and newest hash (`042ff5b6…`) once the owner fills them in. 0104 does not exist.
 
 > **Sales documents (merged 2026-11-18 as PR #241, commit `ad36e109`).** Vercel deployed that commit to production at 15:58 UTC, before the migrations ran, so the Sales Documents screens had no tables until 0109 and 0110 were applied. This is the reverse of the intended order (migrate, then deploy); a merge to `main` **does** auto-deploy to production, so for any future migration the migration must be applied from the pull-request branch **before** merging.
@@ -109,6 +111,7 @@ that was reviewed.
 | 0108 | product_kind_order | Adds nullable `kind`, `blend_percent`, `display_order` to `app.products` with three check constraints, so fuels list Diesel, Petrol/Blend, Gas. Existing rows stay NULL; no backfill, RLS/grants/triggers unchanged | Applied to production (reported by the owner, 2026-11-18). Additive nullable columns |
 | 0109 | sales_documents | Quotations, invoices and receipts: new tables `sales_doc_profiles`, `sales_doc_counters`, `sales_documents`, `sales_document_lines`, a state-guard trigger and an append-only trigger on lines, Force RLS with tenant-context policies, grants to `app_runtime`, ownership to `migration_owner`. Inserts five `sales_document.*` permission definitions and grants them to OWNER, ADMINISTRATOR, FINANCE (no void or profile edit) and AUDITOR (view only), with `ON CONFLICT DO NOTHING` | Applied to production (reported by the owner, 2026-11-18). New tables and permission rows only; no existing table is changed |
 | 0110 | sales_doc_branding | Adds nullable `logo_jpeg_base64` and `brand_colour` to `app.sales_doc_profiles` with two check constraints (`sales_doc_profiles_logo_ck`, `sales_doc_profiles_colour_ck`). Existing rows stay NULL | Applied to production (reported by the owner, 2026-11-18). Additive nullable columns on a table created by 0109 |
+| 0111 | expense_payment_other | Lets an expense be paid with Other: replaces `expenses_payment_method_ck` to also allow `OTHER`, adds nullable `payment_method_other` (text, max 60) with `expenses_payment_method_other_ck` (required when OTHER, null otherwise). Existing rows unchanged | **Applied to production 2026-11-19** by the owner from a clean checkout of `38f971c6`; count 96, hash verified, RLS forced, owner `migration_owner`. Additive, so the previous release keeps working until the merge |
 
 The journal in `src/platform/db/migrations/meta/_journal.json` lists 95 entries, 0000 to 0110 (no 0104) (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
@@ -288,6 +291,7 @@ f789ca29da899a2037ae6175554a5305ddb9e250d3e9fd6f4de0827980916081  0102_staff_rem
 7fb5098b54d2e5bf78886bcc99f78b5ebbee289d4a84778d00e0d340232dcad4  0108_product_kind_order.sql
 b1f651a7403372aabe7adf85a0f41a49bf0137a97edff3681fb121e5e0b2be6a  0109_sales_documents.sql
 042ff5b6b38d26cc6ca5600b480c2693f338a778c3bf53f443aff96688777dd2  0110_sales_doc_branding.sql
+9a864fd3e428b0f0e9f28cfcfcdc54d9cb7753e1bd89b764ac7ec9de09c65b7a  0111_expense_payment_other.sql
 ```
 
 ## 7. Release record (copy this and fill it in)
@@ -326,6 +330,25 @@ Merged to main:                PR #167 at 90e905909f5ec606fd5100be0c6e9ff36bb9db
 Application release commit:    (to fill in when Vercel deploys)
 Vercel deployment ID:          (to fill in; Vercel deployments were rate limited at merge time)
 Smoke test passed (time, who): (to fill in)
+Reopened to staff (time):      (to fill in)
+Problems found:                none during the migration
+```
+
+### Record: migration 0111 expense_payment_other (2026-11-19)
+
+Migration only. The merge of PR #245, the smoke test and reopening are still to be recorded.
+
+```
+Migration date:                2026-11-19
+Migrations commit (full SHA):  38f971c6827c3a864b0a435254170b311cb32320 (fresh clone of branch wizzard; 0111 hash checked against section 6)
+Operator:                      Project owner (hidden-prompt DATABASE_DIRECT_URL, cleared afterwards)
+Production migration count before: 95 (newest 0110, hash 042ff5b6...)   after: 96 (newest id 96, hash 9a864fd3...c65b7a)
+Last migration tag after:      0111_expense_payment_other
+Restore point identifier:      restore-point-2026-11-19 (Neon branch, set to never auto-delete)
+Verified after: payment_method_other column present; both expense payment checks present; RLS enabled and
+  forced on app.expenses; table owner migration_owner, not app_runtime.
+Merged to main:                (to fill in)
+Smoke test passed (time, who): (to fill in: create an expense paid with Other)
 Reopened to staff (time):      (to fill in)
 Problems found:                none during the migration
 ```

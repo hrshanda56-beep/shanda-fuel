@@ -222,7 +222,7 @@ describe('buildFuelCards', () => {
       ['Diesel', 'done'],
       ['Petrol', 'todo'],
     ]);
-    expect(cards[0]!.summary).toBe('Price in use, 1 tank, 1 nozzle. Sold in litres.');
+    expect(cards[0]!.summary).toBe('1 tank · 1 nozzle');
     expect(cards[1]!.summary).toBe('Needs a price, an acceptable difference on 1 tank, a nozzle.');
   });
 

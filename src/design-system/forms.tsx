@@ -41,6 +41,75 @@ export function Select({
   );
 }
 
+/** The select value that means "none of the above, let me type it". */
+export const OTHER_VALUE = '__other__';
+
+/**
+ * A select whose last choice is "Other". Picking it reveals a text box where the
+ * person says what they mean. Use it wherever a list might not cover everything.
+ * `choice` is the selected option value (or OTHER_VALUE); `detail` is the typed text.
+ */
+export function SelectWithOther({
+  id,
+  options,
+  choice,
+  onChoice,
+  detail,
+  onDetail,
+  otherLabel = 'Other',
+  detailLabel = 'Please say what',
+  detailError,
+  detailMaxLength = 80,
+  placeholder,
+  detailPlaceholder,
+}: {
+  placeholder?: string;
+  detailPlaceholder?: string;
+  id: string;
+  options: readonly SelectOption[];
+  choice: string;
+  onChoice: (value: string) => void;
+  detail: string;
+  onDetail: (value: string) => void;
+  otherLabel?: string;
+  detailLabel?: string;
+  detailError?: string;
+  detailMaxLength?: number;
+}) {
+  return (
+    <>
+      <Select
+        id={id}
+        value={choice}
+        onChange={(event) => onChoice(event.target.value)}
+        placeholder={placeholder}
+        options={[...options, { value: OTHER_VALUE, label: otherLabel }]}
+      />
+      {choice === OTHER_VALUE ? (
+        <label
+          htmlFor={`${id}-other`}
+          style={{ display: 'grid', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}
+        >
+          <span>{detailLabel}</span>
+          <input
+            id={`${id}-other`}
+            value={detail}
+            maxLength={detailMaxLength}
+            placeholder={detailPlaceholder}
+            aria-invalid={detailError ? true : undefined}
+            onChange={(event) => onDetail(event.target.value)}
+          />
+          {detailError ? (
+            <span className="field-error" role="alert">
+              {detailError}
+            </span>
+          ) : null}
+        </label>
+      ) : null}
+    </>
+  );
+}
+
 type CheckableProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & {
   label: ReactNode;
   hint?: ReactNode;
