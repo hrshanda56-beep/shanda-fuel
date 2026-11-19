@@ -304,7 +304,10 @@ test.describe('authenticated Staff lifecycle', () => {
     await page.getByRole('button', { name: 'Invite Staff', exact: true }).click();
     // The invite is a wizard: name, how they sign in, contact, then the role. The staff list has its own
     // "All roles" filter that lists every role, so look only inside the invite form.
-    const inviteForm = page.locator('form').filter({ has: page.getByLabel('Full name') });
+    // The name field only exists on the first step, so find the form by its Continue button instead.
+    const inviteForm = page
+      .locator('form')
+      .filter({ has: page.getByRole('button', { name: 'Continue' }) });
     await inviteForm.getByLabel('Full name').fill('Administrator scope check');
     for (let step = 0; step < 3; step += 1) {
       await inviteForm.getByRole('button', { name: 'Continue' }).click();

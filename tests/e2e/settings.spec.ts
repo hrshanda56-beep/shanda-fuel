@@ -117,11 +117,9 @@ test.describe('Settings', () => {
 
       await sectionButton(page, 'Stations').click();
       await expectOnlyPressed(page, 'Stations');
-      // Stations are listed as cards; each card opens the station's own page.
+      // Finance cannot set stations up, so the stations are a read-only list of names, not openable cards.
       await expect(content(page).getByRole('list', { name: 'Stations' })).toBeVisible();
-      await expect(
-        content(page).getByRole('button', { name: /^Open Settings E2E Station/ }),
-      ).toBeVisible();
+      await expect(content(page).getByText('Settings E2E Station', { exact: true })).toBeVisible();
 
       await sectionButton(page, 'Account').click();
       await expectOnlyPressed(page, 'Account');
