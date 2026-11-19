@@ -51,7 +51,15 @@ export async function queryInventoryStock(input: {
   return getStationProductStock(context, parsed.productId);
 }
 
-export type DeliverySupplierOption = Readonly<{ id: string; code: string; name: string }>;
+export type DeliverySupplierOption = Readonly<{
+  id: string;
+  code: string;
+  name: string;
+  /** Sells fuel. Only these are offered as "who supplied it". */
+  providesFuel: boolean;
+  /** Carries fuel. Only these are offered as "who brought it". */
+  providesTransport: boolean;
+}>;
 
 /**
  * Suppliers a delivery may be received from: ACTIVE suppliers of the tenant, id/code/name
@@ -76,13 +84,25 @@ export async function queryDeliverySuppliers(input: {
       // requiring that write permission here made the form silently render an empty list
       // for otherwise authorised inventory viewers.
       authorizeInventoryCommand(context, 'inventory.view');
-      const rows = await transaction.execute<{ id: string; code: string; legal_name: string }>(sql`
-        select id, code, legal_name
+      const rows = await transaction.execute<{
+        id: string;
+        code: string;
+        legal_name: string;
+        provides_fuel: boolean;
+        provides_transport: boolean;
+      }>(sql`
+        select id, code, legal_name, provides_fuel, provides_transport
         from app.suppliers
         where tenant_id = ${context.tenantId} and status = 'ACTIVE'
         order by legal_name, code
       `);
-      return rows.map((row) => ({ id: row.id, code: row.code, name: row.legal_name }));
+      return rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.legal_name,
+        providesFuel: row.provides_fuel,
+        providesTransport: row.provides_transport,
+      }));
     },
   );
 }

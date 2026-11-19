@@ -23,6 +23,7 @@ export type NavigationKey =
   | 'customers'
   | 'staff-benefit'
   | 'suppliers'
+  | 'transporters'
   | 'purchasing'
   | 'expenses'
   | 'sales-documents'
@@ -241,7 +242,16 @@ export const navigationSections: readonly NavigationSection[] = [
         icon: 'truck',
         destination: { kind: 'route', path: '/suppliers' },
         availability: 'active',
-        match: [/^\/suppliers(?!\/due)(\/|$)/],
+        match: [/^\/suppliers(?!\/(due|transporters)(\/|$))(\/|$)/],
+      },
+      {
+        key: 'transporters',
+        label: 'Transporters',
+        searchLabel: 'Transporters',
+        icon: 'truck',
+        destination: { kind: 'route', path: '/suppliers/transporters' },
+        availability: 'active',
+        match: [/^\/suppliers\/transporters(\/|$)/],
       },
       {
         key: 'payments-due',

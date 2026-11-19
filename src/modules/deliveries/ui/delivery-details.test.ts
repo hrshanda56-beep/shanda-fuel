@@ -24,6 +24,7 @@ const detail: DeliveryDetail = {
     unit: 'LITRES' as const,
     supplierName: 'Puma Energy',
     transporter: null,
+    transporterSupplierId: null,
     driver: 'T. Moyo',
     truckRegistration: 'ABC 1234',
     status: 'DRAFT',
@@ -36,7 +37,15 @@ const detail: DeliveryDetail = {
     receivedLitres: '9990.5',
     shortageExcessLitres: '-9.5',
     receipt: 'PARTIAL',
+    varianceCause: null,
+    varianceNote: null,
+    loadTemperatureC: null,
+    dipMeasuredLitres: null,
+    orderedLitres: null,
+    dipVarianceLitres: null,
   },
+  lossClaim: null,
+  canRecordClaim: false,
   compartments: [
     {
       compartmentNumber: 1,
@@ -132,6 +141,7 @@ describe('delivery detail screens', () => {
 
   it('tells the truth when there are no deliveries', () => {
     const empty: DeliveryList = {
+      lossReport: [],
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
       canSetWaterTestRule: false,
@@ -147,6 +157,7 @@ describe('delivery detail screens', () => {
 
   it('does not offer to record a delivery to someone who may not', () => {
     const empty: DeliveryList = {
+      lossReport: [],
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
       canSetWaterTestRule: false,
@@ -163,6 +174,7 @@ describe('delivery detail screens', () => {
 
   it('makes each delivery row one link to its details', () => {
     const list: DeliveryList = {
+      lossReport: [],
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
       canSetWaterTestRule: false,

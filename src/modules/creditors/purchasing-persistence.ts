@@ -42,6 +42,7 @@ export type PolicyRow = {
   default_vat_rate: string | null;
   product_vat_rates: Record<string, string> | null;
   require_invoice_lines: boolean | null;
+  require_transport_bill: boolean | null;
   version: number | string;
   updated_at: string;
 };
@@ -49,7 +50,7 @@ export type PolicyRow = {
 const policyColumns = sql`id, supplier_id, quantity_tolerance_litres::text, quantity_tolerance_percent::text,
   price_tolerance_percent::text, amount_tolerance::text, over_receipt_tolerance_litres::text,
   over_receipt_tolerance_percent::text, tolerance_action, vat_mode, default_vat_rate::text,
-  product_vat_rates, require_invoice_lines, version, updated_at::text`;
+  product_vat_rates, require_invoice_lines, require_transport_bill, version, updated_at::text`;
 
 export function tenantValues(row: PolicyRow): PurchasingPolicyValues {
   return {
@@ -67,6 +68,8 @@ export function tenantValues(row: PolicyRow): PurchasingPolicyValues {
     productVatRates: row.product_vat_rates ?? {},
     requireInvoiceLines:
       row.require_invoice_lines ?? BUILT_IN_PURCHASING_POLICY.requireInvoiceLines,
+    requireTransportBill:
+      row.require_transport_bill ?? BUILT_IN_PURCHASING_POLICY.requireTransportBill,
   };
 }
 
@@ -85,6 +88,7 @@ export function overrideValues(row: PolicyRow): PurchasingPolicyOverride {
   set('vatMode', row.vat_mode);
   set('defaultVatRate', row.default_vat_rate);
   set('requireInvoiceLines', row.require_invoice_lines);
+  set('requireTransportBill', row.require_transport_bill);
   return out as PurchasingPolicyOverride;
 }
 
@@ -133,6 +137,7 @@ export function policyView(row: PolicyRow) {
     defaultVatRate: row.default_vat_rate,
     productVatRates: row.product_vat_rates ?? {},
     requireInvoiceLines: row.require_invoice_lines,
+    requireTransportBill: row.require_transport_bill,
     updatedAt: row.updated_at,
   };
 }
@@ -152,6 +157,7 @@ export type SetPurchasingPolicyInput = {
   defaultVatRate?: string | null | undefined;
   productVatRates?: Record<string, string> | undefined;
   requireInvoiceLines?: boolean | null | undefined;
+  requireTransportBill?: boolean | null | undefined;
 };
 
 /**
@@ -217,6 +223,9 @@ export async function setPurchasingPolicyInTransaction(
   const requireLines =
     values.requireInvoiceLines ??
     (tenantLevel ? BUILT_IN_PURCHASING_POLICY.requireInvoiceLines : null);
+  const requireTransport =
+    values.requireTransportBill ??
+    (tenantLevel ? BUILT_IN_PURCHASING_POLICY.requireTransportBill : null);
   const actor = context.authority.membership.membershipId;
   let policyId: string;
   let version: number;
@@ -248,6 +257,7 @@ export async function setPurchasingPolicyInTransaction(
         default_vat_rate = ${values.defaultVatRate},
         product_vat_rates = ${JSON.stringify(productVatRates)}::jsonb,
         require_invoice_lines = ${requireLines},
+        require_transport_bill = ${requireTransport},
         version = ${version}, updated_by = ${actor}, updated_at = now()
       where tenant_id = ${context.tenantId} and id = ${policyId}
     `);
@@ -266,13 +276,13 @@ export async function setPurchasingPolicyInTransaction(
           id, tenant_id, supplier_id, quantity_tolerance_litres, quantity_tolerance_percent,
           price_tolerance_percent, amount_tolerance, over_receipt_tolerance_litres,
           over_receipt_tolerance_percent, tolerance_action, vat_mode, default_vat_rate,
-          product_vat_rates, require_invoice_lines, version, updated_by
+          product_vat_rates, require_invoice_lines, require_transport_bill, version, updated_by
         ) values (
           ${policyId}, ${context.tenantId}, ${supplierId}, ${values.quantityToleranceLitres},
           ${values.quantityTolerancePercent}, ${values.priceTolerancePercent},
           ${values.amountTolerance}, ${values.overReceiptToleranceLitres},
           ${values.overReceiptTolerancePercent}, ${action}, ${vatMode}, ${values.defaultVatRate},
-          ${JSON.stringify(productVatRates)}::jsonb, ${requireLines}, 0, ${actor}
+          ${JSON.stringify(productVatRates)}::jsonb, ${requireLines}, ${requireTransport}, 0, ${actor}
         )
       `);
     } catch (error) {
@@ -298,6 +308,7 @@ export async function setPurchasingPolicyInTransaction(
     defaultVatRate: values.defaultVatRate,
     productVatRates,
     requireInvoiceLines: requireLines,
+    requireTransportBill: requireTransport,
   };
   await transaction.execute(sql`
     insert into app.purchasing_policy_revisions (
@@ -320,13 +331,36 @@ export type DeliveryLinkInput = {
   allocationId?: string | undefined;
   invoicedQuantityLitres?: string | undefined;
   invoicedAmount?: string | undefined;
+  /** FUEL (the supplier's invoice) or TRANSPORT (the transporter's own bill). Worked out when left out. */
+  kind?: BillKind | undefined;
 };
+
+/** What a supplier bill covers on a delivery. A delivery has one of each. */
+export type BillKind = 'FUEL' | 'TRANSPORT';
+
+/**
+ * Which bill this is for the delivery. A company that only carried the delivery is sending the
+ * transport bill. When the supplier carried its own fuel, the caller says which.
+ */
+export function resolveBillKind(
+  delivery: Pick<DeliveryFacts, 'supplier_id' | 'transporter_supplier_id'>,
+  supplierId: string,
+  explicit?: BillKind | undefined,
+): BillKind {
+  if (explicit) return explicit;
+  if (delivery.supplier_id === supplierId) return 'FUEL';
+  // Only a company that carried this delivery can be sending its transport bill. Any other company
+  // is treated as a fuel supplier, so a wrong link gets the usual "different supplier" refusal.
+  return delivery.transporter_supplier_id === supplierId ? 'TRANSPORT' : 'FUEL';
+}
 
 export type DeliveryFacts = {
   id: string;
   station_id: string;
   status: string;
   supplier_id: string | null;
+  /** The company that carried the fuel, when one was chosen. */
+  transporter_supplier_id?: string | null;
   product_id: string;
   delivery_note_number: string;
   note_quantity_litres: string;
@@ -355,7 +389,7 @@ export const purchaseOrderPriceColumns = sql`(
     where k.tenant_id = d.tenant_id and k.delivery_id = d.id and k.state = 'ACTIVE'
   ) as po_number`;
 
-const deliveryColumns = sql`d.id, d.station_id, d.status, d.supplier_id, d.product_id,
+const deliveryColumns = sql`d.id, d.station_id, d.status, d.supplier_id, d.transporter_supplier_id, d.product_id,
   d.delivery_note_number, d.note_quantity_litres::text, d.actual_quantity_litres::text,
   d.unit_landed_cost::text, s.legal_entity_id,
   (select pu.unit from app.products pu where pu.tenant_id = d.tenant_id and pu.id = d.product_id) as unit,
@@ -410,7 +444,7 @@ async function readDeliveries(
 
 export function assertDeliveryUsable(
   delivery: DeliveryFacts | undefined,
-  input: { supplierId: string; legalEntityId: string; stationId?: string },
+  input: { supplierId: string; legalEntityId: string; stationId?: string; kind?: BillKind },
 ): DeliveryFacts {
   if (!delivery || (input.stationId && delivery.station_id !== input.stationId)) {
     throw new AppError(
@@ -437,6 +471,15 @@ export function assertDeliveryUsable(
       `${label} has no supplier recorded. Assign its supplier first (Correct delivery supplier), then link it to the invoice.`,
     );
   }
+  if (input.kind === 'TRANSPORT') {
+    if (delivery.transporter_supplier_id !== input.supplierId) {
+      throw new AppError(
+        'CONFLICT',
+        `Delivery note ${delivery.delivery_note_number} was not carried by this company, so its transport bill cannot be linked here. Pick the right delivery, or set the transporter on the delivery first.`,
+      );
+    }
+    return delivery;
+  }
   if (delivery.supplier_id !== input.supplierId) {
     throw new AppError(
       'CONFLICT',
@@ -450,6 +493,7 @@ type ActiveRef = {
   id: string;
   delivery_id: string;
   allocation_id: string | null;
+  kind: string;
   reference_number: string;
   document_id: string;
 };
@@ -469,14 +513,14 @@ export async function findCoverageConflict(
   input: {
     tenantId: string;
     excludeDocumentId?: string;
-    links: readonly { deliveryId: string; allocationId?: string | null }[];
+    links: readonly { deliveryId: string; allocationId?: string | null; kind?: BillKind }[];
     deliveryLabels: ReadonlyMap<string, string>;
   },
 ): Promise<AppError | null> {
   const deliveryIds = [...new Set(input.links.map((link) => link.deliveryId))];
   if (deliveryIds.length === 0) return null;
   const rows = await transaction.execute<ActiveRef>(sql`
-    select r.id, r.delivery_id, r.allocation_id, d.reference_number, d.id as document_id
+    select r.id, r.delivery_id, r.allocation_id, r.kind, d.reference_number, d.id as document_id
     from app.supplier_document_delivery_refs r
     join app.supplier_documents d on d.tenant_id = r.tenant_id and d.id = r.supplier_document_id
     where r.tenant_id = ${input.tenantId} and r.active and r.document_type = 'INVOICE'
@@ -490,12 +534,14 @@ export async function findCoverageConflict(
     const hit = rows.find(
       (row) =>
         row.delivery_id === link.deliveryId &&
+        row.kind === (link.kind ?? 'FUEL') &&
         coverageOverlaps(row.allocation_id, link.allocationId),
     );
     if (hit) {
+      const what = (link.kind ?? 'FUEL') === 'TRANSPORT' ? 'transport bill' : 'invoice';
       return new AppError(
         'CONFLICT',
-        `Delivery note ${input.deliveryLabels.get(link.deliveryId) ?? link.deliveryId} is already covered by posted invoice ${hit.reference_number}. A delivery can only be invoiced once. Reverse that invoice first, or record this one as a credit note.`,
+        `Delivery note ${input.deliveryLabels.get(link.deliveryId) ?? link.deliveryId} is already covered by posted ${what} ${hit.reference_number}. A delivery can only be billed once for ${what === 'invoice' ? 'its fuel' : 'its transport'}. Reverse that ${what} first, or record this one as a credit note.`,
         { deliveryId: link.deliveryId, coveredByDocumentId: hit.document_id },
       );
     }
@@ -514,6 +560,7 @@ export type PreparedSubmission = {
     stationId: string;
     deliveryId: string;
     allocationId: string | null;
+    kind: BillKind;
     invoicedQuantityLitres: string | null;
     invoicedAmount: string | null;
   }[];
@@ -549,11 +596,16 @@ export async function prepareSubmission(
     links.map((link) => link.deliveryId),
   );
   const labels = new Map<string, string>();
+  const kinds = new Map<DeliveryLinkInput, BillKind>();
   for (const link of links) {
-    const delivery = assertDeliveryUsable(facts.get(link.deliveryId), {
+    const known = facts.get(link.deliveryId);
+    const kind = known ? resolveBillKind(known, input.supplierId, link.kind) : 'FUEL';
+    kinds.set(link, kind);
+    const delivery = assertDeliveryUsable(known, {
       supplierId: input.supplierId,
       legalEntityId: context.legalEntityId,
       stationId: link.stationId,
+      kind,
     });
     labels.set(delivery.id, delivery.delivery_note_number);
   }
@@ -562,6 +614,7 @@ export async function prepareSubmission(
     stationId: link.stationId,
     deliveryId: link.deliveryId,
     allocationId: link.allocationId ?? null,
+    kind: kinds.get(link) ?? ('FUEL' as BillKind),
     invoicedQuantityLitres: null as string | null,
     invoicedAmount: null as string | null,
     explicitQuantity: link.invoicedQuantityLitres,
@@ -596,7 +649,11 @@ export async function prepareSubmission(
     if (linked.length > 0) {
       const quantity = linked.reduce((sum, line) => sum.add(line.quantity), new Decimal(0));
       const amount = linked.reduce((sum, line) => sum.add(line.netAmount), new Decimal(0));
-      if (ref.explicitQuantity !== undefined && !new Decimal(ref.explicitQuantity).eq(quantity)) {
+      if (
+        ref.kind === 'FUEL' &&
+        ref.explicitQuantity !== undefined &&
+        !new Decimal(ref.explicitQuantity).eq(quantity)
+      ) {
         throw new AppError(
           'VALIDATION_FAILED',
           `The litres you entered for delivery note ${labels.get(ref.deliveryId)} (${ref.explicitQuantity}) do not match its invoice lines (${quantity.toFixed(3)}).`,
@@ -608,11 +665,14 @@ export async function prepareSubmission(
           `The amount you entered for delivery note ${labels.get(ref.deliveryId)} (${ref.explicitAmount}) does not match its invoice lines (${amount.toFixed(4)}).`,
         );
       }
-      ref.invoicedQuantityLitres = quantity.toFixed(3);
+      // A transport bill is priced per trip or per kilometre, so its quantity is not litres.
+      ref.invoicedQuantityLitres = ref.kind === 'TRANSPORT' ? null : quantity.toFixed(3);
       ref.invoicedAmount = amount.toFixed(4);
     } else {
       ref.invoicedQuantityLitres =
-        ref.explicitQuantity === undefined ? null : new Decimal(ref.explicitQuantity).toFixed(3);
+        ref.kind === 'TRANSPORT' || ref.explicitQuantity === undefined
+          ? null
+          : new Decimal(ref.explicitQuantity).toFixed(3);
       ref.invoicedAmount =
         ref.explicitAmount === undefined ? null : new Decimal(ref.explicitAmount).toFixed(4);
     }
@@ -635,6 +695,7 @@ export async function prepareSubmission(
       stationId: ref.stationId,
       deliveryId: ref.deliveryId,
       allocationId: ref.allocationId,
+      kind: ref.kind,
       invoicedQuantityLitres: ref.invoicedQuantityLitres,
       invoicedAmount: ref.invoicedAmount,
     })),
@@ -651,6 +712,8 @@ export type PostedRef = {
   delivery_id: string;
   allocation_id: string | null;
   document_type: string;
+  /** FUEL or TRANSPORT. Only fuel links are checked against the delivery's litres and price. */
+  kind?: string;
   invoiced_quantity_litres: string | null;
   invoiced_amount: string | null;
   allocation_quantity: string | null;
@@ -669,7 +732,8 @@ export function evaluateDocumentVariance(input: {
   lines: readonly { delivery_ref_id: string | null; quantity: string; net_amount: string }[];
 }): DeliveryVariance[] {
   const byDelivery = new Map<string, PostedRef[]>();
-  for (const ref of input.refs) {
+  // A transport bill has no litres or fuel price to compare, so only fuel links are evaluated.
+  for (const ref of input.refs.filter((candidate) => (candidate.kind ?? 'FUEL') === 'FUEL')) {
     byDelivery.set(ref.delivery_id, [...(byDelivery.get(ref.delivery_id) ?? []), ref]);
   }
   const out: DeliveryVariance[] = [];

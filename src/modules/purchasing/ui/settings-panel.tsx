@@ -145,6 +145,12 @@ export function SettingsPanel({
                     ? 'Each invoice lists the fuel it is for'
                     : 'A single total is fine',
                 ],
+                [
+                  'Transport bills',
+                  r.requireTransportBill
+                    ? 'Every delivery carried by another company needs its bill'
+                    : 'A transport bill is optional',
+                ],
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt>{label}</dt>
@@ -236,6 +242,7 @@ type FormState = {
   vatMode: string;
   defaultVatRate: string;
   requireInvoiceLines: string;
+  requireTransportBill: string;
 };
 
 function trimNumber(value: string | null): string {
@@ -260,6 +267,12 @@ function formFromPolicy(view: PolicyView | null, company: boolean): FormState {
           ? 'true'
           : ''
         : String(view.requireInvoiceLines),
+    requireTransportBill:
+      view?.requireTransportBill === null || view?.requireTransportBill === undefined
+        ? company
+          ? 'false'
+          : ''
+        : String(view.requireTransportBill),
   };
 }
 
@@ -399,6 +412,8 @@ function PolicyDialog({
       vatMode,
       requireInvoiceLines:
         form.requireInvoiceLines === '' ? null : form.requireInvoiceLines === 'true',
+      requireTransportBill:
+        form.requireTransportBill === '' ? null : form.requireTransportBill === 'true',
     };
     void save(body, false);
   }
@@ -550,6 +565,25 @@ function PolicyDialog({
                     ...(follow ? [{ value: '', label: follow }] : []),
                     { value: 'true', label: 'Each invoice must list the fuel it is for' },
                     { value: 'false', label: 'Invoices can be entered as a single total' },
+                  ]}
+                />
+              </Field>
+              <Field
+                id="pp-transport-bill"
+                label="Transport bills"
+                hint="Fuel is often brought by a different company that sends its own bill."
+              >
+                <Select
+                  id="pp-transport-bill"
+                  value={form.requireTransportBill}
+                  onChange={(e) => set({ requireTransportBill: e.target.value })}
+                  options={[
+                    ...(follow ? [{ value: '', label: follow }] : []),
+                    {
+                      value: 'true',
+                      label: 'Every delivery carried by another company needs its bill',
+                    },
+                    { value: 'false', label: 'A transport bill is optional' },
                   ]}
                 />
               </Field>

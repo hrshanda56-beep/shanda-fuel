@@ -132,6 +132,7 @@ export const purchasingPolicies = appSchema.table(
       .notNull()
       .default(sql`'{}'::jsonb`),
     requireInvoiceLines: boolean('require_invoice_lines'),
+    requireTransportBill: boolean('require_transport_bill'),
     version: integer('version').notNull().default(0),
     updatedBy: uuid('updated_by').notNull(),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),

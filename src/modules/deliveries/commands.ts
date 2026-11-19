@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { fuelDeliveries } from '../../platform/db/schema/a4';
@@ -26,6 +26,11 @@ import {
   classifyDeliveryReceipt,
 } from './domain';
 import { loadDeliveryForUpdate } from './persistence';
+import {
+  LOSS_LIABLE_PARTIES,
+  LOSS_RECOVERY_STATUSES,
+  checkLossRecovery,
+} from './variance-assessment';
 import { setNoPurchaseOrderReasonSchema } from './purchase-order-choice';
 
 const uuid = z.string().uuid();
@@ -65,6 +70,14 @@ const driverConfirmationPayload = authorityPayload.extend({
   confirmed: z.boolean(),
   confirmedAt: instant.nullish(),
   notes: z.string().trim().max(500).nullish(),
+});
+
+const lossClaimPayload = authorityPayload.extend({
+  liableParty: z.enum(LOSS_LIABLE_PARTIES),
+  status: z.enum(LOSS_RECOVERY_STATUSES),
+  recoveredAmount: z.string().trim().nullish(),
+  currency: z.string().trim().length(3).nullish(),
+  note: z.string().trim().max(500).nullish(),
 });
 
 const waterTestRequiredPayload = z.object({
@@ -445,6 +458,82 @@ export async function setDeliveryNoPurchaseOrderReasonFromRequest(
 ) {
   const payload = setNoPurchaseOrderReasonSchema.parse(input);
   return setDeliveryNoPurchaseOrderReasonCommand(
+    await contextFor(request, payload),
+    payload,
+    requireIdempotency(request),
+  );
+}
+
+/**
+ * Records who is held responsible for a delivery's loss and what came of the claim. The owner
+ * decides each case; the system only keeps the answer. It works on a confirmed delivery too,
+ * because a claim is followed up after the fuel is already in the tank. Nothing is posted to
+ * any ledger.
+ */
+export function recordDeliveryLossClaimCommand(
+  context: InventoryCommandContext,
+  payload: z.infer<typeof lossClaimPayload>,
+  key: string,
+) {
+  const amount = payload.recoveredAmount?.trim() || null;
+  const problem = checkLossRecovery({
+    liableParty: payload.liableParty,
+    status: payload.status,
+    amount,
+  });
+  if (problem) throw new AppError('VALIDATION_FAILED', problem);
+  const currency = payload.status === 'SETTLED' ? (payload.currency?.toUpperCase() ?? null) : null;
+  if (payload.status === 'SETTLED' && !currency) {
+    throw new AppError('VALIDATION_FAILED', 'Choose the currency of the amount recovered.');
+  }
+  return executeInventoryCommand({
+    context,
+    commandType: 'RecordDeliveryLossClaim',
+    permissionCode: 'supplier.delivery.link',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.DELIVERY_LOSS_CLAIM_RECORDED',
+      subjectType: 'FuelDelivery',
+      subjectId: payload.deliveryId,
+    },
+    execute: async (transaction) => {
+      const delivery = await loadDeliveryForUpdate(
+        transaction,
+        scopeOf(context, payload.deliveryId),
+      );
+      if (delivery.status === 'CANCELLED') {
+        throw new AppError('CONFLICT', 'This delivery was cancelled, so it cannot have a claim.');
+      }
+      const lost = await transaction.execute<{ short: boolean }>(sql`
+        select (actual_quantity_litres < note_quantity_litres or variance_cause is not null) as short
+        from app.fuel_deliveries
+        where tenant_id = ${context.tenantId} and id = ${delivery.id}
+      `);
+      if (!lost[0]?.short) {
+        throw new AppError(
+          'CONFLICT',
+          'Fuel received matched the delivery note, so there is no loss to claim for.',
+        );
+      }
+      await transaction.execute(sql`
+        insert into app.fuel_delivery_loss_claims
+          (tenant_id, station_id, delivery_id, liable_party, status, recovered_amount, currency, note, updated_by)
+        values (${context.tenantId}, ${context.stationId}, ${delivery.id}, ${payload.liableParty},
+          ${payload.status}, ${amount}, ${currency}, ${payload.note || null}, ${context.authority.membership.membershipId})
+        on conflict (tenant_id, delivery_id) do update set
+          liable_party = excluded.liable_party, status = excluded.status,
+          recovered_amount = excluded.recovered_amount, currency = excluded.currency,
+          note = excluded.note, updated_by = excluded.updated_by, updated_at = now()
+      `);
+      return { deliveryId: delivery.id, liableParty: payload.liableParty, status: payload.status };
+    },
+  });
+}
+
+export async function recordDeliveryLossClaimFromRequest(request: Request, input: unknown) {
+  const payload = lossClaimPayload.parse(input);
+  return recordDeliveryLossClaimCommand(
     await contextFor(request, payload),
     payload,
     requireIdempotency(request),

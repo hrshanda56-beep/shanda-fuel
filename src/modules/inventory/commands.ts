@@ -19,6 +19,13 @@ import { litresForReading, normaliseCalibrationChart } from './calibration';
 import { assertLandedCostPairMatchesLitres, buildLandedCost } from './landed-cost';
 import { assertWaterTestAllowsConfirmation } from '../deliveries/persistence';
 import {
+  VARIANCE_CAUSES,
+  type VarianceCause,
+  assessDeliveryVariance,
+  missingExplanation,
+} from '../deliveries/variance-assessment';
+import { loadPurchasingPolicy } from '../creditors/purchasing-persistence';
+import {
   assertWithinTankCapacity,
   calculateDeliveryShortageExcess,
   requireAdjustmentReason,
@@ -145,6 +152,8 @@ const deliveryPayload = authorityPayload
     allocations: z.array(allocationPayload).min(1),
     supplierReference: z.string().trim().max(120).nullish(),
     transporter: z.string().trim().max(120).nullish(),
+    /** The supplier that carried the fuel. Its name is stored as the transporter. */
+    transporterSupplierId: uuid.nullish(),
     driver: z.string().trim().max(120).nullish(),
     truckRegistration: z.string().trim().max(80).nullish(),
     sealReference: z.string().trim().max(80).nullish(),
@@ -163,6 +172,14 @@ const deliveryPayload = authorityPayload
     currency: z.string().trim().length(3).nullish(),
     noPoReason: z.enum(NO_PO_REASONS).nullish(),
     noPoNote: z.string().trim().max(300).nullish(),
+    /** Why the litres received differ from the note. Required when the gap is above the allowance. */
+    varianceCause: z.enum(VARIANCE_CAUSES).nullish(),
+    varianceNote: z.string().trim().max(500).nullish(),
+    /** Evidence only: the load temperature. It never changes the litres. */
+    loadTemperatureC: z
+      .string()
+      .regex(/^-?\d{1,2}(?:\.\d)?$/, 'Enter the temperature in degrees, for example 28.5')
+      .nullish(),
   })
   .refine((value) => value.noPoReason !== 'OTHER' || !!value.noPoNote, {
     message: 'Say in a few words why there is no purchase order',
@@ -183,10 +200,18 @@ const updateDeliveryPayload = authorityPayload
     noteQuantityLitres: decimalText,
     actualQuantityLitres: decimalText,
     transporter: z.string().trim().max(120).nullish(),
+    /** The supplier that carried the fuel. Its name is stored as the transporter. */
+    transporterSupplierId: uuid.nullish(),
     driver: z.string().trim().max(120).nullish(),
     truckRegistration: z.string().trim().max(80).nullish(),
     noPoReason: z.enum(NO_PO_REASONS).nullish(),
     noPoNote: z.string().trim().max(300).nullish(),
+    varianceCause: z.enum(VARIANCE_CAUSES).nullish(),
+    varianceNote: z.string().trim().max(500).nullish(),
+    loadTemperatureC: z
+      .string()
+      .regex(/^-?\d{1,2}(?:\.\d)?$/, 'Enter the temperature in degrees, for example 28.5')
+      .nullish(),
   })
   .refine((value) => value.noPoReason !== 'OTHER' || !!value.noPoNote, {
     message: 'Say in a few words why there is no purchase order',
@@ -858,6 +883,48 @@ async function assertActiveSupplier(
 }
 
 /**
+ * Who carried the fuel. A chosen transporter must be an active supplier that carries fuel, or the
+ * delivery's own supplier (who may bring their own fuel). Its name is kept on the delivery so the
+ * delivery reads the same whether the name was picked or typed. With none chosen, the typed name
+ * is kept as before.
+ */
+async function resolveTransporter(
+  transaction: InventoryTransaction,
+  tenantId: string,
+  input: {
+    supplierId: string;
+    transporterSupplierId?: string | null | undefined;
+    transporter?: string | null | undefined;
+  },
+): Promise<{ transporterSupplierId: string | null; transporter: string | null }> {
+  if (!input.transporterSupplierId) {
+    return { transporterSupplierId: null, transporter: input.transporter || null };
+  }
+  const rows = await transaction.execute<{
+    status: string;
+    legal_name: string;
+    provides_transport: boolean;
+  }>(sql`
+    select status, legal_name, provides_transport from app.suppliers
+    where tenant_id = ${tenantId} and id = ${input.transporterSupplierId}
+  `);
+  const row = rows[0];
+  if (!row) {
+    throw new AppError('NOT_FOUND', 'That transporter was not found. Pick one from your list.');
+  }
+  if (row.status !== 'ACTIVE') {
+    throw new AppError('CONFLICT', 'That transporter is inactive. Pick another or reactivate it.');
+  }
+  if (!row.provides_transport && input.transporterSupplierId !== input.supplierId) {
+    throw new AppError(
+      'CONFLICT',
+      'That company is not set up to transport fuel. Change it under Suppliers, or pick another.',
+    );
+  }
+  return { transporterSupplierId: input.transporterSupplierId, transporter: row.legal_name };
+}
+
+/**
  * A dip attached to a delivery is evidence of what arrived, so it must be a real, current reading of
  * the tank the fuel went into. A dip cannot be both typed in and picked from the existing ones.
  */
@@ -929,6 +996,70 @@ async function insertDeliveryRow(
   }
 }
 
+async function loadDipLitres(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  dipId: string | null,
+): Promise<string | null> {
+  if (!dipId) return null;
+  const rows = await transaction
+    .select({ physicalLitres: tankDips.physicalLitres, voidedAt: tankDips.voidedAt })
+    .from(tankDips)
+    .where(
+      and(
+        eq(tankDips.tenantId, context.tenantId),
+        eq(tankDips.stationId, context.stationId),
+        eq(tankDips.id, dipId),
+      ),
+    )
+    .limit(1);
+  const dip = rows[0];
+  return dip && !dip.voidedAt ? String(dip.physicalLitres) : null;
+}
+
+/**
+ * Works out the gap between the note and what arrived (and, when both dips were taken, what the
+ * dips say went into the tank) using the owner's allowances, and refuses to save a delivery whose
+ * gap is above the allowance until the person gives a cause. The fuel is credited at the litres
+ * received either way; this only makes sure the gap is explained.
+ */
+async function assessAndRequireExplanation(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  payload: {
+    supplierId: string;
+    varianceCause?: VarianceCause | null;
+    varianceNote?: string | null;
+  },
+  figures: {
+    noteLitres: string;
+    receivedLitres: string;
+    dipBeforeLitres: string | null;
+    dipAfterLitres: string | null;
+  },
+) {
+  const policy = await loadPurchasingPolicy(transaction, context.tenantId, payload.supplierId);
+  const shortage = {
+    absolute: policy.quantityToleranceLitres,
+    percent: policy.quantityTolerancePercent,
+  };
+  const assessment = assessDeliveryVariance({
+    ...figures,
+    shortageTolerance: shortage,
+    excessTolerance: {
+      absolute: policy.overReceiptToleranceLitres,
+      percent: policy.overReceiptTolerancePercent,
+    },
+    dipTolerance: shortage,
+  });
+  const missing = missingExplanation(assessment, {
+    cause: payload.varianceCause,
+    note: payload.varianceNote,
+  });
+  if (missing) throw new AppError('VALIDATION_FAILED', missing);
+  return assessment;
+}
+
 async function insertDelivery(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
@@ -997,12 +1128,21 @@ async function insertDelivery(
     noteQuantity.toString(),
     actual.toString(),
   );
+  const variance = await assessAndRequireExplanation(transaction, context, payload, {
+    noteLitres: noteQuantity.toString(),
+    receivedLitres: actual.toString(),
+    dipBeforeLitres: preDeliveryDip?.physicalLitres ?? null,
+    dipAfterLitres: postDeliveryDip?.physicalLitres ?? null,
+  });
   await insertDeliveryRow(transaction, {
     id: deliveryId,
     tenantId: context.tenantId,
     stationId: context.stationId,
     productId: payload.productId,
     supplierId: payload.supplierId,
+    varianceCause: variance.causeRequired ? (payload.varianceCause ?? null) : null,
+    varianceNote: variance.causeRequired ? payload.varianceNote || null : null,
+    loadTemperatureC: payload.loadTemperatureC ?? null,
     deliveryNoteNumber: payload.deliveryNoteNumber,
     deliveredAt: new Date(payload.deliveredAt),
     businessDate: deriveBusinessDate(payload.deliveredAt, context.stationTimezone),
@@ -1010,7 +1150,7 @@ async function insertDelivery(
     actualQuantityLitres: actual.toString(),
     shortageExcessLitres: shortageExcess,
     supplierReference: payload.supplierReference ?? null,
-    transporter: payload.transporter ?? null,
+    ...(await resolveTransporter(transaction, context.tenantId, payload)),
     driver: payload.driver ?? null,
     truckRegistration: payload.truckRegistration ?? null,
     sealReference: payload.sealReference ?? null,
@@ -1172,10 +1312,20 @@ export async function updateDeliveryFromRequest(request: Request, input: unknown
         );
       }
       validateDeliveryAllocations(payload.actualQuantityLitres, [payload.actualQuantityLitres]);
+      const transport = await resolveTransporter(transaction, context.tenantId, payload);
+      const variance = await assessAndRequireExplanation(transaction, context, payload, {
+        noteLitres: note.toString(),
+        receivedLitres: actual.toString(),
+        dipBeforeLitres: await loadDipLitres(transaction, context, delivery.preDeliveryDipId),
+        dipAfterLitres: await loadDipLitres(transaction, context, delivery.postDeliveryDipId),
+      });
       try {
         await transaction
           .update(fuelDeliveries)
           .set({
+            varianceCause: variance.causeRequired ? (payload.varianceCause ?? null) : null,
+            varianceNote: variance.causeRequired ? payload.varianceNote || null : null,
+            loadTemperatureC: payload.loadTemperatureC ?? null,
             supplierId: payload.supplierId,
             deliveryNoteNumber: payload.deliveryNoteNumber,
             deliveredAt: new Date(payload.deliveredAt),
@@ -1186,7 +1336,7 @@ export async function updateDeliveryFromRequest(request: Request, input: unknown
               note.toString(),
               actual.toString(),
             ),
-            transporter: payload.transporter || null,
+            ...transport,
             driver: payload.driver || null,
             truckRegistration: payload.truckRegistration || null,
             noPoReason: payload.noPoReason ?? null,

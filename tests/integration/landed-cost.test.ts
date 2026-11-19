@@ -43,6 +43,7 @@ describe('landed cost build-up (PostgreSQL)', { timeout: 120_000 }, () => {
       noteQuantityLitres: '1000.000',
       deliveredAt: QA1_TIMES.opening,
       supplierId,
+      varianceCause: 'TEMPERATURE',
     });
     await confirmDelivery(ctx, delivery.deliveryId, 'landed-a-confirm');
 
