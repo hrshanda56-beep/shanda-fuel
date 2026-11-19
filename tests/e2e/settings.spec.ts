@@ -117,10 +117,11 @@ test.describe('Settings', () => {
 
       await sectionButton(page, 'Stations').click();
       await expectOnlyPressed(page, 'Stations');
+      // Stations are listed as cards; each card opens the station's own page.
+      await expect(content(page).getByRole('list', { name: 'Stations' })).toBeVisible();
       await expect(
-        content(page).getByRole('heading', { name: 'Station details', level: 2 }),
+        content(page).getByRole('button', { name: /^Open Settings E2E Station/ }),
       ).toBeVisible();
-      await expect(content(page).getByText('Settings E2E Station', { exact: true })).toBeVisible();
 
       await sectionButton(page, 'Account').click();
       await expectOnlyPressed(page, 'Account');

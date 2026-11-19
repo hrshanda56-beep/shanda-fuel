@@ -77,6 +77,10 @@ test.describe('supplier workflows', () => {
     await page.getByRole('button', { name: 'Add supplier' }).first().click();
     await page.getByLabel('Supplier code').fill('SUP-0002');
     await page.getByLabel('Legal name').fill('Harare Fuel Hauliers');
+    // The form is a short wizard: who, contact, credit, then a check before creating.
+    for (let step = 0; step < 3; step += 1) {
+      await page.getByRole('button', { name: 'Continue' }).click();
+    }
     await page.getByRole('button', { name: 'Create supplier' }).click();
 
     await expect(

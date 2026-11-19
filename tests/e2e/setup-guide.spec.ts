@@ -121,24 +121,24 @@ test.describe('Guided station setup', () => {
     expect(commands).toHaveLength(0);
   });
 
-  test('shows each fuel as its own card, opened on the part still to do', async ({ page }) => {
+  test('shows each fuel as its own card, with the parts still to do', async ({ page }) => {
     await mockApi(page, [{ id: 'p1', code: 'UNLEADED95', name: 'Unleaded 95', status: 'ACTIVE' }]);
     await page.goto('/dev-preview/setup-guide');
-    // The card's name starts with its status; the menu and delete buttons do not carry the summary.
-    const card = page.getByRole('button', { name: /Unleaded 95.*Needs a price/ });
-    await expect(card).toBeVisible();
-    // The first card still to do opens on its own, on the price.
-    await expect(card).toHaveAttribute('aria-expanded', 'true');
+    const fuels = page.getByRole('list', { name: 'Fuel types' });
+    await expect(fuels.getByText('Needs a price, a tank, a nozzle.')).toBeVisible();
+    // Each part opens on its own page, and Done returns to the card.
+    await page.getByRole('button', { name: 'Unleaded 95: Price' }).click();
     await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeVisible();
-    await card.click();
+    await page.getByRole('button', { name: 'Done' }).click();
     await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeHidden();
+    await expect(fuels).toBeVisible();
   });
 
   test('lets the owner choose the supervisor in charge', async ({ page }) => {
     const { commands } = await mockApi(page);
     await page.goto('/dev-preview/setup-guide');
-    await page.getByRole('button', { name: /Supervisor in charge/ }).click();
-    // Save sits in the card's corner, outside the form, and submits it.
+    await page.getByRole('button', { name: 'Change who is in charge' }).click();
+    // Save sits in the page footer, outside the form, and submits it.
     const save = page.getByRole('button', { name: 'Save', exact: true });
     await save.click();
     await expect(page.getByText('Choose who is in charge of this station.')).toBeVisible();
