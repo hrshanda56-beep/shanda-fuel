@@ -852,10 +852,9 @@
   height: 6.5rem;
   place-items: center;
   margin-bottom: var(--space-3);
-  border: 2px solid var(--palette-brand-400);
   border-radius: 50%;
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--palette-brand-400) 18%, transparent);
   color: var(--palette-brand-400);
+  background: transparent;
 }
 
 .today-hero-ring svg {
@@ -1101,7 +1100,7 @@
     height: 2.75rem;
     place-items: center;
     border-radius: 50%;
-    background: rgb(20 32 30 / 0.14);
+    background: transparent;
   }
 
   .today-figure-icon svg {
@@ -1130,6 +1129,7 @@
     width: 4.5rem;
     height: 4.5rem;
     margin-bottom: var(--space-1);
+    background: transparent;
   }
 
   .today-hero-ring svg {
@@ -1281,7 +1281,7 @@ button.today-period {
     height: 2.25rem;
     place-items: center;
     border-radius: 50%;
-    background: rgb(20 32 30 / 0.14);
+    background: transparent;
   }
 
   .today-figure-icon svg {

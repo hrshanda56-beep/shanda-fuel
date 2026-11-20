@@ -57,8 +57,8 @@
   width: 2.5rem;
   height: 2.5rem;
   border-radius: var(--radius-md);
-  background: var(--accent-subtle);
   color: var(--accent-text);
+  background: transparent;
 }
 
 .report-tile-sm {
@@ -74,10 +74,6 @@
 @media (hover: hover) {
   .report-row:has(.row-link):hover {
     background: var(--bg-subtle);
-  }
-
-  .report-row:has(.row-link):hover .report-tile {
-    background: var(--accent-muted);
   }
 
   .report-row:has(.row-link):hover .row-link {
@@ -227,10 +223,6 @@
 
 .rail-link[aria-current='true'] {
   background: var(--accent-subtle);
-}
-
-.rail-link[aria-current='true'] .report-tile {
-  background: var(--accent-muted);
 }
 
 .rail-link[aria-current='true']::after {

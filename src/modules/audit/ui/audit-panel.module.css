@@ -34,13 +34,13 @@
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  background: var(--bg-subtle);
   color: var(--text-secondary);
+  background: transparent;
 }
 
 .mark[data-kind='created'] {
-  background: var(--accent-muted);
   color: var(--accent-text);
+  background: transparent;
 }
 
 .body {

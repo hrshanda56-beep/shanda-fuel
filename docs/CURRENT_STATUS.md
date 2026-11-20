@@ -1,5 +1,21 @@
 # Shanda Fuel — Current Status
 
+## Transparent icons and one icon per report — 2026-11-20 (branch `feat/icons-transparent-255`, issue #255, uncommitted)
+
+The tiles and circles behind icons are gone: report rows, the Today figure cards and hero ring, My
+Shift figure icons, timeline and audit marks, the confirm, state and work-in-progress icons (the
+station and fuel icons were already plain). Boxes keep their size so nothing moves; colours stay
+tone-based and were checked in light and dark. Each report now has its own icon
+(`reporting/ui/report-icons.ts`, `REPORT_ICONS`), with ten new drawings in `design-system/icons.tsx`
+(arrows, layers, dipstick, factory, person, user-check, safe, bank, clipboard-check, pie); a unit
+test fails if a listed report has no icon of its own or shares one. Sidebar icons were audited:
+Inventory is now the tank, Cash & Banking the bank, Provider payouts the card, Expenses the dollar,
+Staff fuel benefit the nozzle, Suppliers the factory, Payments due the calendar, Purchase orders the
+clipboard, Reconciliations the scale (Transporters and Fuel deliveries keep the truck). Not done:
+the ~19 files that draw their own `<svg>` (charts, provider logos, tank drum) were left alone, as the
+issue says; a full per-screen icon relevance review beyond navigation and reports was not done;
+browser specs were not run (they need Clerk secrets).
+
 ## Quotations, invoices and receipts — 2026-11-18 (branch `feat/sales-documents`, from NOV17)
 
 DEC-045. Built: migration `0108_sales_documents` (letterhead and numbering settings, gap-free
