@@ -1,5 +1,27 @@
 # Shanda Fuel — Current Status
 
+## Loading speed, code-only slice — 2026-11-20 (branch `perf/loading-speed-259`, issue #259, uncommitted)
+
+Done (code only; no schema, auth rule or caching change): (1) My Shift and Settings no longer do a
+second full station and permission lookup. The page now takes the shell's already-loaded list of what
+the person may use and chooses its station from it (`modules/context/page-context.ts`,
+`contextFromShellAccess`, the same pattern as `ServerDataPage` and the Finance page), and hands the
+shell the same result; the choice uses the same route, policy and saved-choice rules, and only picks
+from what the shell verified. (2) My Shift reads the database clock in the station query instead of a
+separate `select now()`. (3) A root `loading.tsx` gives the dashboard an instant skeleton when
+someone moves to Today; sign-in, join, invite, owner-demo and dev-login get an empty `loading.tsx` so
+they do not show the app skeleton. (4) The daily alert email now logs a warning once its recipients
+reach 80 % of the 200 cap (it silently stopped at 200). Not done, on purpose: the dashboard
+per-station "needs attention" batching (it already runs the stations in parallel, and batching means
+rewriting the action-centre reads under per-station permission checks — needs production timings
+first); `next/dynamic` splitting (the biggest candidate, `guided-setup-panel.tsx`, is rewritten in
+the wizard work, so splitting it now would only conflict); the `proxy.ts` slug lookup (it is the
+fail-closed auth boundary and only affects `?org=` addresses); dropping `force-dynamic` (a safety
+net that costs nothing at run time); pool timeouts (the pooler setup is not confirmed); moving
+screen CSS out of the global files (UI-locked, needs a visual pass); turning on
+`CONSOLIDATED_CONTEXT_READS` / adding the slug to migration 0034's snapshot (a production decision).
+Timings are in the PR notes; production timings were not available.
+
 ## Quotations, invoices and receipts — 2026-11-18 (branch `feat/sales-documents`, from NOV17)
 
 DEC-045. Built: migration `0108_sales_documents` (letterhead and numbering settings, gap-free

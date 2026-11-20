@@ -8,7 +8,13 @@ import {
   allowsE2ENavigationFixture,
   E2E_NAVIGATION_FIXTURE_HEADER,
 } from '@/design-system/navigation-projection';
+import {
+  getServerShellAccess,
+  getServerShellAccessForResolution,
+  type ServerShellAccess,
+} from '@/design-system/navigation-server';
 import { AccessDeniedState, ErrorState } from '@/design-system/primitives';
+import { contextFromShellAccess } from '@/modules/context/page-context';
 import { resolveCurrentContext } from '@/modules/context/server';
 import { MyShiftWorkspace } from '@/modules/forecourt/ui/my-shift-workspace';
 import { AppError, isAccessRefusal } from '@/platform/errors';
@@ -54,17 +60,33 @@ export default async function MyShiftPage({
   let tenantId: string | undefined;
   let stationId: string | undefined;
   let failure: unknown;
+  // The shell has to look the person and their stations up anyway; the page reuses that result
+  // for its own station choice instead of asking the database a second time.
+  let shellAccess: Extract<ServerShellAccess, { status: 'ready' }> | undefined;
+  let signedOut = false;
   try {
-    const resolution = await resolveCurrentContext(request);
-    tenantId = resolution.current?.organisationId;
-    stationId = resolution.current?.stationId;
+    const access = await getServerShellAccess(requestHeaders);
+    if (access.status === 'signed-out') {
+      signedOut = true;
+    } else {
+      const resolution =
+        contextFromShellAccess(access, request, '/my-shift', url.searchParams) ??
+        (await resolveCurrentContext(request));
+      tenantId = resolution.current?.organisationId;
+      stationId = resolution.current?.stationId;
+      if (access.status === 'ready') {
+        shellAccess = await getServerShellAccessForResolution(request, access, resolution);
+      }
+    }
   } catch (error) {
     failure = error;
   }
-  if (failure instanceof AppError && failure.code === 'UNAUTHENTICATED') redirect('/login');
+  if (signedOut || (failure instanceof AppError && failure.code === 'UNAUTHENTICATED')) {
+    redirect('/login');
+  }
 
   return (
-    <AppShell attendantHome>
+    <AppShell attendantHome {...(shellAccess ? { shellAccess } : {})}>
       {isAccessRefusal(failure) ? (
         <AccessDeniedState />
       ) : failure ? (
