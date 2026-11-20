@@ -129,9 +129,9 @@ export function checkTank(tank: TankDraft, unit: FuelUnitChoice): Errors {
     errors.difference = `Enter a number of ${w}, or leave this empty.`;
   }
   if (tank.red.trim() && !red) errors.red = `Enter a number of ${w}, or leave this empty.`;
-  else if (red && !difference) errors.red = 'Set the yellow limit first.';
+  else if (red && !difference) errors.red = 'Set the amount to explain first.';
   else if (red && difference && Number(red) < Number(difference)) {
-    errors.red = 'The red limit cannot be lower than the yellow one.';
+    errors.red = 'The urgent amount cannot be lower than the amount to explain.';
   }
   if (tank.reorder.trim() && !reorder) {
     errors.reorder = `Enter a number of ${w}, or leave this empty.`;

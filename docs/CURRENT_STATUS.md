@@ -1,5 +1,43 @@
 # Shanda Fuel — Current Status
 
+## Fuel change wizard, first part (#249, #256, start of #250) — 2026-11-20 (branch `feat/fuel-change-wizard-249`, stacked on the #248 foundations, uncommitted)
+
+Built on the wizard foundations. Done: (1) **"What do you want to change?" stands alone**
+(`WizardMenu` in `wizard-kit.tsx`, `ChangePart` in `guided-setup-panel.tsx`): "Yes, change it" on a
+fuel page opens only the question, the three options (price, tanks, pumps and nozzles) and Cancel;
+picking one goes straight to that flow. (2) **Tank wizard** (`setup/tank-wizard.ts` rules, tested;
+`setup/ui/tank-wizard.tsx` screens): pick a tank or add one, then one question per screen — name,
+size, "remind me to order more fuel" (yes/no, then 25 / 20 / 10 % of the tank or an own amount),
+how big a difference is acceptable (the standard check, 0.5 % warning and 1 % alert, or own
+amounts), a check screen, then "Do you want to change something else?" which returns to the first
+question. Whole numbers with units beside them, no "yellow"/"red" wording (also changed on the
+Inventory tank settings, the add-fuel wizard and the old forms); the old checks stay (reminder not
+above the tank size, urgent not below the explain amount, explain set first, no repeated tank name).
+A tank with only an explain amount is shown with the urgent amount it already has (twice the first).
+(3) **Prices read as money** on the price-change page (`US$1.50/L`, not `1.500000`; decimals the
+price really has are kept, `formatUnitPriceText`) and that page has its own heading, "Change a
+price". (4) The station page card is called "Fuels" and no longer shows the shift note. Changes made
+in the wizard are still staged and saved once from the existing review bar, because the staging
+host lives in the old editing screen. **Not done (the rest of #249, #250, #251):** the price wizard
+(pre-filled price, when it starts, a meter reading per pump, adapting to rights) and the pumps and
+nozzles wizard — their old stacked forms are still in use; "The Whole Station" under the fuel cards
+and the shift and in-charge wizards; the opening-balances question and wizard; removing the editing
+screen and the "Change Setup" toggle (the staged-changes host must be re-homed first); the Readiness
+redesign (#251); removing the old stacked forms. Checks: see the PR notes; verified live on the demo
+database at 390 and 1280 wide (add and change a tank, no horizontal overflow); the saved change was
+only staged, nothing was written to the demo data.
+
+## Wizard foundations (#248) — 2026-11-20 (branch `feat/wizard-foundations-248`, from `main` 7d49ba30, uncommitted)
+
+First step of the owner feedback round (tracking #260). Nothing user-visible changes except one screen.
+
+- **New shared parts** (`src/design-system/`): `wizard-kit.tsx` (pick-list answers `WizardOptions` / `WizardYesNo` / `WizardUsualOrOwn`, the "Change something else?" loop `WizardAnother`, saving progress with `useWizardDraft` + `WizardResumeNotice`, and `WizardConfirm`, the one confirm screen) and the pure, unit-tested rules in `wizard-nav.ts` (Back trail, "Step x of y", repeating steps) and `wizard-draft.ts` (per-wizard draft: kept on this device, offered back, never applied silently, dropped after 24 hours, on a changed record, or for a screen that no longer exists; secrets never kept). `useWizard` now uses `wizard-nav.ts`; behaviour is unchanged. `WizardCard` takes `ownDraft` so the page-wide draft keeper stays out of a wizard that saves its own progress. The written pattern for new wizards is in `src/design-system/README.md`.
+- **The shared confirm is now the page card:** `ConfirmDialog` (used by purchase orders and by `confirm()` from the feedback provider) renders through `WizardConfirm` in `Modal presentation="page"` instead of a small pop-up. Same props; `WizardConfirm` gained the tick-box acknowledgement and a warning tone. Cancel and Escape still close it, and the tick resets on each opening.
+- **One screen converted:** "Add an expense" no longer opens a small pop-up first. "What would you like to add?" is the wizard's first screen (`ExpenseKindStep`).
+- **Not done here (later PRs in the round):** retiring the ten side panels and the one-off dialogs that do not use `ConfirmDialog` is #252, one area at a time; the new pieces are used by #249, #250, #251, #253, #256 and #258.
+- **UI lock:** re-baselined with the owner's approval (DEC-056).
+- **Checks:** typecheck, lint (one old warning), format, unit tests and the production build pass. Checked live on the local demo database (the confirm on the design-system reference page, since the demo has no purchase orders) at phone and desktop widths, light and dark, with no sideways scroll. No browser spec was added: the existing specs mock Clerk and the expenses APIs, and none covers this page.
+
 ## Quotations, invoices and receipts — 2026-11-18 (branch `feat/sales-documents`, from NOV17)
 
 DEC-045. Built: migration `0108_sales_documents` (letterhead and numbering settings, gap-free

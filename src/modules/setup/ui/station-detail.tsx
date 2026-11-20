@@ -127,10 +127,10 @@ export function StationDetail({
   const { state, refresh } = useStationConfig(tenantId, station.id);
   const [editing, setEditing] = useState(startEditing || station.status === 'ONBOARDING');
   const [openPart, setOpenPart] = useState<{
-    kind: 'price' | 'tanks' | 'pumps';
+    kind: 'choose' | 'price' | 'tanks' | 'pumps';
     productId: string;
   }>();
-  const openFuelPart = (kind: 'price' | 'tanks' | 'pumps', productId: string) => {
+  const openFuelPart = (kind: 'choose' | 'price' | 'tanks' | 'pumps', productId: string) => {
     setOpenPart({ kind, productId });
     setEditing(true);
   };
@@ -330,23 +330,15 @@ export function StationDetail({
             <FuelPage
               fuel={openFuel}
               canSetUp={canSetUp}
-              onYes={(kind) => openFuelPart(kind, openFuel.productId)}
+              onYes={() => openFuelPart('choose', openFuel.productId)}
               onNo={() => setFuelId(undefined)}
             />
           ) : (
-            <SectionCard
-              id="station-fuels"
-              title="Fuels and prices"
-              note={
-                overview.shifts.length > 0
-                  ? overview.shifts.map((shift) => `${shift.name} ${shift.when}`).join(' · ')
-                  : 'No shift has been added yet.'
-              }
-            >
+            <SectionCard id="station-fuels" title="Fuels">
               {overview.fuels.length === 0 ? (
                 <CardEmpty>No fuel has been added to this station yet.</CardEmpty>
               ) : (
-                <div className={styles.fuelGrid} role="list" aria-label="Fuels and prices">
+                <div className={styles.fuelGrid} role="list" aria-label="Fuels">
                   {overview.fuels.map((fuel) => (
                     <div
                       className={`${styles.fuelCard} ${styles.clickable}`}
@@ -416,22 +408,12 @@ function FuelPage({
 }: {
   fuel: StationFuelRow;
   canSetUp: boolean;
-  onYes: (kind: 'price' | 'tanks' | 'pumps') => void;
+  /** Opens "What do you want to change?" on its own screen, never beside the tiles. */
+  onYes: () => void;
   onNo: () => void;
 }) {
-  const [choosing, setChoosing] = useState(false);
   const unit = fuel.unitWord === 'litres' ? 'L' : 'kg';
   const accent = { '--fuel-accent': 'var(--brand, #2f6f5a)' } as CSSProperties;
-  const choices: ReadonlyArray<{
-    kind: 'price' | 'tanks' | 'pumps';
-    label: string;
-    hint: string;
-    icon: IconName;
-  }> = [
-    { kind: 'price', label: 'The price', hint: 'What a ' + unit + ' costs', icon: 'tag' },
-    { kind: 'tanks', label: 'The tanks', hint: 'Add or change a tank', icon: 'tank' },
-    { kind: 'pumps', label: 'Pumps & Nozzles', hint: 'Add or change a nozzle', icon: 'nozzle' },
-  ];
   return (
     <div className={styles.fuelPage} style={accent}>
       {!fuel.done && fuel.needs ? (
@@ -500,42 +482,15 @@ function FuelPage({
 
         {canSetUp ? (
           <section className={styles.fuelAsk} role="group" aria-label={`Change ${fuel.name}`}>
-            {choosing ? (
-              <>
-                <strong>What do you want to change?</strong>
-                <div className={styles.choiceGrid}>
-                  {choices.map((c) => (
-                    <button
-                      key={c.kind}
-                      type="button"
-                      className={styles.choice}
-                      onClick={() => onYes(c.kind)}
-                    >
-                      <span className={styles.fuelTileIcon} aria-hidden="true">
-                        <Icon name={c.icon} />
-                      </span>
-                      <span className={styles.choiceLabel}>{c.label}</span>
-                      <span className={styles.muted}>{c.hint}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className={styles.actions}>
-                  <Button variant="quiet" onClick={() => setChoosing(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <div className={styles.askRow}>
-                <strong>Do you want to change anything for {fuel.name}?</strong>
-                <div className={styles.actions}>
-                  <Button onClick={() => setChoosing(true)}>Yes, change it</Button>
-                  <Button variant="secondary" onClick={onNo}>
-                    No, leave it
-                  </Button>
-                </div>
+            <div className={styles.askRow}>
+              <strong>Do you want to change anything for {fuel.name}?</strong>
+              <div className={styles.actions}>
+                <Button onClick={onYes}>Yes, change it</Button>
+                <Button variant="secondary" onClick={onNo}>
+                  No, leave it
+                </Button>
               </div>
-            )}
+            </div>
           </section>
         ) : null}
       </div>

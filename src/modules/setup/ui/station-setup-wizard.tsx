@@ -427,7 +427,7 @@ export function StationSetupWizard({
               <summary>Stock warnings (optional)</summary>
               <NumericInput
                 id="ssw-difference"
-                label={`Yellow: explain above (${unitWord(fuel.unit)})`}
+                label={`Ask for an explanation above (${unitWord(fuel.unit)})`}
                 hint="How far the dip reading may be from the book stock before the difference must be explained."
                 optional
                 error={e('difference')}
@@ -438,7 +438,7 @@ export function StationSetupWizard({
               />
               <NumericInput
                 id="ssw-red"
-                label={`Red: urgent above (${unitWord(fuel.unit)})`}
+                label={`Treat as urgent above (${unitWord(fuel.unit)})`}
                 hint="A difference above this is urgent."
                 optional
                 error={e('red')}
@@ -447,7 +447,7 @@ export function StationSetupWizard({
               />
               <NumericInput
                 id="ssw-reorder"
-                label={`Warn me when stock falls to (${unitWord(fuel.unit)})`}
+                label={`Order more fuel when it falls to (${unitWord(fuel.unit)})`}
                 hint="Used for low-stock reminders."
                 optional
                 error={e('reorder')}

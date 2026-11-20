@@ -85,6 +85,8 @@ import styles from './setup.module.css';
 import hub from './setup-hub.module.css';
 import { StepUpDialog } from './step-up-dialog';
 import { StationSetupWizard } from './station-setup-wizard';
+import { TankWizard } from './tank-wizard';
+import { WizardMenu } from '@/design-system/wizard-kit';
 import { useSetupOverview } from './use-setup-overview';
 
 type Ready = Extract<SetupOverview, { status: 'ready' }>;
@@ -915,9 +917,9 @@ function readTankFields(data: FormData, word: string) {
       redText && !red
         ? `Enter a number of ${word}, or leave this empty.`
         : red && !difference
-          ? 'Set the yellow limit first.'
+          ? 'Set the amount to explain first.'
           : red && difference && Number(red) < Number(difference)
-            ? 'The red limit cannot be lower than the yellow one.'
+            ? 'The urgent amount cannot be lower than the amount to explain.'
             : undefined,
   };
   return { capacity, reorder, difference, red, errors };
@@ -1238,6 +1240,71 @@ function ShiftEditor({ ctx, shift, close }: EditorProps<{ shift: SetupShiftTempl
   );
 }
 
+/** "What do you want to change?" for one fuel, on its own: the question, the three options, Cancel. */
+function ChangePart({
+  unitWord,
+  onPick,
+  onCancel,
+}: {
+  unitWord: string;
+  onPick: (kind: 'price' | 'tanks' | 'pumps') => void;
+  onCancel: () => void;
+}) {
+  return (
+    <WizardMenu<'price' | 'tanks' | 'pumps'>
+      title="What do you want to change?"
+      name="fuel-change"
+      onPick={onPick}
+      onCancel={onCancel}
+      options={[
+        { value: 'price', label: 'The price', detail: `What a ${unitWord} costs` },
+        { value: 'tanks', label: 'The tanks', detail: 'Add or change a tank' },
+        { value: 'pumps', label: 'Pumps & Nozzles', detail: 'Add or change a nozzle' },
+      ]}
+    />
+  );
+}
+
+/** The tanks of one fuel as a one-question-at-a-time flow (#256), then "change something else?". */
+function TankPart({
+  ctx,
+  productId,
+  onAnother,
+  onFinish,
+  onCancel,
+}: {
+  ctx: FormContext;
+  productId: string;
+  onAnother: () => void;
+  onFinish: () => void;
+  onCancel: () => void;
+}) {
+  const { save, busy } = useSaver('/api/inventory/commands', ctx.refresh, ctx.onDenied);
+  const tanks = (ctx.data.tanks ?? []).filter(
+    (t) => t.status === 'ACTIVE' && t.productId === productId,
+  );
+  return (
+    <TankWizard
+      tenantId={ctx.tenantId}
+      stationId={ctx.stationId}
+      productId={productId}
+      word={quantityWord(ctx.data, productId)}
+      tanks={tanks}
+      allCodes={(ctx.data.tanks ?? []).map((t) => t.code)}
+      canManage={ctx.data.capabilities.tanks}
+      busy={busy}
+      save={(body, success) =>
+        new Promise<boolean>((resolve) => {
+          ctx.gate(async () => resolve(await save(body, success)));
+        })
+      }
+      onAnother={onAnother}
+      onFinish={onFinish}
+      onCancel={onCancel}
+    />
+  );
+}
+
 function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; productId?: string }) {
   const { save, busy, outcome } = useSaver('/api/inventory/commands', ctx.refresh, ctx.onDenied);
   const [errors, setErrors] = useState<Errors>({});
@@ -1278,9 +1345,9 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
         redText && !red
           ? `Enter a number of ${word}, or leave this empty.`
           : red && !difference
-            ? 'Set the yellow limit first.'
+            ? 'Set the amount to explain first.'
             : red && difference && Number(red) < Number(difference)
-              ? 'The red limit cannot be lower than the yellow one.'
+              ? 'The urgent amount cannot be lower than the amount to explain.'
               : undefined,
     };
     setErrors(next);
@@ -1397,7 +1464,7 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
               <summary>Stock warnings (optional)</summary>
               <Field
                 id={`${idp}tank-difference`}
-                label={`Yellow: explain above (${word})`}
+                label={`Ask for an explanation above (${word})`}
                 hint="How far the dip reading may be from the book stock before the difference must be explained."
                 error={errors.difference}
                 optional
@@ -1411,8 +1478,8 @@ function TankStep({ ctx, productId: onlyProductId }: { ctx: FormContext; product
               </Field>
               <Field
                 id={`${idp}tank-red`}
-                label={`Red: urgent above (${word})`}
-                hint="A difference above this is urgent. Leave it empty to use twice the yellow limit."
+                label={`Treat as urgent above (${word})`}
+                hint="A difference above this is urgent. Leave it empty to use twice the amount to explain."
                 error={errors.red}
                 optional
               >
@@ -2263,7 +2330,7 @@ export function StationSetupGuide({
   /** Opens straight on the form for correcting when a meter started working. */
   focus?: 'meter-start';
   /** Opens straight on one part of one fuel, e.g. its price. */
-  openPart?: { kind: 'price' | 'tanks' | 'pumps'; productId: string };
+  openPart?: { kind: 'choose' | 'price' | 'tanks' | 'pumps'; productId: string };
 }) {
   const { state, refresh, reload } = useStationConfig(tenantId, stationId);
   if (state.kind === 'loading') return <LoadingState label="Loading station setup" />;
@@ -2319,7 +2386,7 @@ function StagingHost({
   onOpenStaff?: () => void;
   focus?: 'meter-start';
   /** Opens straight on one part of one fuel, e.g. its price. */
-  openPart?: { kind: 'price' | 'tanks' | 'pumps'; productId: string };
+  openPart?: { kind: 'choose' | 'price' | 'tanks' | 'pumps'; productId: string };
 }) {
   const [queue, setQueue] = useState<StagedChange[]>([]);
   const realIds = useRef(new Map<string, string>());
@@ -2655,10 +2722,11 @@ function FuelMenu({
 }
 
 type Part =
-  | { kind: 'price' | 'tanks' | 'pumps' | 'type'; productId: string }
+  | { kind: 'choose' | 'price' | 'tanks' | 'pumps' | 'type'; productId: string }
   | { kind: 'shifts' | 'supervisor' };
 
 const PART_TITLES = {
+  choose: 'What do you want to change?',
   price: 'Price',
   tanks: 'Tanks',
   pumps: 'Pumps & Nozzles',
@@ -2693,7 +2761,7 @@ function GuideSteps({
   onOpenStaff?: () => void;
   focus?: 'meter-start';
   /** Opens straight on one part of one fuel, e.g. its price. */
-  openPart?: { kind: 'price' | 'tanks' | 'pumps'; productId: string };
+  openPart?: { kind: 'choose' | 'price' | 'tanks' | 'pumps'; productId: string };
 }) {
   const steps = buildGuidedSteps(data);
   const fuelCards = buildFuelCards(data);
@@ -2956,33 +3024,52 @@ function GuideSteps({
         presentation="page"
         size="md"
         footer={
-          <>
-            {part?.kind === 'shifts' && ctx.data.capabilities.shiftTemplates ? (
-              <Button variant="secondary" onClick={() => setAddingShift(true)}>
-                Add a shift
+          part?.kind === 'choose' || part?.kind === 'tanks' ? undefined : (
+            <>
+              {part?.kind === 'shifts' && ctx.data.capabilities.shiftTemplates ? (
+                <Button variant="secondary" onClick={() => setAddingShift(true)}>
+                  Add a shift
+                </Button>
+              ) : null}
+              {part?.kind === 'supervisor' &&
+              ctx.data.capabilities.forecourt &&
+              (ctx.data.supervisors ?? []).length > 0 ? (
+                <Button type="submit" form="supervisor-form" loading={supervisorBusy}>
+                  Save
+                </Button>
+              ) : null}
+              <Button
+                variant={part?.kind === 'supervisor' ? 'secondary' : 'primary'}
+                onClick={() => setPart(null)}
+              >
+                Done
               </Button>
-            ) : null}
-            {part?.kind === 'supervisor' &&
-            ctx.data.capabilities.forecourt &&
-            (ctx.data.supervisors ?? []).length > 0 ? (
-              <Button type="submit" form="supervisor-form" loading={supervisorBusy}>
-                Save
-              </Button>
-            ) : null}
-            <Button
-              variant={part?.kind === 'supervisor' ? 'secondary' : 'primary'}
-              onClick={() => setPart(null)}
-            >
-              Done
-            </Button>
-          </>
+            </>
+          )
         }
       >
-        <h2 className="wizard-page-title">{partTitle}</h2>
+        {part && part.kind !== 'choose' && part.kind !== 'tanks' ? (
+          <h2 className="wizard-page-title">{partTitle}</h2>
+        ) : null}
         {part && 'productId' in part ? (
           <>
             {part.kind === 'price' ? <PriceStep ctx={ctx} productId={part.productId} /> : null}
-            {part.kind === 'tanks' ? <TankStep ctx={ctx} productId={part.productId} /> : null}
+            {part.kind === 'choose' ? (
+              <ChangePart
+                unitWord={priceWord(ctx.data, part.productId)}
+                onPick={(kind) => setPart({ kind, productId: part.productId })}
+                onCancel={() => setPart(null)}
+              />
+            ) : null}
+            {part.kind === 'tanks' ? (
+              <TankPart
+                ctx={ctx}
+                productId={part.productId}
+                onAnother={() => setPart({ kind: 'choose', productId: part.productId })}
+                onFinish={() => setPart(null)}
+                onCancel={() => setPart({ kind: 'choose', productId: part.productId })}
+              />
+            ) : null}
             {part.kind === 'pumps' ? (
               <PumpStep
                 ctx={ctx}

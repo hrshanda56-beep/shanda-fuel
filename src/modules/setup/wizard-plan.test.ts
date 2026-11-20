@@ -200,7 +200,7 @@ describe('checks', () => {
     });
     expect(checkTank({ ...blankTank('T'), capacity: '1000' }, 'LITRES')).toEqual({});
     expect(checkTank({ ...blankTank('T'), capacity: '1000', red: '50' }, 'LITRES').red).toMatch(
-      /yellow/,
+      /amount to explain/,
     );
     expect(
       checkTank({ ...blankTank('T'), capacity: '1000', difference: '50', red: '20' }, 'LITRES').red,
