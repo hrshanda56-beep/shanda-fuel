@@ -121,6 +121,8 @@ export const PERMISSION_CODES = [
   'purchase_order.create',
   'purchase_order.approve',
   'purchase_order.cancel',
+  'delivery.loss.record',
+  'delivery.loss.approve',
 ] as const;
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
@@ -217,6 +219,8 @@ const highRiskPermissions = new Set<PermissionCode>([
   'expense.reverse',
   'expense.payment.reverse',
   'expense.policy.manage',
+  'delivery.loss.record',
+  'delivery.loss.approve',
 ]);
 
 type OriginalRole = 'OWNER' | 'ADMINISTRATOR' | 'FINANCE' | 'SUPERVISOR' | 'ATTENDANT';
@@ -342,6 +346,8 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'purchase_order.create',
     'purchase_order.approve',
     'purchase_order.cancel',
+    'delivery.loss.record',
+    'delivery.loss.approve',
   ],
   FINANCE: [
     'tenant.context.select',
@@ -421,6 +427,7 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'purchase_order.create',
     'purchase_order.approve',
     'purchase_order.cancel',
+    'delivery.loss.record',
   ],
   SUPERVISOR: [
     'tenant.context.select',
@@ -474,6 +481,7 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'expense.approve',
     'purchase_order.view',
     'purchase_order.create',
+    'delivery.loss.record',
   ],
   ATTENDANT: [
     'tenant.context.select',

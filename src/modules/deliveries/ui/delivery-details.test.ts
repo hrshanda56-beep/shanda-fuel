@@ -46,6 +46,7 @@ const detail: DeliveryDetail = {
   },
   lossClaim: null,
   canRecordClaim: false,
+  canApproveClaim: false,
   compartments: [
     {
       compartmentNumber: 1,

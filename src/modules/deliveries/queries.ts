@@ -285,12 +285,20 @@ export type DeliveryDetail = Readonly<{
   lossClaim: Readonly<{
     liableParty: string;
     status: string;
+    expectedAmount: string | null;
     recoveredAmount: string | null;
+    settlementMethod: string | null;
     currency: string | null;
     note: string | null;
+    /** NOT_NEEDED, PENDING, APPROVED or REJECTED. */
+    approvalStatus: string;
+    approvalNote: string | null;
+    approvedAt: string | null;
   }> | null;
   /** Only people who may follow up money are offered the claim form. */
   canRecordClaim: boolean;
+  /** An administrator or owner, who did not record the last change, may approve a pending claim. */
+  canApproveClaim: boolean;
   compartments: readonly Readonly<{
     compartmentNumber: number;
     noteLitres: string;
@@ -464,11 +472,19 @@ export async function queryDeliveryDetail(input: {
       const claims = await transaction.execute<{
         liable_party: string;
         status: string;
+        expected_amount: string | null;
         recovered_amount: string | null;
+        settlement_method: string | null;
         currency: string | null;
         note: string | null;
+        approval_status: string;
+        approval_note: string | null;
+        approved_at: Date | string | null;
+        updated_by: string;
       }>(sql`
-        select liable_party, status, recovered_amount::text as recovered_amount, currency, note
+        select liable_party, status, expected_amount::text as expected_amount,
+          recovered_amount::text as recovered_amount, settlement_method, currency, note,
+          approval_status, approval_note, approved_at, updated_by
         from app.fuel_delivery_loss_claims
         where tenant_id = ${context.tenantId} and delivery_id = ${parsed.deliveryId}
       `);
@@ -481,12 +497,27 @@ export async function queryDeliveryDetail(input: {
           ? {
               liableParty: claim.liable_party,
               status: claim.status,
+              expectedAmount: claim.expected_amount,
               recoveredAmount: claim.recovered_amount,
+              settlementMethod: claim.settlement_method,
               currency: claim.currency,
               note: claim.note,
+              approvalStatus: claim.approval_status,
+              approvalNote: claim.approval_note,
+              approvedAt: claim.approved_at ? new Date(claim.approved_at).toISOString() : null,
             }
           : null,
-        canRecordClaim: roleAllows(context, 'supplier.delivery.link'),
+        canRecordClaim:
+          roleAllows(context, 'delivery.loss.record') &&
+          !(
+            claim &&
+            claim.approval_status === 'APPROVED' &&
+            (claim.status === 'SETTLED' || claim.status === 'WRITTEN_OFF')
+          ),
+        canApproveClaim:
+          roleAllows(context, 'delivery.loss.approve') &&
+          claim?.approval_status === 'PENDING' &&
+          claim.updated_by !== context.authority.membership.membershipId,
         stationTimezone: context.stationTimezone,
         waterTestRequired: settings[0]?.water_test_required ?? false,
         canConfirm: roleAllows(context, 'inventory.delivery.manage'),

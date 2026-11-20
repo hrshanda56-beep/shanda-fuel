@@ -8,10 +8,12 @@ import type { DeliveryDetail } from '../queries';
 import {
   LOSS_LIABLE_PARTIES,
   LOSS_RECOVERY_STATUSES,
+  LOSS_SETTLEMENT_METHODS,
   VARIANCE_CAUSE_LABELS,
   checkLossRecovery,
   type LossLiableParty,
   type LossRecoveryStatus,
+  type LossSettlementMethod,
   type VarianceCause,
 } from '../variance-assessment';
 
@@ -29,6 +31,23 @@ const STATUS_LABELS: Record<LossRecoveryStatus, string> = {
   SETTLED: 'Paid back',
   WRITTEN_OFF: 'Written off',
 };
+
+const METHOD_LABELS: Record<LossSettlementMethod, string> = {
+  CASH: 'Paid to us in cash',
+  TRANSPORT_BILL: "Taken off the transport company's bill",
+  SUPPLIER_BALANCE: 'Taken off what we owe the supplier',
+};
+
+export function methodLabel(value: string): string {
+  return METHOD_LABELS[value as LossSettlementMethod] ?? value;
+}
+
+export function approvalLabel(value: string): string {
+  if (value === 'PENDING') return 'Waiting for approval';
+  if (value === 'APPROVED') return 'Approved';
+  if (value === 'REJECTED') return 'Sent back';
+  return '';
+}
 
 export function partyLabel(value: string): string {
   return PARTY_LABELS[value as LossLiableParty] ?? value;
@@ -67,7 +86,13 @@ export function DeliveryLoss({
   const [status, setStatus] = useState<LossRecoveryStatus>(
     (lossClaim?.status as LossRecoveryStatus | undefined) ?? 'NONE',
   );
+  const [expected, setExpected] = useState(lossClaim?.expectedAmount ?? '');
   const [amount, setAmount] = useState(lossClaim?.recoveredAmount ?? '');
+  const [method, setMethod] = useState<LossSettlementMethod | ''>(
+    (lossClaim?.settlementMethod as LossSettlementMethod | null | undefined) ?? '',
+  );
+  const [currency, setCurrency] = useState(lossClaim?.currency ?? 'USD');
+  const [reviewNote, setReviewNote] = useState('');
   const [note, setNote] = useState(lossClaim?.note ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,12 +100,45 @@ export function DeliveryLoss({
   const short = delivery.receipt === 'PARTIAL';
 
   async function save() {
+    const expectedText = status === 'RAISED' ? expected.trim() || null : null;
+    const recoveredText = status === 'SETTLED' ? amount.trim() || null : null;
+    const code = currency.trim().toUpperCase();
     const problem = checkLossRecovery({
       liableParty: party,
       status,
-      amount: status === 'SETTLED' ? amount.trim() || null : null,
+      expectedAmount: expectedText ?? lossClaim?.expectedAmount ?? null,
+      recoveredAmount: recoveredText,
+      settlementMethod: status === 'SETTLED' && method ? method : null,
+      currency: code || null,
     });
     if (problem) return setError(problem);
+    if (code && !/^[A-Z]{3}$/.test(code)) {
+      return setError('Write the currency as three letters, for example USD.');
+    }
+    await send({
+      commandType: 'RecordDeliveryLossClaim',
+      liableParty: party,
+      status,
+      expectedAmount: expectedText,
+      recoveredAmount: recoveredText,
+      settlementMethod: status === 'SETTLED' && method ? method : null,
+      currency: expectedText || recoveredText ? code : null,
+      note: note.trim() || null,
+    });
+  }
+
+  async function review(decision: 'APPROVED' | 'REJECTED') {
+    if (decision === 'REJECTED' && !reviewNote.trim()) {
+      return setError('Say why you are sending it back.');
+    }
+    await send({
+      commandType: 'ReviewDeliveryLossClaim',
+      decision,
+      note: reviewNote.trim() || null,
+    });
+  }
+
+  async function send(body: Record<string, unknown>) {
     setError(null);
     setBusy(true);
     try {
@@ -88,24 +146,19 @@ export function DeliveryLoss({
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
         body: JSON.stringify({
-          commandType: 'RecordDeliveryLossClaim',
+          ...body,
           tenantId: context.tenantId,
           stationId: context.stationId,
           deliveryId: delivery.id,
-          liableParty: party,
-          status,
-          recoveredAmount: status === 'SETTLED' ? amount.trim() : null,
-          currency: status === 'SETTLED' ? 'USD' : null,
-          note: note.trim() || null,
         }),
       });
       if (!response.ok) {
         const result = (await response.json().catch(() => ({}))) as { message?: string };
-        throw new Error(result.message || 'The claim could not be saved. Try again.');
+        throw new Error(result.message || 'That could not be saved. Try again.');
       }
       onSaved();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'The claim could not be saved.');
+      setError(failure instanceof Error ? failure.message : 'That could not be saved.');
     } finally {
       setBusy(false);
     }
@@ -118,7 +171,8 @@ export function DeliveryLoss({
       </div>
       <InfoTip>
         The tank is credited with the fuel that really arrived. This shows the gap against the note,
-        what the tank dips say, and why it happened.
+        what the tank dips say, and why it happened. Claims are only recorded here: nothing is
+        changed in the accounts yet, and an administrator or owner approves each change.
       </InfoTip>
       <dl className="dd-lines">
         {delivery.orderedLitres !== null ? (
@@ -208,15 +262,54 @@ export function DeliveryLoss({
                       </select>
                     </>
                   ) : null}
+                  {status === 'RAISED' ? (
+                    <>
+                      <label htmlFor="loss-expected">Amount we expect to get back</label>
+                      <input
+                        id="loss-expected"
+                        inputMode="decimal"
+                        value={expected}
+                        autoComplete="off"
+                        onChange={(event) => setExpected(event.target.value)}
+                      />
+                    </>
+                  ) : null}
                   {status === 'SETTLED' ? (
                     <>
-                      <label htmlFor="loss-amount">Amount paid back (USD)</label>
+                      <label htmlFor="loss-amount">Amount paid back</label>
                       <input
                         id="loss-amount"
                         inputMode="decimal"
                         value={amount}
                         autoComplete="off"
                         onChange={(event) => setAmount(event.target.value)}
+                      />
+                      <label htmlFor="loss-method">How it was paid back</label>
+                      <select
+                        id="loss-method"
+                        value={method}
+                        onChange={(event) =>
+                          setMethod(event.target.value as LossSettlementMethod | '')
+                        }
+                      >
+                        <option value="">Choose how</option>
+                        {LOSS_SETTLEMENT_METHODS.map((value) => (
+                          <option key={value} value={value}>
+                            {METHOD_LABELS[value]}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  ) : null}
+                  {status === 'RAISED' || status === 'SETTLED' ? (
+                    <>
+                      <label htmlFor="loss-currency">Currency</label>
+                      <input
+                        id="loss-currency"
+                        value={currency}
+                        maxLength={3}
+                        autoComplete="off"
+                        onChange={(event) => setCurrency(event.target.value.toUpperCase())}
                       />
                     </>
                   ) : null}
@@ -245,6 +338,44 @@ export function DeliveryLoss({
               ) : (
                 <span className="dd-empty">No claim has been raised</span>
               )}
+            </dd>
+          </div>
+        ) : null}
+        {lossClaim && lossClaim.status !== 'NONE' ? (
+          <div className="dd-line dd-line-wide">
+            <dt>Where the claim stands</dt>
+            <dd>
+              {lossClaim.expectedAmount
+                ? `Expected back: ${lossClaim.currency ?? ''} ${lossClaim.expectedAmount}. `
+                : ''}
+              {lossClaim.recoveredAmount
+                ? `Paid back: ${lossClaim.currency ?? ''} ${lossClaim.recoveredAmount}${
+                    lossClaim.settlementMethod ? `, ${methodLabel(lossClaim.settlementMethod)}` : ''
+                  }. `
+                : ''}
+              {approvalLabel(lossClaim.approvalStatus)}
+              {lossClaim.approvalNote ? `: ${lossClaim.approvalNote}` : ''}
+              {data.canApproveClaim ? (
+                <div className="form-stack">
+                  <label htmlFor="loss-review-note">Note (needed if you send it back)</label>
+                  <textarea
+                    id="loss-review-note"
+                    rows={2}
+                    maxLength={500}
+                    value={reviewNote}
+                    onChange={(event) => setReviewNote(event.target.value)}
+                  />
+                  {error ? <p role="alert">{error}</p> : null}
+                  <div>
+                    <Button loading={busy} onClick={() => void review('APPROVED')}>
+                      Approve
+                    </Button>{' '}
+                    <Button loading={busy} onClick={() => void review('REJECTED')}>
+                      Send back
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </dd>
           </div>
         ) : null}

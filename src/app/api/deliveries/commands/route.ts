@@ -5,6 +5,7 @@ import {
   recordDeliveryDriverConfirmationFromRequest,
   recordDeliveryLossClaimFromRequest,
   recordDeliveryWaterTestFromRequest,
+  reviewDeliveryLossClaimFromRequest,
   setDeliveryNoPurchaseOrderReasonFromRequest,
   setWaterTestRequiredFromRequest,
 } from '../../../../modules/deliveries';
@@ -17,6 +18,7 @@ const COMMANDS = [
   'RecordDeliveryWaterTest',
   'RecordDeliveryDriverConfirmation',
   'RecordDeliveryLossClaim',
+  'ReviewDeliveryLossClaim',
   'SetDeliveryNoPurchaseOrderReason',
   'SetWaterTestRequired',
 ] as const;
@@ -52,6 +54,9 @@ export const POST = withRequestObservability(
           break;
         case 'RecordDeliveryLossClaim':
           result = await recordDeliveryLossClaimFromRequest(request, body);
+          break;
+        case 'ReviewDeliveryLossClaim':
+          result = await reviewDeliveryLossClaimFromRequest(request, body);
           break;
         case 'SetDeliveryNoPurchaseOrderReason':
           result = await setDeliveryNoPurchaseOrderReasonFromRequest(request, body);

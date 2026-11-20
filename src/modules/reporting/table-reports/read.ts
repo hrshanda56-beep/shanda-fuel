@@ -145,6 +145,13 @@ export const readDeliveryVariance: TableReportReader = async (transaction, filte
     shortage_excess: string;
     short_compartments: number;
     broken_seals: number;
+    cause: string | null;
+    responsible: string | null;
+    claim: string | null;
+    approval: string | null;
+    expected_back: string | null;
+    paid_back: string | null;
+    paid_back_by: string | null;
   }>(sql`
     select f.business_date, s.name as station, p.name as product,
       f.delivery_note_number as delivery_note, sup.legal_name as supplier, p.unit as unit,
@@ -154,8 +161,43 @@ export const readDeliveryVariance: TableReportReader = async (transaction, filte
         where c.tenant_id = f.tenant_id and c.delivery_id = f.id
           and c.received_litres < c.note_litres) as short_compartments,
       (select count(*)::int from app.fuel_delivery_compartment_seals sl
-        where sl.tenant_id = f.tenant_id and sl.delivery_id = f.id and not sl.intact) as broken_seals
+        where sl.tenant_id = f.tenant_id and sl.delivery_id = f.id and not sl.intact) as broken_seals,
+      case f.variance_cause
+        when 'THEFT_SUSPECTED' then 'Fuel may have been taken'
+        when 'TEMPERATURE' then 'Weather or temperature'
+        when 'MEASURING_ERROR' then 'Measuring or dip error'
+        when 'SPILL_OR_LEAK' then 'Spill or leak'
+        when 'LOADING_SHORT' then 'The depot loaded less than the note says'
+        when 'OTHER' then 'Something else'
+      end as cause,
+      case lc.liable_party
+        when 'DRIVER' then 'The driver'
+        when 'TRANSPORTER' then 'The transport company'
+        when 'SUPPLIER' then 'The fuel supplier'
+        when 'OTHER' then 'Someone else'
+      end as responsible,
+      case lc.status
+        when 'RAISED' then 'Claim raised'
+        when 'SETTLED' then 'Paid back'
+        when 'WRITTEN_OFF' then 'Written off'
+      end as claim,
+      case lc.approval_status
+        when 'PENDING' then 'Waiting for approval'
+        when 'APPROVED' then 'Approved'
+        when 'REJECTED' then 'Sent back'
+      end as approval,
+      case when lc.expected_amount is not null
+        then lc.currency || ' ' || lc.expected_amount::text end as expected_back,
+      case when lc.recovered_amount is not null
+        then lc.currency || ' ' || lc.recovered_amount::text end as paid_back,
+      case when lc.recovered_amount is not null then case lc.settlement_method
+        when 'CASH' then 'Cash received'
+        when 'TRANSPORT_BILL' then 'Taken off the transport bill'
+        when 'SUPPLIER_BALANCE' then 'Taken off the supplier balance'
+      end end as paid_back_by
     from app.fuel_deliveries f
+    left join app.fuel_delivery_loss_claims lc
+      on lc.tenant_id = f.tenant_id and lc.delivery_id = f.id
     join app.stations s on s.tenant_id = f.tenant_id and s.id = f.station_id
     join app.products p on p.tenant_id = f.tenant_id and p.id = f.product_id
     left join app.suppliers sup on sup.tenant_id = f.tenant_id and sup.id = f.supplier_id
@@ -179,6 +221,13 @@ export const readDeliveryVariance: TableReportReader = async (transaction, filte
     shortageExcessLitres: row.shortage_excess,
     shortCompartments: String(row.short_compartments),
     brokenSeals: String(row.broken_seals),
+    cause: row.cause,
+    responsible: row.responsible,
+    claim: row.claim,
+    approval: row.approval,
+    expectedBack: row.expected_back,
+    paidBack: row.paid_back,
+    paidBackBy: row.paid_back_by,
   }));
 };
 
