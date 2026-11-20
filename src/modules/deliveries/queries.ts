@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { sql } from 'drizzle-orm';
+import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { isPermissionGranted, type PermissionCode } from '../../platform/security/permissions';
@@ -60,7 +61,19 @@ export type DeliveryTank = Readonly<{
   unit: 'LITRES' | 'KILOGRAMS';
 }>;
 
+/** One line of the loss report: who or what keeps arriving short. */
+export type LossReportRow = Readonly<{
+  kind: 'SUPPLIER' | 'TRANSPORTER' | 'DRIVER' | 'TRUCK';
+  name: string;
+  deliveries: number;
+  shortDeliveries: number;
+  shortLitres: string;
+  claimsOpen: number;
+}>;
+
 export type DeliveryList = Readonly<{
+  /** Confirmed deliveries that came in short, grouped by who brought or sold the fuel. */
+  lossReport: readonly LossReportRow[];
   stationTimezone: string;
   waterTestRequired: boolean;
   /** Only owners may change the water test rule, so only they are shown it. */
@@ -139,7 +152,57 @@ export async function queryDeliveryList(input: {
           and t.status = 'ACTIVE'
         order by ${productOrderSql('p')}, t.code
       `);
+      const lossRows = await transaction.execute<{
+        kind: LossReportRow['kind'];
+        name: string;
+        deliveries: number;
+        short_deliveries: number;
+        short_litres: string;
+        claims_open: number;
+      }>(sql`
+        with base as (
+          select d.id,
+            d.shortage_excess_litres as gap,
+            coalesce(c.status, 'NONE') as claim_status,
+            s.legal_name as supplier_name,
+            coalesce(ts.legal_name, nullif(btrim(d.transporter), '')) as transporter_name,
+            nullif(btrim(d.driver), '') as driver_name,
+            nullif(upper(btrim(d.truck_registration)), '') as truck_name
+          from app.fuel_deliveries d
+          left join app.suppliers s on s.tenant_id = d.tenant_id and s.id = d.supplier_id
+          left join app.suppliers ts
+            on ts.tenant_id = d.tenant_id and ts.id = d.transporter_supplier_id
+          left join app.fuel_delivery_loss_claims c
+            on c.tenant_id = d.tenant_id and c.delivery_id = d.id
+          where d.tenant_id = ${context.tenantId} and d.station_id = ${context.stationId}
+            and d.status = 'CONFIRMED'
+        ), keyed as (
+          select 'SUPPLIER' as kind, supplier_name as name, * from base
+          union all select 'TRANSPORTER', transporter_name, * from base
+          union all select 'DRIVER', driver_name, * from base
+          union all select 'TRUCK', truck_name, * from base
+        )
+        select kind, name,
+          count(*)::int as deliveries,
+          (count(*) filter (where gap < 0))::int as short_deliveries,
+          coalesce(sum(-gap) filter (where gap < 0), 0)::text as short_litres,
+          (count(*) filter (where gap < 0 and claim_status = 'RAISED'))::int as claims_open
+        from keyed
+        where name is not null
+        group by kind, name
+        having count(*) filter (where gap < 0) > 0
+        order by sum(-gap) filter (where gap < 0) desc, name
+        limit 40
+      `);
       return {
+        lossReport: lossRows.map((row) => ({
+          kind: row.kind,
+          name: row.name,
+          deliveries: row.deliveries,
+          shortDeliveries: row.short_deliveries,
+          shortLitres: row.short_litres,
+          claimsOpen: row.claims_open,
+        })),
         stationTimezone: context.stationTimezone,
         waterTestRequired: settings[0]?.water_test_required ?? false,
         canSetWaterTestRule: roleAllows(context, 'tenant.manage'),
@@ -199,13 +262,35 @@ export type DeliveryDetail = Readonly<{
     noPoReason: string | null;
     noPoNote: string | null;
     supplierId: string | null;
+    /** The supplier that carried the fuel, when it is one of the business's suppliers. */
+    transporterSupplierId: string | null;
     /** The tank receiving the fuel; null when the delivery is split across several tanks. */
     tankId: string | null;
     noteLitres: string;
     receivedLitres: string;
     shortageExcessLitres: string;
     receipt: DeliveryReceiptKind;
+    /** Why the litres received differ from the note; null when they agree or none was given. */
+    varianceCause: string | null;
+    varianceNote: string | null;
+    /** Evidence only. It never changes the litres. */
+    loadTemperatureC: string | null;
+    /** What the two tank dips say went in, and how far that is from the litres received. */
+    dipMeasuredLitres: string | null;
+    dipVarianceLitres: string | null;
+    /** Litres on the linked purchase order line; null when there is no order. */
+    orderedLitres: string | null;
   }>;
+  /** Who is held responsible for the loss and how the claim stands; null when none was raised. */
+  lossClaim: Readonly<{
+    liableParty: string;
+    status: string;
+    recoveredAmount: string | null;
+    currency: string | null;
+    note: string | null;
+  }> | null;
+  /** Only people who may follow up money are offered the claim form. */
+  canRecordClaim: boolean;
   compartments: readonly Readonly<{
     compartmentNumber: number;
     noteLitres: string;
@@ -259,14 +344,20 @@ export async function queryDeliveryDetail(input: {
         no_po_reason: string | null;
         no_po_note: string | null;
         supplier_id: string | null;
+        transporter_supplier_id: string | null;
         purchase_order_number: string | null;
         note_litres: string;
         received_litres: string;
         shortage_excess_litres: string;
+        variance_cause: string | null;
+        variance_note: string | null;
+        load_temperature_c: string | null;
+        dip_measured_litres: string | null;
+        ordered_litres: string | null;
       }>(sql`
         select d.id, d.delivery_note_number, d.delivered_at, d.business_date, d.product_id,
           p.name as product_name, p.unit as unit, s.legal_name as supplier_name, d.transporter, d.driver,
-          d.truck_registration, d.status, d.no_po_reason, d.no_po_note, d.supplier_id,
+          d.truck_registration, d.status, d.no_po_reason, d.no_po_note, d.supplier_id, d.transporter_supplier_id,
           (select po.order_number
             from app.purchase_order_delivery_links l
             join app.purchase_orders po
@@ -275,7 +366,19 @@ export async function queryDeliveryDetail(input: {
             limit 1) as purchase_order_number,
           d.note_quantity_litres::text as note_litres,
           d.actual_quantity_litres::text as received_litres,
-          d.shortage_excess_litres::text as shortage_excess_litres
+          d.shortage_excess_litres::text as shortage_excess_litres,
+          d.variance_cause, d.variance_note, d.load_temperature_c::text as load_temperature_c,
+          (select (post.physical_litres - pre.physical_litres)::text
+            from app.tank_dips pre, app.tank_dips post
+            where pre.tenant_id = d.tenant_id and pre.id = d.pre_delivery_dip_id and pre.voided_at is null
+              and post.tenant_id = d.tenant_id and post.id = d.post_delivery_dip_id and post.voided_at is null
+          ) as dip_measured_litres,
+          (select pol.ordered_litres::text
+            from app.purchase_order_delivery_links l2
+            join app.purchase_order_lines pol
+              on pol.tenant_id = l2.tenant_id and pol.id = l2.purchase_order_line_id
+            where l2.tenant_id = d.tenant_id and l2.delivery_id = d.id and l2.state = 'ACTIVE'
+            limit 1) as ordered_litres
         from app.fuel_deliveries d
         join app.products p on p.tenant_id = d.tenant_id and p.id = d.product_id
         left join app.suppliers s on s.tenant_id = d.tenant_id and s.id = d.supplier_id
@@ -358,9 +461,32 @@ export async function queryDeliveryDetail(input: {
         select water_test_required from app.delivery_settings
         where tenant_id = ${context.tenantId}
       `);
+      const claims = await transaction.execute<{
+        liable_party: string;
+        status: string;
+        recovered_amount: string | null;
+        currency: string | null;
+        note: string | null;
+      }>(sql`
+        select liable_party, status, recovered_amount::text as recovered_amount, currency, note
+        from app.fuel_delivery_loss_claims
+        where tenant_id = ${context.tenantId} and delivery_id = ${parsed.deliveryId}
+      `);
+      const claim = claims[0];
+      const dipMeasured = delivery.dip_measured_litres;
       const water = waterTests[0];
       const driver = confirmations[0];
       return {
+        lossClaim: claim
+          ? {
+              liableParty: claim.liable_party,
+              status: claim.status,
+              recoveredAmount: claim.recovered_amount,
+              currency: claim.currency,
+              note: claim.note,
+            }
+          : null,
+        canRecordClaim: roleAllows(context, 'supplier.delivery.link'),
         stationTimezone: context.stationTimezone,
         waterTestRequired: settings[0]?.water_test_required ?? false,
         canConfirm: roleAllows(context, 'inventory.delivery.manage'),
@@ -388,11 +514,21 @@ export async function queryDeliveryDetail(input: {
           noPoReason: delivery.no_po_reason,
           noPoNote: delivery.no_po_note,
           supplierId: delivery.supplier_id,
+          transporterSupplierId: delivery.transporter_supplier_id,
           tankId,
           noteLitres: delivery.note_litres,
           receivedLitres: delivery.received_litres,
           shortageExcessLitres: delivery.shortage_excess_litres,
           receipt: classifyDeliveryReceipt(delivery.note_litres, delivery.received_litres),
+          varianceCause: delivery.variance_cause,
+          varianceNote: delivery.variance_note,
+          loadTemperatureC: delivery.load_temperature_c,
+          orderedLitres: delivery.ordered_litres,
+          dipMeasuredLitres: dipMeasured,
+          dipVarianceLitres:
+            dipMeasured === null
+              ? null
+              : new Decimal(dipMeasured).sub(new Decimal(delivery.received_litres)).toFixed(),
         },
         compartments: compartments.map((row) => ({
           compartmentNumber: row.compartment_number,

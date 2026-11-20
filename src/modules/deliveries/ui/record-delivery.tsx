@@ -22,6 +22,7 @@ import {
 } from '../../../platform/drafts/local-draft';
 import { compartmentSumProblem, shortageOrExcess, type CompartmentRow } from '../record-delivery';
 import { InfoTip } from '@/design-system/info-tip';
+import { OTHER_VALUE, SelectWithOther } from '@/design-system/forms';
 import {
   WizardActions,
   WizardNotice,
@@ -48,6 +49,12 @@ import {
   parsePurchaseOrderChoice,
   purchaseOrderChoiceProblem,
 } from '../purchase-order-choice';
+import {
+  EMPTY_VARIANCE_REASON,
+  VarianceReason,
+  varianceFields,
+  type VarianceReasonValue,
+} from './variance-reason';
 import { PurchaseOrderChoice } from './purchase-order-choice';
 
 type Failure = { message: string; code?: string; status?: number; step?: 'confirm' };
@@ -58,6 +65,8 @@ type DeliveryDraft = {
   deliveryNote: string;
   noteLitres: string;
   receivedLitres: string;
+  /** Who brought it: '' not said, 'SUPPLIER', a transporter's id, or OTHER_VALUE (typed below). */
+  carrier?: string;
   transporter: string;
   driver: string;
   truck: string;
@@ -82,6 +91,9 @@ export type DeliveryEdit = Readonly<{
     deliveredAt: string;
     noteLitres: string;
     receivedLitres: string;
+    /** Who brought it, as for a new delivery. */
+    carrier: string;
+    /** The typed name, when the carrier is not one of the suppliers. */
     transporter: string;
     driver: string;
     truck: string;
@@ -94,6 +106,8 @@ export type DeliveryEdit = Readonly<{
     noPoNote: string;
     /** The number of the purchase order the delivery is already linked to, or empty. */
     linkedOrder: string;
+    /** Why the litres received differ from the note, as already saved. */
+    variance?: VarianceReasonValue;
   }>;
   /** Called once every changed step has been saved. */
   onSaved: () => void;
@@ -261,6 +275,26 @@ function Section({
  * answered before the delivery can be confirmed. The steps are saved in order and a
  * failed step can simply be retried: the ones that worked are not repeated.
  */
+/** Who carried the fuel last time for a supplier, kept on this device only. */
+const lastCarrierKey = (supplierId: string) => `shanda:last-carrier:${supplierId}`;
+function rememberedCarrier(supplierId: string): string {
+  try {
+    return window.localStorage.getItem(lastCarrierKey(supplierId)) ?? '';
+  } catch {
+    return '';
+  }
+}
+function rememberCarrier(supplierId: string, carrier: string) {
+  try {
+    // A typed name is not remembered: it is a one-off, and the next delivery may differ.
+    if (carrier && carrier !== OTHER_VALUE) {
+      window.localStorage.setItem(lastCarrierKey(supplierId), carrier);
+    } else window.localStorage.removeItem(lastCarrierKey(supplierId));
+  } catch {
+    // Remembering is a convenience; saving the delivery never depends on it.
+  }
+}
+
 export function RecordDelivery({
   tenantId,
   stationId,
@@ -283,7 +317,16 @@ export function RecordDelivery({
   const progress = useRef<Progress>({});
   const keys = useRef(new Map<string, string>());
   const start = edit?.start;
-  const [suppliers, setSuppliers] = useState<{ id: string; label: string }[] | null>(null);
+  const [suppliers, setSuppliers] = useState<
+    | {
+        id: string;
+        label: string;
+        name: string;
+        providesFuel: boolean;
+        providesTransport: boolean;
+      }[]
+    | null
+  >(null);
   const [supplierId, setSupplierId] = useState(start?.supplierId ?? '');
   const [tankId, setTankId] = useState(start?.tankId ?? tanks[0]?.id ?? '');
   const [deliveryNote, setDeliveryNote] = useState(start?.deliveryNote ?? '');
@@ -292,9 +335,19 @@ export function RecordDelivery({
   );
   const [noteLitres, setNoteLitres] = useState(start?.noteLitres ?? '');
   const [receivedLitres, setReceivedLitres] = useState(start?.receivedLitres ?? '');
+  const [carrier, setCarrier] = useState(start?.carrier ?? '');
+  // Set once the person chooses (or a draft is restored), so a remembered carrier never overrides them.
+  const carrierPicked = useRef(Boolean(start?.carrier));
+  const pickCarrier = (value: string) => {
+    carrierPicked.current = true;
+    setCarrier(value);
+  };
   const [transporter, setTransporter] = useState(start?.transporter ?? '');
   const [driver, setDriver] = useState(start?.driver ?? '');
   const [truck, setTruck] = useState(start?.truck ?? '');
+  const [variance, setVariance] = useState<VarianceReasonValue>(
+    start?.variance ?? EMPTY_VARIANCE_REASON,
+  );
   const [dipBefore, setDipBefore] = useState('');
   const [dipAfter, setDipAfter] = useState('');
   const [compartments, setCompartments] = useState<CompartmentRow[]>(() =>
@@ -359,6 +412,7 @@ export function RecordDelivery({
     deliveryNote,
     noteLitres,
     receivedLitres,
+    carrier,
     transporter,
     driver,
     truck,
@@ -371,6 +425,60 @@ export function RecordDelivery({
     noPoNote,
   };
   const typedJson = JSON.stringify(typed);
+  // Companies that only carry fuel are not offered as "who supplied it"; a saved supplier stays visible.
+  const fuelSuppliers = (suppliers ?? []).filter(
+    (item) => item.providesFuel || item.id === supplierId,
+  );
+  const carrierSupplierId =
+    carrier === 'SUPPLIER'
+      ? supplierId || null
+      : carrier && carrier !== OTHER_VALUE
+        ? carrier
+        : null;
+  const carrierName =
+    carrier === 'SUPPLIER'
+      ? (suppliers?.find((item) => item.id === supplierId)?.name ?? '')
+      : carrier === OTHER_VALUE
+        ? transporter.trim()
+        : (suppliers?.find((item) => item.id === carrier)?.name ?? '');
+  /** What the server is told. A chosen company wins; otherwise the typed name is kept. */
+  const carrierFields = {
+    transporterSupplierId: carrierSupplierId,
+    transporter: carrier === OTHER_VALUE ? transporter.trim() || null : null,
+  };
+  const carrierField = (id: string, label: string, optional = true) => (
+    <Field
+      id={id}
+      label={label}
+      hint="Transport is billed separately by whoever carries the fuel."
+      optional={optional}
+    >
+      <SelectWithOther
+        id={id}
+        placeholder="Not said"
+        options={[
+          ...(supplierId
+            ? [
+                {
+                  value: 'SUPPLIER',
+                  label: `${suppliers?.find((item) => item.id === supplierId)?.name ?? 'The supplier'} (the supplier)`,
+                },
+              ]
+            : []),
+          ...(suppliers ?? [])
+            .filter((item) => item.providesTransport && item.id !== supplierId)
+            .map((item) => ({ value: item.id, label: item.name })),
+        ]}
+        choice={carrier}
+        onChoice={pickCarrier}
+        otherLabel="Someone else"
+        detailLabel="Transporter's name"
+        detail={transporter}
+        onDetail={setTransporter}
+        detailMaxLength={120}
+      />
+    </Field>
+  );
   const touched = useRef(false);
   const failureRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -386,6 +494,17 @@ export function RecordDelivery({
       }
     });
   }, [draftKey, edit]);
+  useEffect(() => {
+    // A new delivery starts with whoever carried this supplier's fuel last time. It is only a
+    // starting point: the person can change it, and a saved delivery is never altered by it.
+    if (edit || carrierPicked.current || !supplierId || suppliers === null) return;
+    const remembered = rememberedCarrier(supplierId);
+    const usable =
+      remembered === 'SUPPLIER' ||
+      suppliers.some((item) => item.id === remembered && item.providesTransport);
+    // Not picked by the person, so the carrier is only ever this suggestion; follow the supplier.
+    setCarrier(usable ? remembered : '');
+  }, [edit, supplierId, suppliers]);
   useEffect(() => {
     // Editing starts from what is saved, so the typed-draft safety net is for new deliveries only.
     if (edit) return;
@@ -403,6 +522,7 @@ export function RecordDelivery({
     setDeliveryNote(draft.deliveryNote);
     setNoteLitres(draft.noteLitres);
     setReceivedLitres(draft.receivedLitres);
+    setCarrier(draft.carrier ?? (draft.transporter ? OTHER_VALUE : ''));
     setTransporter(draft.transporter);
     setDriver(draft.driver);
     setTruck(draft.truck);
@@ -414,6 +534,7 @@ export function RecordDelivery({
     setNoPo(draft.noPo);
     setNoPoNote(draft.noPoNote);
     touched.current = true;
+    carrierPicked.current = true;
   }
   function startAgain() {
     clearDraft(draftKey);
@@ -423,6 +544,7 @@ export function RecordDelivery({
       deliveryNote: '',
       noteLitres: '',
       receivedLitres: '',
+      carrier: '',
       transporter: '',
       driver: '',
       truck: '',
@@ -435,6 +557,7 @@ export function RecordDelivery({
       noPoNote: '',
     });
     touched.current = false;
+    carrierPicked.current = false;
     setRestored(false);
   }
 
@@ -446,8 +569,25 @@ export function RecordDelivery({
       signal: controller.signal,
     })
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error('failed'))))
-      .then((body: { data: { id: string; code: string; name: string }[] }) =>
-        setSuppliers(body.data.map((row) => ({ id: row.id, label: `${row.name} (${row.code})` }))),
+      .then(
+        (body: {
+          data: {
+            id: string;
+            code: string;
+            name: string;
+            providesFuel?: boolean;
+            providesTransport?: boolean;
+          }[];
+        }) =>
+          setSuppliers(
+            body.data.map((row) => ({
+              id: row.id,
+              label: `${row.name} (${row.code})`,
+              name: row.name,
+              providesFuel: row.providesFuel ?? true,
+              providesTransport: row.providesTransport ?? false,
+            })),
+          ),
       )
       .catch(() => {
         if (!controller.signal.aborted) setSuppliers([]);
@@ -504,9 +644,12 @@ export function RecordDelivery({
       at.toISOString() !== new Date(before.deliveredAt).toISOString() ||
       noteLitres.trim() !== before.noteLitres ||
       receivedLitres.trim() !== before.receivedLitres ||
-      transporter.trim() !== before.transporter ||
+      carrier !== before.carrier ||
+      (carrier === OTHER_VALUE && transporter.trim() !== before.transporter) ||
       driver.trim() !== before.driver ||
       truck.trim() !== before.truck ||
+      JSON.stringify(varianceFields(variance)) !==
+        JSON.stringify(varianceFields(before.variance ?? EMPTY_VARIANCE_REASON)) ||
       reasonOf(noPo) !== before.noPo ||
       (reasonOf(noPo) === 'OTHER' && noPoNote.trim() !== before.noPoNote);
     if (headerChanged && !state.updated) {
@@ -519,11 +662,12 @@ export function RecordDelivery({
         deliveredAt: at.toISOString(),
         noteQuantityLitres: noteLitres.trim(),
         actualQuantityLitres: receivedLitres.trim(),
-        transporter: transporter.trim() || null,
+        ...carrierFields,
         driver: driver.trim() || null,
         truckRegistration: truck.trim() || null,
         noPoReason: reasonOf(noPo) || null,
         noPoNote: reasonOf(noPo) === 'OTHER' ? noPoNote.trim() : null,
+        ...varianceFields(variance),
       });
       state.updated = true;
     }
@@ -637,7 +781,11 @@ export function RecordDelivery({
           noteQuantityLitres: noteLitres.trim(),
           actualQuantityLitres: receivedLitres.trim(),
           allocations: [{ tankId, quantityLitres: receivedLitres.trim() }],
-          ...(transporter.trim() ? { transporter: transporter.trim() } : {}),
+          ...(carrierFields.transporterSupplierId
+            ? { transporterSupplierId: carrierFields.transporterSupplierId }
+            : carrierFields.transporter
+              ? { transporter: carrierFields.transporter }
+              : {}),
           ...(driver.trim() ? { driver: driver.trim() } : {}),
           ...(truck.trim() ? { truckRegistration: truck.trim() } : {}),
           ...(dipBefore.trim()
@@ -660,9 +808,11 @@ export function RecordDelivery({
             : {}),
           ...(reasonOf(noPo) ? { noPoReason: reasonOf(noPo) } : {}),
           ...(reasonOf(noPo) === 'OTHER' && noPoNote.trim() ? { noPoNote: noPoNote.trim() } : {}),
+          ...varianceFields(variance),
         });
         state.deliveryId = String(result.deliveryId);
         setDeliveryId(state.deliveryId);
+        rememberCarrier(supplierId, carrier);
         if (reasonOf(noPo)) {
           state.purchaseOrder = true;
           setPoSaved(true);
@@ -875,7 +1025,7 @@ export function RecordDelivery({
               <option value="">
                 {suppliers === null ? 'Loading suppliers…' : 'Choose a supplier'}
               </option>
-              {(suppliers ?? []).map((supplier) => (
+              {fuelSuppliers.map((supplier) => (
                 <option key={supplier.id} value={supplier.id}>
                   {supplier.label}
                 </option>
@@ -991,6 +1141,9 @@ export function RecordDelivery({
               {difference.text}
             </p>
           ) : null}
+          {difference && difference.kind !== 'EXACT' ? (
+            <VarianceReason value={variance} onChange={setVariance} />
+          ) : null}
           <WizardActions wizard={wizard} onContinue={guideNext} />
         </WizardStep>
       ) : null}
@@ -1020,14 +1173,7 @@ export function RecordDelivery({
           title="Who brought it?"
           hint="You can leave this empty and carry on."
         >
-          <Field id="rd-transporter" label="Transporter" optional>
-            <input
-              id="rd-transporter"
-              autoComplete="off"
-              value={transporter}
-              onChange={(event) => setTransporter(event.target.value)}
-            />
-          </Field>
+          {carrierField('rd-transporter', 'Who is the transporter?')}
           <WizardPair>
             <Field id="rd-truck" label="Truck registration" optional>
               <input
@@ -1169,8 +1315,7 @@ export function RecordDelivery({
               {orderAnswer}
             </WizardSummaryRow>
             <WizardSummaryRow label="Truck and driver" onChange={() => wizard.change('truck')}>
-              {[transporter.trim(), truck.trim(), driver.trim()].filter(Boolean).join(' · ') ||
-                unanswered}
+              {[carrierName, truck.trim(), driver.trim()].filter(Boolean).join(' · ') || unanswered}
             </WizardSummaryRow>
             <WizardSummaryRow label="Tank dips" onChange={() => wizard.change('dips')}>
               {dipBefore.trim() || dipAfter.trim()
@@ -1249,7 +1394,7 @@ export function RecordDelivery({
                     <option value="">
                       {suppliers === null ? 'Loading suppliers…' : 'Choose a supplier'}
                     </option>
-                    {(suppliers ?? []).map((supplier) => (
+                    {fuelSuppliers.map((supplier) => (
                       <option key={supplier.id} value={supplier.id}>
                         {supplier.label}
                       </option>
@@ -1340,22 +1485,19 @@ export function RecordDelivery({
                   {difference.text}
                 </p>
               ) : null}
+              {difference && difference.kind !== 'EXACT' ? (
+                <VarianceReason value={variance} onChange={setVariance} />
+              ) : null}
             </section>
 
             <div className="rd-more">
               <h3>More detail, if you have it</h3>
               <Section
                 title="Truck and driver"
-                note={[transporter.trim(), driver.trim(), truck.trim()].filter(Boolean).join(' · ')}
+                note={[carrierName, driver.trim(), truck.trim()].filter(Boolean).join(' · ')}
               >
                 <div className="rd-grid">
-                  <Field id="rd-transporter" label="Transporter" optional>
-                    <input
-                      id="rd-transporter"
-                      value={transporter}
-                      onChange={(event) => setTransporter(event.target.value)}
-                    />
-                  </Field>
+                  {carrierField('rd-transporter', 'Transporter')}
                   <Field id="rd-truck" label="Truck registration" optional>
                     <input
                       id="rd-truck"

@@ -1244,7 +1244,15 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
       expect(rows.map((row) => row.id)).toEqual(expect.arrayContaining([s1, s2]));
       expect(rows.map((row) => row.id)).not.toContain(hidden); // inactive
       expect(rows.map((row) => row.id)).not.toContain(sB); // other tenant
-      for (const row of rows) expect(Object.keys(row).sort()).toEqual(['code', 'id', 'name']);
+      for (const row of rows) {
+        expect(Object.keys(row).sort()).toEqual([
+          'code',
+          'id',
+          'name',
+          'providesFuel',
+          'providesTransport',
+        ]);
+      }
     }
     // Finance can read the supplier reference list without the delivery write permission.
     expect((await get(tokens.finance)).status).toBe(200);
@@ -1482,7 +1490,11 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
   it('flags over-receipt beyond the tolerance without blocking, and honours the tolerance action', async () => {
     await strictPolicy({ overReceiptToleranceLitres: '5.000' });
     const supplier = await createSupplier('90B0-OVERREC');
-    const d = await confirmedDelivery(supplier, { noteQuantityLitres: '1000.000' }, '1010.000');
+    const d = await confirmedDelivery(
+      supplier,
+      { noteQuantityLitres: '1000.000', varianceCause: 'MEASURING_ERROR' },
+      '1010.000',
+    );
     const status = await client`
       select status from app.fuel_deliveries where id = ${d.deliveryId}`;
     expect(status[0]!.status).toBe('CONFIRMED'); // never blocked at the dock

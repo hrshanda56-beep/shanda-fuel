@@ -46,6 +46,7 @@ const editing: DeliveryEdit = {
     deliveredAt: '2026-10-20T08:00:00.000Z',
     noteLitres: '1000',
     receivedLitres: '1000',
+    carrier: '',
     transporter: '',
     driver: '',
     truck: '',

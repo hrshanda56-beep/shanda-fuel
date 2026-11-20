@@ -4,7 +4,7 @@ import Decimal from 'decimal.js';
 import Link from 'next/link';
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Notice } from '@/design-system/feedback';
-import { Checkbox, Select } from '@/design-system/forms';
+import { Checkbox, OTHER_VALUE, Select } from '@/design-system/forms';
 import { formatQuantity, type QuantityUnit } from '@/design-system/formatters';
 import { useToast } from '@/design-system/feedback-provider';
 import { Modal } from '@/design-system/modal';
@@ -20,6 +20,8 @@ import {
 import { friendlyMessage } from '../../purchasing/ui/purchasing-client';
 import type { DeliveryDetail } from '../queries';
 import { InfoTip } from '@/design-system/info-tip';
+import { DeliveryLoss, hasLoss } from './delivery-loss';
+import type { VarianceCause } from '../variance-assessment';
 
 export type DeliveryDetailsContext = Readonly<{
   tenantId: string;
@@ -102,7 +104,14 @@ function editStart(data: DeliveryDetail): DeliveryEdit['start'] {
     deliveredAt: delivery.deliveredAt,
     noteLitres: plainLitres(delivery.noteLitres),
     receivedLitres: plainLitres(delivery.receivedLitres),
-    transporter: delivery.transporter ?? '',
+    carrier: delivery.transporterSupplierId
+      ? delivery.transporterSupplierId === delivery.supplierId
+        ? 'SUPPLIER'
+        : delivery.transporterSupplierId
+      : delivery.transporter
+        ? OTHER_VALUE
+        : '',
+    transporter: delivery.transporterSupplierId ? '' : (delivery.transporter ?? ''),
     driver: data.driverConfirmation?.driverName ?? delivery.driver ?? '',
     truck: delivery.truckRegistration ?? '',
     compartments: data.compartments.map((row) => ({
@@ -117,6 +126,11 @@ function editStart(data: DeliveryDetail): DeliveryEdit['start'] {
     noPo: delivery.noPoReason ?? '',
     noPoNote: delivery.noPoNote ?? '',
     linkedOrder: delivery.purchaseOrderNumber ?? '',
+    variance: {
+      cause: (delivery.varianceCause as VarianceCause | null) ?? '',
+      note: delivery.varianceNote ?? '',
+      temperature: delivery.loadTemperatureC ?? '',
+    },
   };
 }
 
@@ -958,6 +972,15 @@ export function DeliveryDetails({
               </Line>
             </dl>
           </section>
+          {hasLoss(delivery) ? (
+            <DeliveryLoss
+              data={data}
+              context={context}
+              onSaved={() => {
+                void reload().then(() => toast.success('The claim was saved.'));
+              }}
+            />
+          ) : null}
         </div>
       </article>
 

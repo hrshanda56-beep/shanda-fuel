@@ -164,6 +164,7 @@ export type PolicyView = {
   vatMode: string | null;
   defaultVatRate: string | null;
   requireInvoiceLines: boolean | null;
+  requireTransportBill?: boolean | null;
 };
 
 export type PolicyData = {
@@ -182,5 +183,6 @@ export type PolicyData = {
     vatMode: string;
     defaultVatRate: string | null;
     requireInvoiceLines: boolean;
+    requireTransportBill?: boolean;
   };
 };

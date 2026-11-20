@@ -128,6 +128,7 @@ describe('navigation destinations', () => {
       'Customers',
       'Staff fuel benefit',
       'Suppliers',
+      'Transporters',
       'Payments due',
       'Purchase orders',
       'Reports',
@@ -186,6 +187,7 @@ describe('current-route indication', () => {
     ['/stations/demo/settlements', 'settlements'],
     ['/customers', 'customers'],
     ['/suppliers', 'suppliers'],
+    ['/suppliers/transporters', 'transporters'],
     ['/reports', 'reports'],
   ])('%s marks %s as current', (pathname, key) => {
     const active = allItems.filter((entry) => isNavigationItemActive(entry, pathname));

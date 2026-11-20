@@ -46,12 +46,19 @@ const supplierDetailFields = {
   defaultCreditDays: z.number().int().min(0).max(365).nullable().optional(),
 };
 
+/** What the company does for the business. At least one must be true. */
+const supplierRoleFields = {
+  providesFuel: z.boolean().optional(),
+  providesTransport: z.boolean().optional(),
+};
+
 const createSupplierSchema = base.extend({
   commandType: z.literal('CreateSupplier'),
   code: z.string().trim().min(1).max(80),
   legalName: z.string().trim().min(1).max(240),
   registrationReference: z.string().trim().max(120).optional(),
   ...supplierDetailFields,
+  ...supplierRoleFields,
   /** The most the business wants to owe this supplier; null/omitted = no limit. */
   creditLimit: creditLimitText.nullable().optional(),
 });
@@ -61,6 +68,7 @@ const updateSupplierDetailsSchema = base.extend({
   supplierId: uuid,
   expectedVersion: z.number().int().nonnegative(),
   ...supplierDetailFields,
+  ...supplierRoleFields,
 });
 
 const setCreditLimitSchema = base.extend({
@@ -111,6 +119,8 @@ const submitDocumentSchema = base.extend({
         stationId: uuid,
         deliveryId: uuid,
         allocationId: uuid.optional(),
+        /** FUEL for the supplier's invoice, TRANSPORT for the transporter's own bill. */
+        kind: z.enum(['FUEL', 'TRANSPORT']).optional(),
         invoicedQuantityLitres: decimal.optional(),
         invoicedAmount: decimal.optional(),
       }),
@@ -193,6 +203,7 @@ const setPurchasingPolicySchema = base.extend({
   defaultVatRate: nullableDecimal,
   productVatRates: z.record(uuid, percent).optional(),
   requireInvoiceLines: z.boolean().nullish(),
+  requireTransportBill: z.boolean().nullish(),
 });
 
 function idempotencyKey(request: Request): string {

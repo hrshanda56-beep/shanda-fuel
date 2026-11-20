@@ -16,6 +16,13 @@ import { RecordDelivery } from './record-delivery';
 import { InfoTip } from '@/design-system/info-tip';
 import { NotchedCard } from '@/design-system/notched-card';
 
+const LOSS_KIND_LABELS = {
+  SUPPLIER: 'Fuel supplier',
+  TRANSPORTER: 'Transport company',
+  DRIVER: 'Driver',
+  TRUCK: 'Truck',
+} as const;
+
 export function DeliveriesList({
   context,
   contextQuery,
@@ -233,6 +240,45 @@ export function DeliveriesList({
           </>
         )}
       </NotchedCard>
+      {initialData.lossReport.length > 0 ? (
+        <Card className="pg-card">
+          <details className="deliveries-rules">
+            <summary>Where fuel keeps arriving short</summary>
+            <InfoTip>
+              Confirmed deliveries that came in under the note, grouped by who sold or brought the
+              fuel. Use it to spot a driver, truck or company that is short again and again.
+            </InfoTip>
+            <TableScrollRegion label="Fuel arriving short">
+              <table className="data-table">
+                <caption className="visually-hidden">Fuel arriving short</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Who</th>
+                    <th scope="col">Short deliveries</th>
+                    <th scope="col">Litres short</th>
+                    <th scope="col">Claims open</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {initialData.lossReport.map((row) => (
+                    <tr key={`${row.kind}:${row.name}`}>
+                      <th scope="row">
+                        {row.name}
+                        <span className="table-secondary">{LOSS_KIND_LABELS[row.kind]}</span>
+                      </th>
+                      <td data-label="Short deliveries">
+                        {row.shortDeliveries} of {row.deliveries}
+                      </td>
+                      <td data-label="Litres short">{formatQuantity(row.shortLitres, 'LITRES')}</td>
+                      <td data-label="Claims open">{row.claimsOpen}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScrollRegion>
+          </details>
+        </Card>
+      ) : null}
       {initialData.canSetWaterTestRule ? (
         <Card className="pg-card">
           <details className="deliveries-rules">

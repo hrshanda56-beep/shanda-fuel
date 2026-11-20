@@ -25,7 +25,7 @@ import {
 import { useToast } from '@/design-system/feedback-provider';
 import { FloatingMenuList } from '@/design-system/floating-menu-list';
 import { Modal } from '@/design-system/modal';
-import { AddSupplierWizard, type NewSupplierValue } from './add-supplier-wizard';
+import { AddSupplierWizard, roleFlags, type NewSupplierValue } from './add-supplier-wizard';
 import { NotchedCard } from '@/design-system/notched-card';
 import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
@@ -40,6 +40,7 @@ type SupplierSummary = {
   total: string;
   asOf?: string;
   creditLimit?: { status: string; limit: string | null; available: string | null };
+  providesTransport?: boolean;
 };
 
 type SupplierFilter = 'all' | 'overdue' | 'current';
@@ -189,8 +190,11 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
 
 export function SupplierWorkspace({
   initial,
+  transportersOnly = false,
 }: {
   initial?: { resolution: ContextResolution; rows: SupplierSummary[] };
+  /** Show only companies that bring fuel to the station. */
+  transportersOnly?: boolean;
 }) {
   const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
@@ -198,7 +202,11 @@ export function SupplierWorkspace({
   const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
   const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
-  const [rows, setRows] = useState<SupplierSummary[]>(initial?.rows ?? []);
+  const [allRows, setRows] = useState<SupplierSummary[]>(initial?.rows ?? []);
+  const rows = useMemo(
+    () => (transportersOnly ? allRows.filter((row) => row.providesTransport) : allRows),
+    [allRows, transportersOnly],
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -326,6 +334,7 @@ export function SupplierWorkspace({
           legalEntityId: current.legalEntityId,
           code,
           legalName,
+          ...roleFlags(value.role),
           ...(registrationReference ? { registrationReference } : {}),
           ...(createForm.contactName.trim() ? { contactName: createForm.contactName.trim() } : {}),
           ...(createForm.contactPhone.trim()
@@ -384,7 +393,7 @@ export function SupplierWorkspace({
 
       {hasRequiredContext && supplierSelection ? (
         <NotchedCard
-          title="Supplier balances"
+          title={transportersOnly ? 'Transporters' : 'Supplier balances'}
           titleId="supplier-creditors-title"
           wrapperClassName="content-span"
           notchWidth={9}
@@ -540,6 +549,7 @@ export function SupplierWorkspace({
         dismissible={!creating}
       >
         <AddSupplierWizard
+          initialRole={transportersOnly ? 'TRANSPORT' : 'FUEL'}
           companyName={currentLegalEntityName ?? 'the selected company'}
           busy={creating}
           error={createError}

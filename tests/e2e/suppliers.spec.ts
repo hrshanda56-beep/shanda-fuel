@@ -75,9 +75,12 @@ test.describe('supplier workflows', () => {
     await expect(summary).toContainText('USD 65,000.00');
     await expect(page.getByRole('button', { name: 'Add supplier' })).toHaveCount(1);
     await page.getByRole('button', { name: 'Add supplier' }).first().click();
+    // The form is a short wizard. It starts with what the company does (fuel is the default).
+    await expect(page.getByText('What does this company do for you?')).toBeVisible();
+    await page.getByRole('button', { name: 'Continue' }).click();
     await page.getByLabel('Supplier code').fill('SUP-0002');
     await page.getByLabel('Legal name').fill('Harare Fuel Hauliers');
-    // The form is a short wizard: who, contact, credit, then a check before creating.
+    // Then: who, contact, credit, then a check before creating.
     for (let step = 0; step < 3; step += 1) {
       await page.getByRole('button', { name: 'Continue' }).click();
     }

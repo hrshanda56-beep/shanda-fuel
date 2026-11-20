@@ -221,6 +221,8 @@ export const fuelDeliveries = appSchema.table(
      */
     supplierId: uuid('supplier_id'),
     transporter: text('transporter'),
+    /** The supplier that carried the fuel, when it is one of the business's suppliers (migration 0112). */
+    transporterSupplierId: uuid('transporter_supplier_id'),
     driver: text('driver'),
     truckRegistration: text('truck_registration'),
     sealReference: text('seal_reference'),
@@ -230,6 +232,11 @@ export const fuelDeliveries = appSchema.table(
     /** Why the delivery has no purchase order (migration 0072); NULL when one is linked. */
     noPoReason: text('no_po_reason'),
     noPoNote: text('no_po_note'),
+    /** Why the litres received differ from the note (migration 0115); NULL when they agree. */
+    varianceCause: text('variance_cause'),
+    varianceNote: text('variance_note'),
+    /** The load temperature, kept as evidence only. It never changes the litres. */
+    loadTemperatureC: numeric('load_temperature_c', { precision: 4, scale: 1 }),
     unitLandedCost: numeric('unit_landed_cost', { precision: 20, scale: 8 }),
     totalLandedCost: numeric('total_landed_cost', { precision: 20, scale: 4 }),
     currency: text('currency'),
@@ -308,6 +315,38 @@ export const fuelDeliveries = appSchema.table(
       columns: [table.tenantId, table.confirmedBy],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: 'fuel_deliveries_confirmed_by_fk',
+    }),
+  ],
+);
+
+/** Who is held responsible for a delivery loss and what came of it (migration 0115). */
+export const fuelDeliveryLossClaims = appSchema.table(
+  'fuel_delivery_loss_claims',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    stationId: uuid('station_id').notNull(),
+    deliveryId: uuid('delivery_id').notNull(),
+    liableParty: text('liable_party').notNull(),
+    status: text('status').notNull(),
+    recoveredAmount: numeric('recovered_amount', { precision: 20, scale: 4 }),
+    currency: text('currency'),
+    note: text('note'),
+    updatedBy: uuid('updated_by').notNull(),
+    updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('fuel_delivery_loss_claims_tenant_id_id_uidx').on(table.tenantId, table.id),
+    unique('fuel_delivery_loss_claims_delivery_uidx').on(table.tenantId, table.deliveryId),
+    foreignKey({
+      columns: [table.tenantId, table.stationId, table.deliveryId],
+      foreignColumns: [fuelDeliveries.tenantId, fuelDeliveries.stationId, fuelDeliveries.id],
+      name: 'fuel_delivery_loss_claims_delivery_fk',
+    }),
+    foreignKey({
+      columns: [table.tenantId, table.updatedBy],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: 'fuel_delivery_loss_claims_updated_by_fk',
     }),
   ],
 );

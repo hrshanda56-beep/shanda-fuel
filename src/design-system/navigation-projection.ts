@@ -83,6 +83,7 @@ const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly 
     // Customer accounts are read across the organisation, so a station supervisor does not get them.
     customers: ['customer.payment.record'],
     suppliers: ['supplier.view'],
+    transporters: ['supplier.view'],
     purchasing: ['purchase_order.view'],
     expenses: ['expense.view'],
     'sales-documents': ['sales_document.view'],

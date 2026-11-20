@@ -3,6 +3,7 @@ import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   recordDeliveryCompartmentsFromRequest,
   recordDeliveryDriverConfirmationFromRequest,
+  recordDeliveryLossClaimFromRequest,
   recordDeliveryWaterTestFromRequest,
   setDeliveryNoPurchaseOrderReasonFromRequest,
   setWaterTestRequiredFromRequest,
@@ -15,6 +16,7 @@ const COMMANDS = [
   'RecordDeliveryCompartments',
   'RecordDeliveryWaterTest',
   'RecordDeliveryDriverConfirmation',
+  'RecordDeliveryLossClaim',
   'SetDeliveryNoPurchaseOrderReason',
   'SetWaterTestRequired',
 ] as const;
@@ -47,6 +49,9 @@ export const POST = withRequestObservability(
           break;
         case 'RecordDeliveryDriverConfirmation':
           result = await recordDeliveryDriverConfirmationFromRequest(request, body);
+          break;
+        case 'RecordDeliveryLossClaim':
+          result = await recordDeliveryLossClaimFromRequest(request, body);
           break;
         case 'SetDeliveryNoPurchaseOrderReason':
           result = await setDeliveryNoPurchaseOrderReasonFromRequest(request, body);

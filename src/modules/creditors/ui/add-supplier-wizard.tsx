@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { ErrorState, Field } from '@/design-system/primitives';
 import {
   WizardActions,
+  WizardChoice,
+  WizardChoices,
   WizardStep,
   WIZARD_REVIEW_HINT,
   WizardSummary,
@@ -16,9 +18,13 @@ import {
   checkSupplierName,
 } from '../new-supplier-checks';
 
-type SupplierStep = 'who' | 'contact' | 'credit' | 'review';
+type SupplierStep = 'does' | 'who' | 'contact' | 'credit' | 'review';
+
+/** What the company does for the business. */
+export type SupplierRole = 'FUEL' | 'TRANSPORT' | 'BOTH';
 
 export type NewSupplierValue = {
+  role: SupplierRole;
   code: string;
   legalName: string;
   registrationReference: string;
@@ -29,17 +35,35 @@ export type NewSupplierValue = {
   creditLimit: string;
 };
 
-const SEQUENCE: readonly SupplierStep[] = ['who', 'contact', 'credit', 'review'];
+const SEQUENCE: readonly SupplierStep[] = ['does', 'who', 'contact', 'credit', 'review'];
+
+export const ROLE_CHOICES: readonly { value: SupplierRole; label: string; detail: string }[] = [
+  { value: 'FUEL', label: 'Supplies fuel', detail: 'Sells you fuel. This is the usual choice.' },
+  {
+    value: 'TRANSPORT',
+    label: 'Transports fuel',
+    detail: 'Brings fuel to the station and sends you its own bill.',
+  },
+  { value: 'BOTH', label: 'Both', detail: 'Sells you fuel and also brings it.' },
+];
+
+/** The two flags the server stores for a role. */
+export function roleFlags(role: SupplierRole) {
+  return { providesFuel: role !== 'TRANSPORT', providesTransport: role !== 'FUEL' };
+}
 
 /** Add a supplier one question at a time, ending in a check screen. */
 export function AddSupplierWizard({
   companyName,
+  initialRole = 'FUEL',
   busy,
   error,
   onCancel,
   onSubmit,
 }: {
   companyName: string;
+  /** The answer the first question starts on. */
+  initialRole?: SupplierRole;
   busy: boolean;
   /** A problem from saving, shown on the check screen. */
   error: string | null;
@@ -47,6 +71,7 @@ export function AddSupplierWizard({
   onSubmit: (value: NewSupplierValue) => void;
 }) {
   const [form, setForm] = useState<NewSupplierValue>({
+    role: initialRole,
     code: '',
     legalName: '',
     registrationReference: '',
@@ -56,12 +81,13 @@ export function AddSupplierWizard({
     creditDays: '',
     creditLimit: '',
   });
-  const wizard = useWizard<SupplierStep>({ start: 'who', sequence: SEQUENCE, onCancel });
+  const wizard = useWizard<SupplierStep>({ start: 'does', sequence: SEQUENCE, onCancel });
   const { step, errors } = wizard;
   const set = (patch: Partial<NewSupplierValue>) =>
     setForm((current) => ({ ...current, ...patch }));
 
   function next() {
+    if (step === 'does') return wizard.advance({}, 'who', 'review');
     if (step === 'who') {
       return wizard.advance(checkSupplierName(form.code, form.legalName), 'contact', 'review');
     }
@@ -94,6 +120,29 @@ export function AddSupplierWizard({
         next();
       }}
     >
+      {step === 'does' ? (
+        <WizardStep
+          wizard={wizard}
+          title="What does this company do for you?"
+          hint="A company that brings your fuel is a different company from the one that sells it. Add each one separately, or pick both if one company does both."
+        >
+          <WizardChoices label="What this company does">
+            {ROLE_CHOICES.map((choice) => (
+              <WizardChoice
+                key={choice.value}
+                id={`supplier-role-${choice.value}`}
+                name="supplier-role"
+                checked={form.role === choice.value}
+                onPick={() => set({ role: choice.value })}
+                detail={choice.detail}
+              >
+                {choice.label}
+              </WizardChoice>
+            ))}
+          </WizardChoices>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
       {step === 'who' ? (
         <WizardStep
           wizard={wizard}
@@ -230,6 +279,9 @@ export function AddSupplierWizard({
       {step === 'review' ? (
         <WizardStep wizard={wizard} title="Check the supplier" hint={WIZARD_REVIEW_HINT}>
           <WizardSummary>
+            <WizardSummaryRow label="Does" onChange={() => wizard.change('does')}>
+              {ROLE_CHOICES.find((choice) => choice.value === form.role)?.label}
+            </WizardSummaryRow>
             <WizardSummaryRow label="Supplier" onChange={() => wizard.change('who')}>
               {form.legalName.trim()} ({form.code.trim()})
               {form.registrationReference.trim() ? ` · ${form.registrationReference.trim()}` : ''}

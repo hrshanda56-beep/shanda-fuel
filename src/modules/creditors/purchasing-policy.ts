@@ -36,6 +36,8 @@ export type PurchasingPolicyValues = Readonly<{
   defaultVatRate: string | null;
   productVatRates: Readonly<Record<string, string>>;
   requireInvoiceLines: boolean;
+  /** A delivery carried by a separate company must have that company's own bill. */
+  requireTransportBill: boolean;
 }>;
 
 /** Per-supplier override: every undefined/null field inherits from the tenant policy. */
@@ -64,6 +66,7 @@ export const BUILT_IN_PURCHASING_POLICY: PurchasingPolicyValues = {
   defaultVatRate: null,
   productVatRates: {},
   requireInvoiceLines: true,
+  requireTransportBill: false,
 };
 
 export function resolvePurchasingPolicy(
@@ -94,6 +97,7 @@ export function resolvePurchasingPolicy(
     defaultVatRate: text('defaultVatRate'),
     productVatRates: base.productVatRates,
     requireInvoiceLines: o.requireInvoiceLines ?? base.requireInvoiceLines,
+    requireTransportBill: o.requireTransportBill ?? base.requireTransportBill,
     source: supplierOverride ? 'SUPPLIER_OVERRIDE' : tenantPolicy ? 'TENANT' : 'DEFAULT',
   };
 }
@@ -148,10 +152,15 @@ export function validatePurchasingPolicyValues(input: {
   defaultVatRate?: string | null;
   productVatRates?: Readonly<Record<string, string>>;
   requireInvoiceLines?: boolean | null;
-}): Omit<PurchasingPolicyValues, 'toleranceAction' | 'vatMode' | 'requireInvoiceLines'> & {
+  requireTransportBill?: boolean | null;
+}): Omit<
+  PurchasingPolicyValues,
+  'toleranceAction' | 'vatMode' | 'requireInvoiceLines' | 'requireTransportBill'
+> & {
   toleranceAction: ToleranceAction | null;
   vatMode: VatMode | null;
   requireInvoiceLines: boolean | null;
+  requireTransportBill: boolean | null;
 } {
   const action = input.toleranceAction ?? null;
   if (action !== null && !TOLERANCE_ACTIONS.includes(action as ToleranceAction)) {
@@ -189,6 +198,7 @@ export function validatePurchasingPolicyValues(input: {
     defaultVatRate: percentText(input.defaultVatRate, 'The default VAT rate'),
     productVatRates,
     requireInvoiceLines: input.requireInvoiceLines ?? null,
+    requireTransportBill: input.requireTransportBill ?? null,
   };
 }
 

@@ -673,6 +673,34 @@
       "when": 1793200120000,
       "tag": "0111_expense_payment_other",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1793200130000,
+      "tag": "0112_supplier_transport",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1793200140000,
+      "tag": "0113_supplier_document_ref_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1793200200000,
+      "tag": "0114_purchasing_policy_transport_bill",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1793200260000,
+      "tag": "0115_delivery_variance",
+      "breakpoints": true
     }
   ]
 }

@@ -37,7 +37,19 @@ import { calculateDueDate } from '../credit-terms';
 import { previewLandedCost } from '../landed-cost-preview';
 import { DocumentAttachments } from '@/modules/documents/ui/document-attachments';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
+import { ROLE_CHOICES, roleFlags, type SupplierRole } from './add-supplier-wizard';
 import { initials, isOverdue, movementLabel, overduePercent } from './supplier-format';
+
+/** What the company does, from its two flags. Older rows without them supply fuel. */
+function supplierRole(supplier: {
+  providesFuel?: boolean;
+  providesTransport?: boolean;
+}): (typeof ROLE_CHOICES)[number] {
+  const fuel = supplier.providesFuel ?? true;
+  const transport = supplier.providesTransport ?? false;
+  const value: SupplierRole = fuel && transport ? 'BOTH' : transport ? 'TRANSPORT' : 'FUEL';
+  return ROLE_CHOICES.find((choice) => choice.value === value) ?? ROLE_CHOICES[0]!;
+}
 
 type SupplierSummary = {
   supplierId: string;
@@ -52,6 +64,8 @@ type SupplierSummary = {
   contactPhone?: string | null;
   contactEmail?: string | null;
   defaultCreditDays?: number | null;
+  providesFuel?: boolean;
+  providesTransport?: boolean;
   creditLimit?: {
     status: 'none' | 'ok' | 'near' | 'over';
     limit: string | null;
@@ -114,6 +128,8 @@ type InvoiceDelivery = {
   receivedLitres: string;
   noteLitres: string;
   unit?: 'LITRES' | 'KILOGRAMS';
+  /** FUEL when the fuel invoice is open; TRANSPORT when this company's transport bill is open. */
+  billKind?: 'FUEL' | 'TRANSPORT';
 };
 type InvoiceChoices = {
   products: { id: string; name: string }[];
@@ -124,7 +140,7 @@ type InvoiceChoices = {
     bankName: string;
     accountReferenceMasked: string;
   }[];
-  /** Confirmed deliveries from this supplier that no posted invoice covers yet. */
+  /** Confirmed deliveries this supplier supplied or carried that no posted bill covers yet. */
   deliveries?: InvoiceDelivery[];
 };
 
@@ -311,6 +327,7 @@ export function SupplierDetailWorkspace({
     phone: string;
     email: string;
     days: string;
+    role: SupplierRole;
   } | null>(null);
 
   const current = context?.current ?? null;
@@ -563,6 +580,7 @@ export function SupplierDetailWorkspace({
         contactPhone: contactForm.phone.trim() || null,
         contactEmail: contactForm.email.trim() || null,
         defaultCreditDays: days ? Number(days) : null,
+        ...roleFlags(contactForm.role),
       },
       'Supplier details saved.',
     );
@@ -616,28 +634,44 @@ export function SupplierDetailWorkspace({
       return;
     }
     const stationId = form.stationId ?? current?.stationId ?? '';
-    const deliveryRefs = [
-      ...new Set(
-        filledLines
-          .filter((line) => line.lineType === 'FUEL' && line.deliveryId)
-          .map((l) => l.deliveryId),
-      ),
-    ].map((deliveryId) => {
-      const delivery = (choices.deliveries ?? []).find((candidate) => candidate.id === deliveryId)!;
-      const own = filledLines.filter(
-        (line) => line.lineType === 'FUEL' && line.deliveryId === deliveryId,
+    const billed = (line: LineForm) =>
+      (line.lineType === 'FUEL' || line.lineType === 'TRANSPORT') && line.deliveryId;
+    const mixed = filledLines.find(
+      (line) =>
+        billed(line) &&
+        filledLines.some(
+          (other) =>
+            other.deliveryId === line.deliveryId &&
+            billed(other) &&
+            other.lineType !== line.lineType,
+        ),
+    );
+    if (mixed) {
+      setActionError(
+        'Fuel and transport are billed separately. Put the transport charge on the transporter\u2019s own bill, not on the fuel invoice, for the same delivery.',
       );
-      return {
-        stationId: delivery.stationId,
-        deliveryId,
-        invoicedQuantityLitres: own
-          .reduce((sum, line) => sum.add(line.quantity.trim()), new Decimal(0))
-          .toFixed(3),
-        invoicedAmount: own
-          .reduce((sum, line) => sum.add(lineTotal(line) ?? 0), new Decimal(0))
-          .toFixed(4),
-      };
-    });
+      return;
+    }
+    const deliveryRefs = [...new Set(filledLines.filter(billed).map((l) => l.deliveryId))].map(
+      (deliveryId) => {
+        const delivery = (choices.deliveries ?? []).find(
+          (candidate) => candidate.id === deliveryId,
+        )!;
+        const own = filledLines.filter((line) => billed(line) && line.deliveryId === deliveryId);
+        const transport = own[0]?.lineType === 'TRANSPORT';
+        return {
+          stationId: delivery.stationId,
+          deliveryId,
+          kind: transport ? ('TRANSPORT' as const) : ('FUEL' as const),
+          invoicedQuantityLitres: own
+            .reduce((sum, line) => sum.add(line.quantity.trim()), new Decimal(0))
+            .toFixed(3),
+          invoicedAmount: own
+            .reduce((sum, line) => sum.add(lineTotal(line) ?? 0), new Decimal(0))
+            .toFixed(4),
+        };
+      },
+    );
     const submitted = await submitCommand(
       'SubmitSupplierDocument',
       {
@@ -645,7 +679,9 @@ export function SupplierDetailWorkspace({
         lines: filledLines.map((line) => ({
           lineType: line.lineType,
           ...(line.lineType === 'FUEL' && line.productId ? { productId: line.productId } : {}),
-          ...(line.lineType === 'FUEL' && line.deliveryId ? { deliveryId: line.deliveryId } : {}),
+          ...((line.lineType === 'FUEL' || line.lineType === 'TRANSPORT') && line.deliveryId
+            ? { deliveryId: line.deliveryId }
+            : {}),
           description: line.description.trim(),
           quantity: line.quantity.trim(),
           unitPrice: line.unitPrice.trim(),
@@ -893,6 +929,21 @@ export function SupplierDetailWorkspace({
                       }
                     />
                   </Field>
+                  <Field id="supplier-edit-role" label="What this company does for you">
+                    <select
+                      id="supplier-edit-role"
+                      value={contactForm.role}
+                      onChange={(event) =>
+                        setContactForm({ ...contactForm, role: event.target.value as SupplierRole })
+                      }
+                    >
+                      {ROLE_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
                   <Field id="supplier-edit-days" label="Usual credit period (days)" optional>
                     <input
                       id="supplier-edit-days"
@@ -927,6 +978,7 @@ export function SupplierDetailWorkspace({
                           .join(' · ')
                       : 'No contact details recorded yet.'}
                   </p>
+                  <p>{supplierRole(supplier).label}.</p>
                   <p>
                     {supplier.defaultCreditDays === null || supplier.defaultCreditDays === undefined
                       ? 'Usual credit period not recorded.'
@@ -940,6 +992,7 @@ export function SupplierDetailWorkspace({
                         phone: supplier.contactPhone ?? '',
                         email: supplier.contactEmail ?? '',
                         days: supplier.defaultCreditDays?.toString() ?? '',
+                        role: supplierRole(supplier).value,
                       })
                     }
                   >
@@ -1359,6 +1412,7 @@ export function SupplierDetailWorkspace({
                           setDocumentLine(index, {
                             lineType: event.target.value as LineType,
                             productId: '',
+                            deliveryId: '',
                           })
                         }
                       >
@@ -1387,11 +1441,18 @@ export function SupplierDetailWorkspace({
                         </select>
                       </Field>
                     ) : null}
-                    {line.lineType === 'FUEL' && (choices.deliveries ?? []).length > 0 ? (
+                    {(line.lineType === 'FUEL' || line.lineType === 'TRANSPORT') &&
+                    (choices.deliveries ?? []).some(
+                      (delivery) => (delivery.billKind ?? 'FUEL') === line.lineType,
+                    ) ? (
                       <Field
                         id={`document-line-${index}-delivery`}
                         label="Delivery"
-                        hint="Optional. Tie the fuel to the delivery it was for, so the quantity received sets the cost per litre or kilogram."
+                        hint={
+                          line.lineType === 'TRANSPORT'
+                            ? 'Optional. Tie this transport charge to the delivery it was for.'
+                            : 'Optional. Tie the fuel to the delivery it was for, so the quantity received sets the cost per litre or kilogram.'
+                        }
                         optional
                       >
                         <select
@@ -1405,6 +1466,7 @@ export function SupplierDetailWorkspace({
                           {(choices.deliveries ?? [])
                             .filter(
                               (delivery) =>
+                                (delivery.billKind ?? 'FUEL') === line.lineType &&
                                 (!line.productId || delivery.productId === line.productId) &&
                                 (!(documentForm.stationId ?? current?.stationId) ||
                                   delivery.stationId ===
