@@ -1,5 +1,24 @@
 # Shanda Fuel — Current Status
 
+## Loading truck with each company's own logo — 2026-11-20 (branch `feat/truck-loader-257`, issue #257, uncommitted)
+
+While a page loads, a small tanker drives left to right (`design-system/loading-truck.tsx`, drawn in
+code, one change in `RouteLoading` for all 62 `loading.tsx` files). It appears only after 0.45 s so
+short loads never flash it, stays hidden from screen readers (the "Loading page…" text is kept),
+and stands still for reduced motion. A company with a logo sees it on the tank and its colour on the
+swoosh; a white-lettered logo gets a dark tank (`chooseTank` reads the logo's pixels in the browser).
+The first load, and a company with no logo, show the plain truck in the app's colours.
+Migration `0117_app_logo` adds `sales_doc_profiles.app_logo_png_base64` (PNG only, <= 300 000
+characters, signature checked) — additive, local databases only until approved. The company-details
+screen now accepts PNG, JPG or SVG and keeps two small copies: the JPEG on white for documents and a
+transparent PNG for the loading screen (an SVG is drawn onto a canvas, so only pixels are kept).
+`GET /api/brand?tenantId=` returns the logo and colour to any signed-in member of that company (no
+document permission needed; company membership and row-level security still apply; `private,
+no-store`); the browser asks once per company after the first page. Not done: T.E.I Oils' real logo
+is not loaded for them (they set it in Company details; white lettering is handled by the dark
+tank); the integration suite and browser specs were not run (they need Clerk secrets / are not
+written for this screen).
+
 ## Quotations, invoices and receipts — 2026-11-18 (branch `feat/sales-documents`, from NOV17)
 
 DEC-045. Built: migration `0108_sales_documents` (letterhead and numbering settings, gap-free
