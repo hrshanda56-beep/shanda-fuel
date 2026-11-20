@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { readDeliveryVariance } from '../../src/modules/reporting/table-reports/read';
 import { clerkHeaders } from './auth-session-fixtures';
 import { queryDeliveryList } from '../../src/modules/deliveries/queries';
 import { createQa1ScenarioContext, QA1_TIMES, type Qa1ScenarioContext } from './qa1/fixture';
@@ -144,7 +146,12 @@ describe('delivery loss: explain it and follow it up (PostgreSQL)', { timeout: 1
     const deliveryId = lost.body.deliveryId as string;
     await confirmDelivery(ctx, deliveryId, 'var-claim-confirm');
 
-    const claim = (key: string, body: Record<string, unknown>, id = deliveryId) =>
+    const claim = (
+      key: string,
+      body: Record<string, unknown>,
+      id = deliveryId,
+      who: 'admin' | 'supervisor' | 'finance' | 'attendant' = 'supervisor',
+    ) =>
       deliveryDetail(
         ctx,
         {
@@ -155,41 +162,187 @@ describe('delivery loss: explain it and follow it up (PostgreSQL)', { timeout: 1
           ...body,
         },
         key,
+        who,
+      );
+    const review = (
+      key: string,
+      body: Record<string, unknown>,
+      who: 'admin' | 'supervisor' | 'finance' | 'attendant' = 'admin',
+    ) =>
+      deliveryDetail(
+        ctx,
+        {
+          commandType: 'ReviewDeliveryLossClaim',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          deliveryId,
+          ...body,
+        },
+        key,
+        who,
       );
 
-    const noParty = await claim('var-claim-1', { liableParty: 'NONE', status: 'RAISED' });
-    expect(noParty.response.status).toBe(400);
-    const noAmount = await claim('var-claim-2', { liableParty: 'DRIVER', status: 'SETTLED' });
-    expect(noAmount.response.status).toBe(400);
+    // Validation: a party, an expected amount to raise, an amount and a method to settle.
+    expect(
+      (await claim('var-claim-1', { liableParty: 'NONE', status: 'RAISED' })).response.status,
+    ).toBe(400);
+    expect(
+      (await claim('var-claim-2', { liableParty: 'DRIVER', status: 'RAISED', currency: 'USD' }))
+        .response.status,
+    ).toBe(400);
+    expect(
+      (await claim('var-claim-2b', { liableParty: 'DRIVER', status: 'SETTLED', currency: 'USD' }))
+        .response.status,
+    ).toBe(400);
 
-    const raised = await claim('var-claim-3', { liableParty: 'DRIVER', status: 'RAISED' });
+    // Who may record: a supervisor and finance can, an attendant cannot.
+    const attendant = await claim(
+      'var-claim-att',
+      { liableParty: 'DRIVER', status: 'RAISED', expectedAmount: '120', currency: 'USD' },
+      deliveryId,
+      'attendant',
+    );
+    expect(attendant.response.status).toBe(403);
+
+    const raised = await claim('var-claim-3', {
+      liableParty: 'DRIVER',
+      status: 'RAISED',
+      expectedAmount: '120.50',
+      currency: 'USD',
+    });
     expect(raised.response.status, JSON.stringify(raised.body)).toBe(200);
+    expect(raised.body.approvalStatus).toBe('PENDING');
+
+    // Who may approve: not the person who recorded it, not a supervisor or finance.
+    expect(
+      (await review('var-rev-sup', { decision: 'APPROVED' }, 'supervisor')).response.status,
+    ).toBe(403);
+    expect((await review('var-rev-fin', { decision: 'APPROVED' }, 'finance')).response.status).toBe(
+      403,
+    );
+    expect(
+      (await review('var-rev-att', { decision: 'APPROVED' }, 'attendant')).response.status,
+    ).toBe(403);
+    // Sending back needs words.
+    expect((await review('var-rev-nonote', { decision: 'REJECTED' })).response.status).toBe(400);
+    const sentBack = await review('var-rev-back', { decision: 'REJECTED', note: 'Wrong amount' });
+    expect(sentBack.response.status, JSON.stringify(sentBack.body)).toBe(200);
+    // Already decided: nothing waiting.
+    expect((await review('var-rev-again', { decision: 'APPROVED' })).response.status).toBe(409);
+
+    // Recording again puts it back to waiting, and approval then works.
+    const again = await claim('var-claim-3b', {
+      liableParty: 'DRIVER',
+      status: 'RAISED',
+      expectedAmount: '130',
+      currency: 'USD',
+    });
+    expect(again.body.approvalStatus).toBe('PENDING');
+    const approved = await review('var-rev-ok', { decision: 'APPROVED' });
+    expect(approved.response.status, JSON.stringify(approved.body)).toBe(200);
+
+    // An administrator who recorded the change cannot approve it themselves.
+    await claim(
+      'var-claim-admin',
+      {
+        liableParty: 'DRIVER',
+        status: 'RAISED',
+        expectedAmount: '130',
+        currency: 'USD',
+      },
+      deliveryId,
+      'admin',
+    );
+    expect((await review('var-rev-self', { decision: 'APPROVED' })).response.status).toBe(403);
+    const byFinanceRecord = await claim(
+      'var-claim-fin',
+      {
+        liableParty: 'DRIVER',
+        status: 'RAISED',
+        expectedAmount: '130',
+        currency: 'USD',
+      },
+      deliveryId,
+      'finance',
+    );
+    expect(byFinanceRecord.response.status, JSON.stringify(byFinanceRecord.body)).toBe(200);
+    expect((await review('var-rev-ok2', { decision: 'APPROVED' })).response.status).toBe(200);
+
+    // Settle: the amount, the method and the currency are kept; the expected amount is carried.
     const settled = await claim('var-claim-4', {
       liableParty: 'DRIVER',
       status: 'SETTLED',
       recoveredAmount: '120.50',
+      settlementMethod: 'SUPPLIER_BALANCE',
       currency: 'USD',
     });
     expect(settled.response.status, JSON.stringify(settled.body)).toBe(200);
+    const settleReview = await review('var-rev-settle', { decision: 'APPROVED' });
+    expect(settleReview.response.status, JSON.stringify(settleReview.body)).toBe(200);
+    expect(settleReview.body.posted).toBe('SUPPLIER_ACCOUNT');
+    // Taken off what is owed to the supplier: one credit on their account, never a second.
+    const credits = await client`
+      select amount::text as amount, movement_type, supplier_id, source_type
+      from app.supplier_account_movements
+      where source_type = 'DELIVERY_LOSS_CLAIM'
+        and source_id in (select id from app.fuel_delivery_loss_claims where delivery_id = ${deliveryId})`;
+    expect(credits).toHaveLength(1);
+    expect(credits[0]).toMatchObject({
+      amount: '120.5000',
+      movement_type: 'CREDIT_NOTE',
+      supplier_id: supplierId,
+    });
     const rows = await client`
-      select liable_party, status, recovered_amount::text as amount, currency
+      select liable_party, status, expected_amount::text as expected,
+        recovered_amount::text as amount, settlement_method, currency, approval_status
       from app.fuel_delivery_loss_claims where delivery_id = ${deliveryId}`;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       liable_party: 'DRIVER',
       status: 'SETTLED',
+      expected: '130.0000',
       amount: '120.5000',
+      settlement_method: 'SUPPLIER_BALANCE',
       currency: 'USD',
+      approval_status: 'APPROVED',
     });
+
+    // The report shows the reason, the claim and the amounts with their currency.
+    const reportRows = await readDeliveryVariance(
+      drizzle(client) as never,
+      {
+        tenantId: ctx.tenantId,
+        stationIds: [ctx.stationId],
+        fromDate: '2000-01-01',
+        toDate: '2100-01-01',
+      } as never,
+      {} as never,
+    );
+    const reported = reportRows.find((row) => row.claim === 'Paid back');
+    expect(reported).toMatchObject({
+      responsible: 'The driver',
+      approval: 'Approved',
+      expectedBack: 'USD 130.0000',
+      paidBack: 'USD 120.5000',
+      paidBackBy: 'Taken off the supplier balance',
+    });
+
+    // An approved settlement is closed.
+    const closed = await claim('var-claim-closed', {
+      liableParty: 'DRIVER',
+      status: 'WRITTEN_OFF',
+    });
+    expect(closed.response.status).toBe(409);
 
     const exact = await record(ctx, 'var-claim-b', supplierId, '100', '100');
     const nothing = await claim(
       'var-claim-5',
-      { liableParty: 'DRIVER', status: 'RAISED' },
+      { liableParty: 'DRIVER', status: 'RAISED', expectedAmount: '10', currency: 'USD' },
       exact.body.deliveryId as string,
     );
     expect(nothing.response.status).toBe(409);
   });
+
   it('reports who keeps arriving short, and counts only confirmed deliveries', async () => {
     const ctx = await createQa1ScenarioContext(client, 'var-report');
     await postOpeningPosition(client, ctx, 'var-report-opening', '1000.000', '1000.0000');

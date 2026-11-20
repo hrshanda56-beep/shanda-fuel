@@ -242,7 +242,7 @@
     "src/modules/customers/ui/types.ts": "2381ce2bcd33f078a43f28fb25e9fea09294453646ad5481f4cdf5c9ef25a9f2",
     "src/modules/deliveries/ui/deliveries-list.tsx": "f400ec5841ac0b88418b2c97abd652a1966278d1497a8b33a80283b4b297d046",
     "src/modules/deliveries/ui/delivery-details.tsx": "483934f7f817cb5fde78a677e2e7016de1d387905cc9aca93df6afb03ef157e3",
-    "src/modules/deliveries/ui/delivery-loss.tsx": "7125228a1da8036a20039305ad8e44c8977fd16305c752f9f77c77351e0e730b",
+    "src/modules/deliveries/ui/delivery-loss.tsx": "17a0c3ecfc394563c19988ad10a2ee23ac9364c5c4882d236d547449f77d4075",
     "src/modules/deliveries/ui/purchase-order-choice.tsx": "5d697f3f902f743d8ea187e7dcf1943d43c1a43a1950a143f76e3546b71db6a8",
     "src/modules/deliveries/ui/record-delivery.tsx": "c5281ebac887affe74b37ae9a2e804a247189fcd15f756bdbd6b46cb24982d04",
     "src/modules/deliveries/ui/variance-reason.tsx": "ac849a23cfe52350c54590bb7ffab6a3b5ee493f80dffa75b8d0e8e3baab7661",

@@ -1,10 +1,18 @@
 # Shanda Fuel — Decision Log
 
-## DEC-055 — Recovering a delivery loss: the project lead's answers, design still to confirm (PROPOSED, 2026-11-20)
+## DEC-055 — Recovering a delivery loss with approval (ACCEPTED, 2026-11-20)
 
-**Status:** PROPOSED. These are the project lead's answers in chat; nothing is built and no accounting
-posting exists yet. The accounting treatment below is a proposal and needs the project lead (and
-Finance) to confirm before any ledger posting is written.
+**Status:** ACCEPTED on the explicit instruction of the project lead ("lets go with your recommendations", 2026-11-20). The
+approval workflow is built (migration 0116). The accounting rules below are accepted, but Finance must
+still review them before production, and no ledger posting is built yet.
+
+**Accounting rules (accepted):**
+1. While a claim is open it is a memo beside the stock loss; no asset is booked. A claim agreed in writing may be booked as a receivable by Finance, with its own approval.
+2. On payback the credit goes to one separate "fuel loss recovered" report line for all three methods (cash received; less owed to the transporter; less owed to the supplier), so reports show gross loss, recovered and net loss. It does not change the stock cost history. Today a recovery lowers what is owed (supplier account) but does not yet reach profit; the report line is not built.
+3. A write-off is NOT posted as a new expense (changed 2026-11-20 after reading the code). The shortage is already in cost of sales: stock is received at the full invoiced cost spread over the litres actually received, so a shortage raises the cost per litre and reaches profit as the fuel is sold. A separate "Fuel loss" expense would count it twice. A write-off only closes the claim; Finance may show the loss as its own report line, as a split of cost of sales.
+4. A claim keeps its own currency and is converted at the settlement or write-off date rate. The expected amount is a memo and is never converted.
+5. A part payment settles only what was received; the rest stays open until an approver writes it off or keeps waiting.
+- Finance notes: a recovery after a closed period posts in the period it is received; a deduction from a taxed bill reduces the net amount, not the tax.
 
 - **The company bears the loss first, until it is repaid.** The project lead wants a special
   treatment, because the fuel is gone now but is expected to be paid back.
@@ -14,10 +22,17 @@ Finance) to confirm before any ledger posting is written.
   above may record it; the administrator and the owner approve it.
 - **Money.** USD for now, but other currencies may come, so the currency stays on each claim. The
   amount is typed by the person, never calculated.
-- **Proposed (not agreed):** while a claim is open, show the loss as an amount expected back (a
-  receivable) beside the stock loss, so the books show both the loss and the expected repayment, rather
-  than hiding the loss. Settling turns it into money received or a reduction of what is owed to the
-  transporter or supplier, chosen per case; writing it off moves it to loss expense.
+- **Confirmed by the project lead (2026-11-20):** the expected amount is recorded when the claim is
+  raised; both the raised claim and its settlement need an administrator or owner to approve; a
+  settlement is paid back in cash, taken off the transport company's bill, or taken off what is owed to
+  the supplier, chosen per case; Finance is to confirm the accounting treatment.
+- **Built (migration 0116, no ledger posting).** `delivery.loss.record` (supervisor, area manager,
+  finance, administrator, owner) and `delivery.loss.approve` (administrator, owner), both needing the
+  fresh identity check. Every change goes to "waiting for approval"; the person who recorded it cannot
+  approve it; a claim can be sent back with a reason; an approved settlement or write-off is closed.
+  `supplier.delivery.link` no longer governs claims.
+- **Posting built (USD only, project lead 2026-11-20).** When an administrator or owner approves a settlement taken off the transport bill or off the supplier balance, a credit note movement (source `DELIVERY_LOSS_CLAIM`) is added to the transport company's or supplier's account, once per claim. A transport-bill settlement on a delivery with no transport company is refused. Claims in another currency cannot be taken off an account for now.
+- **Not built:** cash paid back is only recorded on the claim (no cash movement), the "fuel loss recovered" report line (gross loss, recovered, net), and the open-claim memo beside the loss. The "Fuel loss" write-off expense is withdrawn because it would double-count the stock loss.
 
 ## DEC-054 — A delivery loss is worked out by the system and explained by the person (ACCEPTED, 2026-11-20)
 

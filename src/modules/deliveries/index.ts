@@ -20,6 +20,7 @@ export {
   recordDeliveryDriverConfirmationFromRequest,
   recordDeliveryLossClaimFromRequest,
   recordDeliveryWaterTestFromRequest,
+  reviewDeliveryLossClaimFromRequest,
   setDeliveryNoPurchaseOrderReasonFromRequest,
   setWaterTestRequiredFromRequest,
 } from './commands';
@@ -28,6 +29,7 @@ export type { DeliveryDetail, DeliveryList, DeliveryListItem } from './queries';
 export {
   LOSS_LIABLE_PARTIES,
   LOSS_RECOVERY_STATUSES,
+  LOSS_SETTLEMENT_METHODS,
   VARIANCE_CAUSES,
   VARIANCE_CAUSE_LABELS,
   assessDeliveryVariance,

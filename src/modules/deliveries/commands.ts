@@ -29,6 +29,7 @@ import { loadDeliveryForUpdate } from './persistence';
 import {
   LOSS_LIABLE_PARTIES,
   LOSS_RECOVERY_STATUSES,
+  LOSS_SETTLEMENT_METHODS,
   checkLossRecovery,
 } from './variance-assessment';
 import { setNoPurchaseOrderReasonSchema } from './purchase-order-choice';
@@ -75,8 +76,15 @@ const driverConfirmationPayload = authorityPayload.extend({
 const lossClaimPayload = authorityPayload.extend({
   liableParty: z.enum(LOSS_LIABLE_PARTIES),
   status: z.enum(LOSS_RECOVERY_STATUSES),
+  expectedAmount: z.string().trim().nullish(),
   recoveredAmount: z.string().trim().nullish(),
+  settlementMethod: z.enum(LOSS_SETTLEMENT_METHODS).nullish(),
   currency: z.string().trim().length(3).nullish(),
+  note: z.string().trim().max(500).nullish(),
+});
+
+const lossClaimReviewPayload = authorityPayload.extend({
+  decision: z.enum(['APPROVED', 'REJECTED']),
   note: z.string().trim().max(500).nullish(),
 });
 
@@ -465,31 +473,34 @@ export async function setDeliveryNoPurchaseOrderReasonFromRequest(
 }
 
 /**
- * Records who is held responsible for a delivery's loss and what came of the claim. The owner
- * decides each case; the system only keeps the answer. It works on a confirmed delivery too,
- * because a claim is followed up after the fuel is already in the tank. Nothing is posted to
- * any ledger.
+ * Records who is held responsible for a delivery's loss, the amount expected back and what came of
+ * the claim. The owner decides each case; the system only keeps the answer. It works on a confirmed
+ * delivery too, because a claim is followed up after the fuel is already in the tank. Every change
+ * waits for an administrator or owner to approve it (a different person from the one recording),
+ * and an approved settlement or write-off is final. Nothing is posted to any ledger (DEC-055).
  */
 export function recordDeliveryLossClaimCommand(
   context: InventoryCommandContext,
   payload: z.infer<typeof lossClaimPayload>,
   key: string,
 ) {
-  const amount = payload.recoveredAmount?.trim() || null;
+  const expected = payload.expectedAmount?.trim() || null;
+  const recovered = payload.recoveredAmount?.trim() || null;
+  const method = payload.settlementMethod ?? null;
+  const typedCurrency = payload.currency?.toUpperCase() ?? null;
   const problem = checkLossRecovery({
     liableParty: payload.liableParty,
     status: payload.status,
-    amount,
+    expectedAmount: expected,
+    recoveredAmount: recovered,
+    settlementMethod: method,
+    currency: typedCurrency,
   });
   if (problem) throw new AppError('VALIDATION_FAILED', problem);
-  const currency = payload.status === 'SETTLED' ? (payload.currency?.toUpperCase() ?? null) : null;
-  if (payload.status === 'SETTLED' && !currency) {
-    throw new AppError('VALIDATION_FAILED', 'Choose the currency of the amount recovered.');
-  }
   return executeInventoryCommand({
     context,
     commandType: 'RecordDeliveryLossClaim',
-    permissionCode: 'supplier.delivery.link',
+    permissionCode: 'delivery.loss.record',
     idempotencyKey: key,
     requestHash: requestHash(payload),
     audit: {
@@ -516,17 +527,60 @@ export function recordDeliveryLossClaimCommand(
           'Fuel received matched the delivery note, so there is no loss to claim for.',
         );
       }
+      const existing = (
+        await transaction.execute<{
+          status: string;
+          approval_status: string;
+          expected_amount: string | null;
+          currency: string | null;
+        }>(sql`
+          select status, approval_status, expected_amount::text as expected_amount, currency
+          from app.fuel_delivery_loss_claims
+          where tenant_id = ${context.tenantId} and delivery_id = ${delivery.id}
+          for update
+        `)
+      )[0];
+      if (
+        existing &&
+        existing.approval_status === 'APPROVED' &&
+        (existing.status === 'SETTLED' || existing.status === 'WRITTEN_OFF')
+      ) {
+        throw new AppError(
+          'CONFLICT',
+          'This claim was settled and approved, so it is closed and cannot be changed.',
+        );
+      }
+      const none = payload.status === 'NONE';
+      const expectedAmount = none ? null : (expected ?? existing?.expected_amount ?? null);
+      const recoveredAmount = payload.status === 'SETTLED' ? recovered : null;
+      const settlementMethod = payload.status === 'SETTLED' ? method : null;
+      const currency =
+        expectedAmount || recoveredAmount ? (typedCurrency ?? existing?.currency ?? null) : null;
+      if ((expectedAmount || recoveredAmount) && !currency) {
+        throw new AppError('VALIDATION_FAILED', 'Choose the currency of the amount.');
+      }
       await transaction.execute(sql`
         insert into app.fuel_delivery_loss_claims
-          (tenant_id, station_id, delivery_id, liable_party, status, recovered_amount, currency, note, updated_by)
+          (tenant_id, station_id, delivery_id, liable_party, status, expected_amount, recovered_amount,
+           settlement_method, currency, note, approval_status, approved_by, approved_at, approval_note, updated_by)
         values (${context.tenantId}, ${context.stationId}, ${delivery.id}, ${payload.liableParty},
-          ${payload.status}, ${amount}, ${currency}, ${payload.note || null}, ${context.authority.membership.membershipId})
+          ${payload.status}, ${expectedAmount}, ${recoveredAmount}, ${settlementMethod}, ${currency},
+          ${payload.note || null}, ${none ? 'NOT_NEEDED' : 'PENDING'}, null, null, null,
+          ${context.authority.membership.membershipId})
         on conflict (tenant_id, delivery_id) do update set
           liable_party = excluded.liable_party, status = excluded.status,
-          recovered_amount = excluded.recovered_amount, currency = excluded.currency,
-          note = excluded.note, updated_by = excluded.updated_by, updated_at = now()
+          expected_amount = excluded.expected_amount, recovered_amount = excluded.recovered_amount,
+          settlement_method = excluded.settlement_method, currency = excluded.currency,
+          note = excluded.note, approval_status = excluded.approval_status,
+          approved_by = null, approved_at = null, approval_note = null,
+          updated_by = excluded.updated_by, updated_at = now()
       `);
-      return { deliveryId: delivery.id, liableParty: payload.liableParty, status: payload.status };
+      return {
+        deliveryId: delivery.id,
+        liableParty: payload.liableParty,
+        status: payload.status,
+        approvalStatus: none ? 'NOT_NEEDED' : 'PENDING',
+      };
     },
   });
 }
@@ -534,6 +588,162 @@ export function recordDeliveryLossClaimCommand(
 export async function recordDeliveryLossClaimFromRequest(request: Request, input: unknown) {
   const payload = lossClaimPayload.parse(input);
   return recordDeliveryLossClaimCommand(
+    await contextFor(request, payload),
+    payload,
+    requireIdempotency(request),
+  );
+}
+
+/**
+ * An administrator or owner approves or sends back a claim (or its settlement). The person who
+ * recorded the last change cannot approve it, so a second person always looks at it.
+ */
+export function reviewDeliveryLossClaimCommand(
+  context: InventoryCommandContext,
+  payload: z.infer<typeof lossClaimReviewPayload>,
+  key: string,
+) {
+  const note = payload.note?.trim() || null;
+  if (payload.decision === 'REJECTED' && !note) {
+    throw new AppError('VALIDATION_FAILED', 'Say why the claim is being sent back.');
+  }
+  return executeInventoryCommand({
+    context,
+    commandType: 'ReviewDeliveryLossClaim',
+    permissionCode: 'delivery.loss.approve',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode:
+        payload.decision === 'APPROVED'
+          ? 'INVENTORY.DELIVERY_LOSS_CLAIM_APPROVED'
+          : 'INVENTORY.DELIVERY_LOSS_CLAIM_SENT_BACK',
+      subjectType: 'FuelDelivery',
+      subjectId: payload.deliveryId,
+    },
+    execute: async (transaction) => {
+      const claim = (
+        await transaction.execute<{
+          id: string;
+          approval_status: string;
+          updated_by: string;
+          status: string;
+          settlement_method: string | null;
+          recovered_amount: string | null;
+          currency: string | null;
+        }>(sql`
+          select id, approval_status, updated_by, status, settlement_method,
+                 recovered_amount::text as recovered_amount, currency
+          from app.fuel_delivery_loss_claims
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and delivery_id = ${payload.deliveryId}
+          for update
+        `)
+      )[0];
+      if (!claim) throw new AppError('NOT_FOUND', 'No claim was recorded for this delivery.');
+      if (claim.approval_status !== 'PENDING') {
+        throw new AppError('CONFLICT', 'This claim is not waiting for approval.');
+      }
+      const me = context.authority.membership.membershipId;
+      if (claim.updated_by === me) {
+        throw new AppError(
+          'FORBIDDEN',
+          'You recorded this claim, so someone else must approve it.',
+        );
+      }
+      await transaction.execute(sql`
+        update app.fuel_delivery_loss_claims
+        set approval_status = ${payload.decision}, approved_by = ${me}, approved_at = now(),
+            approval_note = ${note}
+        where tenant_id = ${context.tenantId} and delivery_id = ${payload.deliveryId}
+      `);
+      let posted: 'SUPPLIER_ACCOUNT' | null = null;
+      if (payload.decision === 'APPROVED' && claim.status === 'SETTLED') {
+        posted = await postLossRecoveryToSupplierAccount(transaction, context, {
+          claim,
+          deliveryId: payload.deliveryId,
+          actorMembershipId: me,
+        });
+      }
+      return { deliveryId: payload.deliveryId, approvalStatus: payload.decision, posted };
+    },
+  });
+}
+
+/**
+ * DEC-055: a loss paid back by taking it off a bill, or off what is owed to the supplier, lowers
+ * what we owe that company, so it goes onto their account as a credit (USD only for now). Cash paid
+ * back is not posted here, and a write-off to expense is still waiting for Finance.
+ */
+async function postLossRecoveryToSupplierAccount(
+  transaction: Parameters<Parameters<typeof executeInventoryCommand>[0]['execute']>[0],
+  context: InventoryCommandContext,
+  input: {
+    claim: {
+      id: string;
+      settlement_method: string | null;
+      recovered_amount: string | null;
+      currency: string | null;
+    };
+    deliveryId: string;
+    actorMembershipId: string;
+  },
+): Promise<'SUPPLIER_ACCOUNT' | null> {
+  const { claim } = input;
+  if (
+    claim.settlement_method !== 'TRANSPORT_BILL' &&
+    claim.settlement_method !== 'SUPPLIER_BALANCE'
+  ) {
+    return null;
+  }
+  if (claim.currency !== 'USD') {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Only US dollar claims can be taken off an account for now. Settle this one another way.',
+    );
+  }
+  const delivery = (
+    await transaction.execute<{
+      supplier_id: string | null;
+      transporter_supplier_id: string | null;
+      business_date: string;
+    }>(sql`
+      select d.supplier_id, d.transporter_supplier_id,
+             to_char(now() at time zone s.timezone, 'YYYY-MM-DD') as business_date
+      from app.fuel_deliveries d
+      join app.stations s on s.tenant_id = d.tenant_id and s.id = d.station_id
+      where d.tenant_id = ${context.tenantId} and d.station_id = ${context.stationId}
+        and d.id = ${input.deliveryId}
+    `)
+  )[0];
+  const supplierId =
+    claim.settlement_method === 'TRANSPORT_BILL'
+      ? delivery?.transporter_supplier_id
+      : delivery?.supplier_id;
+  if (!delivery || !supplierId || !claim.recovered_amount) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      claim.settlement_method === 'TRANSPORT_BILL'
+        ? 'This delivery has no transport company, so there is no transport bill to take it off.'
+        : 'This delivery has no supplier to take it off.',
+    );
+  }
+  await transaction.execute(sql`
+    insert into app.supplier_account_movements (
+      id, tenant_id, legal_entity_id, supplier_id, movement_type, amount, currency,
+      source_type, source_id, effective_date, actor_membership_id
+    ) values (
+      ${randomUUID()}, ${context.tenantId}, ${context.legalEntityId}, ${supplierId},
+      'CREDIT_NOTE', ${claim.recovered_amount}, 'USD', 'DELIVERY_LOSS_CLAIM', ${claim.id},
+      ${delivery.business_date}, ${input.actorMembershipId}
+    )
+  `);
+  return 'SUPPLIER_ACCOUNT';
+}
+
+export async function reviewDeliveryLossClaimFromRequest(request: Request, input: unknown) {
+  const payload = lossClaimReviewPayload.parse(input);
+  return reviewDeliveryLossClaimCommand(
     await contextFor(request, payload),
     payload,
     requireIdempotency(request),

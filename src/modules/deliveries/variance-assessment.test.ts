@@ -110,34 +110,62 @@ describe('missingExplanation', () => {
 });
 
 describe('checkLossRecovery', () => {
+  const base = {
+    liableParty: 'DRIVER' as const,
+    status: 'RAISED' as const,
+    expectedAmount: '150.50',
+    recoveredAmount: null,
+    settlementMethod: null,
+    currency: 'USD',
+  };
+
   it('accepts no claim at all', () => {
-    expect(checkLossRecovery({ liableParty: 'NONE', status: 'NONE', amount: null })).toBeNull();
+    expect(
+      checkLossRecovery({
+        ...base,
+        liableParty: 'NONE',
+        status: 'NONE',
+        expectedAmount: null,
+        currency: null,
+      }),
+    ).toBeNull();
   });
 
   it('wants a responsible party for a claim, and a status for a party', () => {
-    expect(checkLossRecovery({ liableParty: 'NONE', status: 'RAISED', amount: null })).toMatch(
-      /who is responsible/,
-    );
-    expect(checkLossRecovery({ liableParty: 'DRIVER', status: 'NONE', amount: null })).toMatch(
-      /what happened/,
-    );
+    expect(checkLossRecovery({ ...base, liableParty: 'NONE' })).toMatch(/who is responsible/);
+    expect(checkLossRecovery({ ...base, status: 'NONE' })).toMatch(/what happened/);
   });
 
-  it('needs an amount to settle, and only then', () => {
-    expect(checkLossRecovery({ liableParty: 'DRIVER', status: 'SETTLED', amount: null })).toMatch(
-      /amount/,
-    );
-    expect(checkLossRecovery({ liableParty: 'DRIVER', status: 'SETTLED', amount: '0' })).toMatch(
-      /amount/,
-    );
+  it('needs the amount expected back to raise a claim', () => {
+    expect(checkLossRecovery(base)).toBeNull();
+    expect(checkLossRecovery({ ...base, expectedAmount: null })).toMatch(/expect to get back/);
+    expect(checkLossRecovery({ ...base, expectedAmount: '0' })).toMatch(/expect to get back/);
+    expect(checkLossRecovery({ ...base, expectedAmount: 'abc' })).toMatch(/as a number/);
+  });
+
+  it('needs a currency whenever there is an amount', () => {
+    expect(checkLossRecovery({ ...base, currency: null })).toMatch(/currency/);
+    expect(checkLossRecovery({ ...base, currency: 'ZWG' })).toBeNull();
+  });
+
+  it('needs the amount paid and how, to settle, and only then', () => {
+    const settled = {
+      ...base,
+      status: 'SETTLED' as const,
+      recoveredAmount: '100',
+      settlementMethod: 'TRANSPORT_BILL' as const,
+    };
+    expect(checkLossRecovery(settled)).toBeNull();
+    expect(checkLossRecovery({ ...settled, recoveredAmount: null })).toMatch(/paid back/);
+    expect(checkLossRecovery({ ...settled, recoveredAmount: '0' })).toMatch(/paid back/);
+    expect(checkLossRecovery({ ...settled, settlementMethod: null })).toMatch(/how it was paid/);
+    expect(checkLossRecovery({ ...base, recoveredAmount: '10' })).toMatch(/only kept/);
+    expect(checkLossRecovery({ ...base, settlementMethod: 'CASH' })).toMatch(/only kept/);
+  });
+
+  it('lets a claim be written off with no further amount', () => {
     expect(
-      checkLossRecovery({ liableParty: 'DRIVER', status: 'SETTLED', amount: '150.50' }),
-    ).toBeNull();
-    expect(checkLossRecovery({ liableParty: 'DRIVER', status: 'RAISED', amount: '10' })).toMatch(
-      /only kept/,
-    );
-    expect(
-      checkLossRecovery({ liableParty: 'TRANSPORTER', status: 'WRITTEN_OFF', amount: null }),
+      checkLossRecovery({ ...base, status: 'WRITTEN_OFF', expectedAmount: null, currency: null }),
     ).toBeNull();
   });
 });

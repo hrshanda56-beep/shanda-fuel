@@ -93,7 +93,8 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
     slug: 'delivery-variance',
     audience: 'operational',
     title: 'Delivery Variance',
-    description: 'Quantity on the delivery note against quantity actually received.',
+    description:
+      'Quantity on the delivery note against quantity actually received, with the reason and any claim to get the loss back. The loss itself is already inside the cost of the fuel; a recovery lowers what is owed to the transport company or supplier but is not a separate profit line.',
     category: 'inventory',
     scope: 'station',
     emptyMessage: 'No confirmed deliveries were received for these dates and stations.',
@@ -110,6 +111,13 @@ export const TABLE_REPORTS: readonly TableReportDefinition[] = [
       { key: 'shortageExcessLitres', label: 'Short (−) / over (+)', kind: 'number' },
       { key: 'shortCompartments', label: 'Compartments short', kind: 'number' },
       { key: 'brokenSeals', label: 'Broken seals', kind: 'number' },
+      { key: 'cause', label: 'Why it differed', kind: 'text' },
+      { key: 'responsible', label: 'Who is responsible', kind: 'text' },
+      { key: 'claim', label: 'Claim', kind: 'text' },
+      { key: 'approval', label: 'Approval', kind: 'text' },
+      { key: 'expectedBack', label: 'Expected back', kind: 'text' },
+      { key: 'paidBack', label: 'Paid back', kind: 'text' },
+      { key: 'paidBackBy', label: 'Paid back by', kind: 'text' },
     ],
   },
   {

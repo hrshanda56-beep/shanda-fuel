@@ -36,6 +36,13 @@ export type LossLiableParty = (typeof LOSS_LIABLE_PARTIES)[number];
 export const LOSS_RECOVERY_STATUSES = ['NONE', 'RAISED', 'SETTLED', 'WRITTEN_OFF'] as const;
 export type LossRecoveryStatus = (typeof LOSS_RECOVERY_STATUSES)[number];
 
+/** How a settled claim was paid. The two account methods post a credit on the supplier account (DEC-055). */
+export const LOSS_SETTLEMENT_METHODS = ['CASH', 'TRANSPORT_BILL', 'SUPPLIER_BALANCE'] as const;
+export type LossSettlementMethod = (typeof LOSS_SETTLEMENT_METHODS)[number];
+
+export const LOSS_APPROVAL_STATUSES = ['NOT_NEEDED', 'PENDING', 'APPROVED', 'REJECTED'] as const;
+export type LossApprovalStatus = (typeof LOSS_APPROVAL_STATUSES)[number];
+
 export type VarianceAssessmentInput = Readonly<{
   /** Litres the supplier's delivery note says. */
   noteLitres: string;
@@ -134,29 +141,52 @@ export function missingExplanation(
   return null;
 }
 
+const AMOUNT = /^\d+(?:\.\d{1,4})?$/;
+
+function isPositiveAmount(value: string | null | undefined): value is string {
+  return !!value && AMOUNT.test(value) && !decimal(value).isZero();
+}
+
 /**
  * A loss can be charged back, but the owner decides case by case. The record only keeps who
- * was held responsible and what happened. A settled recovery needs an amount; a recovery with
- * no responsible party is meaningless.
+ * was held responsible, the amount expected back, and what happened. A raised claim needs the
+ * amount expected back; a settled one needs the amount paid and how it was paid; each amount
+ * needs a currency. A claim with no responsible party is meaningless.
  */
 export function checkLossRecovery(input: {
   liableParty: LossLiableParty;
   status: LossRecoveryStatus;
-  amount: string | null;
+  /** The amount expected back, kept from the moment the claim is raised. */
+  expectedAmount: string | null;
+  /** The amount actually paid back, only for a settled claim. */
+  recoveredAmount: string | null;
+  settlementMethod: LossSettlementMethod | null;
+  currency: string | null;
 }): string | null {
-  const { liableParty, status, amount } = input;
+  const { liableParty, status, expectedAmount, recoveredAmount, settlementMethod, currency } =
+    input;
   if (liableParty === 'NONE' && status !== 'NONE') {
     return 'Choose who is responsible before you record a claim.';
   }
   if (liableParty !== 'NONE' && status === 'NONE') {
     return 'Say what happened with the claim: raised, settled or written off.';
   }
+  if (status === 'NONE') return null;
+  if (expectedAmount && !AMOUNT.test(expectedAmount)) {
+    return 'Enter the amount expected back as a number, for example 150.00.';
+  }
+  if (status === 'RAISED' && !isPositiveAmount(expectedAmount)) {
+    return 'Enter the amount you expect to get back.';
+  }
   if (status === 'SETTLED') {
-    if (!amount || !/^\d+(?:\.\d{1,4})?$/.test(amount) || decimal(amount).isZero()) {
-      return 'Enter the amount that was recovered.';
-    }
-  } else if (amount) {
-    return 'An amount is only kept for a settled claim.';
+    if (!isPositiveAmount(recoveredAmount)) return 'Enter the amount that was paid back.';
+    if (!settlementMethod) return 'Say how it was paid back.';
+  } else {
+    if (recoveredAmount) return 'An amount paid back is only kept for a settled claim.';
+    if (settlementMethod) return 'How it was paid back is only kept for a settled claim.';
+  }
+  if ((expectedAmount || recoveredAmount) && !currency) {
+    return 'Choose the currency of the amount.';
   }
   return null;
 }
