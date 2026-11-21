@@ -65,7 +65,7 @@ test.describe('desktop sidebar', () => {
     );
     await expect(nav.getByRole('button', { name: 'Finance' })).toBeVisible();
     await expect(nav.getByRole('button', { name: 'Suppliers' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Reports' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Reports' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Daily operations' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -154,9 +154,10 @@ test.describe('desktop sidebar', () => {
     // Applied by the pre-paint script, before React hydrates.
     await expect(page.locator('html')).toHaveAttribute('data-sidebar', 'collapsed');
     const nav = sidebarNav(page);
-    await expect(nav.getByRole('link', { name: 'Reports' })).toHaveAttribute(
-      'aria-current',
-      'page',
+    // In the rail, Reports is a group; it marks that it holds the current page.
+    await expect(nav.getByRole('button', { name: /^Reports/ })).toHaveAttribute(
+      'data-contains-current',
+      'true',
     );
 
     // Scoped to shell chrome: page bodies are reviewed in the Golden Path work.
@@ -212,7 +213,8 @@ test.describe('desktop sidebar', () => {
       'href',
       '/stations/station-1/cash?tenantId=tenant-1',
     );
-    await expect(nav.getByRole('link', { name: 'Reports' })).toHaveAttribute(
+    await nav.getByRole('button', { name: 'Reports' }).click();
+    await expect(nav.getByRole('link', { name: 'All reports' })).toHaveAttribute(
       'href',
       '/reports?tenantId=tenant-1&stationId=station-1',
     );

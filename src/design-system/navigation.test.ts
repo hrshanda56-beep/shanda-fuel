@@ -32,7 +32,7 @@ describe('grouped navigation model', () => {
   it('renders single-destination sections as links and multi-item sections as groups', () => {
     expect(
       navigationSections.filter((s) => !isSingleDestinationSection(s)).map((s) => s.key),
-    ).toEqual(['operations', 'finance', 'suppliers']);
+    ).toEqual(['operations', 'finance', 'suppliers', 'reports']);
   });
 
   it('uses unique keys so projections are unambiguous', () => {
@@ -131,7 +131,8 @@ describe('navigation destinations', () => {
       'Transporters',
       'Payments due',
       'Purchase orders',
-      'Reports',
+      'All reports',
+      'ZERA Returns',
       'Settings',
     ]);
   });
@@ -189,6 +190,8 @@ describe('current-route indication', () => {
     ['/suppliers', 'suppliers'],
     ['/suppliers/transporters', 'transporters'],
     ['/reports', 'reports'],
+    ['/reports/sales', 'reports'],
+    ['/reports/zera-return', 'zera-returns'],
   ])('%s marks %s as current', (pathname, key) => {
     const active = allItems.filter((entry) => isNavigationItemActive(entry, pathname));
     expect(active.map((entry) => entry.key)).toEqual([key]);
