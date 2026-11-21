@@ -31,6 +31,7 @@ export type NavigationKey =
   | 'fuel-deliveries'
   | 'payments-due'
   | 'reports'
+  | 'zera-returns'
   | 'settings';
 
 export type NavigationSectionKey =
@@ -280,12 +281,22 @@ export const navigationSections: readonly NavigationSection[] = [
     items: [
       {
         key: 'reports',
-        label: 'Reports',
-        searchLabel: 'Reports',
+        label: 'All reports',
+        searchLabel: 'All reports',
         icon: 'chart',
         destination: { kind: 'route', path: '/reports' },
         availability: 'active',
-        match: [/^\/reports(\/|$)/],
+        // The ZERA return has its own entry below, so it does not light up this one.
+        match: [/^\/reports(?!\/zera-return)(\/|$)/],
+      },
+      {
+        key: 'zera-returns',
+        label: 'ZERA Returns',
+        searchLabel: 'ZERA Returns',
+        icon: 'clipboard-check',
+        destination: { kind: 'route', path: '/reports/zera-return' },
+        availability: 'active',
+        match: [/^\/reports\/zera-return(\/|$)/],
       },
     ],
   },

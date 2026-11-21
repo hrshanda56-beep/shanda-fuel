@@ -65,7 +65,7 @@ test.describe('desktop sidebar', () => {
     );
     await expect(nav.getByRole('button', { name: 'Finance' })).toBeVisible();
     await expect(nav.getByRole('button', { name: 'Suppliers' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Reports' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Reports' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Daily operations' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -154,7 +154,7 @@ test.describe('desktop sidebar', () => {
     // Applied by the pre-paint script, before React hydrates.
     await expect(page.locator('html')).toHaveAttribute('data-sidebar', 'collapsed');
     const nav = sidebarNav(page);
-    await expect(nav.getByRole('link', { name: 'Reports' })).toHaveAttribute(
+    await expect(nav.getByRole('link', { name: 'All reports' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -212,7 +212,7 @@ test.describe('desktop sidebar', () => {
       'href',
       '/stations/station-1/cash?tenantId=tenant-1',
     );
-    await expect(nav.getByRole('link', { name: 'Reports' })).toHaveAttribute(
+    await expect(nav.getByRole('link', { name: 'All reports' })).toHaveAttribute(
       'href',
       '/reports?tenantId=tenant-1&stationId=station-1',
     );

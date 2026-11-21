@@ -92,6 +92,8 @@ const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly 
     'staff-benefit': ['customer.payment.record'],
     'payments-due': ['supplier.view'],
     reports: ['report.view'],
+    // The ZERA return is read with the same permission as the other reports.
+    'zera-returns': ['report.view'],
     // A supervisor reaches Settings only for their station's staff list and activity log.
     settings: ['tenant.view', 'membership.view.station', 'audit.view.station'],
   };
