@@ -1,0 +1,171 @@
+/* The loading truck. Decoration only: the loading text for screen readers lives in RouteLoading. */
+
+.road {
+  --truck-accent: var(--color-brand);
+  --truck-tank: #f6f6f3;
+  --truck-ink: #4b4b46;
+  --truck-glass: #f6f6f3;
+  position: relative;
+  height: 4.25rem;
+  overflow: hidden;
+  contain: layout paint;
+  /* A short load never shows the truck: it fades in only if the wait goes on. */
+  opacity: 0;
+  animation: appear 0.25s ease-out 0.45s forwards;
+}
+
+.road[data-tank='dark'] {
+  --truck-tank: color-mix(in srgb, var(--truck-accent) 45%, #06140a);
+}
+
+.road::after {
+  position: absolute;
+  inset: auto 0 0.4rem;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--border-default) 0 14px, transparent 14px 26px);
+  content: '';
+  opacity: 0.7;
+}
+
+.lane {
+  position: absolute;
+  inset: 0;
+}
+
+.truck {
+  position: absolute;
+  bottom: 0.55rem;
+  left: 0;
+  width: 132px;
+  height: 56px;
+  overflow: visible;
+  animation: drive 1.7s linear infinite;
+}
+
+.body {
+  animation: bounce 0.34s ease-in-out infinite alternate;
+}
+
+.tank {
+  fill: var(--truck-tank);
+  stroke: var(--truck-ink);
+  stroke-width: 1.5;
+}
+
+.swoosh,
+.swooshSoft {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.swoosh {
+  stroke: var(--truck-accent);
+  stroke-width: 4;
+}
+
+.swooshSoft {
+  stroke: color-mix(in srgb, var(--truck-accent) 45%, #faa000);
+  stroke-width: 2;
+}
+
+.frame {
+  fill: var(--truck-ink);
+}
+
+.cab {
+  fill: var(--truck-accent);
+  stroke: var(--truck-ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.window {
+  fill: var(--truck-glass);
+  opacity: 0.9;
+}
+
+.speed path {
+  fill: none;
+  stroke: var(--truck-ink);
+  stroke-linecap: round;
+  stroke-width: 2;
+  opacity: 0.45;
+  animation: streak 0.5s linear infinite;
+}
+
+.tyre {
+  fill: var(--truck-ink);
+}
+
+.hub {
+  fill: var(--truck-glass);
+}
+
+.spokes {
+  stroke: var(--truck-ink);
+  stroke-width: 1.2;
+}
+
+.spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin 0.4s linear infinite;
+}
+
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drive {
+  from {
+    left: -150px;
+  }
+
+  to {
+    left: 100%;
+  }
+}
+
+@keyframes bounce {
+  to {
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes streak {
+  from {
+    transform: translateX(10px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(-6px);
+    opacity: 0.45;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Asked for less motion: one still truck, parked in the middle. Nothing moves. */
+@media (prefers-reduced-motion: reduce) {
+  .truck {
+    left: calc(50% - 66px);
+    animation: none;
+  }
+
+  .body,
+  .spin,
+  .speed path {
+    animation: none;
+  }
+
+  .speed {
+    display: none;
+  }
+}

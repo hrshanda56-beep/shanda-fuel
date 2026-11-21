@@ -46,6 +46,7 @@ export const salesDocProfiles = appSchema.table(
     defaultTerms: text('default_terms'),
     footer: text('footer'),
     logoJpegBase64: text('logo_jpeg_base64'),
+    appLogoPngBase64: text('app_logo_png_base64'),
     brandColour: text('brand_colour'),
     quotationPrefix: text('quotation_prefix').notNull().default('QT'),
     invoicePrefix: text('invoice_prefix').notNull().default('INV'),
