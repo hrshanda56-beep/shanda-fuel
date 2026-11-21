@@ -155,8 +155,13 @@ test.describe('shared quality (F4-07)', () => {
     await mockDashboard(page);
     await page.goto(TODAY);
     await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
-    await page.keyboard.press('Control+k');
-    await expect(page.getByRole('combobox', { name: 'Search pages' })).toBeVisible();
+    // The shortcut only works once the page has hydrated; pressing it again is harmless.
+    await expect(async () => {
+      await page.keyboard.press('Control+k');
+      await expect(page.getByRole('combobox', { name: 'Search pages' })).toBeVisible({
+        timeout: 1000,
+      });
+    }).toPass({ timeout: 15000 });
     const search = await fontSizes();
     expect(search.length).toBeGreaterThan(0);
     for (const control of search) expect(control.size, control.name).toBeGreaterThanOrEqual(16);
