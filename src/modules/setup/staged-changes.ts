@@ -1,3 +1,5 @@
+import { formatUnitPriceText } from '@/design-system/formatters';
+
 import type {
   ConfigurationSetupOverview,
   SetupNozzle,
@@ -431,11 +433,13 @@ export function describeStaged(
       };
     case 'DeleteProduct':
       return { title: `Delete ${fuel(b.productId)}` };
-    case 'DraftPriceChange':
+    case 'DraftPriceChange': {
+      const unit =
+        data.products?.find((p) => p.id === b.productId)?.unit === 'KILOGRAMS' ? 'kg' : 'L';
       return {
-        title: `Price for ${fuel(b.productId)}: ${str(b.currency) || 'USD'} ${str(b.unitPrice)}`,
-        detail: 'Saved as a draft. It is used once it is approved.',
+        title: `New price for ${fuel(b.productId)}: ${formatUnitPriceText(str(b.unitPrice), unit)}`,
       };
+    }
     case 'AdvancePrice': {
       const steps = Array.isArray(b.steps) ? (b.steps as string[]) : [];
       const price = data.prices?.find((p) => p.id === b.priceId);
@@ -463,14 +467,22 @@ export function describeStaged(
     case 'CreatePump':
       return { title: `Add pump ${str(b.number)}` };
     case 'UpdatePump':
-      return { title: `Change pump to ${str(b.number)}` };
+      return {
+        title: `Change pump ${str(b.number)}`,
+        detail: str(b.name) ? `Called ${str(b.name)}` : 'No name',
+      };
     case 'CreateNozzle':
       return {
         title: `Add nozzle ${str(b.number)}${pump(b.pumpId) ? ` on pump ${pump(b.pumpId)}` : ''}`,
         detail: `${fuel(b.productId)}${b.meterWorkingSinceDate ? `, meter working from ${str(b.meterWorkingSinceDate)}` : ''}`,
       };
     case 'UpdateNozzle':
-      return { title: `Change nozzle to ${str(b.number)}` };
+      return {
+        title: `Change nozzle to ${str(b.number)}`,
+        detail: pump(data.nozzles?.find((n) => n.id === b.nozzleId)?.pumpId)
+          ? `On pump ${pump(data.nozzles?.find((n) => n.id === b.nozzleId)?.pumpId)}`
+          : undefined,
+      };
     case 'SetMeterWorkingSince': {
       const nozzle = data.nozzles?.find((n) => n.id === b.nozzleId);
       return {

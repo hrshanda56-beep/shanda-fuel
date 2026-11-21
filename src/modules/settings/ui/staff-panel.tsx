@@ -11,6 +11,8 @@ import { useToast } from '@/design-system/feedback-provider';
 import type { RoleCode } from '@/modules/authorization';
 import { defaultScopeForRole, scopeChoicesForRole } from '@/modules/staff/role-scopes';
 import type { SettingsView } from '../contracts';
+import { staffInvitationCommand } from '../staff-invite-checks';
+import { STAFF_ROLE_LABELS } from '../staff-role-labels';
 import styles from './settings-workspace.module.css';
 import { matchesStaffScope } from './staff-filter';
 import { formatStaffInvitationMessage } from './staff-invitation-message';
@@ -32,16 +34,7 @@ type DeactivationOutcome =
   | { kind: 'provider'; message: string }
   | { kind: 'blocked'; message: string };
 
-const ROLE_LABELS: Record<Role, string> = {
-  OWNER: 'Owner',
-  ADMINISTRATOR: 'Administrator',
-  FINANCE: 'Finance',
-  SUPERVISOR: 'Supervisor',
-  ATTENDANT: 'Attendant',
-  AUDITOR: 'Auditor (read only)',
-  AREA_MANAGER: 'Area manager',
-  CASH_COLLECTOR: 'Cash collector',
-};
+const ROLE_LABELS = STAFF_ROLE_LABELS;
 
 function defaultScope(role: Role) {
   return defaultScopeForRole(role);
@@ -300,20 +293,7 @@ export function StaffPanel({
   }
 
   async function submitInvite(value: StaffInviteValue) {
-    const result = await command(
-      {
-        commandType: 'CreateStaffInvitation',
-        invitedName: value.name,
-        ...(value.deliveryMethod === 'EMAIL'
-          ? { invitedEmail: value.email, deliveryMethod: value.deliveryMethod }
-          : { deliveryMethod: value.deliveryMethod, staffNumber: value.staffNumber }),
-        assignedRole: value.role,
-        scopeType: value.scopeType,
-        ...(value.legalEntityId ? { legalEntityId: value.legalEntityId } : {}),
-        stationIds: value.stationIds,
-      },
-      false,
-    );
+    const result = await command(staffInvitationCommand(value), false);
     if (
       result &&
       typeof result === 'object' &&

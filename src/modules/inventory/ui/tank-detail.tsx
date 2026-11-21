@@ -222,22 +222,25 @@ export function TankDetailView({
     if (yellowText && !LITRES.test(yellowText)) {
       return setMessage({
         tone: 'critical',
-        text: `Enter the yellow limit in ${unitWord}, for example 20.`,
+        text: `Enter the amount to explain in ${unitWord}, for example 20.`,
       });
     }
     if (redText && !LITRES.test(redText)) {
       return setMessage({
         tone: 'critical',
-        text: `Enter the red limit in ${unitWord}, for example 40.`,
+        text: `Enter the urgent amount in ${unitWord}, for example 40.`,
       });
     }
     if (redText && !yellowText) {
-      return setMessage({ tone: 'critical', text: 'Set the yellow limit before the red one.' });
+      return setMessage({
+        tone: 'critical',
+        text: 'Set the amount to explain before the urgent amount.',
+      });
     }
     if (redText && Number(redText) < Number(yellowText)) {
       return setMessage({
         tone: 'critical',
-        text: 'The red limit cannot be lower than the yellow limit.',
+        text: 'The urgent amount cannot be lower than the amount to explain.',
       });
     }
     setSaving(true);
@@ -538,12 +541,18 @@ export function TankDetailView({
             <Card className="form-panel">
               <h2>When a difference matters</h2>
               <InfoTip>
-                A dip is compared with the books. Within the yellow limit it is fine. Above yellow
-                it must be explained. Above red it is urgent. Leave red empty to use twice the
-                yellow limit.
+                Each dip is compared with the stock the books expect. A difference up to the first
+                amount is fine; above it, someone must explain it; above the urgent amount it needs
+                attention at once. Leave the urgent amount empty to use twice the first amount.
+                Leave both empty to use the standard check: a warning past 0.5% and an alert past 1%
+                of the fuel sold since the last dip.
               </InfoTip>
               <form className="form-stack" onSubmit={saveLimits}>
-                <Field id="tank-yellow" label={`Yellow: explain above (${unitWord})`} optional>
+                <Field
+                  id="tank-yellow"
+                  label={`Ask for an explanation above (${unitWord})`}
+                  optional
+                >
                   <input
                     id="tank-yellow"
                     inputMode="decimal"
@@ -551,7 +560,7 @@ export function TankDetailView({
                     onChange={(event) => setYellow(event.target.value)}
                   />
                 </Field>
-                <Field id="tank-red" label={`Red: urgent above (${unitWord})`} optional>
+                <Field id="tank-red" label={`Treat as urgent above (${unitWord})`} optional>
                   <input
                     id="tank-red"
                     inputMode="decimal"

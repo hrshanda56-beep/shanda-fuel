@@ -10,6 +10,7 @@ import {
   LoadingState,
   StatusBadge,
 } from '@/design-system/primitives';
+import { formatUnitPriceText } from '@/design-system/formatters';
 import { stationLocalToInstant } from '@/platform/domain/business-time';
 import { friendlySetupError } from '@/modules/setup/guided-setup';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
@@ -170,6 +171,9 @@ type CardProps = {
 
 function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
   const per = product.unit === 'KILOGRAMS' ? 'kilogram' : 'litre';
+  /** Prices read as money ('US$1.50/L'), never as the stored digits ('1.500000'). */
+  const shown = (value: string) =>
+    formatUnitPriceText(value, product.unit === 'KILOGRAMS' ? 'kg' : 'L');
   const { tenantId } = data;
   const stationId = data.station.id;
   const keys = useRef(new Map<string, string>());
@@ -319,7 +323,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
           priceId: change.priceId,
           expectedVersion: change.version,
         });
-        return `${product.name} now sells at ${change.unitPrice} per ${per}.`;
+        return `${product.name} now sells at ${shown(change.unitPrice)}.`;
       }),
     );
   }
@@ -395,7 +399,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
           priceId: change.priceId,
           expectedVersion: change.version,
         });
-        return `${product.name} now sells at ${change.unitPrice} per ${per}.`;
+        return `${product.name} now sells at ${shown(change.unitPrice)}.`;
       }),
     );
   }
@@ -409,7 +413,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
         <p className={styles.muted}>
           {product.currentPrice === null
             ? 'No price in use yet'
-            : `In use now: ${product.currentPrice} per ${per}`}
+            : `In use now: ${shown(product.currentPrice)}`}
         </p>
       </div>
 
@@ -446,9 +450,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
       ) : (
         <div className={styles.form}>
           <p className={styles.actions}>
-            <strong>
-              New price: {change.unitPrice} per {per}
-            </strong>
+            <strong>New price: {shown(change.unitPrice)}</strong>
             {change.plannedFrom ? (
               <span className={styles.muted}>
                 Planned for {stationDateTime(change.plannedFrom, data.station.timezone)}
@@ -532,7 +534,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
           {next?.step === 'ACTIVATE' && !next.blockedBy ? (
             <div className={styles.actions}>
               <Button onClick={activate} loading={busy}>
-                Switch to {change.unitPrice} now
+                Switch to {shown(change.unitPrice)} now
               </Button>
             </div>
           ) : null}
@@ -545,7 +547,7 @@ function ProductCard({ data, product, refresh, gate, onDenied }: CardProps) {
           <ul>
             {product.history.map((entry) => (
               <li key={entry.priceId}>
-                <strong>{entry.unitPrice}</strong> from{' '}
+                <strong>{shown(entry.unitPrice)}</strong> from{' '}
                 {stationDateTime(entry.startedAt, data.station.timezone)}
                 {entry.endedAt
                   ? ` to ${stationDateTime(entry.endedAt, data.station.timezone)}`

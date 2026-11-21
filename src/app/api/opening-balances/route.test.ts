@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   lock: vi.fn(),
   list: vi.fn(),
   detail: vi.fn(),
+  options: vi.fn(),
 }));
 
 vi.mock('../../../modules/identity', () => ({
@@ -25,6 +26,7 @@ vi.mock('../../../modules/opening-balances/commands', () => ({
 vi.mock('../../../modules/opening-balances/queries', () => ({
   listOpeningBalanceBatchesFromRequest: mocks.list,
   getOpeningBalanceBatchFromRequest: mocks.detail,
+  getOpeningBalanceOptionsFromRequest: mocks.options,
 }));
 
 import { GET, POST } from './route';
@@ -50,6 +52,7 @@ describe('opening balance API boundary', () => {
     mocks.lock.mockResolvedValue({ batchId, state: 'LOCKED' });
     mocks.list.mockResolvedValue({ batches: [] });
     mocks.detail.mockResolvedValue(null);
+    mocks.options.mockResolvedValue(null);
   });
 
   it('authenticates before parsing an unauthenticated body', async () => {
@@ -134,5 +137,54 @@ describe('opening balance API boundary', () => {
     expect(detailResponse.status).toBe(200);
     expect(mocks.list).toHaveBeenCalledOnce();
     expect(mocks.detail).toHaveBeenCalledOnce();
+  });
+
+  it('answers the one-question-at-a-time lookup for one station, and nothing else', async () => {
+    const stationId = '33333333-3333-4333-8333-333333333333';
+    mocks.options.mockResolvedValue({ station: { id: stationId }, tanks: [] });
+
+    const response = await GET(
+      new Request(
+        `https://fuel.example.test/api/opening-balances?tenantId=${tenantId}&optionsFor=${stationId}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ options: { station: { id: stationId }, tanks: [] } });
+    expect(mocks.authenticate).toHaveBeenCalled();
+    expect(mocks.options).toHaveBeenCalledWith(expect.any(Request), tenantId, stationId);
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.detail).not.toHaveBeenCalled();
+  });
+
+  it('says there are no options for a station the company does not have', async () => {
+    const response = await GET(
+      new Request(
+        `https://fuel.example.test/api/opening-balances?tenantId=${tenantId}&optionsFor=${batchId}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ options: null });
+  });
+
+  it('refuses the lookup to someone without access, and requires a sign-in first', async () => {
+    mocks.options.mockRejectedValue(new AppError('FORBIDDEN', 'No access'));
+    const denied = await GET(
+      new Request(
+        `https://fuel.example.test/api/opening-balances?tenantId=${tenantId}&optionsFor=${batchId}`,
+      ),
+    );
+    expect(denied.status).toBe(403);
+
+    mocks.options.mockClear();
+    mocks.authenticate.mockRejectedValue(new AppError('UNAUTHENTICATED', 'Sign in required'));
+    const anonymous = await GET(
+      new Request(
+        `https://fuel.example.test/api/opening-balances?tenantId=${tenantId}&optionsFor=${batchId}`,
+      ),
+    );
+    expect(anonymous.status).toBe(401);
+    expect(mocks.options).not.toHaveBeenCalled();
   });
 });

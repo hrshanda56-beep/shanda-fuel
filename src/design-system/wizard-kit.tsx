@@ -353,8 +353,8 @@ export function WizardConfirm({
       <h2
         tabIndex={-1}
         className={styles.question}
+        // Risky confirmations start on the safe choice (the cancel button) instead of the heading.
         ref={(el) => {
-          // Risky confirmations start on the safe choice (Cancel); the others start on the question.
           if (tone === 'default') el?.focus();
         }}
       >
@@ -415,5 +415,45 @@ export function WizardConfirm({
         </Button>
       </div>
     </div>
+  );
+}
+
+/* A menu that stands alone ----------------------------------------------------- */
+
+/**
+ * "What do you want to change?": only the question, the options and Cancel. Picking an option goes
+ * straight to that flow's first question (no Continue to press), and nothing else is on the screen.
+ */
+export function WizardMenu<V extends string>({
+  title,
+  hint,
+  name,
+  options,
+  onPick,
+  onCancel,
+  cancelLabel = 'Cancel',
+}: {
+  title: string;
+  hint?: string;
+  name: string;
+  options: readonly WizardOption<V>[];
+  onPick: (value: V) => void;
+  onCancel: () => void;
+  cancelLabel?: string;
+}) {
+  // The question takes focus when the menu appears, like every other screen of a flow.
+  const [heading, captureHeading] = useState<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    heading?.focus();
+  }, [heading]);
+  return (
+    <WizardStep wizard={{ position: 1, total: 0, captureHeading }} title={title} hint={hint}>
+      <WizardOptions<V> label={title} name={name} options={options} value={null} onPick={onPick} />
+      <div className={styles.actions}>
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          {cancelLabel}
+        </Button>
+      </div>
+    </WizardStep>
   );
 }

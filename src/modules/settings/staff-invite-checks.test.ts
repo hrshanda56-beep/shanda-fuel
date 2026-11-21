@@ -4,6 +4,7 @@ import {
   checkInviteName,
   checkInviteScope,
   checkInviteStaffNumber,
+  staffInvitationCommand,
 } from './staff-invite-checks';
 
 describe('staff invite checks', () => {
@@ -31,5 +32,52 @@ describe('staff invite checks', () => {
     expect(checkInviteScope('LEGAL_ENTITY', 'e1', [])).toEqual({});
     expect(checkInviteScope('STATION', 'e1', [])).toHaveProperty('inv-stations');
     expect(checkInviteScope('STATION', 'e1', ['s1'])).toEqual({});
+  });
+});
+
+describe('staffInvitationCommand', () => {
+  const base = {
+    name: 'Tendai',
+    deliveryMethod: 'MANUAL' as const,
+    email: '',
+    staffNumber: 'TEN001',
+    role: 'ATTENDANT',
+    scopeType: 'STATION' as const,
+    legalEntityId: 'le1',
+    stationIds: ['s1'],
+  };
+
+  it('builds a staff-number invitation for one station', () => {
+    expect(staffInvitationCommand(base)).toEqual({
+      commandType: 'CreateStaffInvitation',
+      invitedName: 'Tendai',
+      deliveryMethod: 'MANUAL',
+      staffNumber: 'TEN001',
+      assignedRole: 'ATTENDANT',
+      scopeType: 'STATION',
+      legalEntityId: 'le1',
+      stationIds: ['s1'],
+    });
+  });
+
+  it('builds an email invitation and leaves out an empty company', () => {
+    expect(
+      staffInvitationCommand({
+        ...base,
+        deliveryMethod: 'EMAIL',
+        email: 'a@b.co',
+        scopeType: 'TENANT',
+        legalEntityId: '',
+        stationIds: [],
+      }),
+    ).toEqual({
+      commandType: 'CreateStaffInvitation',
+      invitedName: 'Tendai',
+      invitedEmail: 'a@b.co',
+      deliveryMethod: 'EMAIL',
+      assignedRole: 'ATTENDANT',
+      scopeType: 'TENANT',
+      stationIds: [],
+    });
   });
 });

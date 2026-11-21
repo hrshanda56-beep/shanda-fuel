@@ -29,6 +29,21 @@ export function formatUnitPrice(value: string, unit: 'L' | 'kg'): { amount: stri
 }
 
 /**
+ * A unit price as a person reads it: "US$1.50/L". Cents are always shown, and extra decimals only
+ * when the price really has them (a stored "1.575000" is "US$1.575/L", never "1.575000" and never
+ * rounded to "1.58"). An unreadable value is shown as a dash.
+ */
+export function formatUnitPriceText(value: string, unit: string): string {
+  const trimmed = value.trim();
+  if (!DECIMAL_PATTERN.test(trimmed)) return '—';
+  const exact = new Decimal(trimmed);
+  const places = Math.max(2, exact.decimalPlaces());
+  const [whole = '', fraction = ''] = exact.toFixed(places).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `US$${grouped}.${fraction}/${unit}`;
+}
+
+/**
  * A saved money value as it should appear in an input box: "450.0000" becomes "450.00". Only zeros
  * past the cents are dropped, so the value is never changed and saving it again changes nothing.
  */

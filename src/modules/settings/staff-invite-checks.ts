@@ -41,3 +41,30 @@ export function checkInviteScope(
   }
   return {};
 }
+
+/** What the invite wizard collects, as the staff command needs it. */
+export type StaffInvitationAnswers = {
+  name: string;
+  deliveryMethod: 'EMAIL' | 'MANUAL';
+  email: string;
+  staffNumber: string;
+  role: string;
+  scopeType: 'TENANT' | 'LEGAL_ENTITY' | 'STATION';
+  legalEntityId: string;
+  stationIds: readonly string[];
+};
+
+/** The `CreateStaffInvitation` command for the answers (the tenant is added by the caller). */
+export function staffInvitationCommand(value: StaffInvitationAnswers): Record<string, unknown> {
+  return {
+    commandType: 'CreateStaffInvitation',
+    invitedName: value.name,
+    ...(value.deliveryMethod === 'EMAIL'
+      ? { invitedEmail: value.email, deliveryMethod: value.deliveryMethod }
+      : { deliveryMethod: value.deliveryMethod, staffNumber: value.staffNumber }),
+    assignedRole: value.role,
+    scopeType: value.scopeType,
+    ...(value.legalEntityId ? { legalEntityId: value.legalEntityId } : {}),
+    stationIds: value.stationIds,
+  };
+}
