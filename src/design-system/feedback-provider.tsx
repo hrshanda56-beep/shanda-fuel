@@ -123,6 +123,20 @@ export function wantsOwnErrors(input: RequestInfo | URL, init?: RequestInit): bo
   return headers.has(OWN_ERRORS_HEADER);
 }
 
+/**
+ * A screen that saves in the background as the person goes (the shift figures save at every
+ * question) sets this header so each save does not pop up its own "Saved". Failures still show.
+ */
+export const OWN_CONFIRMATION_HEADER = 'x-own-confirmation';
+
+export function wantsOwnConfirmation(input: RequestInfo | URL, init?: RequestInit): boolean {
+  const headers = new Headers(
+    init?.headers ??
+      (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined),
+  );
+  return headers.has(OWN_CONFIRMATION_HEADER);
+}
+
 type SaveOutcome = 'saved' | 'rejected' | 'failed';
 
 /** Only requests that change data are announced; reads stay quiet. */
@@ -208,6 +222,7 @@ function useBusyTracking(
       sync();
       const savePath = saveRequestPath(input, init);
       const ownErrors = wantsOwnErrors(input, init);
+      const quietSave = wantsOwnConfirmation(input, init);
       try {
         // A command first makes sure the sign-in is fresh, so a tab left idle does not meet a 401.
         const response = savePath
@@ -218,7 +233,7 @@ function useBusyTracking(
               (window as unknown as { Clerk?: ClerkLike }).Clerk,
             )
           : await originalFetch(input, init);
-        if (savePath && !(!response.ok && ownErrors)) {
+        if (savePath && !(!response.ok && ownErrors) && !(response.ok && quietSave)) {
           onSaveRef.current(
             response.ok ? 'saved' : response.status >= 500 ? 'failed' : 'rejected',
             savePath,

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { OWN_ERRORS_HEADER, refusalMessage, wantsOwnErrors } from './feedback-provider';
+import {
+  OWN_CONFIRMATION_HEADER,
+  OWN_ERRORS_HEADER,
+  refusalMessage,
+  wantsOwnConfirmation,
+  wantsOwnErrors,
+} from './feedback-provider';
 
 const respond = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -56,6 +62,28 @@ describe('wantsOwnErrors', () => {
       false,
     );
     expect(wantsOwnErrors('/api/x')).toBe(false);
+  });
+});
+
+describe('wantsOwnConfirmation', () => {
+  it('is true only when the request carries the header, in any header form', () => {
+    expect(wantsOwnConfirmation('/api/x', { headers: { [OWN_CONFIRMATION_HEADER]: '1' } })).toBe(
+      true,
+    );
+    expect(
+      wantsOwnConfirmation('/api/x', { headers: new Headers({ [OWN_CONFIRMATION_HEADER]: '1' }) }),
+    ).toBe(true);
+    expect(wantsOwnConfirmation('/api/x', { headers: [[OWN_CONFIRMATION_HEADER, '1']] })).toBe(
+      true,
+    );
+  });
+
+  it('is false without it, and is not the same as handling your own errors', () => {
+    expect(wantsOwnConfirmation('/api/x')).toBe(false);
+    expect(
+      wantsOwnConfirmation('/api/x', { headers: { 'content-type': 'application/json' } }),
+    ).toBe(false);
+    expect(wantsOwnConfirmation('/api/x', { headers: { [OWN_ERRORS_HEADER]: '1' } })).toBe(false);
   });
 });
 

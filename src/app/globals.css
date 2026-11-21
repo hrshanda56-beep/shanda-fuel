@@ -4106,6 +4106,15 @@ h3,
   padding-inline: var(--space-5);
 }
 
+/* The figures wizard has its own buttons inside the card, so the card keeps its whole corner. */
+.entry-card-wrap[data-wizard] {
+  --notch-h: 0px;
+}
+
+.entry-card-wrap[data-wizard] .entry-body {
+  clip-path: none;
+}
+
 .entry-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
