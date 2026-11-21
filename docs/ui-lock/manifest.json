@@ -210,7 +210,7 @@
     "src/design-system/theme.ts": "7bddf0e1a29ee7f3d9b00c213ea08913e718a394deabced292e902d422f82b10",
     "src/design-system/tokens.ts": "a4f2392659a5f6b97badcfef9c32e9fe0e6a22772870e7e62bf3f5b697b373da",
     "src/design-system/wizard-draft.ts": "2d94d0c5149a44f2200f5a29e37abd91ae6a173f5da5d5146b5539ce433e8ffc",
-    "src/design-system/wizard-kit.tsx": "fd85d51e313d901d1eb05efd73ade2b03e9dd6bd0b3c842b074fdb7fceb2128a",
+    "src/design-system/wizard-kit.tsx": "ed90d91a242f99dc47375eb8e795d4179ee1c408ddc371bb92572f883b069fbb",
     "src/design-system/wizard-nav.ts": "57fbbceb8851759938e9a95acd69b06829d48b5d0a9aecce462527e716b9c3f2",
     "src/design-system/wizard.module.css": "a9ea40ab3757aa090bc40d7ac48445395c955b52500d5d04ff4b945ec047bf12",
     "src/design-system/wizard.tsx": "96348d5c325bc0ad20b75382ed05dbbfde0f055e89df89349fd52401d6878dc2",
