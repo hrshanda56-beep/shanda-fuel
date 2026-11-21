@@ -24,9 +24,39 @@ together, the readings wizard at 390 and 1280 px (empty, negative and non-numeri
 Back keeps answers, Change from the check screen returns to it, no sideways scroll, light and dark),
 and the price link into the price wizard; "Save opening readings" was pressed for real and the
 rows were saved, after which the card read "Continue entering the figures". Not run: the Playwright
-specs (need Clerk secrets). **Still to do in Phase 6:**
-the figures steps (Team, Pumps, Payments, Expenses, Cash, Tank dips, Submit) as one question per
-screen with the "This shift" strip kept, and resuming on the next unanswered question.
+specs (need Clerk secrets).
+
+**Part 2: the figures, one question per screen (#253, branch `feat/daily-ops-figures-253`, on top of
+part 1).** The supervisor entering a shift's figures (role `SUPERVISOR`, record still editable) now
+gets a wizard in place of the seven stepped cards; managers reviewing or approving, and any
+submitted or locked record, keep the stepped overview exactly as it was (every figure still visible,
+Return and Approve untouched). Order, as the form: who worked (and, when there are any, who covered
+from another station); one pump meter per screen with litres, price and sales value live under the
+box; payments one line per screen (pick the way, then amount, customer or recipient where the
+method needs one) followed by "Did customers pay another way?"; expenses the same way; the cash
+count with expected cash, payouts and difference beside it; one tank per screen (the dip must be
+saved before moving on, because the server refuses a submit without a dip for every tank, and
+"A dip recorded for every tank" is now on the checklist); one question per difference that needs
+explaining; then a last screen with the checklist, photos and papers, Save now and Submit for review.
+The "This shift" totals stay on every screen. Rules (order, resume, checks) are plain functions in
+`figures-wizard.ts` (19 tests); screens in `figures-screens.tsx`; the page logic in
+`daily-operations-workspace.tsx`. Every question saves the draft when something changed, with the same
+versioned, idempotent commands as before; the address keeps `?screen=` so a refresh stays put;
+without it the page lands on the first unanswered question (who worked, a pump with no closing
+reading, a payment with no amount, cash not counted, a tank with no dip, an unexplained
+difference). Closing readings are checked exactly (no floating point) against the opening reading;
+cash of 0 is a valid answer. The "Saved" pop-up no longer appears for each automatic save (the
+`x-own-confirmation` header the tank dips already sent is now honoured). Checks: typecheck, lint,
+prettier, full unit suite (329 files, 2,568 tests); live on a scratch copy of the local database at
+390 px: team, both pumps (empty, too-low and valid readings), payment line (empty then valid), "no
+more", no expenses, cash (empty then valid), two tank dips (skipping refused), both explanations, the
+checklist, reload on the last screen staying put, resume landing on the first undipped tank, and
+Submit for review accepted by the server (then the stepped overview shows the submitted record). Not
+run: the Playwright specs (need Clerk secrets). At 1280 px in dark mode only the cash, payments and
+last screens were looked at (no sideways scroll; the card keeps its whole corner there, since its own
+buttons sit inside it); light mode at 1280 px and the other screens at that size were not. Not done: editing a payment or expense line after leaving its screen
+other than by going Back to it; the opening-reading correction was kept on the pump screens but not
+exercised live. **Phase 7 is still to do** (close-out and a role-by-role crawl).
 
 ## ZERA monthly return (#258) — 2026-11-21 (branch `feat/zera-return-258`, on top of `feat/side-panels-to-wizards-252`, uncommitted)
 
