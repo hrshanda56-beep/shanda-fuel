@@ -1,5 +1,16 @@
 # Shanda Fuel — Current Status
 
+## Wizard foundations (#248) — 2026-11-20 (branch `feat/wizard-foundations-248`, from `main` 7d49ba30, uncommitted)
+
+First step of the owner feedback round (tracking #260). Nothing user-visible changes except one screen.
+
+- **New shared parts** (`src/design-system/`): `wizard-kit.tsx` (pick-list answers `WizardOptions` / `WizardYesNo` / `WizardUsualOrOwn`, the "Change something else?" loop `WizardAnother`, saving progress with `useWizardDraft` + `WizardResumeNotice`, and `WizardConfirm`, the one confirm screen) and the pure, unit-tested rules in `wizard-nav.ts` (Back trail, "Step x of y", repeating steps) and `wizard-draft.ts` (per-wizard draft: kept on this device, offered back, never applied silently, dropped after 24 hours, on a changed record, or for a screen that no longer exists; secrets never kept). `useWizard` now uses `wizard-nav.ts`; behaviour is unchanged. `WizardCard` takes `ownDraft` so the page-wide draft keeper stays out of a wizard that saves its own progress. The written pattern for new wizards is in `src/design-system/README.md`.
+- **The shared confirm is now the page card:** `ConfirmDialog` (used by purchase orders and by `confirm()` from the feedback provider) renders through `WizardConfirm` in `Modal presentation="page"` instead of a small pop-up. Same props; `WizardConfirm` gained the tick-box acknowledgement and a warning tone. Cancel and Escape still close it, and the tick resets on each opening.
+- **One screen converted:** "Add an expense" no longer opens a small pop-up first. "What would you like to add?" is the wizard's first screen (`ExpenseKindStep`).
+- **Not done here (later PRs in the round):** retiring the ten side panels and the one-off dialogs that do not use `ConfirmDialog` is #252, one area at a time; the new pieces are used by #249, #250, #251, #253, #256 and #258.
+- **UI lock:** re-baselined with the owner's approval (DEC-056).
+- **Checks:** typecheck, lint (one old warning), format, unit tests and the production build pass. Checked live on the local demo database (the confirm on the design-system reference page, since the demo has no purchase orders) at phone and desktop widths, light and dark, with no sideways scroll. No browser spec was added: the existing specs mock Clerk and the expenses APIs, and none covers this page.
+
 ## Loading speed, code-only slice — 2026-11-20 (branch `perf/loading-speed-259`, issue #259, uncommitted)
 
 Done (code only; no schema, auth rule or caching change): (1) My Shift and Settings no longer do a
