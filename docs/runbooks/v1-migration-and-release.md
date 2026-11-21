@@ -352,3 +352,25 @@ Smoke test passed (time, who): (to fill in: create an expense paid with Other)
 Reopened to staff (time):      (to fill in)
 Problems found:                none during the migration
 ```
+
+### Record: migrations 0117 to 0119 app_logo, station_zera_licence, zera_returns (2026-11-21)
+
+Migrations only. The live smoke test of the new features is still to be recorded.
+
+```
+Migration date:                2026-11-21
+Migrations commit (full SHA):  30b3f319 (clean detached checkout of main; file hashes checked against the repo)
+  0117 sha256 bc052dd8...961676, 0118 sha256 a28f9a21...799fe42d, 0119 sha256 69b1b72b...396908
+Operator:                      Project owner (hidden-prompt DATABASE_DIRECT_URL, cleared afterwards)
+Production migration count before: 101   after: 104 (newest id 104)
+Last migration tag after:      0119_zera_returns
+Restore point identifier:      br-divine-glitter-b2u9j2qx (Neon branch from production main, never auto-delete;
+  the owner may delete it once the release has settled)
+Verified after (read-only check, 10 rows, all OK): sales_doc_profiles.app_logo_png_base64 and its check; seven
+  zera_* columns and seven stations_zera_* checks on app.stations; app.zera_returns exists with RLS enabled and
+  forced, owner migration_owner, one policy; app_runtime owns no objects in the app schema.
+Merged to main:                #272 (the code for these migrations was already live before they were applied)
+Smoke test passed (time, who): (to fill in: logo upload, station Zera details save and reopen, Zera return report)
+Reopened to staff (time):      (to fill in)
+Problems found:                none during the migration (two harmless Drizzle NOTICEs: schema and table already exist)
+```

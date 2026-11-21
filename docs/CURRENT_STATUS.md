@@ -71,7 +71,8 @@ h1 headings for owner and finance (before Phase 6); the home card showed a "Pend
 (not investigated). **Still unproven:** the Playwright specs (need Clerk secrets), Approve past the identity
 check, the deployed site, and the owner's review. Open: #259 further slices (turning on
 `CONSOLIDATED_CONTEXT_READS` is the owner's call) and the dark-lettering logo (#257). Production migrations
-0117, 0118 and 0119 are still the owner's to run.
+0117, 0118 and 0119 were applied by the owner on 2026-11-21 and verified (104 migrations; see the release
+record in `docs/runbooks/v1-migration-and-release.md`). The live smoke test is still to be done.
 
 ## ZERA monthly return (#258) — 2026-11-21 (branch `feat/zera-return-258`, on top of `feat/side-panels-to-wizards-252`, uncommitted)
 
