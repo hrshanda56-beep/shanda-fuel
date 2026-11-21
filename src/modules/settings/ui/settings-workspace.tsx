@@ -258,7 +258,7 @@ export function SettingsWorkspace({
   /** A station whose setup should open straight away, e.g. from the readiness list. */
   initialSetupStation?: string;
   /** Part of that station's setup to take the person to, e.g. from a blocked shift close. */
-  initialFocus?: 'meter-start';
+  initialFocus?: 'meter-start' | 'prices';
 }) {
   // Station setup lives on the Stations section, so an older link to it lands there.
   const requested = initialTab === 'setup' ? 'stations' : initialTab;

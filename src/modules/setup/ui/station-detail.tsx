@@ -138,7 +138,7 @@ type StationDetailProps = {
   canSetUp: boolean;
   canEditDetails: boolean;
   /** Opens straight on correcting a meter start day, e.g. from a blocked shift close. */
-  focus?: 'meter-start';
+  focus?: 'meter-start' | 'prices';
   staff?: StaffOverview;
   onBack: () => void;
   onOpenStaff: () => void;
@@ -236,11 +236,19 @@ function StationDetailView({
     focus === 'meter-start' && canSetUp && !meterHandled
       ? (shown?.nozzles ?? []).find((n) => n.meterWorkingSinceEditable)
       : undefined;
+  // Coming from "Change a price" on Daily Operations: the one fuel's price wizard, or a choice of fuel.
+  const activeFuels = (shown?.products ?? []).filter((p) => p.status === 'ACTIVE');
+  const priceStart: WizardPart | undefined =
+    focus === 'prices' && canSetUp && !meterHandled && shown && activeFuels.length > 0
+      ? activeFuels.length === 1
+        ? { kind: 'price', productId: activeFuels[0]!.id }
+        : { kind: 'pickPrice' }
+      : undefined;
   const activeWizard: WizardPart | undefined =
     wizard ??
     (meterNozzle
       ? { kind: 'pumps', productId: meterNozzle.productId, meterStart: true }
-      : undefined);
+      : priceStart);
 
   return (
     <div className={styles.page}>

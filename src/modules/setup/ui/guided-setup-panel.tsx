@@ -444,6 +444,8 @@ export type WizardPart =
       meterStart?: boolean;
     }
   | { kind: 'addFuel' }
+  /** "Which fuel's price do you want to change?", from a link on another page. */
+  | { kind: 'pickPrice' }
   | { kind: 'shifts' }
   | { kind: 'inCharge' }
   | { kind: 'openingBalances' };
@@ -488,13 +490,15 @@ export function StationWizardPage({
   const title =
     current.kind === 'addFuel'
       ? 'Add a fuel'
-      : current.kind === 'shifts'
-        ? 'Shifts'
-        : current.kind === 'inCharge'
-          ? 'Who is in charge'
-          : current.kind === 'openingBalances'
-            ? 'Opening balances'
-            : (product?.name ?? 'Fuel');
+      : current.kind === 'pickPrice'
+        ? 'Change a price'
+        : current.kind === 'shifts'
+          ? 'Shifts'
+          : current.kind === 'inCharge'
+            ? 'Who is in charge'
+            : current.kind === 'openingBalances'
+              ? 'Opening balances'
+              : (product?.name ?? 'Fuel');
 
   let body: ReactNode = null;
   if (current.kind === 'addFuel') {
@@ -507,6 +511,18 @@ export function StationWizardPage({
         onStage={stage}
         onFinish={onClose}
         onCancel={onClose}
+      />
+    );
+  } else if (current.kind === 'pickPrice') {
+    body = (
+      <WizardMenu<string>
+        title="Which price do you want to change?"
+        name="price-fuel"
+        onPick={(productId) => setCurrent({ kind: 'price', productId })}
+        onCancel={onClose}
+        options={(data.products ?? [])
+          .filter((p) => p.status === 'ACTIVE')
+          .map((p) => ({ value: p.id, label: p.name }))}
       />
     );
   } else if (current.kind === 'shifts') {

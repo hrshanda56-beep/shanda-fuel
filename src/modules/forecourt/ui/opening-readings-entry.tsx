@@ -1,13 +1,31 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useToast } from '../../../design-system/feedback-provider';
-import { Modal } from '../../../design-system/modal';
-import { Button, Card, NumericInput } from '../../../design-system/primitives';
+import { NumericInput } from '../../../design-system/primitives';
+import {
+  WIZARD_REVIEW_HINT,
+  WizardActions,
+  WizardCard,
+  WizardNotice,
+  WizardStep,
+  WizardSummary,
+  WizardSummaryRow,
+  useWizard,
+} from '../../../design-system/wizard';
+import { WizardResumeNotice, useWizardDraft } from '../../../design-system/wizard-kit';
+import { wizardDraftKey } from '../../../design-system/wizard-draft';
 import { dailyOperationsProblem } from './daily-operations-state';
-import { InfoTip } from '@/design-system/info-tip';
+import {
+  checkReading,
+  pumpName,
+  readingPosition,
+  sortPumps,
+  startingReadings,
+  unpricedPumps,
+} from './opening-readings-wizard';
 
 type Pump = Readonly<{
   nozzleId: string;
@@ -28,8 +46,11 @@ type Props = Readonly<{
   pumps: ReadonlyArray<Pump>;
 }>;
 
+type Screen = 'reading' | 'review';
+const SCREENS: readonly Screen[] = ['reading', 'review'];
+
 /**
- * Shown right after a shift opens: one number per pump and one button, nothing else. The saved
+ * Shown right after a shift opens: one pump meter per screen, then a check screen. The saved
  * opening readings are what the figures screen later shows, locked, beside the closing readings.
  */
 export function OpeningReadingsEntry({
@@ -42,39 +63,62 @@ export function OpeningReadingsEntry({
 }: Props) {
   const router = useRouter();
   const toast = useToast();
-  const [open, setOpen] = useState(true);
-  const sorted = [...pumps].sort((a, b) =>
-    `${a.pumpNumber}.${a.nozzleNumber}`.localeCompare(
-      `${b.pumpNumber}.${b.nozzleNumber}`,
-      undefined,
-      {
-        numeric: true,
-      },
-    ),
-  );
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(sorted.map((pump) => [pump.nozzleId, pump.previousReading ?? ''])),
-  );
+  const sorted = useMemo(() => sortPumps(pumps), [pumps]);
+  const [values, setValues] = useState<Record<string, string>>(() => startingReadings(sorted));
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const home = `/operations/daily?${new URLSearchParams({ tenantId, stationId }).toString()}`;
 
-  async function save() {
-    const missing = sorted.find((pump) => !values[pump.nozzleId]?.trim());
-    if (missing) {
-      setError(
-        `Enter the opening reading for pump ${missing.pumpNumber}, nozzle ${missing.nozzleNumber}.`,
-      );
+  const wizard = useWizard<Screen>({
+    start: 'reading',
+    sequence: SCREENS,
+    onCancel: () => router.push(home),
+  });
+  const onReview = wizard.step === 'review';
+  const pump = sorted[wizard.index];
+  const { position, total } = readingPosition(sorted.length, wizard.index, onReview);
+  const shown = { ...wizard, position, total };
+  const unpriced = unpricedPumps(sorted);
+
+  // The readings typed so far survive a reload, and are offered back rather than applied.
+  const draft = useWizardDraft<Screen, { values: Record<string, string> }>({
+    key: wizardDraftKey(['opening-readings', tenantId, reconciliationId]),
+    version: String(version),
+    steps: SCREENS,
+    wizard,
+    answers: { values },
+    onRestore: (saved) => setValues((current) => ({ ...current, ...saved.values })),
+  });
+
+  /** Moves on from one pump to the next, or to the check screen after the last. */
+  function nextPump() {
+    if (!pump) return;
+    const checked = checkReading(values[pump.nozzleId] ?? '', pump);
+    if (!checked.ok) {
+      wizard.setErrors({ [`opening-${pump.nozzleId}`]: checked.message });
+      wizard.setFocusId(`opening-${pump.nozzleId}`);
       return;
     }
-    const unpriced = sorted.find((pump) => !pump.sellingPriceId);
-    if (unpriced) {
-      setError(
-        `${unpriced.productName} has no selling price yet. Ask a manager to set it, then come back.`,
+    // Changed from the check screen: go straight back to it.
+    if (wizard.trail[wizard.trail.length - 1]?.step === 'review') return wizard.back();
+    if (wizard.index + 1 < sorted.length) wizard.go('reading', wizard.index + 1);
+    else wizard.go('review', 0);
+  }
+
+  async function save() {
+    const missing = sorted.find((item) => !checkReading(values[item.nozzleId] ?? '', item).ok);
+    if (missing) {
+      wizard.show('reading', sorted.indexOf(missing));
+      wizard.setProblem(`Check the reading of ${pumpName(missing).toLowerCase()}.`);
+      return;
+    }
+    if (unpriced[0]) {
+      wizard.setProblem(
+        `${unpriced[0].productName} has no selling price yet. Ask a manager to set it, then come back.`,
       );
       return;
     }
     setBusy(true);
-    setError(undefined);
+    wizard.setProblem(null);
     try {
       const response = await fetch('/api/forecourt/commands', {
         method: 'POST',
@@ -89,15 +133,15 @@ export function OpeningReadingsEntry({
           reconciliationId,
           expectedVersion: version,
           // The closing reading is not known yet; it is filled in when the figures are entered.
-          readings: sorted.map((pump) => {
-            const opening = values[pump.nozzleId]!.trim();
+          readings: sorted.map((item) => {
+            const opening = values[item.nozzleId]!.trim();
             return {
-              nozzleId: pump.nozzleId,
-              productId: pump.productId,
+              nozzleId: item.nozzleId,
+              productId: item.productId,
               shiftId,
               openingReading: opening,
               closingReading: opening,
-              sellingPriceId: pump.sellingPriceId,
+              sellingPriceId: item.sellingPriceId,
             };
           }),
         }),
@@ -107,80 +151,112 @@ export function OpeningReadingsEntry({
           message?: string;
           code?: string;
         };
-        setError(dailyOperationsProblem(response.status, body.code, body.message).message);
+        wizard.setProblem(dailyOperationsProblem(response.status, body.code, body.message).message);
         return;
       }
-      setOpen(false);
+      draft.clear();
       toast.success('Opening readings saved. You can now enter the figures for this shift.');
-      router.push(`/operations/daily?${new URLSearchParams({ tenantId, stationId }).toString()}`);
+      router.push(home);
       router.refresh();
     } catch {
-      setError('The readings could not be saved. Check your connection and press Save again.');
+      wizard.setProblem(
+        'The readings could not be saved. Check your connection and press Save again.',
+      );
     } finally {
       setBusy(false);
     }
   }
 
+  if (sorted.length === 0) {
+    return (
+      <div className="daily-operations-workspace" aria-label="Opening readings">
+        <WizardCard>
+          <WizardStep
+            wizard={{ position: 1, total: 0, captureHeading: wizard.captureHeading }}
+            title="No pumps are set up yet"
+            hint="A manager needs to set up the pumps for this station before readings can be entered."
+          >
+            <WizardActions
+              wizard={wizard}
+              onContinue={() => router.push(home)}
+              continueLabel="Back"
+            />
+          </WizardStep>
+        </WizardCard>
+      </div>
+    );
+  }
+
   return (
     <div className="daily-operations-workspace" aria-label="Opening readings">
-      <Card as="section" className="card panel cash-panel" aria-labelledby="opening-readings-title">
-        <p className="eyebrow">Shift opened</p>
-        <h2 id="opening-readings-title">Opening readings needed</h2>
-        <InfoTip>Enter what each pump meter shows now to start the shift.</InfoTip>
-        <div className="form-actions">
-          <Button variant="primary" onClick={() => setOpen(true)}>
-            Enter opening readings
-          </Button>
-        </div>
-      </Card>
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title="Opening readings"
-        description="Enter what each pump meter shows now."
-        dismissible={!busy}
-      >
-        <form
-          className="meter-list"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save();
-          }}
-        >
-          {sorted.map((pump) => (
-            <article className="meter-card" key={pump.nozzleId}>
-              <div className="meter-card-heading">
-                <div>
-                  <span className="eyebrow">
-                    Pump {pump.pumpNumber} · Nozzle {pump.nozzleNumber}
-                  </span>
-                  <h3>{pump.productName}</h3>
-                </div>
-              </div>
-              <NumericInput
-                id={`opening-${pump.nozzleId}`}
-                label="Opening"
-                value={values[pump.nozzleId] ?? ''}
-                onChange={(event) =>
-                  setValues((current) => ({ ...current, [pump.nozzleId]: event.target.value }))
-                }
-                unit="L"
-                required
-              />
-            </article>
-          ))}
-          {error ? (
-            <p className="field-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div className="form-actions">
-            <Button type="submit" variant="primary" loading={busy}>
-              Save opening readings
-            </Button>
-          </div>
-        </form>
-      </Modal>
+      <WizardCard ownDraft>
+        <WizardResumeNotice offer={draft.offer} onResume={draft.resume} onDiscard={draft.discard} />
+        {onReview ? (
+          <WizardStep wizard={shown} title="Check the opening readings" hint={WIZARD_REVIEW_HINT}>
+            <WizardSummary>
+              {sorted.map((item, index) => (
+                <WizardSummaryRow
+                  key={item.nozzleId}
+                  label={`${pumpName(item)} · ${item.productName}`}
+                  onChange={() => wizard.change('reading', index)}
+                >
+                  {values[item.nozzleId]?.trim() || '—'} L
+                </WizardSummaryRow>
+              ))}
+            </WizardSummary>
+            {unpriced.length > 0 ? (
+              <WizardNotice>
+                {unpriced.map((item) => item.productName).join(' and ')} has no selling price yet.
+                Ask a manager to set it before you save.
+              </WizardNotice>
+            ) : null}
+            {wizard.problem ? (
+              <p className="field-error" role="alert">
+                {wizard.problem}
+              </p>
+            ) : null}
+            <WizardActions
+              wizard={wizard}
+              continueLabel="Save opening readings"
+              busy={busy}
+              onContinue={() => void save()}
+            />
+          </WizardStep>
+        ) : pump ? (
+          <WizardStep
+            wizard={shown}
+            title={`What does the meter show on ${pumpName(pump).toLowerCase()}?`}
+            hint={
+              pump.previousReading
+                ? `${pump.productName}. The last closing reading was ${pump.previousReading}. Change it if the meter shows something else.`
+                : `${pump.productName}. Read the number on the pump meter now.`
+            }
+          >
+            <NumericInput
+              id={`opening-${pump.nozzleId}`}
+              label="Opening reading"
+              value={values[pump.nozzleId] ?? ''}
+              error={wizard.errors[`opening-${pump.nozzleId}`]}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, [pump.nozzleId]: event.target.value }))
+              }
+              unit="L"
+              required
+              autoComplete="off"
+            />
+            {wizard.problem ? (
+              <p className="field-error" role="alert">
+                {wizard.problem}
+              </p>
+            ) : null}
+            <WizardActions
+              wizard={wizard}
+              continueLabel={wizard.index + 1 < sorted.length ? 'Continue' : 'Check readings'}
+              onContinue={nextPump}
+            />
+          </WizardStep>
+        ) : null}
+      </WizardCard>
     </div>
   );
 }
