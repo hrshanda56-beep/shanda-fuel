@@ -194,7 +194,7 @@ export function OpeningBalanceWorkspace({
       <Card as="section" className="panel content-span" aria-labelledby="opening-balance-title">
         <div className="panel-heading">
           <div>
-            <h1 id="opening-balance-title">Opening balances</h1>
+            <h2 id="opening-balance-title">Opening balances</h2>
             <p>
               Upload one CSV, check every line, then approve and lock it. Locked figures cannot be
               edited.

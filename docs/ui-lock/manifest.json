@@ -301,7 +301,7 @@
     "src/modules/inventory/ui/tank-drum.tsx": "9e5617b4768df160231e5f9883a4ff11a9d8ba11a224d2e9a584d451eab49e74",
     "src/modules/inventory/ui/tank-overview-model.ts": "40246680c9ffe2543bb87ce8e83c1ea21a9e66cacbe8f173dbda996c1d2001af",
     "src/modules/inventory/ui/tank-overview.tsx": "b6fba4efe5d7409d9e5c96bd352bad36b8803ced3f3777c5ff2627ea611bce82",
-    "src/modules/opening-balances/ui/opening-balance-workspace.tsx": "274adbc3defa043371163bbb40f62f75420a589a4ad88161f43d026ca4260260",
+    "src/modules/opening-balances/ui/opening-balance-workspace.tsx": "784345fbd75916f46a1fdd890811e57402ed3c9e6492e98eceedf21dac4fa09c",
     "src/modules/opening-balances/ui/opening-wizard.tsx": "aa1351f8f69315e252de065f5ecf844de304a66e94ce8306a249c12174f2f3b7",
     "src/modules/owner/ui/daily-profit-workspace.tsx": "72b6cea1f5d0418a6a1aad14c4ef003986d7a1a4ce134ddf712e89971a298775",
     "src/modules/owner/ui/finance-tiles.tsx": "a0338169e211ee45e09f93cdd3f746b93d883bacd696023af9ad4fc3a9b0057c",
