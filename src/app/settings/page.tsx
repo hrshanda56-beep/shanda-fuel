@@ -95,7 +95,9 @@ export default async function SettingsPage({
         view={view}
         initialTab={typeof params.tab === 'string' ? params.tab : undefined}
         initialSetupStation={typeof params.setup === 'string' ? params.setup : undefined}
-        initialFocus={params.focus === 'meter-start' ? 'meter-start' : undefined}
+        initialFocus={
+          params.focus === 'meter-start' || params.focus === 'prices' ? params.focus : undefined
+        }
       />
     </AppShell>
   );

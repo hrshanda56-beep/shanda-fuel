@@ -1,5 +1,33 @@
 # Shanda Fuel — Current Status
 
+## Daily operations wizard, part 1: one next step, opening readings, change a price (#253) — 2026-11-21 (branch `feat/daily-ops-wizard-253`, from `main` ff83c5ba, uncommitted)
+
+First slice of Phase 6. (1) **One next step on the home screen.** For anyone who runs the shift
+(`canRunShift`), the page no longer offers the same jobs twice: the day card's "Open business day"
+button, the empty Shifts card's shift picker with "Open shift", the "open the next shift" picker and
+the per-row "Start shift" button are gone. The "Quick actions" card (`next-step.ts`, unchanged) is the
+one button: "Open Day Shift" also opens the business day, then the card moves through the figures,
+closing the shift and closing the day as before. People who cannot run a shift (finance) keep the
+controls they had. The per-row "Close Shift" for several open shifts stays. (2) **Opening readings are
+a wizard** (`opening-readings-entry.tsx`, rules in `opening-readings-wizard.ts`, tested): one pump
+meter per screen, starting from the last closing reading on record, a check screen with a Change
+button on each reading, then the same save as before (`SaveMeterReadings`, same idempotency and
+messages). Answers survive a reload and are offered back ("Continue where I was"). A fuel with no
+selling price is flagged on the check screen and still blocks saving. (3) **"Change a price" on the
+home screen** opens Settings > Stations > this station straight in the price wizard (a choice of fuel
+first when there is more than one): `/settings?tab=stations&setup=<station>&focus=prices`. The change
+joins that page's waiting list and is reviewed and saved once with the identity check, as everywhere
+else. Checks: typecheck, lint, prettier, the full unit suite (328 files, 2,547 tests; new: 9 for the
+readings rules); live on a scratch copy of the local database (nothing written to the demo
+database): one "Open Day Shift" button and no "Open business day" button, the day and shift opening
+together, the readings wizard at 390 and 1280 px (empty, negative and non-numeric readings refused,
+Back keeps answers, Change from the check screen returns to it, no sideways scroll, light and dark),
+and the price link into the price wizard; "Save opening readings" was pressed for real and the
+rows were saved, after which the card read "Continue entering the figures". Not run: the Playwright
+specs (need Clerk secrets). **Still to do in Phase 6:**
+the figures steps (Team, Pumps, Payments, Expenses, Cash, Tank dips, Submit) as one question per
+screen with the "This shift" strip kept, and resuming on the next unanswered question.
+
 ## ZERA monthly return (#258) — 2026-11-21 (branch `feat/zera-return-258`, on top of `feat/side-panels-to-wizards-252`, uncommitted)
 
 Phase 5 of the owner feedback round. **Reports > Inventory > ZERA Monthly Return** works out the
