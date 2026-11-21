@@ -11,6 +11,25 @@ First step of the owner feedback round (tracking #260). Nothing user-visible cha
 - **UI lock:** re-baselined with the owner's approval (DEC-056).
 - **Checks:** typecheck, lint (one old warning), format, unit tests and the production build pass. Checked live on the local demo database (the confirm on the design-system reference page, since the demo has no purchase orders) at phone and desktop widths, light and dark, with no sideways scroll. No browser spec was added: the existing specs mock Clerk and the expenses APIs, and none covers this page.
 
+## One tab style — 2026-11-20 (branch `feat/one-tab-style-254`, issue #254, uncommitted)
+
+`src/design-system/tabs.tsx` is now the only tab look: a light rounded track with the open tab as a
+raised pill, every tab always showing its name (an optional icon is supported), at the right end of
+its row, CSS in `design-system/styles/tabs.css`. `TabSwitcher` is a real `role="tablist"` with
+arrow-key, Home and End navigation (`tabs-keys.ts`, hidden tabs are skipped); `TabLinks` gives the
+same look to related-report links; `FilterPills` gives it to list filters. Moved over: `TabbedCard`
+(Finance, valuation, settlements, cash, supplier-due), Profit, Expenses (All Expenses / Regular
+Costs), Purchasing, Tank detail (its desktop "Dips and movements" merge kept), the Related-reports
+links and the reconciliation filters. The old `.profit-tabs`, `.tank-tabs` look, `.purchasing-tabs`,
+`.recon-tab*` and the underline `.income-tabs` rules are gone. Decision per case: the reconciliation
+list filter stays a filter (`aria-pressed`) but looks the same; other `aria-pressed` groups (today
+overview, customers, staff panel, settings, sales documents, orders, creditors, deliveries,
+inventory) were left as they are — they narrow a list rather than switch views. The Daily Operations
+step bar keeps its own behaviour until its wizard (#253). Phones: tabs share the width in even
+columns (no sideways scroll; checked at 390 px on Profit, Expenses, Purchasing, Cash, Settlements,
+Tank, Reconciliations, Valuation, Finance, Suppliers due, Reports). Not done: the Playwright specs
+were not run (they need Clerk secrets); `role=tab` is unchanged so their selectors still match.
+
 ## Quotations, invoices and receipts — 2026-11-18 (branch `feat/sales-documents`, from NOV17)
 
 DEC-045. Built: migration `0108_sales_documents` (letterhead and numbering settings, gap-free

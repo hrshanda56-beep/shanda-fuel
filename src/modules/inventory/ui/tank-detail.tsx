@@ -11,6 +11,7 @@ import { Modal } from '@/design-system/modal';
 import { Button, Card, EmptyState, Field, StatusBadge } from '@/design-system/primitives';
 import { Pagination, usePagination } from '@/design-system/pagination';
 import { TableScrollRegion } from '@/design-system/table';
+import { TabSwitcher } from '@/design-system/tabs';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { StockSignal } from '../../approvals/operations-alerts';
 import { parseCalibrationText } from '../calibration';
@@ -413,37 +414,31 @@ export function TankDetailView({
         </dl>
       </Card>
 
-      <div
+      <TabSwitcher
         className="tank-tabs"
-        role="tablist"
-        aria-label="Tank details"
+        label="Tank details"
+        idPrefix="tank-tab"
         data-solo={canManage ? undefined : 'true'}
-      >
-        {availableTabs.map((item) => (
-          <button
-            key={item.value}
-            id={`tank-tab-${item.value}`}
-            type="button"
-            role="tab"
-            className={item.value === 'settings' ? undefined : 'tank-tab-narrow'}
-            aria-selected={tab === item.value}
-            aria-controls="tank-tabpanel"
-            onClick={() => selectTab(item.value)}
-          >
-            {item.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          role="tab"
-          className="tank-tab-wide"
-          aria-selected={tab !== 'settings'}
-          aria-controls="tank-tabpanel"
-          onClick={() => selectTab('dips')}
-        >
-          Dips and movements
-        </button>
-      </div>
+        value={tab}
+        onChange={selectTab}
+        tabs={[
+          ...availableTabs.map((item) => ({
+            value: item.value,
+            label: item.label,
+            controls: 'tank-tabpanel',
+            className: item.value === 'settings' ? undefined : 'tank-tab-narrow',
+          })),
+          // On a wide screen dips and movements sit side by side, so one tab stands for both.
+          {
+            value: 'dips' as TankTab,
+            label: 'Dips and movements',
+            controls: 'tank-tabpanel',
+            className: 'tank-tab-wide',
+            id: null,
+            selected: tab !== 'settings',
+          },
+        ]}
+      />
 
       <div id="tank-tabpanel" role="tabpanel" aria-labelledby={`tank-tab-${tab}`}>
         {tab !== 'settings' ? (
