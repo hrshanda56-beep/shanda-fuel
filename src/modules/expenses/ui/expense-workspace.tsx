@@ -766,7 +766,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
               className={styles.stat}
               data-attention={waiting.length > 0 ? 'true' : undefined}
               onClick={() => showFilter('waiting')}
-              aria-label={`Waiting for approval: ${waiting.length}. Show them.`}
             >
               <span>Waiting for approval</span>
               <strong>
@@ -776,12 +775,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
               </strong>
               {ready.length > 0 ? <small>{ready.length} ready to record</small> : null}
             </button>
-            <button
-              type="button"
-              className={styles.stat}
-              onClick={() => showFilter('unpaid')}
-              aria-label="Not paid yet. Show these expenses."
-            >
+            <button type="button" className={styles.stat} onClick={() => showFilter('unpaid')}>
               <span>Not paid yet</span>
               <strong>
                 {isZeroMoney(summary.payables.postedExpensesOutstanding)

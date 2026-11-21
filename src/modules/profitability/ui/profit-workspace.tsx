@@ -286,92 +286,90 @@ export function ProfitWorkspace({ initial }: { initial: ProfitInitial }) {
         />
       </div>
 
-      {tab === 'daily' ? (
-        <div id="profit-tabpanel" role="tabpanel" aria-labelledby="profit-tab-daily">
+      <div id="profit-tabpanel" role="tabpanel" aria-labelledby={`profit-tab-${tab}`}>
+        {tab === 'daily' ? (
           <DailyProfitWorkspace embedded initial={initial} links={links} />
-        </div>
-      ) : tab === 'position' ? (
-        <div id="profit-tabpanel" role="tabpanel" aria-labelledby="profit-tab-position">
+        ) : tab === 'position' ? (
           <FinancialPositionWorkspace initial={initial} links={links} />
-        </div>
-      ) : initial.badRange ? (
-        <EmptyState
-          title="Choose both dates"
-          message="Pick a start date and an end date, with the start on or before the end."
-        />
-      ) : initial.error && initial.restricted ? (
-        <AccessDeniedState message={initial.error} />
-      ) : initial.error ? (
-        <ErrorState
-          title="Profit could not be loaded"
-          message={initial.error}
-          action={
-            <button
-              type="button"
-              className="button button-secondary"
-              onClick={() => router.refresh()}
-            >
-              Try again
-            </button>
-          }
-        />
-      ) : view && report ? (
-        <div className="profit-body">
-          {view.state === 'no-sales' ? (
-            <Card
-              as="section"
-              className="panel profit-panel"
-              aria-labelledby="profit-summary-title"
-            >
-              <div className="panel-heading">
-                <h2 id="profit-summary-title">Profit</h2>
-                <StatusBadge tone="warning">No sales</StatusBadge>
-              </div>
-              <EmptyState
-                layout="block"
-                title="No fuel sales yet"
-                message={view.explanation ?? view.headline}
-                icon="chart"
-              />
-            </Card>
-          ) : (
-            <div className="profit-overview">
+        ) : initial.badRange ? (
+          <EmptyState
+            title="Choose both dates"
+            message="Pick a start date and an end date, with the start on or before the end."
+          />
+        ) : initial.error && initial.restricted ? (
+          <AccessDeniedState message={initial.error} />
+        ) : initial.error ? (
+          <ErrorState
+            title="Profit could not be loaded"
+            message={initial.error}
+            action={
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => router.refresh()}
+              >
+                Try again
+              </button>
+            }
+          />
+        ) : view && report ? (
+          <div className="profit-body">
+            {view.state === 'no-sales' ? (
               <Card
                 as="section"
                 className="panel profit-panel"
                 aria-labelledby="profit-summary-title"
               >
                 <div className="panel-heading">
-                  <span className="heading-with-tip">
-                    <h2 id="profit-summary-title">Profit</h2>
-                    <InfoTip text={[view.headline, view.explanation].filter(Boolean).join(' ')} />
-                  </span>
-                  {view.profit !== null ? (
-                    <StatusBadge tone={isNegative(view.profit) ? 'critical' : 'positive'}>
-                      {isNegative(view.profit) ? 'Loss' : 'Profit'}
-                    </StatusBadge>
-                  ) : (
-                    <StatusBadge tone="warning">Not worked out yet</StatusBadge>
-                  )}
+                  <h2 id="profit-summary-title">Profit</h2>
+                  <StatusBadge tone="warning">No sales</StatusBadge>
                 </div>
-                <p
-                  className="profit-hero"
-                  data-tone={
-                    view.profit === null ? 'missing' : isNegative(view.profit) ? 'bad' : 'good'
-                  }
-                >
-                  {moneyOrUnavailable(view.profit)}
-                </p>
-                <SalesSplit view={view} />
+                <EmptyState
+                  layout="block"
+                  title="No fuel sales yet"
+                  message={view.explanation ?? view.headline}
+                  icon="chart"
+                />
               </Card>
-              <FuelTable view={view} links={links} />
-            </div>
-          )}
+            ) : (
+              <div className="profit-overview">
+                <Card
+                  as="section"
+                  className="panel profit-panel"
+                  aria-labelledby="profit-summary-title"
+                >
+                  <div className="panel-heading">
+                    <span className="heading-with-tip">
+                      <h2 id="profit-summary-title">Profit</h2>
+                      <InfoTip text={[view.headline, view.explanation].filter(Boolean).join(' ')} />
+                    </span>
+                    {view.profit !== null ? (
+                      <StatusBadge tone={isNegative(view.profit) ? 'critical' : 'positive'}>
+                        {isNegative(view.profit) ? 'Loss' : 'Profit'}
+                      </StatusBadge>
+                    ) : (
+                      <StatusBadge tone="warning">Not worked out yet</StatusBadge>
+                    )}
+                  </div>
+                  <p
+                    className="profit-hero"
+                    data-tone={
+                      view.profit === null ? 'missing' : isNegative(view.profit) ? 'bad' : 'good'
+                    }
+                  >
+                    {moneyOrUnavailable(view.profit)}
+                  </p>
+                  <SalesSplit view={view} />
+                </Card>
+                <FuelTable view={view} links={links} />
+              </div>
+            )}
 
-          {view.state !== 'no-sales' ? <StationTable view={view} /> : null}
-          {view.state !== 'no-sales' && view.fuels.length > 0 ? null : links}
-        </div>
-      ) : null}
+            {view.state !== 'no-sales' ? <StationTable view={view} /> : null}
+            {view.state !== 'no-sales' && view.fuels.length > 0 ? null : links}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

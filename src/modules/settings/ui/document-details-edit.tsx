@@ -57,7 +57,7 @@ export function EditDocumentDetails({
         variant="secondary"
         size="sm"
         aria-haspopup="dialog"
-        aria-label={`Edit document details for ${company.name}`}
+        aria-label={`Edit details for ${company.name}`}
         loading={loading}
         onClick={() => void begin()}
       >
