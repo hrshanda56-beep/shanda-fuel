@@ -60,6 +60,7 @@ type HeaderRow = {
   business_date: string;
   supervisor_id: string | null;
   approval_note: string | null;
+  return_reason?: string | null;
   state: string;
   version: number | string;
 };
@@ -108,7 +109,7 @@ async function loadHeader(
 ): Promise<HeaderRow> {
   const rows = await transaction.execute<HeaderRow>(sql`
     select c.id, c.tenant_id, c.station_id, c.business_day_id, c.shift_id,
-           d.business_date, c.supervisor_id, c.approval_note, c.state, c.version
+           d.business_date, c.supervisor_id, c.approval_note, c.return_reason, c.state, c.version
     from app.reconciliations c
     join app.station_business_days d
       on d.tenant_id = c.tenant_id and d.station_id = c.station_id and d.id = c.business_day_id
@@ -1837,6 +1838,7 @@ export async function getProductionReconciliationFromRequest(
       cash: cash[0] ?? null,
       explanations,
       approvalNote: header.approval_note,
+      returnReason: header.state === 'RETURNED' ? (header.return_reason ?? null) : null,
       totals: {
         expectedSales: metrics.sales.toString(),
         accountedSales: metrics.payments.toString(),

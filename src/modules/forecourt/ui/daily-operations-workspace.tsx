@@ -2066,7 +2066,8 @@ export function DailyOperationsWorkspace({
         banners={
           state === 'RETURNED' ? (
             <p className="state state-warning" role="status">
-              <strong>Returned:</strong> Fix the figures and save before you submit again.
+              <strong>Returned:</strong> {record?.returnReason ? `“${record.returnReason}” ` : null}
+              Fix the figures and save before you submit again.
             </p>
           ) : null
         }
@@ -3136,7 +3137,9 @@ export function DailyOperationsWorkspace({
                     ) : null}
                     {state === 'RETURNED' ? (
                       <p className="state state-warning" role="status">
-                        <strong>Returned:</strong> Fix the figures and save before you submit again.
+                        <strong>Returned:</strong>{' '}
+                        {record?.returnReason ? `“${record.returnReason}” ` : null}
+                        Fix the figures and save before you submit again.
                       </p>
                     ) : null}
                     {inReview && record?.unvaluedFuels?.length ? (

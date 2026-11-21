@@ -15,6 +15,8 @@ export type RecordData = {
   /** The tank and fuel behind each missing cost, so the cost can be entered from the screen. */
   unvaluedStreams?: Array<{ name: string; tankId: string; productId: string }>;
   approvalNote: string | null;
+  /** Why a manager sent the day back; only set while the record is returned. */
+  returnReason?: string | null;
   business_date: string;
   /** Customer accounts that may be charged at this station, with what they may still spend. */
   customerAccounts: Array<{
