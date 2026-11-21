@@ -663,12 +663,12 @@ export async function lockOpeningBalanceBatchFromRequest(request: Request, body:
         } else if (line.lineType === 'CUSTOMER_CHARGE') {
           await transaction.execute(sql`
             insert into app.customer_ledger_entries (id, tenant_id, customer_id, account_id, account_type, entry_type, direction, amount, source_type, source_id, source_key, occurred_at, business_date, note, reason, actor_membership_id)
-            values (${randomUUID()}, ${context.tenantId}, ${line.customerId}, ${line.accountId}, 'CREDIT', 'CREDIT_FUEL_CHARGE', 'INCREASE', ${line.amount}, 'OPENING_BALANCE', ${line.id}, ${`opening-balance:customer:${line.accountId}:${line.reference}`}, ${effectiveAt}, ${line.effectiveDate}, ${`Opening charge ${line.reference}`}, ${line.notes}, ${context.authority.membership.membershipId})
+            values (${randomUUID()}, ${context.tenantId}, ${line.customerId}, ${line.accountId}, 'CREDIT', 'CREDIT_FUEL_CHARGE', 'INCREASE', ${line.amount}, 'OPENING_BALANCE', ${line.id}, ${`opening-balance:customer:${line.accountId}:${line.reference}`}, ${effectiveAt.toISOString()}::timestamptz, ${line.effectiveDate}, ${`Opening charge ${line.reference}`}, ${line.notes}, ${context.authority.membership.membershipId})
           `);
         } else if (line.lineType === 'CASH_BALANCE') {
           await transaction.execute(sql`
             insert into app.cash_movements (id, tenant_id, station_id, movement_type, amount, currency, from_location_id, to_location_id, source_type, source_id, business_date, effective_at, reason, actor_membership_id)
-            values (${randomUUID()}, ${context.tenantId}, ${line.stationId}, 'ADJUSTMENT_IN', ${line.amount}, 'USD', null, ${line.cashLocationId}, 'OPENING_BALANCE', ${line.id}, ${line.effectiveDate}, ${effectiveAt}, ${line.notes ?? 'Opening cash balance'}, ${context.authority.membership.membershipId})
+            values (${randomUUID()}, ${context.tenantId}, ${line.stationId}, 'ADJUSTMENT_IN', ${line.amount}, 'USD', null, ${line.cashLocationId}, 'OPENING_BALANCE', ${line.id}, ${line.effectiveDate}, ${effectiveAt.toISOString()}::timestamptz, ${line.notes ?? 'Opening cash balance'}, ${context.authority.membership.membershipId})
           `);
         } else if (line.lineType === 'BANK_BALANCE') {
           await transaction.insert(bankOpeningBalances).values({

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
-import { Icon, type IconName } from '@/design-system/icons';
+import { Icon } from '@/design-system/icons';
 import { formatUnitPrice } from '@/design-system/formatters';
 import {
   AccessDeniedState,
@@ -11,13 +11,23 @@ import {
   LoadingState,
   StatusBadge,
 } from '@/design-system/primitives';
-import { CardEmpty, SectionCard } from '@/design-system/section-card';
+import { CardEmpty, CardRow, CardRows, SectionCard } from '@/design-system/section-card';
 import { EditStation } from '@/modules/settings/ui/structure-forms';
 import type { SettingsStation } from '@/modules/settings/contracts';
 import type { StaffOverview } from '@/modules/staff/contracts';
 
+import type { StationReadiness } from '../contracts';
+
 import { buildStationOverview, type StationFuelRow } from '../station-overview';
-import { StationSetupGuide, useStationConfig } from './guided-setup-panel';
+import {
+  NewStationGuide,
+  StationStaging,
+  StationWizardPage,
+  useStagedStation,
+  useStationConfig,
+  useStationGuiding,
+  type WizardPart,
+} from './guided-setup-panel';
 import styles from './station-detail.module.css';
 import { useSetupOverview } from './use-setup-overview';
 
@@ -33,6 +43,28 @@ export function StationList({
 }) {
   const { state } = useSetupOverview();
   const readiness = state.kind === 'ready' ? state.overview.stations : [];
+  return (
+    <StationCards
+      stations={stations}
+      readiness={readiness}
+      canSeeReadiness={canSeeReadiness}
+      onOpen={onOpen}
+    />
+  );
+}
+
+/** The station cards themselves, shared by the Stations list and the Readiness check. */
+export function StationCards({
+  stations,
+  readiness,
+  canSeeReadiness,
+  onOpen,
+}: {
+  stations: readonly SettingsStation[];
+  readiness: readonly StationReadiness[];
+  canSeeReadiness: boolean;
+  onOpen: (stationId: string) => void;
+}) {
   const [query, setQuery] = useState('');
   const needle = query.trim().toLowerCase();
   const shown = needle
@@ -71,7 +103,6 @@ export function StationList({
               <button
                 type="button"
                 className={`${styles.card} ${settingUp ? styles.cardPending : ''}`.trim()}
-                aria-label={`Open ${station.name}`}
                 onClick={() => onOpen(station.id)}
               >
                 <span className={styles.cardTop}>
@@ -97,43 +128,63 @@ export function StationList({
 }
 
 /**
- * One station on its own page: what it sells, where the fuel is kept, which pumps sell it and when
- * shifts run. Changing anything opens the step-by-step setup, so nothing is edited in place.
+ * One station on its own page: the fuels it sells with their prices, tanks and pumps, then the
+ * whole station (shifts and who is in charge). Changing anything opens a wizard, one question per
+ * screen, so nothing is edited in place and there is no separate editing screen.
  */
-export function StationDetail({
-  tenantId,
-  station,
-  canSetUp,
-  canEditDetails,
-  startEditing,
-  focus,
-  staff,
-  onBack,
-  onOpenStaff,
-  onOpenReadiness,
-}: {
+type StationDetailProps = {
   tenantId: string;
   station: SettingsStation;
   canSetUp: boolean;
   canEditDetails: boolean;
-  /** Opens with the setup steps showing, e.g. from a link on the readiness list. */
-  startEditing: boolean;
+  /** Opens straight on correcting a meter start day, e.g. from a blocked shift close. */
   focus?: 'meter-start';
   staff?: StaffOverview;
   onBack: () => void;
   onOpenStaff: () => void;
-  onOpenReadiness?: () => void;
+};
+
+/**
+ * Reads the station and, for people who may change it, holds the changes waiting to be saved for
+ * the whole page, so they survive while wizards open and close.
+ */
+export function StationDetail(props: StationDetailProps) {
+  const { state, refresh } = useStationConfig(props.tenantId, props.station.id);
+  if (state.kind === 'ready' && props.canSetUp) {
+    return (
+      <StationStaging
+        tenantId={props.tenantId}
+        stationId={props.station.id}
+        serverData={state.data}
+        refresh={refresh}
+      >
+        <StationDetailView {...props} state={state} refresh={refresh} />
+      </StationStaging>
+    );
+  }
+  return <StationDetailView {...props} state={state} refresh={refresh} />;
+}
+
+function StationDetailView({
+  tenantId,
+  station,
+  canSetUp,
+  canEditDetails,
+  focus,
+  staff,
+  onBack,
+  onOpenStaff,
+  state,
+  refresh,
+}: StationDetailProps & {
+  state: ReturnType<typeof useStationConfig>['state'];
+  refresh: () => void;
 }) {
-  const { state, refresh } = useStationConfig(tenantId, station.id);
-  const [editing, setEditing] = useState(startEditing || station.status === 'ONBOARDING');
-  const [openPart, setOpenPart] = useState<{
-    kind: 'choose' | 'price' | 'tanks' | 'pumps';
-    productId: string;
-  }>();
-  const openFuelPart = (kind: 'choose' | 'price' | 'tanks' | 'pumps', productId: string) => {
-    setOpenPart({ kind, productId });
-    setEditing(true);
-  };
+  const staged = useStagedStation();
+  const guiding = useStationGuiding();
+  /** The wizard page showing over the station, if any. */
+  const [wizard, setWizard] = useState<WizardPart>();
+  const [meterHandled, setMeterHandled] = useState(false);
   /** The fuel whose own page is showing; none means the station page. */
   const [fuelId, setFuelId] = useState<string>();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -172,10 +223,24 @@ export function StationDetail({
     };
   }, [moreOpen]);
 
-  const overview = state.kind === 'ready' ? buildStationOverview(state.data) : null;
+  const shown = state.kind === 'ready' ? (staged ?? state.data) : null;
+  const overview = shown ? buildStationOverview(shown) : null;
   const openFuel =
     overview && fuelId ? overview.fuels.find((row) => row.productId === fuelId) : undefined;
-  const showFuel = Boolean(openFuel) && !editing;
+  const showFuel = Boolean(openFuel);
+  const hiddenFuels = (shown?.products ?? []).filter((p) => p.status !== 'ACTIVE');
+
+  // Coming from a blocked shift close: the pumps wizard of the fuel whose meter start day can still
+  // be corrected opens first, once the station has been read, until it is closed.
+  const meterNozzle =
+    focus === 'meter-start' && canSetUp && !meterHandled
+      ? (shown?.nozzles ?? []).find((n) => n.meterWorkingSinceEditable)
+      : undefined;
+  const activeWizard: WizardPart | undefined =
+    wizard ??
+    (meterNozzle
+      ? { kind: 'pumps', productId: meterNozzle.productId, meterStart: true }
+      : undefined);
 
   return (
     <div className={styles.page}>
@@ -196,7 +261,7 @@ export function StationDetail({
             </StatusBadge>
           </div>
           <div className={styles.actions}>
-            {overview && !editing && overview.todo.length > 0 ? (
+            {overview && overview.todo.length > 0 ? (
               <div className={styles.more} ref={todoMenu}>
                 <button
                   type="button"
@@ -226,18 +291,6 @@ export function StationDetail({
                   </div>
                 ) : null}
               </div>
-            ) : null}
-            {canSetUp ? (
-              <Button
-                variant={editing ? 'secondary' : 'primary'}
-                onClick={() => {
-                  if (editing) refresh();
-                  setOpenPart(undefined);
-                  setEditing(!editing);
-                }}
-              >
-                {editing ? 'Done changing' : settingUp ? 'Continue setup' : 'Change setup'}
-              </Button>
             ) : null}
             <div className={styles.more} ref={menu}>
               <Button
@@ -272,17 +325,6 @@ export function StationDetail({
                       Who works here
                     </Button>
                   ) : null}
-                  {onOpenReadiness ? (
-                    <Button
-                      variant="quiet"
-                      onClick={() => {
-                        setMoreOpen(false);
-                        onOpenReadiness();
-                      }}
-                    >
-                      Readiness checklist
-                    </Button>
-                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -297,19 +339,21 @@ export function StationDetail({
         />
       ) : null}
 
-      {editing && canSetUp ? (
-        <>
-          <StationSetupGuide
-            key={station.id}
-            tenantId={tenantId}
-            stationId={station.id}
-            stationName={station.name}
-            focus={focus}
-            openPart={openPart}
-            staff={staff}
-            onOpenStaff={onOpenStaff}
-          />
-        </>
+      {canSetUp && !showFuel && state.kind === 'ready' ? (
+        <NewStationGuide stationName={station.name} />
+      ) : null}
+
+      {canSetUp && activeWizard ? (
+        <StationWizardPage
+          key={JSON.stringify(activeWizard)}
+          part={activeWizard}
+          stationName={station.name}
+          onOpenStaff={staff ? onOpenStaff : undefined}
+          onClose={() => {
+            setWizard(undefined);
+            setMeterHandled(true);
+          }}
+        />
       ) : null}
 
       {state.kind === 'loading' ? <LoadingState label="Loading this station" /> : null}
@@ -324,74 +368,181 @@ export function StationDetail({
         />
       ) : null}
 
-      {overview && !editing ? (
+      {overview && !guiding ? (
         <>
           {openFuel ? (
             <FuelPage
               fuel={openFuel}
               canSetUp={canSetUp}
-              onYes={() => openFuelPart('choose', openFuel.productId)}
+              onYes={() => setWizard({ kind: 'choose', productId: openFuel.productId })}
               onNo={() => setFuelId(undefined)}
             />
           ) : (
-            <SectionCard id="station-fuels" title="Fuels">
-              {overview.fuels.length === 0 ? (
-                <CardEmpty>No fuel has been added to this station yet.</CardEmpty>
-              ) : (
-                <div className={styles.fuelGrid} role="list" aria-label="Fuels">
-                  {overview.fuels.map((fuel) => (
-                    <div
-                      className={`${styles.fuelCard} ${styles.clickable}`}
-                      role="listitem"
-                      key={fuel.productId}
-                      tabIndex={0}
-                      aria-label={`Open ${fuel.name}`}
-                      onClick={() => setFuelId(fuel.productId)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          setFuelId(fuel.productId);
-                        }
-                      }}
+            <>
+              <SectionCard
+                id="station-fuels"
+                title="Fuels"
+                action={
+                  canSetUp ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      aria-haspopup="dialog"
+                      onClick={() => setWizard({ kind: 'addFuel' })}
                     >
-                      <div className={styles.fuelTop}>
-                        <span className={styles.name}>{fuel.name}</span>
-                        <span className={styles.fuelPrice}>
-                          {fuel.price
-                            ? (() => {
-                                const p = formatUnitPrice(
-                                  fuel.price,
-                                  fuel.unitWord === 'litres' ? 'L' : 'kg',
-                                );
-                                return `${p.amount}${p.unit}`;
-                              })()
-                            : fuel.priceNote}
-                        </span>
+                      Add a fuel
+                    </Button>
+                  ) : null
+                }
+              >
+                {overview.fuels.length === 0 ? (
+                  <CardEmpty>No fuel has been added to this station yet.</CardEmpty>
+                ) : (
+                  <div className={styles.fuelGrid} role="list" aria-label="Fuels">
+                    {overview.fuels.map((fuel) => (
+                      <div
+                        className={`${styles.fuelCard} ${styles.clickable}`}
+                        role="listitem"
+                        key={fuel.productId}
+                        tabIndex={0}
+                        aria-label={`Open ${fuel.name}`}
+                        onClick={() => setFuelId(fuel.productId)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setFuelId(fuel.productId);
+                          }
+                        }}
+                      >
+                        <div className={styles.fuelTop}>
+                          <span className={styles.name}>{fuel.name}</span>
+                          <span className={styles.fuelPrice}>
+                            {fuel.price
+                              ? (() => {
+                                  const p = formatUnitPrice(
+                                    fuel.price,
+                                    fuel.unitWord === 'litres' ? 'L' : 'kg',
+                                  );
+                                  return `${p.amount}${p.unit}`;
+                                })()
+                              : fuel.priceNote}
+                          </span>
+                        </div>
+                        {fuel.unitWord !== 'litres' ? (
+                          <span className={styles.muted}>Sold in {fuel.unitWord}</span>
+                        ) : null}
+                        <div className={styles.fuelPart}>
+                          <span className={styles.cellLabel}>Tanks</span>
+                          {fuel.tanks.length ? (
+                            fuel.tanks.map((tank) => <span key={tank}>{tank}</span>)
+                          ) : (
+                            <span className={styles.muted}>No tank yet</span>
+                          )}
+                        </div>
+                        <div className={styles.fuelPart}>
+                          <span className={styles.cellLabel}>Pumps & Nozzles</span>
+                          {fuel.nozzles.length ? (
+                            fuel.nozzles.map((nozzle) => <span key={nozzle}>{nozzle}</span>)
+                          ) : (
+                            <span className={styles.muted}>No nozzle yet</span>
+                          )}
+                        </div>
                       </div>
-                      {fuel.unitWord !== 'litres' ? (
-                        <span className={styles.muted}>Sold in {fuel.unitWord}</span>
-                      ) : null}
-                      <div className={styles.fuelPart}>
-                        <span className={styles.cellLabel}>Tanks</span>
-                        {fuel.tanks.length ? (
-                          fuel.tanks.map((tank) => <span key={tank}>{tank}</span>)
-                        ) : (
-                          <span className={styles.muted}>No tank yet</span>
-                        )}
-                      </div>
-                      <div className={styles.fuelPart}>
-                        <span className={styles.cellLabel}>Pumps & Nozzles</span>
-                        {fuel.nozzles.length ? (
-                          fuel.nozzles.map((nozzle) => <span key={nozzle}>{nozzle}</span>)
-                        ) : (
-                          <span className={styles.muted}>No nozzle yet</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SectionCard>
+                    ))}
+                  </div>
+                )}
+                {canSetUp && hiddenFuels.length > 0 ? (
+                  <CardRows label="Hidden fuels">
+                    {hiddenFuels.map((fuel) => (
+                      <CardRow
+                        key={fuel.id}
+                        title={fuel.name}
+                        detail="Hidden. It is not offered for sale."
+                        aside={
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() =>
+                              setWizard({
+                                kind: 'fuel',
+                                productId: fuel.id,
+                                flow: 'visibility',
+                              })
+                            }
+                          >
+                            Show again
+                          </Button>
+                        }
+                      />
+                    ))}
+                  </CardRows>
+                ) : null}
+              </SectionCard>
+
+              <SectionCard id="station-whole" title="The whole station">
+                <CardRows label="The whole station">
+                  <CardRow
+                    title="Shifts"
+                    detail={
+                      overview.shifts.length > 0
+                        ? overview.shifts.map((shift) => `${shift.name} ${shift.when}`).join(', ')
+                        : 'No shift added yet.'
+                    }
+                    aside={
+                      canSetUp ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          aria-haspopup="dialog"
+                          aria-label="Change shifts"
+                          onClick={() => setWizard({ kind: 'shifts' })}
+                        >
+                          Change shifts
+                        </Button>
+                      ) : null
+                    }
+                  />
+                  <CardRow
+                    title="Who is in charge"
+                    detail={
+                      overview.supervisor ??
+                      ((shown?.supervisors ?? []).length === 0
+                        ? 'No supervisor works at this station yet.'
+                        : 'Nobody has been chosen yet.')
+                    }
+                    aside={
+                      canSetUp ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          aria-haspopup="dialog"
+                          aria-label="Change who is in charge"
+                          onClick={() => setWizard({ kind: 'inCharge' })}
+                        >
+                          Change
+                        </Button>
+                      ) : null
+                    }
+                  />
+                  {canSetUp ? (
+                    <CardRow
+                      title="Opening balances"
+                      detail="What the station has today: fuel in the tanks, cash, bank, customers and suppliers."
+                      aside={
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          aria-haspopup="dialog"
+                          onClick={() => setWizard({ kind: 'openingBalances' })}
+                        >
+                          Add opening balances
+                        </Button>
+                      }
+                    />
+                  ) : null}
+                </CardRows>
+              </SectionCard>
+            </>
           )}
         </>
       ) : null}

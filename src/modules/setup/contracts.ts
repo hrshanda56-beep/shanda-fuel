@@ -94,6 +94,8 @@ export type StationSetupFacts = Readonly<{
   providerAccounts: number;
   bankAccounts: number;
   assignedStaff: number;
+  /** People invited to this station who have not accepted yet (absent in old payloads). */
+  pendingInvitations?: number;
 }>;
 export type ReadinessArea = Readonly<{
   code: ReadinessAreaCode;
@@ -122,6 +124,21 @@ export type StationReadiness = Readonly<{
   areas: readonly ReadinessArea[];
   ready: boolean;
   blockedSummary: string | null;
+  /**
+   * Things a station can go live without but should still have (payment accounts, opening
+   * stock). The "complete this station" loop (#251) asks about them too. Absent in old payloads.
+   */
+  wants?: StationWants;
+}>;
+export type StationWants = Readonly<{
+  /** No payment provider account serves this station. */
+  providerAccount: boolean;
+  /** The station's company has no bank account. */
+  bankAccount: boolean;
+  /** At least one active tank has no opening quantity recorded. */
+  openingStock: boolean;
+  /** Someone was invited to this station and has not accepted yet, so it need not be asked again. */
+  invitationPending?: boolean;
 }>;
 export type PaymentProviderRow = Readonly<{
   id: string;

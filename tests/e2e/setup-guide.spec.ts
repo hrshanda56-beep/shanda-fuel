@@ -2,9 +2,9 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * The guided station setup, driven against sample API answers so no Clerk user or database is
- * needed. It checks the plain-language flow a non-technical owner follows, not server rules (those
- * are covered by the setup integration tests).
+ * The station page and its setup wizards, driven against sample API answers so no Clerk user or
+ * database is needed. It checks the plain-language flow a non-technical owner follows, one question
+ * per screen, not server rules (those are covered by the setup integration tests).
  */
 
 const tenantId = 'e2e80000-0000-4000-8000-000000000001';
@@ -44,35 +44,15 @@ async function mockApi(page: Page, products: Product[] = []) {
   const state = { products, supervisor: null as string | null };
   const commands: Array<Record<string, unknown>> = [];
   await page.route('**/api/setup/overview**', async (route) => {
-    await route.fulfill({
-      json: {
-        status: 'ready',
-        tenantId,
-        canViewReadiness: true,
-        canViewPayments: false,
-        canManagePayments: false,
-        stations: [],
-        stationOptions: [{ id: stationId, code: 'MAIN', name: 'Main Station', legalEntityId: 'x' }],
-        providers: [],
-        providerAccounts: [],
-        bankAccounts: [],
-        data: configuration(state),
-      },
-    });
+    await route.fulfill({ json: { status: 'ready', tenantId, data: configuration(state) } });
   });
   await page.route('**/api/setup/commands', async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     commands.push(body);
-    if (body.commandType === 'CreateProduct') {
-      state.products.push({
-        id: `p${state.products.length + 1}`,
-        code: String(body.code),
-        name: String(body.name),
-        status: 'ACTIVE',
-      });
-    }
-    if (body.commandType === 'SetResponsibleSupervisor')
-      state.supervisor = String(body.membershipId);
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.route('**/api/forecourt/commands', async (route) => {
+    commands.push(route.request().postDataJSON() as Record<string, unknown>);
     await route.fulfill({ json: { ok: true } });
   });
   return { commands, state };
@@ -88,32 +68,38 @@ async function openReviewAndSave(page: Page) {
   await expect(page.getByText('Confirm it is you').first()).toBeVisible();
 }
 
-test.describe('Guided station setup', () => {
-  test('walks an owner from an empty station to adding the first fuel in plain language', async ({
+const next = (page: Page) => page.getByRole('button', { name: 'Continue' });
+
+test.describe('Station page and setup wizards', () => {
+  test('has no editing screen: a new station offers the guide and a fuel wizard', async ({
     page,
   }) => {
     const { commands } = await mockApi(page);
     await page.goto('/dev-preview/setup-guide');
 
-    await expect(page.getByRole('heading', { name: 'Fuel Types' })).toBeVisible();
-    await expect(page.getByText('No fuel types yet. Add the first one to begin.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Fuels' })).toBeVisible();
+    await expect(page.getByText('No fuel has been added to this station yet.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'The whole station' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Change setup|Done changing/ })).toHaveCount(0);
 
-    // Adding a fuel asks for the fuel type and its unit, in a small dialog.
-    await page.getByRole('button', { name: 'Add a fuel type' }).click();
-    const form = page.getByRole('form', { name: 'Add a fuel type' });
-    await form.getByRole('button', { name: 'Add fuel type' }).click();
+    // Adding a fuel asks one thing per screen: the type, the name, then how it is measured.
+    await page.getByRole('button', { name: 'Add a fuel' }).click();
+    await next(page).click();
     await expect(page.getByText('Choose the type of fuel.')).toBeVisible();
     expect(commands).toHaveLength(0);
 
     // Gas is measured in kilograms by default; every other type in litres.
-    await form.getByLabel('Type of fuel').selectOption('GAS');
-    await expect(form.getByLabel('Measured in')).toHaveValue('KILOGRAMS');
+    await page.getByText('Gas', { exact: true }).click();
+    await next(page).click();
+    await page.locator('#name').fill('Unleaded 95');
+    await next(page).click();
+    await expect(page.locator('#fuel-unit-KILOGRAMS')).toBeChecked();
+    await page.getByText('Litres', { exact: true }).click();
+    await next(page).click();
 
-    // Entries wait on the screen. The identity check and the save happen once, at the review step.
-    await form.getByLabel('Type of fuel').selectOption('OTHER');
-    await expect(form.getByLabel('Measured in')).toHaveValue('LITRES');
-    await form.getByLabel('Fuel name').fill('Unleaded 95');
-    await form.getByRole('button', { name: 'Add fuel type' }).click();
+    // The answers wait. The identity check and the save happen once, at the review step.
+    await page.getByRole('button', { name: 'Add the fuel' }).click();
+    await page.getByRole('button', { name: /^No/ }).click();
     await expect(page.getByText('1 change is waiting.')).toBeVisible();
     await expect(page.getByText('Confirm it is you')).toHaveCount(0);
     expect(commands).toHaveLength(0);
@@ -121,37 +107,57 @@ test.describe('Guided station setup', () => {
     expect(commands).toHaveLength(0);
   });
 
-  test('shows each fuel as its own card, with the parts still to do', async ({ page }) => {
+  test('shows each fuel as its own card and opens its parts on their own page', async ({
+    page,
+  }) => {
     await mockApi(page, [{ id: 'p1', code: 'UNLEADED95', name: 'Unleaded 95', status: 'ACTIVE' }]);
     await page.goto('/dev-preview/setup-guide');
-    const fuels = page.getByRole('list', { name: 'Fuel types' });
-    await expect(fuels.getByText('Needs a price, a tank, a nozzle.')).toBeVisible();
-    // Each part opens on its own page, and Done returns to the card.
-    await page.getByRole('button', { name: 'Unleaded 95: Price' }).click();
-    await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeVisible();
-    await page.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByRole('form', { name: 'Set a selling price' })).toBeHidden();
-    await expect(fuels).toBeVisible();
+    await expect(page.getByRole('listitem', { name: /Open Unleaded 95/ })).toBeVisible();
+    await page.getByRole('listitem', { name: /Open Unleaded 95/ }).click();
+    await expect(page.getByText('Still to do: a price, a tank, a nozzle.')).toBeVisible();
+    await page.getByRole('button', { name: 'Yes, change it' }).click();
+    await page.getByText('The price', { exact: true }).click();
+    await next(page).click();
+    await expect(
+      page.getByRole('heading', { name: /new price per litre of Unleaded 95/i }),
+    ).toBeVisible();
   });
 
   test('lets the owner choose the supervisor in charge', async ({ page }) => {
     const { commands } = await mockApi(page);
     await page.goto('/dev-preview/setup-guide');
     await page.getByRole('button', { name: 'Change who is in charge' }).click();
-    // Save sits in the page footer, outside the form, and submits it.
-    const save = page.getByRole('button', { name: 'Save', exact: true });
-    await save.click();
+    await next(page).click();
     await expect(page.getByText('Choose who is in charge of this station.')).toBeVisible();
-    await page
-      .getByRole('form', { name: 'Choose the supervisor in charge' })
-      .getByLabel('Tendai Moyo')
-      .check();
-    await save.click();
+    await page.getByLabel('Tendai Moyo').check();
+    await next(page).click();
+    await page.getByRole('button', { name: 'Save the choice' }).click();
     await expect(page.getByText('1 change is waiting.')).toBeVisible();
     await expect(page.getByText('Confirm it is you')).toHaveCount(0);
     expect(commands).toHaveLength(0);
     await openReviewAndSave(page);
     expect(commands).toHaveLength(0);
+  });
+
+  test('adds a shift one question at a time', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/dev-preview/setup-guide');
+    await page.getByRole('button', { name: 'Change shifts' }).click();
+    await page.getByText('Add a shift', { exact: true }).click();
+    await next(page).click();
+    await next(page).click();
+    await expect(page.getByText('Give the shift a name, for example Day shift.')).toBeVisible();
+    await page.locator('#name').fill('Night shift');
+    await next(page).click();
+    await next(page).click();
+    await expect(page.getByText('Choose the start time.')).toBeVisible();
+    await page.locator('#start').fill('18:00');
+    await page.locator('#end').fill('06:00');
+    await next(page).click();
+    await expect(page.getByText('18:00 to 06:00 (ends the next day)')).toBeVisible();
+    await page.getByRole('button', { name: 'Add the shift' }).click();
+    await page.getByRole('button', { name: /^No/ }).click();
+    await expect(page.getByText('1 change is waiting.')).toBeVisible();
   });
 
   for (const width of [320, 390, 768, 1280]) {
@@ -159,7 +165,7 @@ test.describe('Guided station setup', () => {
       await mockApi(page);
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/dev-preview/setup-guide');
-      await expect(page.getByRole('heading', { name: 'Fuel Types' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'The whole station' })).toBeVisible();
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );

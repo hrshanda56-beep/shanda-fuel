@@ -1,165 +1,55 @@
 'use client';
 
+import { useState } from 'react';
+
+import { Modal } from '@/design-system/modal';
 import {
   AccessDeniedState,
   Button,
   ErrorState,
   LoadingState,
   StatusBadge,
-  type StatusTone,
 } from '@/design-system/primitives';
-import { Notice } from '@/design-system/feedback';
-import { CardRow, CardRows, SectionCard } from '@/design-system/section-card';
-import { useState } from 'react';
+import { SectionCard } from '@/design-system/section-card';
+import { WizardMenu } from '@/design-system/wizard-kit';
 
-import type { ReadinessStatus, SetupOverview, StationReadiness } from '../contracts';
-import { statusLabel } from '../readiness';
+import type { SettingsStation, SettingsView } from '../../settings/contracts';
+import type { SetupOverview } from '../contracts';
+import { CompleteStation } from './complete-station';
+import { StationCards } from './station-detail';
 import styles from './setup.module.css';
 import { useSetupOverview } from './use-setup-overview';
 
-const TONE: Record<ReadinessStatus, StatusTone> = {
-  READY: 'positive',
-  PARTIAL: 'warning',
-  NOT_ENTERED: 'neutral',
-};
+type Mode = { kind: 'idle' } | { kind: 'pick' } | { kind: 'station'; stationId: string };
+
+const things = (count: number) => `${count} ${count === 1 ? 'thing' : 'things'}`;
 
 /**
- * Where "Fix this" leads. Station setup lives on the Stations section and opens for the station
- * the item belongs to; payments and staff keep their own sections.
+ * Readiness, built like the Stations page: the same station cards, and first a plain question,
+ * "Some stations have things left to do. Do you want to complete them now?". Yes leads through one
+ * station at a time (#251), asking only about what is missing there, so nobody has to leave this
+ * page to finish what they saw on it.
  */
-function fixHref(tab: string, stationId: string) {
-  const params = new URLSearchParams(window.location.search);
-  if (tab === 'setup') {
-    params.set('tab', 'stations');
-    params.set('setup', stationId);
-  } else {
-    params.set('tab', tab);
-    params.delete('setup');
-  }
-  return `/settings?${params.toString()}`;
-}
-
-function StationCard({
-  station,
-  tenantId,
-  onActivated,
-}: {
-  station: StationReadiness;
-  tenantId: string;
-  onActivated: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
-  async function activate() {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const response = await fetch('/api/forecourt/commands', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
-        body: JSON.stringify({
-          commandType: 'ActivateStation',
-          tenantId,
-          stationId: station.stationId,
-        }),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        setError(body?.message ?? 'The station could not be activated. Nothing was changed.');
-        return;
-      }
-      onActivated();
-    } catch {
-      setError('The station could not be activated. Check your connection and try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const settingUp = station.stationStatus === 'ONBOARDING';
-
-  return (
-    <SectionCard
-      id={`readiness-${station.stationId}`}
-      title={
-        <>
-          {station.stationName} <span className={styles.note}>({station.stationCode})</span>
-        </>
-      }
-      action={
-        <StatusBadge tone={settingUp ? 'pending' : station.ready ? 'positive' : 'warning'}>
-          {settingUp ? 'Setting up' : station.ready ? 'Setup complete' : 'Setup incomplete'}
-        </StatusBadge>
-      }
-    >
-      {settingUp ? (
-        <div className={styles.todo}>
-          {station.missing.length > 0 ? (
-            <>
-              <p className={styles.note}>Before this station can go live you still need:</p>
-              <ul className={styles.todoList} aria-label={`${station.stationName} still needed`}>
-                {station.missing.map((item) => (
-                  <li key={item.code} className={styles.todoItem}>
-                    <div>
-                      <span className={styles.rowTitle}>{item.label}</span>
-                      <span className={styles.rowDetail}>{item.detail}</span>
-                    </div>
-                    <a
-                      className="button button-secondary button-sm"
-                      href={fixHref(item.tab, station.stationId)}
-                    >
-                      Fix this
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className={styles.note}>
-              Everything needed is in place. Opening stock is entered after the station goes live.
-            </p>
-          )}
-          {station.canActivate ? (
-            <div>
-              <Button variant="primary" loading={busy} onClick={activate}>
-                Activate station
-              </Button>
-            </div>
-          ) : null}
-          {error ? (
-            <p className={styles.messageError} role="alert">
-              {error}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-      <CardRows label={`${station.stationName} setup`}>
-        {station.areas.map((area) => (
-          <CardRow
-            key={area.code}
-            title={area.label}
-            detail={area.detail}
-            aside={<StatusBadge tone={TONE[area.status]}>{statusLabel(area.status)}</StatusBadge>}
-          />
-        ))}
-      </CardRows>
-      {station.blockedSummary ? (
-        <Notice tone="warning" title="Some transactions are blocked here">
-          {station.blockedSummary}
-        </Notice>
-      ) : null}
-    </SectionCard>
-  );
-}
-
 export function ReadinessView({
   overview,
-  onActivated = () => window.location.reload(),
+  onChanged = () => window.location.reload(),
+  staff,
+  onOpenStation,
+  onOpenStaff,
 }: {
   overview: Extract<SetupOverview, { status: 'ready' }>;
-  onActivated?: () => void;
+  /** Who can be invited from the loop; absent when the person cannot manage staff. */
+  staff?: NonNullable<SettingsView['staff']>;
+  /** Re-reads the readiness check after something was saved. */
+  onChanged?: () => void;
+  /** Opens a finished station's own page. */
+  onOpenStation?: (stationId: string) => void;
+  /** Takes the person to Staff, to assign someone to a station. */
+  onOpenStaff?: () => void;
 }) {
+  const [mode, setMode] = useState<Mode>({ kind: 'idle' });
+  const [declined, setDeclined] = useState(false);
+
   if (!overview.canViewReadiness) {
     return <AccessDeniedState message="You do not have access to station setup readiness." />;
   }
@@ -172,40 +62,118 @@ export function ReadinessView({
       />
     );
   }
-  const ready = overview.stations.filter((station) => station.ready).length;
-  const total = overview.stations.length;
+
+  const incomplete = overview.stations.filter((station) => station.missing.length > 0);
+  const stations: SettingsStation[] = overview.stations.map((station) => ({
+    id: station.stationId,
+    code: station.stationCode,
+    name: station.stationName,
+    timezone: '',
+    status: station.stationStatus,
+  }));
+  const current =
+    mode.kind === 'station'
+      ? overview.stations.find((station) => station.stationId === mode.stationId)
+      : undefined;
+  const others = incomplete.filter((station) => station.stationId !== current?.stationId);
+
   return (
     <div className={styles.stack}>
       <SectionCard
         id="readiness"
         title="Readiness"
-        note="This is read from what has been entered. Anything marked Not entered or Incomplete has not been set up, and transactions that depend on it are blocked until it is."
         action={
-          <StatusBadge tone={ready === total ? 'positive' : 'warning'}>
-            {ready === total
-              ? total === 1
+          <StatusBadge tone={incomplete.length === 0 ? 'positive' : 'warning'}>
+            {incomplete.length === 0
+              ? overview.stations.length === 1
                 ? 'Station set up'
                 : 'All stations set up'
-              : ready === 0
-                ? 'No station set up yet'
-                : `${ready} of ${total} stations set up`}
+              : `${incomplete.length} of ${overview.stations.length} to finish`}
           </StatusBadge>
         }
+        note={
+          incomplete.length === 0
+            ? 'Every station has what it needs.'
+            : `${
+                incomplete.length === 1 ? 'One station has' : `${incomplete.length} stations have`
+              } things left to do.`
+        }
+      >
+        {incomplete.length > 0 && !declined ? (
+          <div className={styles.todo}>
+            <p className={styles.rowTitle}>Do you want to complete them now?</p>
+            <div className={styles.formActions}>
+              <Button onClick={() => setMode({ kind: 'pick' })}>Yes, complete them</Button>
+              <Button variant="secondary" onClick={() => setDeclined(true)}>
+                No, not now
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </SectionCard>
+
+      <StationCards
+        stations={stations}
+        readiness={overview.stations}
+        canSeeReadiness
+        onOpen={(stationId) => {
+          const found = overview.stations.find((station) => station.stationId === stationId);
+          if (found && found.missing.length > 0) setMode({ kind: 'station', stationId });
+          else onOpenStation?.(stationId);
+        }}
       />
-      {overview.stations.map((station) => (
-        <StationCard
-          key={station.stationId}
-          station={station}
+
+      {mode.kind === 'pick' ? (
+        <Modal
+          open
+          onClose={() => setMode({ kind: 'idle' })}
+          title="Which station first?"
+          presentation="page"
+          size="md"
+        >
+          <WizardMenu<string>
+            title="Which station do you want to start with?"
+            name="readiness-station"
+            onPick={(stationId) => setMode({ kind: 'station', stationId })}
+            onCancel={() => setMode({ kind: 'idle' })}
+            options={incomplete.map((station) => ({
+              value: station.stationId,
+              label: station.stationName,
+              detail: `${things(station.missing.length)} to do`,
+            }))}
+          />
+        </Modal>
+      ) : null}
+
+      {current ? (
+        <CompleteStation
+          key={current.stationId}
           tenantId={overview.tenantId}
-          onActivated={onActivated}
+          overview={overview}
+          staff={staff}
+          station={current}
+          hasNext={others.length > 0}
+          canActivate={current.canActivate}
+          onChanged={onChanged}
+          onNext={() => setMode({ kind: 'pick' })}
+          onOpenStaff={onOpenStaff}
+          onClose={() => setMode({ kind: 'idle' })}
         />
-      ))}
+      ) : null}
     </div>
   );
 }
 
-export function ReadinessPanel() {
-  const { state, reload } = useSetupOverview();
+export function ReadinessPanel({
+  staff,
+  onOpenStation,
+  onOpenStaff,
+}: {
+  staff?: NonNullable<SettingsView['staff']>;
+  onOpenStation?: (stationId: string) => void;
+  onOpenStaff?: () => void;
+}) {
+  const { state, reload, refresh } = useSetupOverview();
   if (state.kind === 'loading') return <LoadingState label="Loading station setup" />;
   if (state.kind === 'unavailable') {
     return <AccessDeniedState message="You do not have access to station setup readiness." />;
@@ -219,5 +187,13 @@ export function ReadinessPanel() {
       />
     );
   }
-  return <ReadinessView overview={state.overview} />;
+  return (
+    <ReadinessView
+      overview={state.overview}
+      staff={staff}
+      onChanged={refresh}
+      onOpenStation={onOpenStation}
+      onOpenStaff={onOpenStaff}
+    />
+  );
 }

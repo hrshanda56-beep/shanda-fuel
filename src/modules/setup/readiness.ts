@@ -273,6 +273,12 @@ export function computeStationReadiness(facts: StationSetupFacts): StationReadin
     areas,
     ready: open.length === 0,
     blockedSummary,
+    wants: {
+      providerAccount: facts.providerAccounts === 0,
+      bankAccount: facts.bankAccounts === 0,
+      openingStock: facts.tanksMissingOpeningStock > 0,
+      invitationPending: (facts.pendingInvitations ?? 0) > 0,
+    },
   };
 }
 

@@ -50,6 +50,7 @@ type FactRow = {
   provider_accounts: number | string;
   bank_accounts: number | string;
   assigned_staff: number | string;
+  pending_invitations: number | string;
 };
 
 const count = (value: number | string): number => Number(value);
@@ -135,7 +136,12 @@ export async function readStationSetupFacts(
          join app.member_directory(s.tenant_id) m on m.id = a.membership_id
         where a.tenant_id = s.tenant_id and a.scope_type = 'STATION' and a.station_id = s.id
           and (a.expires_at is null or a.expires_at > now())
-          and m.usable) as assigned_staff
+          and m.usable) as assigned_staff,
+      (select count(distinct i.id) from app.staff_invitations i
+         join app.staff_invitation_stations x
+           on x.tenant_id = i.tenant_id and x.invitation_id = i.id
+        where i.tenant_id = s.tenant_id and x.station_id = s.id
+          and i.status = 'PENDING' and i.expires_at > now()) as pending_invitations
     from app.stations s
     where s.tenant_id = current_setting('app.tenant_id')::uuid
       and s.status in ('ACTIVE', 'ONBOARDING')
@@ -161,6 +167,7 @@ export async function readStationSetupFacts(
     providerAccounts: count(row.provider_accounts),
     bankAccounts: count(row.bank_accounts),
     assignedStaff: count(row.assigned_staff),
+    pendingInvitations: count(row.pending_invitations),
   }));
 }
 

@@ -119,7 +119,7 @@ test.describe('Setup readiness and payment setup', () => {
     expect(layout.doc).toBeLessThanOrEqual(layout.view);
   }
 
-  test('readiness shows Not entered for unentered setup and never a bare zero', async ({
+  test('readiness looks like the Stations page and asks whether to complete what is left', async ({
     page,
   }) => {
     const overviewResponsePromise = page.waitForResponse(
@@ -131,27 +131,29 @@ test.describe('Setup readiness and payment setup', () => {
     expect(overviewResponse.ok(), `Setup overview returned ${overviewResponse.status()}`).toBe(
       true,
     );
-    const bare = page.getByRole('region', { name: /Setup Bare Station/ });
+    // The same station cards as the Stations page, each saying what is left in plain words.
+    const bare = page.getByRole('button', { name: /Setup Bare Station/ });
     await expect(bare).toBeVisible();
-    await expect(bare.getByText('Not entered').first()).toBeVisible();
     await expect(bare.getByText('Setting up', { exact: true })).toBeVisible();
-    await expect(bare.getByText('No tanks have been entered.')).toBeVisible();
-    await expect(
-      bare.getByText(/transactions|Blocked until setup is complete/).first(),
-    ).toBeVisible();
+    await expect(bare.getByText(/\d+ things? to do/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Setup Ready Station/ })).toBeVisible();
     await expect(content(page).getByText(/\b0\b/)).toHaveCount(0);
 
-    const ready = page.getByRole('region', { name: /Setup Ready Station/ });
-    // The ready station has a tank but no opening stock yet, which the Tanks area now says plainly.
+    // First the question; Yes asks which station to start with, then focuses on that one station.
+    await expect(content(page).getByText('Do you want to complete them now?')).toBeVisible();
+    await page.getByRole('button', { name: 'Yes, complete them' }).click();
     await expect(
-      ready.getByText('1 tank entered; opening stock not recorded for 1.'),
+      page.getByRole('heading', { name: 'Which station do you want to start with?' }),
     ).toBeVisible();
-    await expect(ready.getByText('1 product with an active price.')).toBeVisible();
-    await expect(ready.getByText('1 pump and 1 nozzle entered.')).toBeVisible();
-    // Payment accounts and staff are genuinely not entered yet.
+    await page
+      .getByRole('radiogroup', { name: /which station do you want to start with/i })
+      .getByText('Setup Bare Station', { exact: true })
+      .click();
     await expect(
-      ready.getByText('No payment provider accounts or bank accounts have been entered.'),
+      page.getByRole('heading', { name: "Let's finish Setup Bare Station" }),
     ).toBeVisible();
+    await page.getByRole('button', { name: 'Not now' }).click();
+    await expect(content(page).getByText('Do you want to complete them now?')).toBeVisible();
   });
 
   test('readiness shows a loading state, then recovers from a load error', async ({ page }) => {
@@ -169,7 +171,7 @@ test.describe('Setup readiness and payment setup', () => {
     await expect(page.getByRole('alert').getByText('Setup could not be loaded')).toBeVisible();
     failing = false;
     await page.getByRole('button', { name: 'Try again' }).click();
-    await expect(page.getByRole('region', { name: /Setup Bare Station/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Setup Bare Station/ })).toBeVisible();
   });
 
   // Needs a real Clerk second factor (step-up). Skipped, not passed, until the test Clerk instance
@@ -221,14 +223,7 @@ test.describe('Setup readiness and payment setup', () => {
     ).toBeVisible();
 
     await tab(page, 'Readiness').click();
-    const ready = page.getByRole('region', { name: /Setup Ready Station/ });
-    await expect(
-      ready.getByText('1 provider account entered; bank account not entered.'),
-    ).toBeVisible();
-    const bank = page.getByRole('region', { name: /Setup Bare Station/ });
-    await expect(
-      bank.getByText('No payment provider accounts or bank accounts have been entered.'),
-    ).toBeVisible();
+    await expect(page.getByRole('button', { name: /Setup Ready Station/ })).toBeVisible();
   });
 
   test('owner can open the bank-account setup path without exposing full account numbers', async ({

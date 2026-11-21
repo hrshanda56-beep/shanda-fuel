@@ -408,13 +408,10 @@ function BankSection({ overview, reload, gate, onDenied, checking }: SectionProp
   );
 }
 
-export function PaymentsView({ overview, reload }: { overview: Ready; reload: () => void }) {
+/** Asks for the identity check before a save, and remembers it for a few minutes. */
+function useStepUpGate(tenantId: string) {
   const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
   const confirmedUntil = useRef(0);
-  if (!overview.canViewPayments) {
-    return <AccessDeniedState message="You do not have access to payment setup." />;
-  }
-
   const gate: Gate = (save) => {
     if (Date.now() < confirmedUntil.current) void save();
     else setPending(() => save);
@@ -422,7 +419,170 @@ export function PaymentsView({ overview, reload }: { overview: Ready; reload: ()
   const onDenied = () => {
     confirmedUntil.current = 0;
   };
-  const section: SectionProps = { overview, reload, gate, onDenied, checking: pending !== null };
+  const dialog = (
+    <StepUpDialog
+      open={pending !== null}
+      tenantId={tenantId}
+      onCancel={() => setPending(null)}
+      onVerified={() => {
+        confirmedUntil.current = Date.now() + STEP_UP_REUSE_MS;
+        const save = pending;
+        setPending(null);
+        if (save) void save();
+      }}
+    />
+  );
+  return { gate, onDenied, checking: pending !== null, dialog };
+}
+
+/**
+ * One payment job inside the complete-this-station loop (#251): the payment provider and its
+ * account for the station, or the company's bank account. The same wizards, commands and identity
+ * check as the Payments page; `onClose` is called when the job is saved or left.
+ */
+export function PaymentJob({
+  overview,
+  stationId,
+  job,
+  reload,
+  onClose,
+}: {
+  overview: Ready;
+  stationId: string;
+  job: 'provider' | 'bank';
+  /** Re-reads the setup after something was saved. */
+  reload: () => void;
+  onClose: () => void;
+}) {
+  const { gate, onDenied, checking, dialog } = useStepUpGate(overview.tenantId);
+  const station = overview.stationOptions.find((option) => option.id === stationId);
+  const activeProviders = overview.providers.filter((provider) => provider.status === 'ACTIVE');
+  // No provider yet: it is added first, then its account for this station.
+  const [needsProvider] = useState(activeProviders.length === 0);
+  const [addedProvider, setAddedProvider] = useState(false);
+  const shared: SectionProps = { overview, reload, gate, onDenied, checking };
+  const { run, busy, outcome } = useCommand(reload, onDenied);
+
+  if (!station) return null;
+  const page = (title: string, body: React.ReactNode) => (
+    <>
+      <Modal
+        open
+        onClose={() => !busy && !checking && onClose()}
+        title={title}
+        presentation="page"
+        size="sm"
+        dismissible={!busy && !checking}
+      >
+        {body}
+      </Modal>
+      {dialog}
+    </>
+  );
+
+  if (job === 'bank') {
+    return page(
+      'Add a bank account',
+      <BankWizard
+        companies={[{ value: station.legalEntityId, label: station.legalEntityName ?? 'Company' }]}
+        busy={busy}
+        error={outcome?.message ?? null}
+        onCancel={onClose}
+        onSubmit={(value) =>
+          gate(async () => {
+            const saved = await run(
+              {
+                commandType: 'CreateBankAccount',
+                tenantId: overview.tenantId,
+                stationId: station.id,
+                legalEntityId: station.legalEntityId,
+                name: value.name,
+                bankName: value.bankName,
+                accountReferenceMasked: value.masked,
+                currency: 'USD',
+              },
+              `${value.name} was added. All the company's stations can use it.`,
+            );
+            if (saved) onClose();
+          })
+        }
+      />,
+    );
+  }
+
+  if (needsProvider && !addedProvider) {
+    return page(
+      'Add a payment provider',
+      <ProviderWizard
+        types={PROVIDER_TYPES}
+        busy={busy}
+        error={outcome?.message ?? null}
+        onCancel={onClose}
+        onSubmit={(value) =>
+          gate(async () => {
+            const saved = await run(
+              {
+                commandType: 'CreatePaymentProvider',
+                tenantId: overview.tenantId,
+                stationId: station.id,
+                code: value.code,
+                name: value.name,
+                providerType: value.type,
+                metadata: {},
+              },
+              `${value.name} was added.`,
+            );
+            if (saved) setAddedProvider(true);
+          })
+        }
+      />,
+    );
+  }
+
+  // The provider just added appears once the setup is re-read.
+  if (activeProviders.length === 0) {
+    return page('Add a payment account', <LoadingState label="Loading the new provider" />);
+  }
+  return page(
+    'Add a payment account',
+    <AccountWizard
+      stations={[{ value: station.id, label: `${station.name} (${station.code})` }]}
+      providers={activeProviders.map((provider) => ({ value: provider.id, label: provider.name }))}
+      busy={busy}
+      error={outcome?.message ?? null}
+      onCancel={onClose}
+      onSubmit={(value) =>
+        gate(async () => {
+          const saved = await run(
+            {
+              commandType: 'ConfigureProviderAccount',
+              tenantId: overview.tenantId,
+              stationId: station.id,
+              providerId: value.providerId,
+              accountReference: value.reference,
+              displayName: value.name,
+              currency: value.currency,
+              accountStationId: station.id,
+              legalEntityId: station.legalEntityId,
+              feePercent: value.feePercent || null,
+              feeFixed: value.feeFixed || null,
+              metadata: {},
+            },
+            `${value.name} was added for ${station.name}.`,
+          );
+          if (saved) onClose();
+        })
+      }
+    />,
+  );
+}
+
+export function PaymentsView({ overview, reload }: { overview: Ready; reload: () => void }) {
+  const { gate, onDenied, checking, dialog } = useStepUpGate(overview.tenantId);
+  if (!overview.canViewPayments) {
+    return <AccessDeniedState message="You do not have access to payment setup." />;
+  }
+  const section: SectionProps = { overview, reload, gate, onDenied, checking };
 
   return (
     <div className={styles.stack}>
@@ -434,17 +594,7 @@ export function PaymentsView({ overview, reload }: { overview: Ready; reload: ()
         stations={overview.stationOptions}
         refreshKey={overview.bankAccounts.map((bank) => `${bank.id}:${bank.status}`).join(',')}
       />
-      <StepUpDialog
-        open={pending !== null}
-        tenantId={overview.tenantId}
-        onCancel={() => setPending(null)}
-        onVerified={() => {
-          confirmedUntil.current = Date.now() + STEP_UP_REUSE_MS;
-          const save = pending;
-          setPending(null);
-          if (save) void save();
-        }}
-      />
+      {dialog}
     </div>
   );
 }

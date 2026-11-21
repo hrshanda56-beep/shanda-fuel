@@ -1,5 +1,123 @@
 # Shanda Fuel — Current Status
 
+## Station page, opening balances and Readiness (rest of #250, #251) — 2026-11-20 (branch `feat/fuel-change-wizard-249`, on top of the fuel wizard work, uncommitted)
+
+Finishes Phase 3 of the owner feedback round. **The editing screen is gone.** The station page
+(`setup/ui/station-detail.tsx`) is now the only station screen: the "Fuels" cards, then "The whole
+station", with no "Change setup / Done changing / Continue setup" button. Every job the old screen
+did now has a wizard (one question per screen, pick-lists first, a check screen, then "Do you want to
+change something else?"), and every change still joins the one waiting-changes list that is reviewed
+and saved once with one identity check (`StationStaging`).
+
+- **Where each old job went.** Add a fuel (`AddFuelWizard`), and for one fuel the new "The fuel
+  itself" option under "What do you want to change?": rename, change the type (incl. blend), change
+  how it is measured, hide, show again (also "Show again" on the Fuels card for hidden fuels), delete
+  an unused fuel (`FuelEditWizard`). Shifts: add, change or remove (`ShiftsWizard`). Who is in charge
+  (`InChargeWizard`, with "Go to Staff" when nobody can be chosen). The new-station guide
+  (`NewStationGuide`) still shows for a station with no fuel. The blocked-shift-close arrival
+  (`focus=meter-start`) opens the pumps wizard on the meter day. Rules are in `setup/station-wizards.ts`
+  (tested); screens in `setup/ui/station-wizards.tsx`; the page that hosts them is `StationWizardPage`
+  in `guided-setup-panel.tsx` (that file went from about 2,800 to about 700 lines: the stacked forms,
+  `GuideSteps`, the supervisor card with its move/remove actions, and the standalone setup page are
+  deleted; moving or removing a person from a station is done under Staff).
+- **Opening balances wizard** (`opening-balances/wizard.ts` rules, `ui/opening-wizard.tsx`): "Do you
+  want to add the opening balances now?" Yes / No; then the day, the fuel in each tank (litres, and
+  an optional value), cash at each cash location, each bank account, customers who owe, unpaid
+  supplier invoices; each skippable with "None" or No; a check screen in plain words; then it saves
+  **the same draft batch the spreadsheet import makes** (preview, create, approve, lock, each with
+  the same identity check), the answers being turned into the same CSV the import reads (a test parses
+  it with the real parser). The spreadsheet import page stays for bulk use. New read-only lookup
+  `GET /api/opening-balances?tenantId=…&optionsFor=<stationId>` (`getOpeningBalanceOptionsFromRequest`,
+  same permission as the import; no schema change, no migration). Items that already have an opening
+  figure are not asked again; bank, customer and supplier figures are company-wide and are asked once
+  (a bank account or customer that already has one is skipped). It needs the station's own waiting
+  changes saved first, so a new tank is included.
+- **Readiness redesign** (#251, `setup/ui/readiness-panel.tsx`, `complete-station.tsx`, rules in
+  `setup/complete-station.ts`, tested): the tab uses the same station cards as the Stations page
+  (`StationCards`), says "N stations have things left to do" and asks "Do you want to complete them
+  now?"; Yes asks which station to start with, then goes through only what that station still needs
+  (a fuel, a price, a tank, a pump and nozzle, a shift) in the matching wizard, asks to review and save,
+  offers "Make it live" for a station being set up, then "This station is now complete. Do you want
+  to complete the next station?". Clicking an unfinished station's card starts the same loop for it.
+  The long per-area list, the "Fix this" links and the "Readiness checklist" link in the station menu
+  are removed.
+- **Owner decisions applied to the loop (2026-11-20).** The loop also asks about payment accounts
+  and opening stock, and invites people from inside it. In order: the station's own setup, then who
+  works there (`StaffInviteJob`: the Staff page's invite wizard with the station fixed and only
+  station roles offered; one-time activation code shown before the loop moves on; an invitation is
+  not an assigned person until accepted, so the station then "can go live once X has joined"), then
+  a payment provider (if none exists) and its account for the station and the company's bank account
+  (`PaymentJob`: the Payments page's wizards, commands and identity check), then, after the waiting
+  changes are saved, the opening stock (the opening-balances wizard). `StationReadiness.wants`
+  (`providerAccount`, `bankAccount`, `openingStock`) carries what the readiness facts already
+  counted; none of the three holds a station back from going live (`activationMissing` is
+  unchanged). A person without payment or staff rights is not asked those jobs.
+- **Checks (latest, after the gaps above):** typecheck, lint (one old warning), format, the full unit
+  suite (310 files, 2,432 tests) and a production build pass; `opening-balances-wizard.spec.ts` (6
+  tests) passes in the browser. Earlier count: typecheck, lint, format and the unit suite (2,416 tests; new:
+  station wizards 26, opening balances 16, complete-station 9). Browser specs rewritten/added and run
+  against the local dev server: `setup-guide.spec.ts` (station page, fuel/shift/in-charge wizards,
+  8 tests incl. axe at 320–1280 px) and `opening-balances-wizard.spec.ts` (full flow with sample
+  answers, saves the same file, approve and lock needing the tick; 4 tests). `setup-readiness.spec.ts`
+  was rewritten for the new page but **not run** here (it needs CI PostgreSQL and the Clerk
+  development instance). Verified live on the local demo database at 390 and 1280 px, light and dark,
+  no sideways scroll: station page, add fuel, rename, shifts, in-charge, the opening-balances flow
+  (real preview call; create, approve and lock answered with sample replies so nothing was written)
+  and the Readiness loop (the second station was made to look unfinished by changing only what the
+  page was shown).
+- **Real round trips on a scratch copy of the demo database (2026-11-20, nothing mocked, copy
+  dropped afterwards; the demo database was not written).** Opening balances: create, approve and
+  lock with a tank, two cash locations, a bank balance, a customer and a supplier invoice; every row
+  posted. Readiness loop on a new bare station: staff invitation, payment provider and station
+  account, tanks, pump and nozzles, a shift, both prices through the full request,
+  approve and activate steps (the bank-account job was skipped because the company already had one), one save of the waiting changes, a partly saved station resumed, and
+  opening stock locked. **This found and fixed three real faults:** (1) locking any batch with a cash
+  or customer line failed with a server error (a `Date` passed into hand-written SQL; same code is
+  on `main`; fixed in `opening-balances/commands.ts`, guarded by `commands.guard.test.ts`);
+  (2) the wizard stopped at "These exact figures were already saved" if the same figures had been
+  saved as a draft; it now carries on to approve or lock; (3) the station cards had an accessible
+  name that left out their visible text (axe failure at 320 px); `setup-readiness.spec.ts` also had
+  an ambiguous selector. The identity check (a Clerk component) cannot run under the local sign-in
+  bypass, so for these runs it was set through `/api/auth/step-up` and, in the loop run, a
+  temporary auto-approve in the dialog that was reverted. Not covered: the Clerk dialog itself, and
+  `setup-readiness.spec.ts` against Clerk (its assertions were run through the bypass in a
+  temporary copy and pass). **Gap found, now fixed in the loop:** a save cut off halfway (page
+  closed) could leave a price prepared but not activated; the loop treated it as set, so nothing
+  finished it and "Make it live" stayed blocked by "No active selling price". The loop now asks
+  again for any waiting price this person can still take further (the price wizard then offers
+  "Start using this price"), and leaves alone a price only someone else can move (unit tests).
+  **Re-run for real on a fresh scratch copy (2026-11-20):** one price was left prepared but not
+  started through the real commands, then the real Readiness loop asked about it again ("A new
+  price is already waiting"), "Start using this price" ran `ActivatePriceChange`, and both prices
+  were ACTIVE. The gap itself also exists on `main`.
+- **Loop checks:** unit tests for the job order, `wants` and the invitation command; run live with
+  the station made to look unfinished and the staff, settlement and identity-check calls answered
+  with sample replies (nothing written): invite to code to next job, provider, account, bank,
+  opening-balances question, closing screens, 390 and 1280 px, light and dark, no sideways scroll.
+  No browser spec covers the new loop jobs (the Readiness spec needs CI PostgreSQL and Clerk).
+  Opening stock that is entered without a value still blocks "Make it live" (the existing rule, in
+  the activation command). The check screen of the opening-balances wizard now says so up front
+  ("Tank 1 has fuel but no value ... cannot go live until the value is added"); saving without a
+  value is still allowed.
+- **Gaps closed after the round trips (2026-11-20).** (1) The cut-off price above. (2) The opening-
+  balances wizard keeps its answers on this device (`useWizardDraft`, key per company and station)
+  and offers "Continue where I was" after a reload; a screen in the middle of one item resumes at
+  the start of its group with the answers kept; nothing is kept once saved to the server (browser
+  test). (3) Someone invited to a station and not yet joined is a readiness fact
+  (`StationSetupFacts.pendingInvitations`, `StationWants.invitationPending`): the loop no longer asks
+  to invite again, and says "can go live once the person you invited has joined" (verified live;
+  readiness unit and integration tests). (4) `tests/integration/opening-balances-wizard.test.ts`
+  (PostgreSQL, fresh ids every run): the options lookup (this station and company only, nothing from
+  another tenant), then create, approve and lock with tank, cash, bank, customer and supplier lines
+  and the rows posted, an unlocked draft not counting as an opening figure, the duplicate-batch
+  answer, the unvalued-tank readiness detail and the pending-invitation fact. Run on a scratch
+  copy of the demo database, with `setup-readiness`, `opening-balances` and
+  `opening-cost-per-litre` (14 tests pass). The "Tank 1" label (from code "T1") is the app-wide tank
+  naming, not a defect.
+- **Still not covered:** the Clerk identity-check dialog itself, and `setup-readiness.spec.ts` against
+  Clerk and CI PostgreSQL (needs their credentials). **Not done:** Phases 4–7 of the round (the side
+  panels #252, the Zera return #258, daily operations #253, close-out).
+
 ## Fuel change wizard, first part (#249, #256, start of #250) — 2026-11-20 (branch `feat/fuel-change-wizard-249`, stacked on the #248 foundations, uncommitted)
 
 Built on the wizard foundations. Done: (1) **"What do you want to change?" stands alone**
@@ -16,16 +134,27 @@ above the tank size, urgent not below the explain amount, explain set first, no 
 A tank with only an explain amount is shown with the urgent amount it already has (twice the first).
 (3) **Prices read as money** on the price-change page (`US$1.50/L`, not `1.500000`; decimals the
 price really has are kept, `formatUnitPriceText`) and that page has its own heading, "Change a
-price". (4) The station page card is called "Fuels" and no longer shows the shift note. Changes made
-in the wizard are still staged and saved once from the existing review bar, because the staging
-host lives in the old editing screen. **Not done (the rest of #249, #250, #251):** the price wizard
-(pre-filled price, when it starts, a meter reading per pump, adapting to rights) and the pumps and
-nozzles wizard — their old stacked forms are still in use; "The Whole Station" under the fuel cards
-and the shift and in-charge wizards; the opening-balances question and wizard; removing the editing
-screen and the "Change Setup" toggle (the staged-changes host must be re-homed first); the Readiness
-redesign (#251); removing the old stacked forms. Checks: see the PR notes; verified live on the demo
-database at 390 and 1280 wide (add and change a tank, no horizontal overflow); the saved change was
-only staged, nothing was written to the demo data.
+price". (4) The station page card is called "Fuels" and no longer shows the shift note.
+(5) **The waiting-changes list now belongs to the station page** (`StationStaging` in
+`guided-setup-panel.tsx`): the review bar, the review list and the one identity check wrap the whole
+page, so a wizard opens on its own (`FuelPartWizard`, no stacked cards behind it) and the list
+survives while wizards open and close. The old editing screen reads the same list. Everything still
+saves once, from the review bar. (6) **Price wizard** (`setup/price-wizard.ts` rules and
+`setup/ui/price-wizard.tsx`): one question (the new price per litre or kilogram, with the price in use
+shown), a check screen that says what happens for this person's rights (sent for approval, approved,
+or used straight away), then "Do you want to change something else?". A price already waiting can be
+taken one step further from the first screen instead. The old price form and the link out to the
+price-change page are gone from the setup screen. (7) **Pumps and nozzles wizard**
+(`setup/pump-wizard.ts`, `setup/ui/pump-wizard.tsx`): add a nozzle on a pump you have or a new one
+(pump, number, meter serial number, when the meter was fitted, check), change a pump's number or name
+and its nozzles' numbers (a swap is sent in an order the database accepts), or correct when a meter
+started working (also the arrival from a blocked shift close). The old pump forms are gone; adding a
+pump on its own, with no nozzle, is no longer offered. The review list now reads "New price for
+Unleaded: US$1.755/L" and shows a pump's new name. (The rest of #250 and #251, built after this part, is in the entry above.) Checks: see the PR notes; verified live on the
+demo database at 390 and 1280 wide (tank, price and pump wizards, review list, no horizontal
+overflow); changes were only staged, nothing was written to the demo data. Not verified live: the
+"price already waiting" screen (the demo owner can take a price all the way) and the meter-day
+correction (no nozzle on the demo qualifies); both are covered by unit tests of their rules.
 
 ## Wizard foundations (#248) — 2026-11-20 (branch `feat/wizard-foundations-248`, from `main` 7d49ba30, uncommitted)
 

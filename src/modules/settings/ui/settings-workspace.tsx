@@ -272,10 +272,6 @@ export function SettingsWorkspace({
         null)
       : null,
   );
-  // A link from the readiness list or a blocked shift close opens the setup steps straight away.
-  const [openedByLink, setOpenedByLink] = useState(
-    () => initialTab === 'setup' || Boolean(initialSetupStation) || Boolean(initialFocus),
-  );
   const content = useRef<HTMLDivElement>(null);
   const organisation = view.context.status === 'ready' ? view.context.organisation : undefined;
 
@@ -332,7 +328,6 @@ export function SettingsWorkspace({
 
   // The section lives in the address, so a refresh or a shared link returns to it.
   function chooseSetup(id: string | null) {
-    setOpenedByLink(false);
     setSetupStationId(id);
     try {
       const url = new URL(window.location.href);
@@ -459,7 +454,6 @@ export function SettingsWorkspace({
               station={setupStation}
               canSetUp={canSetUp}
               canEditDetails={Boolean(view.access?.canManageStations)}
-              startEditing={openedByLink}
               focus={initialFocus}
               staff={view.staff?.canManage ? view.staff : undefined}
               onBack={() => {
@@ -470,7 +464,6 @@ export function SettingsWorkspace({
                 choose('staff');
                 askForFocus();
               }}
-              onOpenReadiness={() => choose('readiness')}
             />
           ) : null}
 
@@ -490,7 +483,24 @@ export function SettingsWorkspace({
             />
           ) : null}
 
-          {shown === 'readiness' && view.access?.canViewReadiness ? <ReadinessPanel /> : null}
+          {shown === 'readiness' && view.access?.canViewReadiness ? (
+            <ReadinessPanel
+              staff={view.staff?.canManage ? view.staff : undefined}
+              onOpenStation={(stationId) => {
+                choose('stations');
+                chooseSetup(stationId);
+                askForFocus();
+              }}
+              onOpenStaff={
+                view.staff?.canManage
+                  ? () => {
+                      choose('staff');
+                      askForFocus();
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
 
           {shown === 'payments' && view.access?.canViewPayments ? <PaymentsPanel /> : null}
 

@@ -45,12 +45,19 @@ export function StaffInviteWizard({
   overview,
   roleLabels,
   busy,
+  forStation,
   onCancel,
   onSubmit,
 }: {
   overview: StaffOverview;
   roleLabels: Record<RoleCode, string>;
   busy: boolean;
+  /**
+   * When the person is being invited to work at one particular station (the "complete this
+   * station" loop), the station is fixed: only roles that work at a station are offered and the
+   * "Where will they work?" question is not asked.
+   */
+  forStation?: { id: string; name: string; legalEntityId: string };
   onCancel: () => void;
   onSubmit: (value: StaffInviteValue) => void;
 }) {
@@ -61,10 +68,10 @@ export function StaffInviteWizard({
   const [role, setRole] = useState<RoleCode>('ATTENDANT');
   const [scopeType, setScopeType] = useState<Scope>(defaultScopeForRole('ATTENDANT'));
   const onlyCompany = overview.scopeOptions.length === 1 ? overview.scopeOptions[0]!.id : '';
-  const [legalEntityId, setLegalEntityId] = useState(onlyCompany);
-  const [stationIds, setStationIds] = useState<string[]>([]);
+  const [legalEntityId, setLegalEntityId] = useState(forStation?.legalEntityId ?? onlyCompany);
+  const [stationIds, setStationIds] = useState<string[]>(forStation ? [forStation.id] : []);
 
-  const needsScope = defaultScopeForRole(role) !== 'TENANT';
+  const needsScope = !forStation && defaultScopeForRole(role) !== 'TENANT';
   const sequence: readonly InviteStep[] = [
     'name',
     'method',
@@ -77,11 +84,14 @@ export function StaffInviteWizard({
   const { step, errors } = wizard;
   const company = overview.scopeOptions.find((option) => option.id === legalEntityId);
   const roles = (Object.keys(roleLabels) as RoleCode[]).filter(
-    (item) => item !== 'OWNER' || overview.canInviteOwner,
+    (item) =>
+      (item !== 'OWNER' || overview.canInviteOwner) &&
+      (!forStation || scopeChoicesForRole(item).includes('STATION')),
   );
 
   function pickRole(next: RoleCode) {
     setRole(next);
+    if (forStation) return;
     setScopeType(defaultScopeForRole(next));
     setStationIds([]);
     if (defaultScopeForRole(next) === 'TENANT') setLegalEntityId(onlyCompany);
@@ -101,23 +111,25 @@ export function StaffInviteWizard({
     if (step === 'scope') {
       return wizard.advance(checkInviteScope(scopeType, legalEntityId, stationIds), 'review');
     }
+    const here = forStation !== undefined;
     onSubmit({
       name: name.trim(),
       deliveryMethod: method,
       email: email.trim(),
       staffNumber: staffNumber.trim(),
       role,
-      scopeType,
-      legalEntityId: scopeType === 'TENANT' ? '' : legalEntityId,
-      stationIds: scopeType === 'STATION' ? stationIds : [],
+      scopeType: here ? 'STATION' : scopeType,
+      legalEntityId: !here && scopeType === 'TENANT' ? '' : legalEntityId,
+      stationIds: here ? [forStation.id] : scopeType === 'STATION' ? stationIds : [],
     });
   }
 
   const stationNames = (company?.stations ?? [])
     .filter((station) => stationIds.includes(station.id))
     .map((station) => station.name);
-  const whereText =
-    scopeType === 'TENANT'
+  const whereText = forStation
+    ? forStation.name
+    : scopeType === 'TENANT'
       ? 'Every station'
       : scopeType === 'LEGAL_ENTITY'
         ? `Whole company: ${company?.name ?? ''}`
