@@ -68,6 +68,15 @@ export const stations = appSchema.table(
     status: text('status').notNull().default('ONBOARDING'),
     /** The supervisor accountable for this station (DEC-044); set through Setup.SetResponsibleSupervisor. */
     responsibleSupervisorMembershipId: uuid('responsible_supervisor_membership_id'),
+    /** ZERA return details (#258). All optional; asked for in the station wizard, never guessed. */
+    zeraLicenceNumber: text('zera_licence_number'),
+    zeraLicenceHolder: text('zera_licence_holder'),
+    /** COCO, CODO or DODO. */
+    zeraOwnership: text('zera_ownership'),
+    zeraProvince: text('zera_province'),
+    zeraRepresentativeName: text('zera_representative_name'),
+    zeraRepresentativePhone: text('zera_representative_phone'),
+    zeraRepresentativeEmail: text('zera_representative_email'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },

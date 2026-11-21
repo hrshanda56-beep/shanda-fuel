@@ -1,5 +1,52 @@
 # Shanda Fuel — Current Status
 
+## ZERA monthly return (#258) — 2026-11-21 (branch `feat/zera-return-258`, on top of `feat/side-panels-to-wizards-252`, uncommitted)
+
+Phase 5 of the owner feedback round. **Reports > Inventory > ZERA Monthly Return** works out the
+regulator's monthly return for one station and asks only what it cannot know, one question per screen
+(`/reports/zera-return`; the wizard is `reporting/zera/ui/zera-return-wizard.tsx`, its rules are pure and
+tested in `zera-return.ts` and `zera-wizard-checks.ts`).
+
+- **Figures.** Supplied = confirmed deliveries by station business date; sold = meter litres on approved,
+  posted or locked reconciliations. D50 goes to Diesel 50ppm; petrol and blends to Petrol; plain diesel,
+  gas and other products are listed in the notes only; a product with no fuel type blocks saving; kilograms
+  are never added to litres. `0` when nothing moved; `m` for both sold boxes when any past day of the
+  month has no approved report (the days are listed in the notes). One blend percentage in use is taken as
+  it is; none or several is asked, and `0` is written when no petrol moved.
+- **Rounding is ZERA's own rule** (printed on the form): whole litres, rounded to the nearest litre
+  (203 401.56 becomes 203 402). Quantities are summed exactly (integers scaled by 10^6) and rounded once, on
+  the total, never per delivery. **An exact half litre is reported as it is (for example 1500.5), not
+  rounded** (the owner's choice on 2026-11-21; the form says "full litres" and is silent on halves, so this
+  is an exception to confirm with ZERA). Stored
+  quantities with more than six decimal places are refused rather than cut.
+- **Answers** are the form's fourteen questions in its own order, including the representative's email.
+  Licence details (name on the licence, number, ownership COCO/CODO/DODO, province, representative name,
+  phone, email) live on the station (migration 0117, six plus one nullable columns with checks) and are
+  asked once, then kept.
+- **Saved returns** (migration 0118, `app.zera_returns`): each save is a new version holding the answers as
+  they were; the application role can read and add rows but never change or delete them (row-level
+  security forced). A later correction to a delivery or report does not change a saved return.
+- **Who can see it.** Reading, saving, listing and downloading all need `report.view`, checked at the
+  station. Nobody without it can see a return or its downloads, and another organisation cannot reach it.
+  Saving runs through the audited, idempotent inventory command path (`REPORT.ZERA_RETURN_SAVED`); the
+  server works the figures out again from the database and ignores any figures from the browser.
+- **Downloads** (`/api/reports/zera/download`): CSV or a PDF made by the existing PDF writer, from a saved
+  version only. They need a fresh identity check and are written to the signed audit log
+  (`REPORT.EXPORTED`) in the same transaction as the read. CSV cells that would run as spreadsheet
+  formulas are defused; phone numbers keep their leading +.
+- **Checks run:** 30 unit tests for the figures and wizard rules; 13 integration tests on a freshly migrated
+  database (`tests/integration/zera-return.test.ts`: nearest-litre rounding of 1000.4 + 500.4 = 1501, no
+  fuel type, ethanol, validation, versions, idempotent retry, saved return unchanged after later books
+  change, PDF and audit event, role matrix, other organisation, supervisor's other station, application-role
+  privileges); 5 browser tests (`tests/e2e/zera-return-wizard.spec.ts`, phone width, axe clean); a live
+  walk against the seeded local database as the application role, which matched hand-computed litres.
+- **Not done.** The integration suite connects as the database owner, so the row-level-security policy
+  itself is only exercised by the live walk, not by a test. Sold litres from real approved reconciliations
+  are covered by the live walk and hand-computed SQL, not by an integration fixture. The due date is shown
+  as the 3rd of the following month (the form's wording); the owner's "every second month" remark is not
+  built. Migrations 0117 and 0118 are applied only to local throwaway databases; the numbers and the UI-lock
+  manifest may shift once #266 and #267 merge. Nothing was run against production.
+
 ## Side panels retired (#252) — 2026-11-21 (branch `feat/side-panels-to-wizards-252`, on top of `feat/fuel-change-wizard-249`, uncommitted)
 
 Phase 4 of the owner feedback round. **No screen opens a side panel any more.** Every job that used
