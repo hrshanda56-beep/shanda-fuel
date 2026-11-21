@@ -22,6 +22,7 @@ import { formatTileMoney } from '@/modules/reporting/format';
 import { CashDonut } from '@/modules/cash/ui/cash-visuals';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import { isStaffFuelCategory } from '../domain';
+import { TabSwitcher } from '@/design-system/tabs';
 import styles from './expenses.module.css';
 import {
   ExpenseKindStep,
@@ -883,24 +884,15 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
             <span className={styles.muted}>Showing the latest 200 expenses.</span>
           ) : null}
           {showRegularTab ? (
-            <div className={`profit-tabs`} role="tablist" aria-label="Expense views">
-              {(
-                [
-                  ['all', 'All Expenses'],
-                  ['regular', 'Regular Costs'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="tab"
-                  aria-selected={listTab === value}
-                  onClick={() => setListTab(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <TabSwitcher
+              label="Expense views"
+              value={listTab}
+              onChange={setListTab}
+              tabs={[
+                { value: 'all', label: 'All Expenses' },
+                { value: 'regular', label: 'Regular Costs' },
+              ]}
+            />
           ) : null}
         </div>
         {listTab === 'regular' && showRegularTab ? (

@@ -6,6 +6,8 @@ import { WorkContextProvider } from '../modules/context/client-context';
 import { AppShell } from './app-shell';
 import { emptyNavigationProjection } from './navigation-projection';
 import { Button, EmptyState, ErrorState, SkeletonBlock } from './primitives';
+import { recallBrand } from './brand-memory';
+import { LoadingTruck } from './loading-truck';
 import { recallShell } from './shell-memory';
 
 /**
@@ -21,6 +23,7 @@ export function RouteLoading() {
   const skeleton = (
     <div className="route-loading" role="status" aria-live="polite">
       <span className="visually-hidden">Loading page…</span>
+      <LoadingTruck brand={recallBrand()} />
       <div className="route-loading-header" aria-hidden="true">
         <SkeletonBlock width="7rem" height="0.75rem" />
         <SkeletonBlock width="min(22rem, 70%)" height="1.75rem" />

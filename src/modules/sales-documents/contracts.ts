@@ -76,6 +76,13 @@ export const saveSalesDocProfileSchema = z.object({
     .regex(/^\/9j\/[A-Za-z0-9+/]+=*$/, 'The logo must be a JPEG picture')
     .nullable()
     .optional(),
+  /** The same logo as a small PNG with its transparent background, for the loading screen. */
+  appLogoPngBase64: z
+    .string()
+    .max(300000)
+    .regex(/^iVBORw0KGgo[A-Za-z0-9+/]+=*$/, 'The logo must be a PNG picture')
+    .nullable()
+    .optional(),
   brandColour: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/, 'Choose a colour')

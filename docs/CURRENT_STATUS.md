@@ -156,6 +156,41 @@ overflow); changes were only staged, nothing was written to the demo data. Not v
 "price already waiting" screen (the demo owner can take a price all the way) and the meter-day
 correction (no nozzle on the demo qualifies); both are covered by unit tests of their rules.
 
+## Loading truck with each company's own logo — 2026-11-20 (branch `feat/truck-loader-257`, issue #257, uncommitted)
+
+While a page loads, a small tanker drives left to right (`design-system/loading-truck.tsx`, drawn in
+code, one change in `RouteLoading` for all 62 `loading.tsx` files). It appears only after 0.45 s so
+short loads never flash it, stays hidden from screen readers (the "Loading page…" text is kept),
+and stands still for reduced motion. A company with a logo sees it on the tank and its colour on the
+swoosh; a white-lettered logo gets a dark tank (`chooseTank` reads the logo's pixels in the browser).
+The first load, and a company with no logo, show the plain truck in the app's colours.
+Migration `0117_app_logo` adds `sales_doc_profiles.app_logo_png_base64` (PNG only, <= 300 000
+characters, signature checked) — additive, local databases only until approved. The company-details
+screen now accepts PNG, JPG or SVG and keeps two small copies: the JPEG on white for documents and a
+transparent PNG for the loading screen (an SVG is drawn onto a canvas, so only pixels are kept).
+`GET /api/brand?tenantId=` returns the logo and colour to any signed-in member of that company (no
+document permission needed; company membership and row-level security still apply; `private,
+no-store`); the browser asks once per company after the first page. Not done: T.E.I Oils' real logo
+is not loaded for them (they set it in Company details; white lettering is handled by the dark
+tank); the integration suite and browser specs were not run (they need Clerk secrets / are not
+written for this screen).
+
+## Transparent icons and one icon per report — 2026-11-20 (branch `feat/icons-transparent-255`, issue #255, uncommitted)
+
+The tiles and circles behind icons are gone: report rows, the Today figure cards and hero ring, My
+Shift figure icons, timeline and audit marks, the confirm, state and work-in-progress icons (the
+station and fuel icons were already plain). Boxes keep their size so nothing moves; colours stay
+tone-based and were checked in light and dark. Each report now has its own icon
+(`reporting/ui/report-icons.ts`, `REPORT_ICONS`), with ten new drawings in `design-system/icons.tsx`
+(arrows, layers, dipstick, factory, person, user-check, safe, bank, clipboard-check, pie); a unit
+test fails if a listed report has no icon of its own or shares one. Sidebar icons were audited:
+Inventory is now the tank, Cash & Banking the bank, Provider payouts the card, Expenses the dollar,
+Staff fuel benefit the nozzle, Suppliers the factory, Payments due the calendar, Purchase orders the
+clipboard, Reconciliations the scale (Transporters and Fuel deliveries keep the truck). Not done:
+the ~19 files that draw their own `<svg>` (charts, provider logos, tank drum) were left alone, as the
+issue says; a full per-screen icon relevance review beyond navigation and reports was not done;
+browser specs were not run (they need Clerk secrets).
+
 ## Wizard foundations (#248) — 2026-11-20 (branch `feat/wizard-foundations-248`, from `main` 7d49ba30, uncommitted)
 
 First step of the owner feedback round (tracking #260). Nothing user-visible changes except one screen.
@@ -166,6 +201,48 @@ First step of the owner feedback round (tracking #260). Nothing user-visible cha
 - **Not done here (later PRs in the round):** retiring the ten side panels and the one-off dialogs that do not use `ConfirmDialog` is #252, one area at a time; the new pieces are used by #249, #250, #251, #253, #256 and #258.
 - **UI lock:** re-baselined with the owner's approval (DEC-056).
 - **Checks:** typecheck, lint (one old warning), format, unit tests and the production build pass. Checked live on the local demo database (the confirm on the design-system reference page, since the demo has no purchase orders) at phone and desktop widths, light and dark, with no sideways scroll. No browser spec was added: the existing specs mock Clerk and the expenses APIs, and none covers this page.
+
+
+## Loading speed, code-only slice — 2026-11-20 (branch `perf/loading-speed-259`, issue #259, uncommitted)
+
+Done (code only; no schema, auth rule or caching change): (1) My Shift and Settings no longer do a
+second full station and permission lookup. The page now takes the shell's already-loaded list of what
+the person may use and chooses its station from it (`modules/context/page-context.ts`,
+`contextFromShellAccess`, the same pattern as `ServerDataPage` and the Finance page), and hands the
+shell the same result; the choice uses the same route, policy and saved-choice rules, and only picks
+from what the shell verified. (2) My Shift reads the database clock in the station query instead of a
+separate `select now()`. (3) A root `loading.tsx` gives the dashboard an instant skeleton when
+someone moves to Today; sign-in, join, invite, owner-demo and dev-login get an empty `loading.tsx` so
+they do not show the app skeleton. (4) The daily alert email now logs a warning once its recipients
+reach 80 % of the 200 cap (it silently stopped at 200). Not done, on purpose: the dashboard
+per-station "needs attention" batching (it already runs the stations in parallel, and batching means
+rewriting the action-centre reads under per-station permission checks — needs production timings
+first); `next/dynamic` splitting (the biggest candidate, `guided-setup-panel.tsx`, is rewritten in
+the wizard work, so splitting it now would only conflict); the `proxy.ts` slug lookup (it is the
+fail-closed auth boundary and only affects `?org=` addresses); dropping `force-dynamic` (a safety
+net that costs nothing at run time); pool timeouts (the pooler setup is not confirmed); moving
+screen CSS out of the global files (UI-locked, needs a visual pass); turning on
+`CONSOLIDATED_CONTEXT_READS` / adding the slug to migration 0034's snapshot (a production decision).
+Timings are in the PR notes; production timings were not available.
+
+## One tab style — 2026-11-20 (branch `feat/one-tab-style-254`, issue #254, uncommitted)
+
+`src/design-system/tabs.tsx` is now the only tab look: a light rounded track with the open tab as a
+raised pill, every tab always showing its name (an optional icon is supported), at the right end of
+its row, CSS in `design-system/styles/tabs.css`. `TabSwitcher` is a real `role="tablist"` with
+arrow-key, Home and End navigation (`tabs-keys.ts`, hidden tabs are skipped); `TabLinks` gives the
+same look to related-report links; `FilterPills` gives it to list filters. Moved over: `TabbedCard`
+(Finance, valuation, settlements, cash, supplier-due), Profit, Expenses (All Expenses / Regular
+Costs), Purchasing, Tank detail (its desktop "Dips and movements" merge kept), the Related-reports
+links and the reconciliation filters. The old `.profit-tabs`, `.tank-tabs` look, `.purchasing-tabs`,
+`.recon-tab*` and the underline `.income-tabs` rules are gone. Decision per case: the reconciliation
+list filter stays a filter (`aria-pressed`) but looks the same; other `aria-pressed` groups (today
+overview, customers, staff panel, settings, sales documents, orders, creditors, deliveries,
+inventory) were left as they are — they narrow a list rather than switch views. The Daily Operations
+step bar keeps its own behaviour until its wizard (#253). Phones: tabs share the width in even
+columns (no sideways scroll; checked at 390 px on Profit, Expenses, Purchasing, Cash, Settlements,
+Tank, Reconciliations, Valuation, Finance, Suppliers due, Reports). Not done: the Playwright specs
+were not run (they need Clerk secrets); `role=tab` is unchanged so their selectors still match.
 
 ## Quotations, invoices and receipts — 2026-11-18 (branch `feat/sales-documents`, from NOV17)
 

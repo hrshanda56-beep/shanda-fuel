@@ -330,6 +330,7 @@ export type SalesDocumentProfileView = {
   defaultTerms: string | null;
   footer: string | null;
   logoJpegBase64: string | null;
+  appLogoPngBase64: string | null;
   brandColour: string | null;
   quotationPrefix: string;
   invoicePrefix: string;
@@ -361,6 +362,7 @@ export async function getSalesDocumentProfileFromRequest(
       default_terms: string | null;
       footer: string | null;
       logo_jpeg_base64: string | null;
+      app_logo_png_base64: string | null;
       brand_colour: string | null;
       quotation_prefix: string;
       invoice_prefix: string;
@@ -370,7 +372,7 @@ export async function getSalesDocumentProfileFromRequest(
     }>(sql`
       select id, version, display_name, address, phone, email, tax_label, tax_number,
              default_tax_rate::text as default_tax_rate, bank_details, default_terms, footer,
-             logo_jpeg_base64, brand_colour, quotation_prefix, invoice_prefix, receipt_prefix, default_valid_days, default_due_days
+             logo_jpeg_base64, app_logo_png_base64, brand_colour, quotation_prefix, invoice_prefix, receipt_prefix, default_valid_days, default_due_days
       from app.sales_doc_profiles
       where tenant_id = ${context.tenantId} and legal_entity_id = ${context.legalEntityId}
     `);
@@ -390,6 +392,7 @@ export async function getSalesDocumentProfileFromRequest(
       defaultTerms: row.default_terms,
       footer: row.footer,
       logoJpegBase64: row.logo_jpeg_base64,
+      appLogoPngBase64: row.app_logo_png_base64,
       brandColour: row.brand_colour,
       quotationPrefix: row.quotation_prefix,
       invoicePrefix: row.invoice_prefix,

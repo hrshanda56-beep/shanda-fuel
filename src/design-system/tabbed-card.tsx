@@ -1,11 +1,15 @@
 'use client';
 
 import { useId, useState, type ReactNode } from 'react';
+import type { IconName } from './icons';
 import { Card } from './primitives';
+import { TabSwitcher } from './tabs';
 
 export type CardTab = {
   id: string;
   label: string;
+  /** Optional: only where it helps people recognise the tab. The name is always shown. */
+  icon?: IconName;
   /** Sits beside the title while this tab is open, such as an explanation mark. */
   aside?: ReactNode;
   content: ReactNode;
@@ -40,21 +44,18 @@ export function TabbedCard({
           {active.aside}
         </div>
         {tabs.length > 1 ? (
-          <div className="profit-tabs" role="tablist" aria-label={`${String(title)} views`}>
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                id={`${base}-tab-${tab.id}`}
-                type="button"
-                role="tab"
-                aria-selected={tab.id === active.id}
-                aria-controls={`${base}-panel-${tab.id}`}
-                onClick={() => setOpenId(tab.id)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <TabSwitcher
+            label={`${String(title)} views`}
+            idPrefix={`${base}-tab`}
+            value={active.id}
+            onChange={setOpenId}
+            tabs={tabs.map((tab) => ({
+              value: tab.id,
+              label: tab.label,
+              icon: tab.icon,
+              controls: `${base}-panel-${tab.id}`,
+            }))}
+          />
         ) : null}
       </div>
       {tabs.map((tab) => (

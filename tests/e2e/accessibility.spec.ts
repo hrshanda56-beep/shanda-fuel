@@ -87,7 +87,12 @@ test.describe('design-system foundation reference', () => {
   });
 
   test('confirmation dialog starts on the safe action and restores focus', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto('/design-system');
+    // Wait for hydration before clicking: "System (dark)" only appears once client code has run.
+    await expect(page.getByLabel('Theme').locator('option[value="system"]')).toHaveText(
+      'System (dark)',
+    );
     const trigger = page.getByRole('button', { name: 'Reverse receipt' });
     await trigger.click();
 
