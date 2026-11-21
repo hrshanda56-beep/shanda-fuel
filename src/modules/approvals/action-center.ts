@@ -2,7 +2,10 @@ import { loadOperationsFacts } from './operations-facts';
 import { loadExtraAlertFacts } from './extra-alert-facts';
 import { loadSignOffFacts } from './sign-off';
 import { loadDocumentApprovalFacts } from './document-approval-facts';
-import { withRequestReadScope } from '../../platform/security/request-read-scope';
+import {
+  memoizeRequestRead,
+  withRequestReadScope,
+} from '../../platform/security/request-read-scope';
 import { requireAuthenticatedActor, type AuthenticatedActorContext } from '../identity';
 import 'server-only';
 
@@ -17,6 +20,11 @@ import { observeError } from '../../platform/observability';
 import { classifyCreditUse, type ActionCenterFacts, type Section } from './action-center-model';
 import { DEFAULT_ALERT_SETTINGS } from './operations-alerts';
 import { getCustomerAccountsFromRequest } from '../customers/queries';
+
+// The company's customer accounts do not depend on the station, so when one request looks at
+// several stations (the all-stations Today page) the list is read once. The key names the company
+// and the person, so it is never shared between people.
+const customerAccountsRead = Symbol('action-center-customer-accounts');
 
 /** A check the person is not allowed to make is "restricted"; anything else is "unavailable". */
 async function section<T>(
@@ -145,7 +153,11 @@ async function loadActionCenterFactsUncached(
     }),
     section(request, 'customers', async () => {
       if (!current.legalEntityId) throw new AppError('FORBIDDEN', 'A legal entity is required');
-      const { customers: all } = await getCustomerAccountsFromRequest(request, { tenantId });
+      const { customers: all } = await memoizeRequestRead(
+        customerAccountsRead,
+        JSON.stringify([actor.identityId, tenantId]),
+        () => getCustomerAccountsFromRequest(request, { tenantId }),
+      );
       // Only credit accounts that this station can serve, in this legal entity.
       const uses = all
         .flatMap((customer) => customer.accounts)
