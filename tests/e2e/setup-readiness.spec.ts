@@ -136,7 +136,8 @@ test.describe('Setup readiness and payment setup', () => {
     await expect(bare).toBeVisible();
     await expect(bare.getByText('Setting up', { exact: true })).toBeVisible();
     await expect(bare.getByText(/\d+ things? to do/)).toBeVisible();
-    await expect(page.getByRole('button', { name: /Setup Ready Station/ })).toBeVisible();
+    // The page also has the work-context pill in the header, so look inside the page content only.
+    await expect(content(page).getByRole('button', { name: /Setup Ready Station/ })).toBeVisible();
     await expect(content(page).getByText(/\b0\b/)).toHaveCount(0);
 
     // First the question; Yes asks which station to start with, then focuses on that one station.
@@ -223,7 +224,7 @@ test.describe('Setup readiness and payment setup', () => {
     ).toBeVisible();
 
     await tab(page, 'Readiness').click();
-    await expect(page.getByRole('button', { name: /Setup Ready Station/ })).toBeVisible();
+    await expect(content(page).getByRole('button', { name: /Setup Ready Station/ })).toBeVisible();
   });
 
   test('owner can open the bank-account setup path without exposing full account numbers', async ({
