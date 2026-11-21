@@ -350,7 +350,14 @@ export function WizardConfirm({
   const ackMissing = Boolean(acknowledgement) && !acknowledged;
   return (
     <div className={styles.page}>
-      <h2 tabIndex={-1} className={styles.question} ref={(el) => el?.focus()}>
+      <h2
+        tabIndex={-1}
+        className={styles.question}
+        // Risky confirmations start on the safe choice (the cancel button) instead of the heading.
+        ref={(el) => {
+          if (tone === 'default') el?.focus();
+        }}
+      >
         {title}
       </h2>
       <p className={styles.hint}>{consequence}</p>
@@ -397,7 +404,13 @@ export function WizardConfirm({
         >
           {confirmLabel}
         </Button>
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={busy}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onCancel}
+          disabled={busy}
+          data-autofocus={tone === 'default' ? undefined : true}
+        >
           {cancelLabel}
         </Button>
       </div>
