@@ -154,9 +154,10 @@ test.describe('desktop sidebar', () => {
     // Applied by the pre-paint script, before React hydrates.
     await expect(page.locator('html')).toHaveAttribute('data-sidebar', 'collapsed');
     const nav = sidebarNav(page);
-    await expect(nav.getByRole('link', { name: 'All reports' })).toHaveAttribute(
-      'aria-current',
-      'page',
+    // In the rail, Reports is a group; it marks that it holds the current page.
+    await expect(nav.getByRole('button', { name: /^Reports/ })).toHaveAttribute(
+      'data-contains-current',
+      'true',
     );
 
     // Scoped to shell chrome: page bodies are reviewed in the Golden Path work.
@@ -212,6 +213,7 @@ test.describe('desktop sidebar', () => {
       'href',
       '/stations/station-1/cash?tenantId=tenant-1',
     );
+    await nav.getByRole('button', { name: 'Reports' }).click();
     await expect(nav.getByRole('link', { name: 'All reports' })).toHaveAttribute(
       'href',
       '/reports?tenantId=tenant-1&stationId=station-1',
