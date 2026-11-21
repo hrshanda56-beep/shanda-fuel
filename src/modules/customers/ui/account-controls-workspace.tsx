@@ -21,6 +21,13 @@ import {
 } from '@/design-system/primitives';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
+import { entryDetailsPayload } from '../account-controls-checks';
+import {
+  CreditLimitWizard,
+  EntryDetailsWizard,
+  type DetailsValue,
+  type LimitValue,
+} from './account-controls-wizards';
 import type { CustomerAccount, CustomerSummary, CustomerTransaction } from './types';
 import { InfoTip } from '@/design-system/info-tip';
 
@@ -526,45 +533,31 @@ function LimitDialog({
   onClose: () => void;
   onSaved: (accountId: string, newLimit: string, message: string) => void;
 }) {
-  const [limit, setLimit] = useState('');
-  const [approverId, setApproverId] = useState('');
-  const [reason, setReason] = useState('');
-  const [fieldError, setFieldError] = useState<string | null>(null);
   const saver = useSaver(tenantId);
   const targetKey = target?.account.accountId ?? null;
   const [lastKey, setLastKey] = useState<string | null>(null);
   if (targetKey !== lastKey) {
     setLastKey(targetKey);
-    setLimit('');
-    setApproverId('');
-    setReason('');
-    setFieldError(null);
     saver.setError(null);
   }
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
+  function submit(value: LimitValue) {
     if (!target) return;
-    const value = parseAmount(limit);
-    if (!value) return setFieldError('Enter the new limit, for example 2500.00.');
-    if (!approverId) return setFieldError('Choose who approved this change.');
-    if (!reason.trim()) return setFieldError('Say why the limit is being changed.');
-    setFieldError(null);
     void saver.save(
       {
         commandType: 'OverrideCustomerCreditLimit',
         tenantId,
         accountId: target.account.accountId,
         expectedVersion: target.account.version,
-        newLimit: value,
-        approvedByMembershipId: approverId,
-        reason: reason.trim(),
+        newLimit: value.limit,
+        approvedByMembershipId: value.approverId,
+        reason: value.reason,
       },
       () =>
         onSaved(
           target.account.accountId,
-          value,
-          `Credit limit for ${target.customer.displayName} is now ${formatTileMoney(value, target.account.currency)}.`,
+          value.limit,
+          `Credit limit for ${target.customer.displayName} is now ${formatTileMoney(value.limit, target.account.currency)}.`,
         ),
     );
   }
@@ -577,71 +570,24 @@ function LimitDialog({
         title={
           target ? `Change credit limit for ${target.customer.displayName}` : 'Change credit limit'
         }
-        presentation="side"
+        presentation="page"
+        backLabel="Account controls"
         size="sm"
         dismissible={!saver.busy}
       >
-        <form className="form-stack" onSubmit={submit} noValidate>
-          {saver.error ? (
-            <ErrorState title="This could not be saved" message={saver.error} />
-          ) : null}
-          {target ? (
-            <p className="field-hint">
-              The limit is now{' '}
-              {target.account.creditLimit === null
-                ? 'not set'
-                : formatTileMoney(target.account.creditLimit, target.account.currency)}
-              .
-            </p>
-          ) : null}
-          <Field
-            id="limit-new"
-            label={`New credit limit (${target?.account.currency ?? 'USD'})`}
-            required
-          >
-            <input
-              id="limit-new"
-              inputMode="decimal"
-              autoComplete="off"
-              value={limit}
-              onChange={(event) => setLimit(event.target.value)}
-            />
-          </Field>
-          <Field id="limit-approver" label="Who approved this?" required>
-            <Select
-              id="limit-approver"
-              value={approverId}
-              onChange={(event) => setApproverId(event.target.value)}
-              placeholder="Choose a person"
-              options={approvers.map((approver) => ({
-                value: approver.membershipId,
-                label: approver.name,
-              }))}
-            />
-          </Field>
-          <Field id="limit-reason" label="Why is the limit changing?" required>
-            <textarea
-              id="limit-reason"
-              rows={3}
-              maxLength={500}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-            />
-          </Field>
-          {fieldError ? (
-            <p className="field-error" role="alert">
-              {fieldError}
-            </p>
-          ) : null}
-          <div className="form-actions">
-            <Button variant="secondary" type="button" onClick={onClose} disabled={saver.busy}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={saver.busy}>
-              Change limit
-            </Button>
-          </div>
-        </form>
+        {target ? (
+          <CreditLimitWizard
+            key={target.account.accountId}
+            customerName={target.customer.displayName}
+            currentLimit={target.account.creditLimit}
+            currency={target.account.currency}
+            approvers={approvers}
+            busy={saver.busy}
+            error={saver.error}
+            onCancel={onClose}
+            onSubmit={submit}
+          />
+        ) : null}
       </Modal>
       {saver.dialog}
     </>
@@ -670,49 +616,26 @@ function DetailsDialog({
   const choices = stations.filter(
     (station) => !customerLegalEntityId || station.legalEntityId === customerLegalEntityId,
   );
-  const [vehicle, setVehicle] = useState('');
-  const [driver, setDriver] = useState('');
-  const [voucher, setVoucher] = useState('');
-  const [approverId, setApproverId] = useState('');
-  const [stationId, setStationId] = useState('');
-  const [fieldError, setFieldError] = useState<string | null>(null);
   const saver = useSaver(tenantId);
-  const [lastKey, setLastKey] = useState<string | null>(null);
   const key = transaction?.id ?? null;
+  const [lastKey, setLastKey] = useState<string | null>(null);
   if (key !== lastKey) {
     setLastKey(key);
-    setVehicle('');
-    setDriver('');
-    setVoucher('');
-    setApproverId('');
-    setFieldError(null);
-    setStationId(
-      choices.some((station) => station.id === currentStationId) ? (currentStationId ?? '') : '',
-    );
     saver.setError(null);
   }
+  const initialStationId = choices.some((station) => station.id === currentStationId)
+    ? (currentStationId ?? '')
+    : '';
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
+  function submit(value: DetailsValue) {
     if (!transaction) return;
-    if (!stationId) return setFieldError('Choose the station where this happened.');
-    const details = {
-      ...(vehicle.trim() ? { vehicleRegistration: vehicle.trim() } : {}),
-      ...(driver.trim() ? { driverName: driver.trim() } : {}),
-      ...(voucher.trim() ? { voucherNumber: voucher.trim() } : {}),
-      ...(approverId ? { approvedByMembershipId: approverId } : {}),
-    };
-    if (Object.keys(details).length === 0) {
-      return setFieldError('Fill in at least one of the details.');
-    }
-    setFieldError(null);
     void saver.save(
       {
         commandType: 'RecordCustomerEntryDetails',
         tenantId,
-        stationId,
+        stationId: value.stationId,
         ledgerEntryId: transaction.id,
-        details,
+        details: entryDetailsPayload(value),
       },
       onSaved,
     );
@@ -724,82 +647,23 @@ function DetailsDialog({
         open={transaction !== null && !saver.waiting}
         onClose={() => !saver.busy && onClose()}
         title="Add details to this transaction"
-        presentation="side"
+        presentation="page"
+        backLabel="Account controls"
         size="sm"
         dismissible={!saver.busy}
       >
-        <form className="form-stack" onSubmit={submit} noValidate>
-          {saver.error ? (
-            <ErrorState title="This could not be saved" message={saver.error} />
-          ) : null}
-          <InfoTip>
-            Details cannot be changed once saved, so check them before you press Save.
-          </InfoTip>
-          <Field id="details-station" label="Which station was it at?" required>
-            <Select
-              id="details-station"
-              value={stationId}
-              onChange={(event) => setStationId(event.target.value)}
-              placeholder="Choose a station"
-              options={choices.map((station) => ({
-                value: station.id,
-                label: `${station.name} (${station.code})`,
-              }))}
-            />
-          </Field>
-          <Field id="details-vehicle" label="Vehicle registration" optional>
-            <input
-              id="details-vehicle"
-              maxLength={20}
-              autoComplete="off"
-              value={vehicle}
-              onChange={(event) => setVehicle(event.target.value)}
-            />
-          </Field>
-          <Field id="details-driver" label="Driver's name" optional>
-            <input
-              id="details-driver"
-              maxLength={120}
-              autoComplete="off"
-              value={driver}
-              onChange={(event) => setDriver(event.target.value)}
-            />
-          </Field>
-          <Field id="details-voucher" label="Voucher or slip number" optional>
-            <input
-              id="details-voucher"
-              maxLength={60}
-              autoComplete="off"
-              value={voucher}
-              onChange={(event) => setVoucher(event.target.value)}
-            />
-          </Field>
-          <Field id="details-approver" label="Who approved it?" optional>
-            <Select
-              id="details-approver"
-              value={approverId}
-              onChange={(event) => setApproverId(event.target.value)}
-              placeholder="Not recorded"
-              options={approvers.map((approver) => ({
-                value: approver.membershipId,
-                label: approver.name,
-              }))}
-            />
-          </Field>
-          {fieldError ? (
-            <p className="field-error" role="alert">
-              {fieldError}
-            </p>
-          ) : null}
-          <div className="form-actions">
-            <Button variant="secondary" type="button" onClick={onClose} disabled={saver.busy}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={saver.busy}>
-              Save details
-            </Button>
-          </div>
-        </form>
+        {transaction ? (
+          <EntryDetailsWizard
+            key={transaction.id}
+            stations={choices}
+            initialStationId={initialStationId}
+            approvers={approvers}
+            busy={saver.busy}
+            error={saver.error}
+            onCancel={onClose}
+            onSubmit={submit}
+          />
+        ) : null}
       </Modal>
       {saver.dialog}
     </>

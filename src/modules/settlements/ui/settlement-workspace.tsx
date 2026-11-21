@@ -44,6 +44,7 @@ import {
 } from './settlement-summary';
 import { InfoTip } from '@/design-system/info-tip';
 import { TabbedCard } from '@/design-system/tabbed-card';
+import { MatchPaymentWizard } from './match-wizard';
 
 function money(value: string, currency = 'USD'): string {
   return formatTileMoney(value, currency);
@@ -715,79 +716,55 @@ export function SettlementWorkspace({
           open={matchOpen}
           onClose={() => setMatchOpen(false)}
           title="Match a payment"
-          presentation="side"
+          presentation="page"
+          backLabel="Provider payouts"
+          size="sm"
           dismissible={!working}
-          className="cash-sheet payout-sheet"
         >
-          {error ? (
-            <ErrorState
-              message={error}
-              action={<Button onClick={() => void refresh()}>Refresh</Button>}
+          {matchOpen ? (
+            <MatchPaymentWizard
+              payouts={settlements.map((row) => ({
+                value: row.settlementId,
+                label: `${row.providerName} · ${row.settlementReference} · ${money(row.unallocatedProviderAmount, row.currency)} left`,
+              }))}
+              payments={unmatched.map((row) => ({
+                value: row.paymentId,
+                label: `${methodLabel(row.method)} · ${row.businessDate} · ${money(row.unallocatedAmount)} · ${row.reference ?? row.paymentId.slice(0, 8)}`,
+              }))}
+              settlementId={settlementId}
+              paymentId={paymentId}
+              amount={amount}
+              maxAmount={
+                selectedPayment && selectedSettlement
+                  ? suggestedAmount(
+                      selectedPayment.unallocatedAmount,
+                      selectedSettlement.unallocatedProviderAmount,
+                    ) || '0'
+                  : null
+              }
+              maxLabel={
+                selectedPayment && selectedSettlement
+                  ? money(
+                      suggestedAmount(
+                        selectedPayment.unallocatedAmount,
+                        selectedSettlement.unallocatedProviderAmount,
+                      ) || '0',
+                      selectedSettlement.currency,
+                    )
+                  : null
+              }
+              busy={working}
+              error={error}
+              onPickPayout={(id) => chooseMatch(id, paymentId)}
+              onPickPayment={(id) => chooseMatch(settlementId, id)}
+              onAmount={(value) => {
+                setAmount(value);
+                setAmountError(undefined);
+              }}
+              onCancel={() => setMatchOpen(false)}
+              onSubmit={() => void allocate()}
             />
           ) : null}
-          <form
-            className="form-stack"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void allocate();
-            }}
-          >
-            <Field id="settlement" label="Provider payout" required>
-              <Select
-                id="settlement"
-                value={settlementId}
-                onChange={(event) => chooseMatch(event.target.value, paymentId)}
-                options={settlements.map((row) => ({
-                  value: row.settlementId,
-                  label: `${row.providerName} · ${row.settlementReference} · ${money(row.unallocatedProviderAmount, row.currency)} left`,
-                }))}
-                placeholder="Select a payout"
-              />
-            </Field>
-            <Field id="payment" label="Customer payment" required>
-              <Select
-                id="payment"
-                value={paymentId}
-                onChange={(event) => chooseMatch(settlementId, event.target.value)}
-                options={unmatched.map((row) => ({
-                  value: row.paymentId,
-                  label: `${methodLabel(row.method)} · ${row.businessDate} · ${money(row.unallocatedAmount)} · ${row.reference ?? row.paymentId.slice(0, 8)}`,
-                }))}
-                placeholder="Select a payment"
-              />
-            </Field>
-            <Field
-              id="allocation-amount"
-              label="Amount to match"
-              hint={
-                selectedPayment && selectedSettlement
-                  ? `Most you can match: ${money(suggestedAmount(selectedPayment.unallocatedAmount, selectedSettlement.unallocatedProviderAmount) || '0', selectedSettlement.currency)}`
-                  : undefined
-              }
-              error={amountError}
-              required
-            >
-              <input
-                id="allocation-amount"
-                inputMode="decimal"
-                value={amount}
-                onChange={(event) => {
-                  setAmount(event.target.value);
-                  setAmountError(undefined);
-                }}
-                placeholder="0.00"
-                required
-              />
-            </Field>
-            <Button
-              type="submit"
-              variant="primary"
-              loading={working}
-              disabled={!selectedSettlement || !paymentId || !context}
-            >
-              Match
-            </Button>
-          </form>
         </Modal>
       </Card>
 

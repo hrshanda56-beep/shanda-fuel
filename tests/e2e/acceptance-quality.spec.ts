@@ -168,9 +168,12 @@ test.describe('shared quality (F4-07)', () => {
     await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
     await page.getByRole('button', { name: 'Match', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Match a payment' })).toBeVisible();
-    await expect(page.getByLabel('Amount to match')).toBeVisible();
+    await expect(
+      page.getByRole('dialog', { name: 'Match a payment' }).getByRole('heading').first(),
+    ).toBeVisible();
+    // One question per screen, so only that question's control is on show.
     const form = await fontSizes();
-    expect(form.length).toBeGreaterThanOrEqual(3);
+    expect(form.length).toBeGreaterThanOrEqual(1);
     for (const control of form) expect(control.size, control.name).toBeGreaterThanOrEqual(16);
   });
 

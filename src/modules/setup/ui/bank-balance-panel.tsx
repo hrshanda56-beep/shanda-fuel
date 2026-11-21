@@ -1,15 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { useToast } from '@/design-system/feedback-provider';
 import { Modal } from '@/design-system/modal';
-import { Button, ErrorState, Field, LoadingState } from '@/design-system/primitives';
-import { Select } from '@/design-system/forms';
+import { Button, ErrorState, LoadingState } from '@/design-system/primitives';
 import { formatUsd } from '@/design-system/formatters';
 import { CardEmpty, CardRow, CardRows, SectionCard } from '@/design-system/section-card';
 
 import { friendlySetupError } from '../guided-setup';
+import { BankBalanceWizard, type BankBalanceValue } from './bank-balance-wizard';
 
 type Account = {
   id: string;
@@ -37,10 +37,6 @@ export function BankBalancePanel({
   refreshKey?: string;
 }>) {
   const toast = useToast();
-  const [stationId, setStationId] = useState<string | undefined>(
-    // With several stations the person chooses; none is picked for them.
-    stations.length === 1 ? stations[0]?.id : undefined,
-  );
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -66,17 +62,7 @@ export function BankBalancePanel({
     void Promise.resolve().then(load);
   }, [load, refreshKey]);
 
-  async function save(event: FormEvent<HTMLFormElement>, account: Account) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const balance = String(data.get('balance') ?? '')
-      .trim()
-      .replace(/,/g, '');
-    const asOfDate = String(data.get('asOfDate') ?? '');
-    if (!/^-?\d+(?:\.\d{1,4})?$/.test(balance))
-      return setFormError('Enter the balance as a number, such as 1250.50.');
-    if (!asOfDate) return setFormError('Choose the date on the bank statement.');
-    if (!stationId) return setFormError('Choose a station first.');
+  async function save({ stationId, balance, asOfDate }: BankBalanceValue, account: Account) {
     setBusy(true);
     setFormError(null);
     try {
@@ -124,20 +110,6 @@ export function BankBalancePanel({
       title="Bank balances"
       note="Type in the balance from the bank statement. The financial position uses it for the money in the bank once every account has one; until then it uses the deposits recorded in the app."
     >
-      {loaded.canRecord && stations.length > 1 ? (
-        <Field id="balance-station" label="Entering as station" required>
-          <Select
-            id="balance-station"
-            value={stationId ?? ''}
-            onChange={(event) => setStationId(event.target.value)}
-            placeholder="Choose a station"
-            options={stations.map((station) => ({
-              value: station.id,
-              label: `${station.name} (${station.code})`,
-            }))}
-          />
-        </Field>
-      ) : null}
       {loaded.accounts.length === 0 ? (
         <CardEmpty>
           No bank accounts yet. Enter a bank account above, then type in its balance here.
@@ -184,51 +156,20 @@ export function BankBalancePanel({
         open={editing !== null}
         onClose={() => !busy && setEditing(null)}
         title={editing ? `Balance for ${editing.name}` : 'Bank balance'}
-        presentation="side"
+        presentation="page"
+        backLabel="Payments"
         size="sm"
         dismissible={!busy}
       >
         {editing ? (
-          <form
-            className="form-stack"
-            onSubmit={(event) => void save(event, editing)}
-            noValidate
-            aria-label={`Type in the balance for ${editing.name}`}
-          >
-            {formError ? <ErrorState title="This could not be saved" message={formError} /> : null}
-            {stations.length > 1 ? (
-              <Field id="balance-station" label="Entering as station">
-                <Select
-                  id="balance-station"
-                  value={stationId ?? ''}
-                  onChange={(event) => setStationId(event.target.value)}
-                  options={stations.map((station) => ({
-                    value: station.id,
-                    label: `${station.name} (${station.code})`,
-                  }))}
-                />
-              </Field>
-            ) : null}
-            <Field id={`balance-${editing.id}`} label="Balance on the statement (USD)" required>
-              <input id={`balance-${editing.id}`} name="balance" inputMode="decimal" />
-            </Field>
-            <Field id={`balance-date-${editing.id}`} label="Date on the statement" required>
-              <input id={`balance-date-${editing.id}`} name="asOfDate" type="date" />
-            </Field>
-            <div className="form-actions">
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() => setEditing(null)}
-                disabled={busy}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" loading={busy}>
-                Save balance
-              </Button>
-            </div>
-          </form>
+          <BankBalanceWizard
+            accountName={editing.name}
+            stations={stations}
+            busy={busy}
+            error={formError}
+            onCancel={() => setEditing(null)}
+            onSubmit={(value) => void save(value, editing)}
+          />
         ) : null}
       </Modal>
     </SectionCard>

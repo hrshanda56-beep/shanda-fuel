@@ -217,15 +217,26 @@ test.describe('New v1 screens', () => {
     const { posted } = await mockApi(page);
     await page.goto('/dev-preview/v1-panels?sheet=closed');
     await expect(page.getByText(/starting values apply/)).toBeVisible();
-    await page.getByLabel(/Warn about supplier invoices due within/).fill('0');
-    await page.getByRole('button', { name: 'Save reminders' }).click();
+    // The settings are listed; "Change reminders" asks about one at a time.
+    await expect(page.getByText('Warn 7 days before they are due')).toBeVisible();
+    await page.getByRole('button', { name: 'Change reminders' }).click();
+    const guide = page.getByRole('dialog', { name: 'Change reminders' });
+    await guide.getByRole('radio', { name: 'Another number' }).check();
+    await guide.getByLabel('Number of days').fill('0');
+    await guide.getByRole('button', { name: 'Continue' }).click();
     await expect(
-      page.getByText('enter a number of days from 1 to 60', { exact: false }),
+      guide.getByText('enter a number of days from 1 to 60', { exact: false }),
     ).toBeVisible();
     expect(posted).toHaveLength(0);
 
-    await page.getByLabel(/Warn about supplier invoices due within/).fill('10');
-    await page.getByRole('button', { name: 'Save reminders' }).click();
+    await guide.getByLabel('Number of days').fill('10');
+    await guide.getByRole('button', { name: 'Continue' }).click();
+    // The other three settings keep their current answers.
+    for (let i = 0; i < 3; i += 1) {
+      await guide.getByRole('button', { name: 'Continue' }).click();
+    }
+    await expect(guide.getByRole('heading', { name: 'Check the reminders' })).toBeVisible();
+    await guide.getByRole('button', { name: 'Save reminders' }).click();
     await expect(page.getByText('Reminders will use these numbers from now on.')).toBeVisible();
     expect(posted[0]).toMatchObject({
       commandType: 'SetAlertSettings',

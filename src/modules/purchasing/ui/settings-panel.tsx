@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '@/design-system/modal';
-import { Select } from '@/design-system/forms';
+import { PolicyWizard } from './policy-wizard';
+import type { PolicyFormValues } from './policy-wizard-checks';
 import { Icon } from '@/design-system/icons';
 import { InfoTip } from '@/design-system/info-tip';
 import {
@@ -231,19 +232,7 @@ export function SettingsPanel({
   );
 }
 
-type FormState = {
-  quantityToleranceLitres: string;
-  quantityTolerancePercent: string;
-  overReceiptToleranceLitres: string;
-  overReceiptTolerancePercent: string;
-  priceTolerancePercent: string;
-  amountTolerance: string;
-  toleranceAction: string;
-  vatMode: string;
-  defaultVatRate: string;
-  requireInvoiceLines: string;
-  requireTransportBill: string;
-};
+type FormState = PolicyFormValues;
 
 function trimNumber(value: string | null): string {
   if (value === null) return '';
@@ -367,37 +356,23 @@ function PolicyDialog({
     }
   }
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
+  function submit(values: FormState, reasonText: string) {
     setError(null);
-    const fields: Array<[keyof FormState, string, number]> = [
-      ['quantityToleranceLitres', 'Allowed quantity difference on the invoice (litres or kg)', 3],
-      ['quantityTolerancePercent', 'Allowed percentage difference on the invoice quantity', 4],
-      [
-        'overReceiptToleranceLitres',
-        'Allowed extra quantity compared with the delivery note (litres or kg)',
-        3,
-      ],
-      ['overReceiptTolerancePercent', 'Allowed extra percentage compared with the note', 4],
-      ['priceTolerancePercent', 'Allowed price difference', 4],
-      ['amountTolerance', 'Allowed invoice total difference', 4],
-      ['defaultVatRate', 'VAT rate', 4],
-    ];
-    const values: Record<string, string | null> = {};
-    for (const [key, label, places] of fields) {
-      const checked = checkAllowanceInput(form[key], places);
-      if (!checked.ok) {
-        return setError(
-          `${label}: enter a plain number (at most ${places} decimal places), or leave it empty.`,
-        );
-      }
-      values[key] = checked.value;
+    const numbers: Record<string, string | null> = {};
+    for (const key of [
+      'quantityToleranceLitres',
+      'quantityTolerancePercent',
+      'overReceiptToleranceLitres',
+      'overReceiptTolerancePercent',
+      'priceTolerancePercent',
+      'amountTolerance',
+      'defaultVatRate',
+    ] as const) {
+      // The guide has already checked each number; this only reads it.
+      const checked = checkAllowanceInput(values[key], 4);
+      numbers[key] = checked.ok ? checked.value : null;
     }
-    const vatMode = form.vatMode || null;
-    if (vatMode && vatMode !== 'NONE' && !values.defaultVatRate) {
-      return setError('Enter the VAT rate that applies to supplier invoices.');
-    }
-    if (!reason.trim()) return setError('Say briefly why you are changing these settings.');
+    const vatMode = values.vatMode || null;
     const existing = loadedView?.view ?? null;
     const body: Record<string, unknown> = {
       commandType: 'SetPurchasingPolicy',
@@ -405,22 +380,30 @@ function PolicyDialog({
       legalEntityId,
       ...(supplierId ? { supplierId } : {}),
       ...(existing ? { expectedVersion: existing.version } : {}),
-      reason: reason.trim(),
-      ...values,
-      defaultVatRate: vatMode === 'NONE' ? null : values.defaultVatRate,
-      toleranceAction: form.toleranceAction || null,
+      reason: reasonText.trim(),
+      ...numbers,
+      defaultVatRate: vatMode === 'NONE' ? null : numbers.defaultVatRate,
+      toleranceAction: values.toleranceAction || null,
       vatMode,
       requireInvoiceLines:
-        form.requireInvoiceLines === '' ? null : form.requireInvoiceLines === 'true',
+        values.requireInvoiceLines === '' ? null : values.requireInvoiceLines === 'true',
       requireTransportBill:
-        form.requireTransportBill === '' ? null : form.requireTransportBill === 'true',
+        values.requireTransportBill === '' ? null : values.requireTransportBill === 'true',
     };
     void save(body, false);
   }
 
   const ready = loadedView !== null;
-  const disabled = !canManage || busy;
   const companyView = company?.resolved;
+  const companyNote =
+    !isCompany && companyView
+      ? `The company currently allows: ${litresAllowanceSentence(
+          companyView.quantityToleranceLitres,
+          companyView.quantityTolerancePercent,
+        ).toLowerCase()} on invoice quantity, ${percentAllowanceSentence(
+          companyView.priceTolerancePercent,
+        ).toLowerCase()} on price.`
+      : null;
 
   return (
     <>
@@ -433,193 +416,28 @@ function PolicyDialog({
         description={
           isCompany
             ? 'These apply to every supplier unless a supplier has its own settings.'
-            : 'Leave a box empty or choose “Same as the company” to follow the company setting.'
+            : 'Choose “Same as the company” to follow the company setting.'
         }
-        size="lg"
+        presentation="page"
+        backLabel="Purchase order settings"
+        size="sm"
         dismissible={!busy}
-        footer={
-          <>
-            <Button variant="secondary" onClick={onClose} disabled={busy}>
-              {canManage ? 'Cancel' : 'Close'}
-            </Button>
-            {canManage ? (
-              <Button type="submit" form="purchasing-policy-form" loading={busy} disabled={!ready}>
-                Save settings
-              </Button>
-            ) : null}
-          </>
-        }
       >
         {loadError ? <ErrorState message={loadError} /> : null}
         {!ready && !loadError ? <LoadingState label="Loading settings" /> : null}
-        {error ? <ErrorState title="Please check the form" message={error} /> : null}
         {ready ? (
-          <form id="purchasing-policy-form" className={styles.formGrid} onSubmit={submit}>
-            {!canManage ? (
-              <p className={styles.muted}>You can see these settings but not change them.</p>
-            ) : null}
-            <fieldset className={styles.fieldset} disabled={disabled}>
-              <legend>How much difference is acceptable?</legend>
-              <p className={styles.muted}>
-                An invoice is only flagged when it is further off than this. Leave empty to allow no
-                difference
-                {isCompany ? '.' : ', or to follow the company setting.'}
-              </p>
-              <div className={styles.pair}>
-                <Field
-                  id="pp-qty-l"
-                  label="Quantity on the invoice vs quantity received (litres or kg)"
-                  optional
-                >
-                  <input
-                    id="pp-qty-l"
-                    inputMode="decimal"
-                    value={form.quantityToleranceLitres}
-                    onChange={(e) => set({ quantityToleranceLitres: e.target.value })}
-                  />
-                </Field>
-                <Field id="pp-qty-p" label="…or as a percentage (%)" optional>
-                  <input
-                    id="pp-qty-p"
-                    inputMode="decimal"
-                    value={form.quantityTolerancePercent}
-                    onChange={(e) => set({ quantityTolerancePercent: e.target.value })}
-                  />
-                </Field>
-                <Field
-                  id="pp-over-l"
-                  label="Extra quantity received vs delivery note (litres or kg)"
-                  optional
-                >
-                  <input
-                    id="pp-over-l"
-                    inputMode="decimal"
-                    value={form.overReceiptToleranceLitres}
-                    onChange={(e) => set({ overReceiptToleranceLitres: e.target.value })}
-                  />
-                </Field>
-                <Field id="pp-over-p" label="…or as a percentage (%)" optional>
-                  <input
-                    id="pp-over-p"
-                    inputMode="decimal"
-                    value={form.overReceiptTolerancePercent}
-                    onChange={(e) => set({ overReceiptTolerancePercent: e.target.value })}
-                  />
-                </Field>
-                <Field id="pp-price" label="Invoice price vs agreed price (%)" optional>
-                  <input
-                    id="pp-price"
-                    inputMode="decimal"
-                    value={form.priceTolerancePercent}
-                    onChange={(e) => set({ priceTolerancePercent: e.target.value })}
-                  />
-                </Field>
-                <Field id="pp-amount" label="Invoice total vs expected total (USD)" optional>
-                  <input
-                    id="pp-amount"
-                    inputMode="decimal"
-                    value={form.amountTolerance}
-                    onChange={(e) => set({ amountTolerance: e.target.value })}
-                  />
-                </Field>
-              </div>
-              <Field id="pp-action" label="If a difference is bigger than allowed">
-                <Select
-                  id="pp-action"
-                  value={form.toleranceAction}
-                  onChange={(e) => set({ toleranceAction: e.target.value })}
-                  options={[
-                    ...(follow ? [{ value: '', label: follow }] : []),
-                    ...TOLERANCE_ACTION_OPTIONS,
-                  ]}
-                />
-              </Field>
-            </fieldset>
-
-            <fieldset className={styles.fieldset} disabled={disabled}>
-              <legend>VAT on supplier invoices</legend>
-              <Field id="pp-vat" label="How do suppliers show VAT?">
-                <Select
-                  id="pp-vat"
-                  value={form.vatMode}
-                  onChange={(e) => set({ vatMode: e.target.value })}
-                  options={[...(follow ? [{ value: '', label: follow }] : []), ...VAT_MODE_OPTIONS]}
-                />
-              </Field>
-              {form.vatMode && form.vatMode !== 'NONE' ? (
-                <Field id="pp-vat-rate" label="VAT rate (%)" required>
-                  <input
-                    id="pp-vat-rate"
-                    inputMode="decimal"
-                    value={form.defaultVatRate}
-                    onChange={(e) => set({ defaultVatRate: e.target.value })}
-                  />
-                </Field>
-              ) : null}
-              <Field id="pp-lines" label="Invoice lines">
-                <Select
-                  id="pp-lines"
-                  value={form.requireInvoiceLines}
-                  onChange={(e) => set({ requireInvoiceLines: e.target.value })}
-                  options={[
-                    ...(follow ? [{ value: '', label: follow }] : []),
-                    { value: 'true', label: 'Each invoice must list the fuel it is for' },
-                    { value: 'false', label: 'Invoices can be entered as a single total' },
-                  ]}
-                />
-              </Field>
-              <Field
-                id="pp-transport-bill"
-                label="Transport bills"
-                hint="Fuel is often brought by a different company that sends its own bill."
-              >
-                <Select
-                  id="pp-transport-bill"
-                  value={form.requireTransportBill}
-                  onChange={(e) => set({ requireTransportBill: e.target.value })}
-                  options={[
-                    ...(follow ? [{ value: '', label: follow }] : []),
-                    {
-                      value: 'true',
-                      label: 'Every delivery carried by another company needs its bill',
-                    },
-                    { value: 'false', label: 'A transport bill is optional' },
-                  ]}
-                />
-              </Field>
-            </fieldset>
-
-            {!isCompany && companyView ? (
-              <p className={styles.muted}>
-                The company currently allows:{' '}
-                {litresAllowanceSentence(
-                  companyView.quantityToleranceLitres,
-                  companyView.quantityTolerancePercent,
-                ).toLowerCase()}{' '}
-                on invoice quantity,{' '}
-                {percentAllowanceSentence(companyView.priceTolerancePercent).toLowerCase()} on
-                price.
-              </p>
-            ) : null}
-
-            {canManage ? (
-              <Field
-                id="pp-reason"
-                label="Why are you changing these settings?"
-                required
-                hint="This is kept in the record of changes."
-              >
-                <input
-                  id="pp-reason"
-                  maxLength={500}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="e.g. Agreed new terms with the supplier"
-                  disabled={busy}
-                />
-              </Field>
-            ) : null}
-          </form>
+          <PolicyWizard
+            key={loadedView?.view?.version ?? 'new'}
+            initial={form}
+            isCompany={isCompany}
+            who={isCompany ? 'the whole company' : scope.supplier.legalName}
+            companyNote={companyNote}
+            busy={busy}
+            error={error}
+            readOnly={!canManage}
+            onCancel={onClose}
+            onSubmit={submit}
+          />
         ) : null}
       </Modal>
       <StepUpDialog

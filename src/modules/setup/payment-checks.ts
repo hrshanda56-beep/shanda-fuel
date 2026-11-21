@@ -46,6 +46,25 @@ export function checkAccountCharges(percent: string, fixed: string): Errors {
   return errors;
 }
 
+export function checkBalanceStation(stationId: string): Errors {
+  return stationId ? {} : { 'balance-station': 'Choose a station.' };
+}
+
+/** The statement balance: a plain number, commas allowed, up to four decimals, may be negative. */
+export function cleanBalance(value: string): string {
+  return value.trim().replace(/,/g, '');
+}
+
+export function checkBalanceAmount(value: string): Errors {
+  return /^-?\d+(?:\.\d{1,4})?$/.test(cleanBalance(value))
+    ? {}
+    : { 'balance-amount': 'Enter the balance as a number, such as 1250.50.' };
+}
+
+export function checkBalanceDate(value: string): Errors {
+  return value ? {} : { 'balance-date': 'Choose the date on the bank statement.' };
+}
+
 export function checkBankCompany(companyId: string): Errors {
   return companyId ? {} : { 'bank-company': 'Choose the company this account belongs to.' };
 }
