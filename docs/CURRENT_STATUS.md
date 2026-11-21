@@ -56,7 +56,22 @@ run: the Playwright specs (need Clerk secrets). At 1280 px in dark mode only the
 last screens were looked at (no sideways scroll; the card keeps its whole corner there, since its own
 buttons sit inside it); light mode at 1280 px and the other screens at that size were not. Not done: editing a payment or expense line after leaving its screen
 other than by going Back to it; the opening-reading correction was kept on the pump screens but not
-exercised live. **Phase 7 is still to do** (close-out and a role-by-role crawl).
+exercised live.
+
+**Phase 7 close-out (21 Nov 2026): Phase 6 is merged** (#269, #270, #271), and a verification pass was
+done on a throwaway local copy of the database (no production contact). Passed live: manager overview for
+submitted, approved and locked records; Return (record goes to RETURNED) and re-submit (reason cleared);
+Approve reaches the server and stops at the by-design identity check (not passed here, the dev login cannot
+do it); the opening-reading correction end to end (audit shows from, to and reason); all 14 wizard screens at
+phone and desktop, light and dark (no sideways scroll, no tiny text, no error pages); owner, supervisor,
+attendant and finance landing pages at phone and desktop; unit suite 2,568 of 2,568. One defect found and
+fixed in #271: the manager's return reason was stored but never shown to the supervisor.
+Seen and left alone: the "Save dip" button is under 36 px tall (existing design); the My Shift page has two
+h1 headings for owner and finance (before Phase 6); the home card showed a "Pending Approval" pill on a draft
+(not investigated). **Still unproven:** the Playwright specs (need Clerk secrets), Approve past the identity
+check, the deployed site, and the owner's review. Open: #259 further slices (turning on
+`CONSOLIDATED_CONTEXT_READS` is the owner's call) and the dark-lettering logo (#257). Production migrations
+0117, 0118 and 0119 are still the owner's to run.
 
 ## ZERA monthly return (#258) — 2026-11-21 (branch `feat/zera-return-258`, on top of `feat/side-panels-to-wizards-252`, uncommitted)
 
