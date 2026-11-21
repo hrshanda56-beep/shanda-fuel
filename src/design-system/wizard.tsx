@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Card } from './primitives';
+import { popTrail, pushTrail, returnsToSummary, stepPosition } from './wizard-nav';
 import styles from './wizard.module.css';
 
 /**
@@ -9,7 +10,8 @@ import styles from './wizard.module.css';
  *
  * `useWizard` owns where the person is (a step, plus an optional index for a step that repeats,
  * such as "item 2"), the way back, field errors and moving focus. The screen decides what each
- * step asks and how it is checked. Nothing here saves anything.
+ * step asks and how it is checked. `useWizard` saves nothing; a wizard that should survive a
+ * reload adds `useWizardDraft` below. The pure rules live in `wizard-nav.ts` and `wizard-draft.ts`.
  */
 
 export type WizardErrors = Record<string, string>;
@@ -63,7 +65,7 @@ export function useWizard<S extends string>({
 
   /** Goes to a screen and remembers the one being left, so Back returns to it. */
   function go(to: S, toIndex = index) {
-    setTrail((current) => [...current, { step, index }]);
+    setTrail((current) => pushTrail(current, { step, index }));
     setStep(to);
     setIndex(toIndex);
     setErrors({});
@@ -79,12 +81,12 @@ export function useWizard<S extends string>({
   function back() {
     setErrors({});
     setProblem(null);
-    const previous = trail[trail.length - 1];
+    const { previous, rest } = popTrail(trail);
     if (!previous) return onCancel();
     setStep(previous.step);
     setIndex(previous.index);
-    setTrail(trail.slice(0, -1));
-    if (previous.step === sequence[sequence.length - 1]) setFromReview(false);
+    setTrail(rest);
+    if (returnsToSummary(sequence, previous)) setFromReview(false);
   }
 
   /** From the summary: change one answer, then come straight back to the summary. */
@@ -114,7 +116,7 @@ export function useWizard<S extends string>({
     return true;
   }
 
-  const position = Math.max(1, sequence.indexOf(step) + 1);
+  const position = stepPosition(sequence, step);
 
   return {
     step,
@@ -142,9 +144,22 @@ export type Wizard<S extends string = string> = ReturnType<typeof useWizard<S>>;
 /** The line under every "Check ..." screen, so they all read the same. */
 export const WIZARD_REVIEW_HINT = 'Nothing is saved until you press the button below.';
 
-/** The white card every step sits in. */
-export function WizardCard({ children }: { children: ReactNode }) {
-  return <Card className={styles.wizard}>{children}</Card>;
+/**
+ * The white card every step sits in. Set `ownDraft` when the wizard saves its own progress with
+ * `useWizardDraft`, so the page-wide draft keeper does not also read the one screen showing.
+ */
+export function WizardCard({
+  children,
+  ownDraft = false,
+}: {
+  children: ReactNode;
+  ownDraft?: boolean;
+}) {
+  return (
+    <Card className={styles.wizard} {...(ownDraft ? { 'data-no-page-draft': '' } : {})}>
+      {children}
+    </Card>
+  );
 }
 
 /** One screen: "Step 2 of 7", the question, an optional hint, then the answers. */
@@ -189,9 +204,12 @@ export function WizardHeading({
 }) {
   return (
     <>
-      <p className={styles.stepCount}>
-        Step {position} of {total}
-      </p>
+      {/* A lone first question (before the flow's steps are known) passes `total` 0 to hide this. */}
+      {total > 0 ? (
+        <p className={styles.stepCount}>
+          Step {position} of {total}
+        </p>
+      ) : null}
       <h2 ref={onHeading} tabIndex={-1} className={styles.question}>
         {title}
       </h2>

@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { ErrorState, Field } from '@/design-system/primitives';
+import { WizardOptions } from '@/design-system/wizard-kit';
 import {
   WizardActions,
   WizardPair,
@@ -27,6 +28,58 @@ import {
 import { formatFriendlyDate } from './expense-format';
 
 type Choice = { id: string; name: string };
+
+export type ExpenseKind = 'new' | 'regular';
+
+/**
+ * The first screen of "Add an expense": what kind of thing is being added. It used to be a small
+ * pop-up in front of the wizard; the choice belongs on the wizard's first screen.
+ */
+export function ExpenseKindStep({
+  kinds,
+  onPick,
+  onCancel,
+}: {
+  /** Only the kinds this person may add. */
+  kinds: readonly ExpenseKind[];
+  onPick: (kind: ExpenseKind) => void;
+  onCancel: () => void;
+}) {
+  const [kind, setKind] = useState<ExpenseKind | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const wizard = { position: 0, total: 0, captureHeading: () => {}, atStart: true, back: onCancel };
+  const options = [
+    {
+      value: 'new' as const,
+      label: 'Enter an expense',
+      detail: 'Money that was spent once, such as a repair or a purchase.',
+    },
+    {
+      value: 'regular' as const,
+      label: 'Add a regular cost',
+      detail: 'A cost that repeats every month, such as rent or salaries.',
+    },
+  ].filter((option) => kinds.includes(option.value));
+  return (
+    <WizardStep wizard={wizard} title="What would you like to add?">
+      <WizardOptions
+        label="What would you like to add?"
+        name="expense-kind"
+        options={options}
+        value={kind}
+        onPick={(value) => {
+          setKind(value);
+          setError(null);
+        }}
+      />
+      {error ? <ErrorState message={error} /> : null}
+      <WizardActions
+        wizard={wizard}
+        onContinue={() => (kind ? onPick(kind) : setError('Pick one to continue.'))}
+      />
+    </WizardStep>
+  );
+}
 
 // ---------------------------------------------------------------- one-off expense
 

@@ -22,8 +22,10 @@ import { formatTileMoney } from '@/modules/reporting/format';
 import { CashDonut } from '@/modules/cash/ui/cash-visuals';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import { isStaffFuelCategory } from '../domain';
+import { TabSwitcher } from '@/design-system/tabs';
 import styles from './expenses.module.css';
 import {
+  ExpenseKindStep,
   ExpenseWizard,
   RegularCostWizard,
   type NewExpenseValue,
@@ -141,6 +143,7 @@ type Payment = {
 };
 
 type Sheet =
+  | { kind: 'add' }
   | { kind: 'new' }
   | { kind: 'categories' }
   | { kind: 'regular' }
@@ -248,7 +251,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [detailError, setDetailError] = useState<string | null>(null);
 
   const [sheet, setSheet] = useState<Sheet | null>(null);
-  const [choosing, setChoosing] = useState(false);
   const [listTab, setListTab] = useState<'all' | 'regular'>('all');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -648,6 +650,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       );
     }
 
+    if (sheet.kind === 'add') return;
     const { expense } = sheet;
     const base = {
       ...scope(expense.stationId),
@@ -750,7 +753,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const { total: spent, shares } = categoryShares(summary.byCategory);
   const waitingTotal = sumAmounts(waiting.map((row) => row.amount));
   const showRegularTab = Boolean(caps?.manageRecurring || (reference.templates ?? []).length > 0);
-  const guided = sheet?.kind === 'new' || sheet?.kind === 'regular';
+  const guided = sheet?.kind === 'add' || sheet?.kind === 'new' || sheet?.kind === 'regular';
   const canAddExpense = Boolean(caps?.submit || caps?.manageRecurring);
 
   return (
@@ -816,11 +819,15 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
                 ) : null}
                 {canAddExpense ? (
                   <Button
-                    aria-haspopup="dialog"
                     onClick={() =>
-                      caps?.submit && caps.manageRecurring
-                        ? setChoosing(true)
-                        : openSheet({ kind: caps?.submit ? 'new' : 'regular' })
+                      openSheet({
+                        kind:
+                          caps?.submit && caps.manageRecurring
+                            ? 'add'
+                            : caps?.submit
+                              ? 'new'
+                              : 'regular',
+                      })
                     }
                   >
                     Add an expense
@@ -877,24 +884,15 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
             <span className={styles.muted}>Showing the latest 200 expenses.</span>
           ) : null}
           {showRegularTab ? (
-            <div className={`profit-tabs`} role="tablist" aria-label="Expense views">
-              {(
-                [
-                  ['all', 'All Expenses'],
-                  ['regular', 'Regular Costs'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="tab"
-                  aria-selected={listTab === value}
-                  onClick={() => setListTab(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <TabSwitcher
+              label="Expense views"
+              value={listTab}
+              onChange={setListTab}
+              tabs={[
+                { value: 'all', label: 'All Expenses' },
+                { value: 'regular', label: 'Regular Costs' },
+              ]}
+            />
           ) : null}
         </div>
         {listTab === 'regular' && showRegularTab ? (
@@ -1182,39 +1180,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       </Card>
 
       <Modal
-        open={choosing}
-        onClose={() => setChoosing(false)}
-        title="Add an expense"
-        description="What would you like to add?"
-        size="sm"
-      >
-        <div className={styles.addChoices}>
-          <button
-            type="button"
-            className={styles.addChoice}
-            onClick={() => {
-              setChoosing(false);
-              openSheet({ kind: 'new' });
-            }}
-          >
-            <strong>Enter an expense</strong>
-            <span>Money that was spent once, such as a repair or a purchase.</span>
-          </button>
-          <button
-            type="button"
-            className={styles.addChoice}
-            onClick={() => {
-              setChoosing(false);
-              openSheet({ kind: 'regular' });
-            }}
-          >
-            <strong>Add a regular cost</strong>
-            <span>A cost that repeats every month, such as rent or salaries.</span>
-          </button>
-        </div>
-      </Modal>
-
-      <Modal
         open={sheet !== null && stepUpRetry === null}
         onClose={closeSheet}
         title={sheetTitle(sheet)}
@@ -1248,6 +1213,13 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           )
         }
       >
+        {sheet?.kind === 'add' ? (
+          <ExpenseKindStep
+            kinds={['new', 'regular']}
+            onPick={(kind) => openSheet({ kind })}
+            onCancel={closeSheet}
+          />
+        ) : null}
         {sheet?.kind === 'new' && expenseSeed ? (
           <ExpenseWizard
             categories={activeCategories.map((category) => ({
@@ -1528,6 +1500,8 @@ function quickAction(
 
 function sheetTitle(sheet: Sheet | null): string {
   switch (sheet?.kind) {
+    case 'add':
+      return 'Add an expense';
     case 'new':
       return 'Enter an expense';
     case 'categories':
@@ -1581,6 +1555,8 @@ function sheetAction(sheet: Sheet | null): string {
 function sheetDescription(sheet: Sheet | null): string {
   if (!sheet) return '';
   switch (sheet.kind) {
+    case 'add':
+      return '';
     case 'new':
       return 'It counts as spending once approved and recorded.';
     case 'categories':

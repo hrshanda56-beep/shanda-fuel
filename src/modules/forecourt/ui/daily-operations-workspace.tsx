@@ -1436,7 +1436,7 @@ export function DailyOperationsWorkspace({
             <span className="saved-indicator">Saved</span>
           )}
         </div>
-        <nav className="entry-steps profit-tabs" aria-label="Steps">
+        <nav className="entry-steps ds-tabs" aria-label="Steps">
           {STEPS.map((label, index) => (
             <button
               key={label}

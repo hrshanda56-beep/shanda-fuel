@@ -16,6 +16,58 @@ the ~19 files that draw their own `<svg>` (charts, provider logos, tank drum) we
 issue says; a full per-screen icon relevance review beyond navigation and reports was not done;
 browser specs were not run (they need Clerk secrets).
 
+## Wizard foundations (#248) — 2026-11-20 (branch `feat/wizard-foundations-248`, from `main` 7d49ba30, uncommitted)
+
+First step of the owner feedback round (tracking #260). Nothing user-visible changes except one screen.
+
+- **New shared parts** (`src/design-system/`): `wizard-kit.tsx` (pick-list answers `WizardOptions` / `WizardYesNo` / `WizardUsualOrOwn`, the "Change something else?" loop `WizardAnother`, saving progress with `useWizardDraft` + `WizardResumeNotice`, and `WizardConfirm`, the one confirm screen) and the pure, unit-tested rules in `wizard-nav.ts` (Back trail, "Step x of y", repeating steps) and `wizard-draft.ts` (per-wizard draft: kept on this device, offered back, never applied silently, dropped after 24 hours, on a changed record, or for a screen that no longer exists; secrets never kept). `useWizard` now uses `wizard-nav.ts`; behaviour is unchanged. `WizardCard` takes `ownDraft` so the page-wide draft keeper stays out of a wizard that saves its own progress. The written pattern for new wizards is in `src/design-system/README.md`.
+- **The shared confirm is now the page card:** `ConfirmDialog` (used by purchase orders and by `confirm()` from the feedback provider) renders through `WizardConfirm` in `Modal presentation="page"` instead of a small pop-up. Same props; `WizardConfirm` gained the tick-box acknowledgement and a warning tone. Cancel and Escape still close it, and the tick resets on each opening.
+- **One screen converted:** "Add an expense" no longer opens a small pop-up first. "What would you like to add?" is the wizard's first screen (`ExpenseKindStep`).
+- **Not done here (later PRs in the round):** retiring the ten side panels and the one-off dialogs that do not use `ConfirmDialog` is #252, one area at a time; the new pieces are used by #249, #250, #251, #253, #256 and #258.
+- **UI lock:** re-baselined with the owner's approval (DEC-056).
+- **Checks:** typecheck, lint (one old warning), format, unit tests and the production build pass. Checked live on the local demo database (the confirm on the design-system reference page, since the demo has no purchase orders) at phone and desktop widths, light and dark, with no sideways scroll. No browser spec was added: the existing specs mock Clerk and the expenses APIs, and none covers this page.
+
+## Loading speed, code-only slice — 2026-11-20 (branch `perf/loading-speed-259`, issue #259, uncommitted)
+
+Done (code only; no schema, auth rule or caching change): (1) My Shift and Settings no longer do a
+second full station and permission lookup. The page now takes the shell's already-loaded list of what
+the person may use and chooses its station from it (`modules/context/page-context.ts`,
+`contextFromShellAccess`, the same pattern as `ServerDataPage` and the Finance page), and hands the
+shell the same result; the choice uses the same route, policy and saved-choice rules, and only picks
+from what the shell verified. (2) My Shift reads the database clock in the station query instead of a
+separate `select now()`. (3) A root `loading.tsx` gives the dashboard an instant skeleton when
+someone moves to Today; sign-in, join, invite, owner-demo and dev-login get an empty `loading.tsx` so
+they do not show the app skeleton. (4) The daily alert email now logs a warning once its recipients
+reach 80 % of the 200 cap (it silently stopped at 200). Not done, on purpose: the dashboard
+per-station "needs attention" batching (it already runs the stations in parallel, and batching means
+rewriting the action-centre reads under per-station permission checks — needs production timings
+first); `next/dynamic` splitting (the biggest candidate, `guided-setup-panel.tsx`, is rewritten in
+the wizard work, so splitting it now would only conflict); the `proxy.ts` slug lookup (it is the
+fail-closed auth boundary and only affects `?org=` addresses); dropping `force-dynamic` (a safety
+net that costs nothing at run time); pool timeouts (the pooler setup is not confirmed); moving
+screen CSS out of the global files (UI-locked, needs a visual pass); turning on
+`CONSOLIDATED_CONTEXT_READS` / adding the slug to migration 0034's snapshot (a production decision).
+Timings are in the PR notes; production timings were not available.
+
+## One tab style — 2026-11-20 (branch `feat/one-tab-style-254`, issue #254, uncommitted)
+
+`src/design-system/tabs.tsx` is now the only tab look: a light rounded track with the open tab as a
+raised pill, every tab always showing its name (an optional icon is supported), at the right end of
+its row, CSS in `design-system/styles/tabs.css`. `TabSwitcher` is a real `role="tablist"` with
+arrow-key, Home and End navigation (`tabs-keys.ts`, hidden tabs are skipped); `TabLinks` gives the
+same look to related-report links; `FilterPills` gives it to list filters. Moved over: `TabbedCard`
+(Finance, valuation, settlements, cash, supplier-due), Profit, Expenses (All Expenses / Regular
+Costs), Purchasing, Tank detail (its desktop "Dips and movements" merge kept), the Related-reports
+links and the reconciliation filters. The old `.profit-tabs`, `.tank-tabs` look, `.purchasing-tabs`,
+`.recon-tab*` and the underline `.income-tabs` rules are gone. Decision per case: the reconciliation
+list filter stays a filter (`aria-pressed`) but looks the same; other `aria-pressed` groups (today
+overview, customers, staff panel, settings, sales documents, orders, creditors, deliveries,
+inventory) were left as they are — they narrow a list rather than switch views. The Daily Operations
+step bar keeps its own behaviour until its wizard (#253). Phones: tabs share the width in even
+columns (no sideways scroll; checked at 390 px on Profit, Expenses, Purchasing, Cash, Settlements,
+Tank, Reconciliations, Valuation, Finance, Suppliers due, Reports). Not done: the Playwright specs
+were not run (they need Clerk secrets); `role=tab` is unchanged so their selectors still match.
+
 ## Quotations, invoices and receipts — 2026-11-18 (branch `feat/sales-documents`, from NOV17)
 
 DEC-045. Built: migration `0108_sales_documents` (letterhead and numbering settings, gap-free

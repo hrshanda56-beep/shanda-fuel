@@ -111,6 +111,20 @@
   background: var(--bg-surface);
 }
 
+.noticeText {
+  margin: 0 0 var(--space-3);
+}
+
+.reason {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.reason textarea {
+  width: 100%;
+  font: inherit;
+}
+
 .grid2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

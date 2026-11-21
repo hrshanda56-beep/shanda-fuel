@@ -73,16 +73,22 @@ async function loadMyShift(
   input: MyShiftInput,
   canCapture: boolean,
 ): Promise<MyShiftData> {
-  const stationRows = await transaction.execute<{ id: string; name: string; timezone: string }>(sql`
-    select id, name, timezone
+  // The database clock rides on the station read (one round trip, not two). `now()` is the
+  // transaction's start time, the same value the shift query below compares against.
+  const stationRows = await transaction.execute<{
+    id: string;
+    name: string;
+    timezone: string;
+    now: Date | string;
+  }>(sql`
+    select id, name, timezone, now() as now
     from app.stations
     where tenant_id = ${context.tenantId} and id = ${input.stationId}
   `);
-  const station = stationRows[0];
-  if (!station) throw new AppError('NOT_FOUND', 'The requested station was not found');
-
-  const clock = await transaction.execute<{ now: Date | string }>(sql`select now() as now`);
-  const nowIso = new Date(clock[0]!.now).toISOString();
+  const stationRow = stationRows[0];
+  if (!stationRow) throw new AppError('NOT_FOUND', 'The requested station was not found');
+  const station = { id: stationRow.id, name: stationRow.name, timezone: stationRow.timezone };
+  const nowIso = new Date(stationRow.now).toISOString();
 
   const shiftRows = await transaction.execute<ShiftRow>(sql`
     select s.id, s.business_day_id as "businessDayId", t.name as label, s.state,
