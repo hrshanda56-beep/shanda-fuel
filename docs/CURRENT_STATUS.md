@@ -73,6 +73,18 @@ check, the deployed site, and the owner's review. Open: #259 further slices (tur
 `CONSOLIDATED_CONTEXT_READS` is the owner's call) and the dark-lettering logo (#257). Production migrations
 0117, 0118 and 0119 are still the owner's to run.
 
+**Phase 7 hardening pass (21 Nov 2026, local scratch database, no production contact).** Production
+migrations 0117 to 0119 have since been applied and verified (see the runbook record, PR #273).
+Accessibility: an axe crawl of 22 owner pages plus the supervisor, attendant and finance landing pages, at
+phone and desktop, light and dark, found three real defects (Profit Month tab had no panel; two Expenses
+buttons and the Settings "Edit details" button had spoken names that did not start with their visible
+text); all fixed in #275, re-crawl shows no serious or critical finding and no sideways scroll anywhere.
+Left open (minor): a few empty/error cards put a level-3 title directly under the page title. CI runs the
+Playwright specs with real sign-in, so #274 caught three sidebar specs that treated Reports as one link;
+they were updated. Not proven here: offline behaviour in a browser (the service worker only runs in a
+production build; the outbox and draft logic has unit coverage), tenant-isolation integration tests (run
+by CI, not locally), the deployed site and the owner's review.
+
 ## ZERA monthly return (#258) — 2026-11-21 (branch `feat/zera-return-258`, on top of `feat/side-panels-to-wizards-252`, uncommitted)
 
 Phase 5 of the owner feedback round. **Reports > Inventory > ZERA Monthly Return** works out the
