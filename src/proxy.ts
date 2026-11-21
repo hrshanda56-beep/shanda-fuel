@@ -1,6 +1,7 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
+import { isDevOnlyPath, isDevOnlySurfaceAvailable } from '@/design-system/reference/availability';
 import { isLocalDevBypassEnabled } from '@/platform/auth/dev-bypass';
 import type { NextFetchEvent, NextRequest } from 'next/server';
 import {
@@ -20,6 +21,11 @@ const clerkProxy = clerkMiddleware({
 });
 
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
+  // Development-only pages never exist in a production build. Answer with a plain 404 here, before
+  // anything renders, so the status does not depend on a page's own not-found handling.
+  if (isDevOnlyPath(request.nextUrl.pathname) && !isDevOnlySurfaceAvailable()) {
+    return new NextResponse(null, { status: 404 });
+  }
   // The owner-demo route is a dedicated browser-local artifact with no Clerk
   // session. Keep the bypass limited to that exact route and explicit env;
   // every other request continues through Clerk middleware.

@@ -187,6 +187,36 @@ semantics, validated navigation, and the server-owned files feature agents must 
   guard, but screens must adapt (stacked tables, KPI lists, wrapping labels);
   `tests/e2e/ui-polish.spec.ts` checks every screen at 320 and 390px.
 
+## Guided flows (wizards)
+
+Every entry flow is one question per screen, in the same page wizard as the quotations and
+invoices editor (`sales-documents/ui/document-editor.tsx`). No entry flow uses a side panel.
+
+| File                               | Owns                                                                                                                                                                                                              |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wizard.tsx`                       | `useWizard` (step, repeat index, Back trail, errors, focus, "Step x of y", return to summary) and the layout parts: `WizardStep`, `WizardChoices`, `WizardSummary`, `WizardActions`, `WizardNotice`, `WizardPair` |
+| `wizard-kit.tsx`                   | Ready-made answers and screens: `WizardOptions`, `WizardYesNo`, `WizardUsualOrOwn`, `WizardAnother` ("Change something else?"), `useWizardDraft` + `WizardResumeNotice`, `WizardConfirm`                          |
+| `wizard-nav.ts`, `wizard-draft.ts` | The pure rules behind them, with unit tests                                                                                                                                                                       |
+
+Writing a new wizard:
+
+1. Host it in `Modal presentation="page"`; the modal supplies the card. A first screen that is only a
+   choice ("What would you like to add?") is a wizard step, not a pop-up in front of the wizard.
+2. Pick, don't type. Use `WizardOptions` / `WizardYesNo` / `WizardUsualOrOwn` first; a text box is for
+   answers that really are free (a name, an amount).
+3. Keep the checks in a pure `*-checks.ts` next to the screen, each returning field errors, with a
+   unit test (see `expenses/new-expense-checks.ts`). The screen only shows what they return.
+4. A step that repeats ("pump 2 of 4") uses `index` on `useWizard`; `nextRepeat`, `previousRepeat`
+   and `repeatLabel` (`wizard-nav.ts`) hold the arithmetic.
+5. Help goes under the question as a short `hint`, never a lone "?" icon.
+6. Progress: by default the page draft keeper offers back whatever field is on screen. A wizard
+   with answers on earlier screens adds `useWizardDraft` and puts `ownDraft` on its `WizardCard`;
+   the draft is offered back, never applied silently, and `clear()` is called once it saves.
+7. Approve, reject, reverse, suspend and remove are not wizards: one click, then `WizardConfirm`
+   (title names the action, one line says what happens and whether it can be undone, a button with a
+   verb and an object, and a reason box only when a reason is required).
+8. Plain words, phone first, no sideways scroll, light and dark, station time from the station.
+
 ## Contract assumptions
 
 - Navigation permissions are an input projection from the authorization layer, not a

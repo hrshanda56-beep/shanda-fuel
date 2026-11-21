@@ -116,7 +116,7 @@
   height: 1.75rem;
   place-items: center;
   border-radius: 50%;
-  background: rgb(20 32 30 / 0.14);
+  background: transparent;
 }
 
 .my-shift-figure-icon svg {
