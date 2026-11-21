@@ -715,6 +715,20 @@
       "when": 1793200380000,
       "tag": "0117_app_logo",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1793286720000,
+      "tag": "0118_station_zera_licence",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1793373120000,
+      "tag": "0119_zera_returns",
+      "breakpoints": true
     }
   ]
 }

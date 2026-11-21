@@ -39,6 +39,7 @@ export const REPORT_ICONS: Record<string, IconName> = {
   'customer-ageing': 'clock',
   'sales-by-period': 'calendar',
   'stock-variance': 'alert',
+  'zera-return': 'fuel',
 };
 
 export function reportIcon(report: { slug: string; category: ReportCategoryId }): IconName {

@@ -1,5 +1,67 @@
 # Shanda Fuel — Current Status
 
+## ZERA monthly return (#258) — 2026-11-21 (branch `feat/zera-return-258`, on top of `feat/side-panels-to-wizards-252`, uncommitted)
+
+Phase 5 of the owner feedback round. **Reports > Inventory > ZERA Monthly Return** works out the
+regulator's monthly return for one station and asks only what it cannot know, one question per screen
+(`/reports/zera-return`; the wizard is `reporting/zera/ui/zera-return-wizard.tsx`, its rules are pure and
+tested in `zera-return.ts` and `zera-wizard-checks.ts`).
+
+- **Figures.** Supplied = confirmed deliveries by station business date; sold = meter litres on approved,
+  posted or locked reconciliations. D50 goes to Diesel 50ppm; petrol and blends to Petrol; plain diesel,
+  gas and other products are listed in the notes only; a product with no fuel type blocks saving; kilograms
+  are never added to litres. `0` when nothing moved; `m` for both sold boxes when any past day of the
+  month has no approved report (the days are listed in the notes). One blend percentage in use is taken as
+  it is; none or several is asked, and `0` is written when no petrol moved.
+- **Rounding is ZERA's own rule** (printed on the form): whole litres, rounded to the nearest litre
+  (203 401.56 becomes 203 402). Quantities are summed exactly (integers scaled by 10^6) and rounded once, on
+  the total, never per delivery. **An exact half litre rounds up** (0.5 becomes 1): the owner found that
+  ZERA does not accept a figure ending in .5, so every figure is a whole litre (2026-11-21). Stored
+  quantities with more than six decimal places are refused rather than cut.
+- **Answers** are the form's fourteen questions in its own order, including the representative's email.
+  Licence details (name on the licence, number, ownership COCO/CODO/DODO, province, representative name,
+  phone, email) live on the station (migration 0118, six plus one nullable columns with checks) and are
+  asked once, then kept.
+- **Saved returns** (migration 0119, `app.zera_returns`): each save is a new version holding the answers as
+  they were; the application role can read and add rows but never change or delete them (row-level
+  security forced). A later correction to a delivery or report does not change a saved return.
+- **Who can see it.** Reading, saving, listing and downloading all need `report.view`, checked at the
+  station. Nobody without it can see a return or its downloads, and another organisation cannot reach it.
+  Saving runs through the audited, idempotent inventory command path (`REPORT.ZERA_RETURN_SAVED`); the
+  server works the figures out again from the database and ignores any figures from the browser.
+- **Downloads** (`/api/reports/zera/download`): CSV or a PDF made by the existing PDF writer, from a saved
+  version only. They need a fresh identity check and are written to the signed audit log
+  (`REPORT.EXPORTED`) in the same transaction as the read. CSV cells that would run as spreadsheet
+  formulas are defused; phone numbers keep their leading +.
+- **Also enforced on the server:** a month that has not finished cannot be saved; two saves of one month at
+  the same moment take turns (an advisory lock) so each gets its own version number.
+- **No fuel type.** The blocker screen links to the station's page under Settings, and says the path: open
+  the fuel, Yes Change It, The fuel itself, Change the type of fuel (walked on the live dev server).
+- **Checks run:** 31 unit tests for the figures and wizard rules (including exact halves rounding up);
+  17 integration tests on a freshly migrated database (`tests/integration/zera-return.test.ts`: nearest-litre
+  rounding of 1000.4 + 500.4 = 1501, no fuel type, ethanol, validation, versions, idempotent retry,
+  simultaneous saves, unfinished month refused, saved return unchanged after later books change, PDF and
+  audit event, role matrix, other organisation, supervisor's other station, application-role privileges,
+  **sold litres from reconciliations in every state** (pending and draft days are not counted, so the
+  figure is `m` until every day is approved, then 1299.5 becomes 1300), and **row-level security as the
+  real `app_runtime` role** (own organisation sees its returns, another sees none, no context sees none,
+  update and delete refused)); 5 browser tests (`tests/e2e/zera-return-wizard.spec.ts`, phone width, axe
+  clean); a live walk against the seeded local database as the application role, which matched
+  hand-computed litres. The reconciliation fixture writes end states with database triggers off for that
+  one connection (the real commands are guarded and need lineage); the ZERA code under test runs normally.
+- **Licence details** are asked, and can be changed at any time, inside the ZERA wizard (every answer has a
+  Change button on the check screen) and are kept on the station. The edit-station wizard does not ask them
+  too, on purpose: one place to change them.
+- **Due date.** The check screen shows ZERA's own sentence from the form, word for word ("Complete the
+  return as at the end of each month and send it to ZERA by the 3rd (section 43 of the Petroleum Act and
+  the licence conditions)."), and works out no date of its own. The form also says "on or before the 3rd of
+  every second month" in another place; the screen uses only the section-43 sentence above.
+- **Still open.** Migrations 0118 and 0119
+  are applied only to local throwaway databases (production migrations are the owner's, done at the very
+  end); the numbers and the UI-lock manifest may shift once #266 and #267 merge. Nothing was run against
+  production.
+
+
 ## Side panels retired (#252) — 2026-11-21 (branch `feat/side-panels-to-wizards-252`, on top of `feat/fuel-change-wizard-249`, uncommitted)
 
 Phase 4 of the owner feedback round. **No screen opens a side panel any more.** Every job that used
@@ -71,6 +133,7 @@ presentation stays in the design system only so its styles do not disappear.
     (`E2E_CLERK_USERS`), which only CI has. `accessibility.spec` (design-system reference page, four
     tests) fails here; nothing under `src/design-system` or its pages changed in this work, so it is not
     caused by it, but it was not re-run on a clean checkout.
+
 
 
 ## Station page, opening balances and Readiness (rest of #250, #251) — 2026-11-20 (branch `feat/fuel-change-wizard-249`, on top of the fuel wizard work, uncommitted)
@@ -230,6 +293,7 @@ overflow); changes were only staged, nothing was written to the demo data. Not v
 correction (no nozzle on the demo qualifies); both are covered by unit tests of their rules.
 
 
+
 ## Loading truck with each company's own logo — 2026-11-20 (branch `feat/truck-loader-257`, issue #257, uncommitted)
 
 While a page loads, a small tanker drives left to right (`design-system/loading-truck.tsx`, drawn in
@@ -275,6 +339,7 @@ First step of the owner feedback round (tracking #260). Nothing user-visible cha
 - **Not done here (later PRs in the round):** retiring the ten side panels and the one-off dialogs that do not use `ConfirmDialog` is #252, one area at a time; the new pieces are used by #249, #250, #251, #253, #256 and #258.
 - **UI lock:** re-baselined with the owner's approval (DEC-056).
 - **Checks:** typecheck, lint (one old warning), format, unit tests and the production build pass. Checked live on the local demo database (the confirm on the design-system reference page, since the demo has no purchase orders) at phone and desktop widths, light and dark, with no sideways scroll. No browser spec was added: the existing specs mock Clerk and the expenses APIs, and none covers this page.
+
 
 
 

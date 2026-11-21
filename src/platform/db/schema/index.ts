@@ -25,3 +25,4 @@ export * from './expense-versions';
 export * from './delivery-detail';
 export * from './opening-balances';
 export * from './sales-documents';
+export * from './zera-returns';

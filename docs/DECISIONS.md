@@ -1263,3 +1263,15 @@ Date: 2026-11-18. Explicit human instruction (client request relayed by the owne
 6. **Not a fiscal or tax-authority invoice.** No ZIMRA or other fiscal compliance is claimed. Tax is a plain per-company rate the user sets.
 7. **Schema.** Migration 0108 (after 0107), additive, local development databases only until approved.
 8. **Needs owner approval before landing:** the navigation entry (it touches UI-locked navigation files and needs a manifest re-baseline) and migration 0108 for any real database.
+
+## Addendum to DEC-056 — ZERA monthly return: ZERA's rounding rule, who may see returns (#258, 2026-11-21)
+
+Date: 2026-11-21. Source: the owner's feedback round (issue #258) and the owner's instruction in chat.
+**Status:** built on branch `feat/zera-return-258`; PROPOSED until the owner confirms the open points below. Not approved for any real database.
+
+1. **Rounding.** Volumes follow the rule printed on ZERA's form: whole litres, rounded to the nearest litre. Amounts are added exactly and rounded once, on the total. An exact half litre goes up (0.5 becomes 1): the owner found on 2026-11-21 that ZERA does not accept a figure ending in .5, so every figure is a whole litre.
+2. **Boxes.** D50 is the Diesel 50ppm box; petrol and blends are the Petrol box; plain diesel, gas and other products appear only in the notes; kilograms are never added to litres; a product with no fuel type blocks saving; `0` means nothing moved and `m` means a day of the month has no approved report.
+3. **Who can see it.** Only roles with `report.view` can read, save, list or download a return, checked at the station. Nothing else grants it.
+4. **Kept as filed.** Each save is a new version; versions are never edited or deleted by the application role.
+5. **Downloads** need a fresh identity check and are written to the signed audit log.
+6. **Due date.** The screen quotes ZERA's own sentence from the form word for word and works out no date itself (owner's instruction, 2026-11-21). The form also says "on or before the 3rd of every second month" elsewhere; only the section-43 sentence is shown.
