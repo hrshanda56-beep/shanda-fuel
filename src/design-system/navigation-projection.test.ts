@@ -239,6 +239,7 @@ describe('server navigation projection', () => {
       'staff-benefit',
       'payments-due',
       'reports',
+      'zera-returns',
       'settings',
     ]);
   });

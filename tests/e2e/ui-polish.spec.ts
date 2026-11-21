@@ -599,7 +599,9 @@ test.describe('click targets', () => {
     await page.goto('/foundation');
 
     const sidebar = page.locator('.shell-sidebar');
-    expect(await cursorOver(page, sidebar.getByRole('link', { name: 'Reports' }))).toBe('pointer');
+    expect(await cursorOver(page, sidebar.getByRole('button', { name: 'Reports' }))).toBe(
+      'pointer',
+    );
     expect(await cursorOver(page, sidebar.getByRole('button', { name: 'Operations' }))).toBe(
       'pointer',
     );

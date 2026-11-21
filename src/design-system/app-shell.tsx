@@ -132,7 +132,10 @@ function pageTitleForRoute(
     .flatMap((section) => section.items)
     .find((item) => isNavigationItemActive(item, pathname));
   if (!current) return titleFromPath(pathname);
-  return current.key === 'today' ? 'Dashboard' : current.label;
+  if (current.key === 'today') return 'Dashboard';
+  // The reports list is "All reports" in the menu, but the page is simply Reports.
+  if (current.key === 'reports') return 'Reports';
+  return current.label;
 }
 
 /** A page outside the person's own menu still gets a heading, from the last readable URL part. */

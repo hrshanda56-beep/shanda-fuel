@@ -18,6 +18,7 @@ test('tablet rail opens labeled navigation and Escape restores focus', async ({ 
   await expect(dialog).not.toBeVisible();
   await expect(trigger).toBeFocused();
   await trigger.press('Enter');
-  await dialog.getByRole('link', { name: 'Reports', exact: true }).click();
+  // The group holding the current page (Reports) opens by itself.
+  await dialog.getByRole('link', { name: 'All reports', exact: true }).click();
   await expect(dialog).not.toBeVisible();
 });
