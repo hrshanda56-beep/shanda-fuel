@@ -3135,50 +3135,6 @@ h3,
   align-items: center;
 }
 
-.recon-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border-radius: var(--radius-lg);
-  background: var(--bg-subtle);
-}
-
-.recon-tab {
-  display: inline-flex;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: 2.5rem;
-  padding: 0 var(--space-4);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-md);
-  transition: var(--transition-colors);
-}
-
-.recon-tab:hover {
-  color: var(--text-primary);
-}
-
-.recon-tab[aria-pressed='true'] {
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-xs);
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
-}
-
-.recon-tab-count {
-  color: var(--text-tertiary);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
-}
-
 /* Plain status: a coloured dot and the word, not a pill. */
 .recon-status {
   display: inline-flex;
@@ -3278,10 +3234,6 @@ h3,
   .ops-hero,
   .ops-attention {
     padding: var(--space-4);
-  }
-
-  .recon-tab {
-    padding: 0 var(--space-3);
   }
 }
 
@@ -3799,11 +3751,6 @@ h3,
 }
 
 @media (min-width: 48rem) {
-  .recon-tab {
-    flex: 0 0 auto;
-    padding: 0 var(--space-5);
-  }
-
   .recon-expand .recon-facts {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -6293,41 +6240,7 @@ h3,
   transition: width var(--duration-slow) var(--ease-out);
 }
 
-.tank-tabs,
-.profit-tabs {
-  display: flex;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  overflow-x: auto;
-  border-radius: var(--radius-lg);
-  background: var(--bg-muted);
-  width: fit-content;
-  max-width: 100%;
-}
-
-.tank-tabs button,
-.profit-tabs button {
-  min-height: 2.5rem;
-  padding: 0 var(--space-4);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-weight: 550;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: var(--transition-colors);
-}
-
-.tank-tabs button[aria-selected='true'],
-.profit-tabs button[aria-selected='true'] {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.tank-tab-wide {
+.tank-tabs > .tank-tab-wide {
   display: none;
 }
 
@@ -6399,12 +6312,12 @@ h3,
     gap: var(--space-4);
   }
 
-  .tank-tab-narrow {
+  .tank-tabs > .tank-tab-narrow {
     display: none;
   }
 
-  .tank-tab-wide {
-    display: block;
+  .tank-tabs > .tank-tab-wide {
+    display: inline-flex;
     order: -1;
   }
 
@@ -6547,15 +6460,6 @@ h3,
 
   .shell-header .shell-header-controls .shell-context-selector {
     max-width: 34vw;
-  }
-}
-
-/* Filter tabs wrap into even rows on narrow screens. */
-@media (max-width: 47.99rem) {
-  .recon-tabs {
-    width: 100%;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
   }
 }
 
@@ -7987,34 +7891,9 @@ h3,
   }
 }
 
-/* A tab switcher in a card heading never pushes past the card; it scrolls inside instead. */
-.panel-heading > .profit-tabs {
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* The Purchasing switcher has no period text beside it, so it sits at the far right. */
-.purchasing-tabs {
-  margin-left: auto;
-  min-width: 0;
-}
 .profit-top.content-span {
   min-width: 0;
 }
-/* On a phone the four sections sit two by two, so none is hidden off the side. */
-@media (max-width: 40rem) {
-  .purchasing-tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-    margin-left: 0;
-    overflow: visible;
-  }
-  .purchasing-tabs button {
-    padding: 0 var(--space-2);
-  }
-}
-
 /* A one-series column chart: wider columns, labels that wrap, an amber column for what is late. */
 .column-chart {
   --recon-label-h: 2.75rem;

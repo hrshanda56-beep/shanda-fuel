@@ -17,6 +17,7 @@ import {
   type StatementSection,
 } from './reconciliation-statement';
 import { InfoTip } from '@/design-system/info-tip';
+import { FilterPills } from '@/design-system/tabs';
 
 export type QueueItem = Readonly<{
   id: string;
@@ -811,20 +812,12 @@ export function ReconciliationBoard({
       <section className="card panel cash-panel recon-queue" aria-labelledby="recon-queue-title">
         <div className="panel-heading">
           <h2 id="recon-queue-title">Shift reconciliations</h2>
-          <div className="recon-tabs" role="group" aria-label="Show reconciliations">
-            {FILTERS.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                className="recon-tab"
-                aria-pressed={filter === item.value}
-                onClick={() => setFilter(item.value)}
-              >
-                {item.label}
-                <span className="recon-tab-count">{counts[item.value]}</span>
-              </button>
-            ))}
-          </div>
+          <FilterPills
+            label="Show reconciliations"
+            value={filter}
+            onChange={setFilter}
+            options={FILTERS.map((item) => ({ ...item, count: counts[item.value] }))}
+          />
         </div>
 
         {visible.length === 0 ? (

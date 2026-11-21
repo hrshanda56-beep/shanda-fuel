@@ -793,32 +793,6 @@
   padding: var(--space-5) var(--space-6) var(--space-5);
 }
 
-.income-tabs {
-  display: flex;
-  gap: var(--space-5);
-  margin-bottom: var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.income-tabs a {
-  padding: var(--space-2) 0 var(--space-3);
-  margin-bottom: -1px;
-  border-bottom: 2px solid transparent;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  text-decoration: none;
-}
-
-.income-tabs a:hover {
-  color: var(--text-primary);
-}
-
-.income-tabs a[aria-current='page'] {
-  color: var(--accent-text);
-  border-bottom-color: var(--accent);
-}
-
 .income-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1057,11 +1031,6 @@
   .income .income-detail th {
     padding-left: calc(var(--space-2) + 1.5rem);
   }
-
-  .income-tabs {
-    flex-wrap: wrap;
-    gap: var(--space-1) var(--space-4);
-  }
 }
 
 @media print {
@@ -1206,14 +1175,6 @@
   border-bottom-right-radius: var(--radius-md);
 }
 
-.income-tabs a {
-  font-weight: var(--font-weight-regular, 400);
-}
-
-.income-tabs a[aria-current='page'] {
-  font-weight: var(--font-weight-medium);
-}
-
 /* Phone: the statement card uses the width instead of padding it away. */
 @media (max-width: 47.99rem) {
   .income-card {
@@ -1235,14 +1196,6 @@
 /* Income statement: a compact title row. */
 .income-card {
   padding-block: var(--space-4);
-}
-
-.income-tabs {
-  margin-bottom: var(--space-3);
-}
-
-.income-tabs a {
-  padding-block: var(--space-1) var(--space-2);
 }
 
 .income-toolbar {

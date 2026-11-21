@@ -9,6 +9,7 @@ import { ChecksPanel } from './checks-panel';
 import { ExposurePanel } from './exposure-panel';
 import { OrdersPanel } from './orders-panel';
 import { SettingsPanel } from './settings-panel';
+import { TabSwitcher } from '@/design-system/tabs';
 import { getJson } from './purchasing-client';
 import { availableTabs, resolveTab, type PurchasingTab } from './purchasing-tabs';
 import type { StationOption, SupplierName } from './purchasing-types';
@@ -91,25 +92,17 @@ export function PurchasingWorkspace({
   return (
     <div className="profit-workspace wide-workspace">
       <div className="profit-top">
-        <div
-          className="profit-tabs purchasing-tabs"
-          role="tablist"
-          aria-label="Purchasing sections"
-        >
-          {tabs.map((item) => (
-            <button
-              key={item.value}
-              id={`purchasing-tab-${item.value}`}
-              type="button"
-              role="tab"
-              aria-selected={tab === item.value}
-              aria-controls="purchasing-tabpanel"
-              onClick={() => choose(item.value)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        <TabSwitcher
+          label="Purchasing sections"
+          idPrefix="purchasing-tab"
+          value={tab}
+          onChange={choose}
+          tabs={tabs.map((item) => ({
+            value: item.value,
+            label: item.label,
+            controls: 'purchasing-tabpanel',
+          }))}
+        />
       </div>
       <div id="purchasing-tabpanel" role="tabpanel" aria-labelledby={`purchasing-tab-${tab}`}>
         {tab === 'orders' ? (
