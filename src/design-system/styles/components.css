@@ -2035,18 +2035,18 @@ tr:has(.row-link):active {
   place-items: center;
   margin-bottom: var(--space-1);
   border-radius: var(--radius-full);
-  background: var(--tone-neutral-bg);
   color: var(--tone-neutral-fg);
+  background: transparent;
 }
 
 .confirm-icon-critical {
-  background: var(--tone-critical-bg);
   color: var(--tone-critical-fg);
+  background: transparent;
 }
 
 .confirm-icon-warning {
-  background: var(--tone-warning-bg);
   color: var(--tone-warning-fg);
+  background: transparent;
 }
 
 .confirm-consequence {
@@ -2096,10 +2096,9 @@ tr:has(.row-link):active {
   width: 2.5rem;
   height: 2.5rem;
   place-items: center;
-  border: var(--border-width) solid var(--accent-border);
   border-radius: var(--radius-lg);
-  background: var(--accent-subtle);
   color: var(--accent);
+  background: transparent;
 }
 
 .wip-badge {
@@ -2248,13 +2247,13 @@ tr:has(.row-link):active {
   height: 2.5rem;
   place-items: center;
   border-radius: var(--radius-full);
-  background: var(--bg-muted);
   color: var(--text-tertiary);
+  background: transparent;
 }
 
 .state-block-error .state-icon {
-  background: var(--tone-critical-bg);
   color: var(--tone-critical-fg);
+  background: transparent;
 }
 
 /* Loading ---------------------------------------------------------------- */

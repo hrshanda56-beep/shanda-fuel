@@ -209,13 +209,13 @@
   height: 1.5rem;
   place-items: center;
   border-radius: var(--radius-full);
-  background: var(--tone-info-bg);
   color: var(--tone-info-text);
+  background: transparent;
 }
 
 .pg-timeline-mark[data-kind='created'] {
-  background: var(--tone-positive-bg);
   color: var(--tone-positive-text);
+  background: transparent;
 }
 
 .pg-timeline-mark .icon {
