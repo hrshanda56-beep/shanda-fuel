@@ -89,7 +89,11 @@ they were updated. #273, #274 and #275 are merged (21 Nov 2026).
 shows the browser's own error and the page recovers cleanly when the connection returns; with 1.5 s added
 to every request My Shift and Daily Operations still load fully with no page errors; with every browser API
 call answered 503 the server-drawn pages still show their data. Saving while offline and replaying the save
-is covered by the outbox unit tests only, not by a browser test. The attendant My Shift screen has no axe
+is now also proven in a browser: on Daily Operations an edit made offline is kept on the device ("saved on
+this device, waiting to be sent", with Send Now and Throw Away), replays to the server when the connection
+returns, and the queue empties; on My Shift an offline reading says "Nothing was recorded", keeps the confirm
+button, saves on retry and is still there after a reload. A final axe crawl of 58 page and screen-size
+combinations on the merged code found only the known moderate heading-order item. The attendant My Shift screen has no axe
 violations and no sideways scroll for an attendant who has a station assignment (the local attendant1 login
 has none, so it shows "Access restricted", which is scratch data, not a defect).
 **Not measured:** page timings. A local production build deliberately refuses the dev sign-in, so
