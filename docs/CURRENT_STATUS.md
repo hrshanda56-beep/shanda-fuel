@@ -71,7 +71,8 @@ h1 headings for owner and finance (before Phase 6); the home card showed a "Pend
 (not investigated). **Still unproven:** the Playwright specs (need Clerk secrets), Approve past the identity
 check, the deployed site, and the owner's review. Open: #259 further slices (turning on
 `CONSOLIDATED_CONTEXT_READS` is the owner's call) and the dark-lettering logo (#257). Production migrations
-0117, 0118 and 0119 are still the owner's to run.
+0117, 0118 and 0119 were applied by the owner on 2026-11-21 and verified (104 migrations; see the release
+record in `docs/runbooks/v1-migration-and-release.md`). The live smoke test is still to be done.
 
 **Phase 7 hardening pass (21 Nov 2026, local scratch database, no production contact).** Production
 migrations 0117 to 0119 have since been applied and verified (see the runbook record, PR #273).
