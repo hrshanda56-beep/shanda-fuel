@@ -186,16 +186,12 @@ export function zeraAnswers(input: {
   ];
 }
 
-/** The form says to send the return to ZERA by the 3rd. This is the date that means, for the month chosen. */
-export function zeraDueDate(month: string): { value: string; label: string } {
-  const [year = 0, mon = 1] = month.split('-').map(Number);
-  const nextYear = mon === 12 ? year + 1 : year;
-  const nextMonth = mon === 12 ? 1 : mon + 1;
-  return {
-    value: `${nextYear}-${String(nextMonth).padStart(2, '0')}-03`,
-    label: `3 ${MONTH_NAMES[nextMonth - 1]} ${nextYear}`,
-  };
-}
+/**
+ * ZERA's own words about when a return is due, exactly as printed on the form. They are shown as
+ * written: no date is worked out from them, so nothing is added to or read into what ZERA says.
+ */
+export const ZERA_DEADLINE_WORDING =
+  'Complete the return as at the end of each month and send it to ZERA by the 3rd (section 43 of the Petroleum Act and the licence conditions).';
 
 /**
  * Text a spreadsheet would run as a formula is defused with a leading apostrophe. Phone numbers and

@@ -31,7 +31,7 @@ import {
   checkLicenceNumber,
   monthName,
   zeraAnswers,
-  zeraDueDate,
+  ZERA_DEADLINE_WORDING,
   zeraSteps,
   type ZeraStep,
 } from '../zera-wizard-checks';
@@ -158,7 +158,6 @@ export function ZeraReturnWizard({ tenantId, stations, months }: Props) {
 
   const monthLabel = months.find((m) => m.value === month)?.label ?? month;
   const stationName = view?.stationName ?? stations.find((s) => s.id === stationId)?.name ?? '';
-  const due = zeraDueDate(month);
   const details: StationZeraDetails = {
     licenceHolder: holder.trim() || null,
     licenceNumber: number.trim() || null,
@@ -607,8 +606,13 @@ export function ZeraReturnWizard({ tenantId, stations, months }: Props) {
             <WizardNotice>
               These products have no fuel type, so we cannot tell which box they belong in:{' '}
               {result.blockers.map((b) => b.productName).join(', ')}. Set the type under{' '}
-              <Link href={`/stations?tenantId=${encodeURIComponent(tenantId)}`}>Fuels</Link>, then
-              come back.
+              <Link
+                href={`/settings?tab=stations&setup=${encodeURIComponent(stationId ?? '')}&tenantId=${encodeURIComponent(tenantId)}`}
+              >
+                Fuels
+              </Link>
+              : open the fuel, choose Yes, Change It, then The fuel itself and Change the type of
+              fuel. Then come back here.
             </WizardNotice>
           ) : null}
           {result.missingDays.length > 0 ? (
@@ -650,9 +654,10 @@ export function ZeraReturnWizard({ tenantId, stations, months }: Props) {
         <>
           <WizardStep wizard={wizard} title="Check the return" hint={WIZARD_REVIEW_HINT}>
             <p className="field-hint">
-              {monthLabel} · {stationName} · send to ZERA by {due.label}. Saving keeps this version;
-              a later change is saved as a new version.
+              {monthLabel} · {stationName}. Saving keeps this version; a later change is saved as a
+              new version.
             </p>
+            <p className="field-hint">ZERA says: “{ZERA_DEADLINE_WORDING}”</p>
             <WizardSummary>
               {answers.map((answer, position) => {
                 const target = CHANGE_STEP[position];
@@ -688,9 +693,10 @@ export function ZeraReturnWizard({ tenantId, stations, months }: Props) {
               ZERA return for {monthLabel}, {stationName}
             </h2>
             <p role="status">
-              Saved as version {savedVersion}. Send it to ZERA by {due.label}. Copy each answer into
-              the ZERA form, or download the saved return.
+              Saved as version {savedVersion}. Copy each answer into the ZERA form, or download the
+              saved return.
             </p>
+            <p className="field-hint">ZERA says: “{ZERA_DEADLINE_WORDING}”</p>
             <ul className="form-stack">
               {answers.map((answer) => (
                 <li key={answer.label}>

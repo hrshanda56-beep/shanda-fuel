@@ -56,6 +56,22 @@ describe('rounding', () => {
     );
   });
 
+  it('always reports whole litres, even when the total is an exact half', () => {
+    const half = (a: string, b: string) =>
+      buildZeraReturn({
+        supplied: [
+          row({ kind: 'D50', quantity: a, productId: 'a' }),
+          row({ kind: 'D50', quantity: b, productId: 'b' }),
+        ],
+        sold: [],
+        missingDays: [],
+      }).diesel50.supplied;
+    expect(half('1000.2', '500.3')).toBe('1501'); // 1500.5 exactly
+    expect(half('0.25', '0.25')).toBe('1'); // 0.5 exactly
+    expect(half('1000.25', '500.2499')).toBe('1500'); // just under a half
+    expect(half('1000.2', '500.3')).not.toContain('.');
+  });
+
   it('sums exact decimals before rounding (no drift)', () => {
     const rows = Array.from({ length: 10 }, () => row({ kind: 'D50', quantity: '0.1' }));
     const result = buildZeraReturn({ supplied: rows, sold: [], missingDays: [] });

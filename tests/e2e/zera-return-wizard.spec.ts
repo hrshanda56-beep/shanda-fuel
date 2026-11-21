@@ -188,7 +188,9 @@ test.describe('ZERA monthly return wizard', () => {
     const summary = page.locator('main');
     await expect(summary).toContainText('Tendai Moyo');
     await expect(summary).toContainText('tendai@example.com');
-    await expect(summary).toContainText('send to ZERA by 3 November 2026');
+    await expect(summary).toContainText(
+      'Complete the return as at the end of each month and send it to ZERA by the 3rd (section 43 of the Petroleum Act and the licence conditions).',
+    );
     // Fuel sold is missing for the whole month because one day has no approved report.
     await expect(summary.getByText('Fuel sold: Petrol (litres)').locator('..')).toContainText('m');
 
@@ -248,6 +250,11 @@ test.describe('ZERA monthly return wizard', () => {
     await startOctober(page);
     await heading(page, 'Something needs your attention');
     await expect(page.getByText(/Mystery Fuel/)).toBeVisible();
+    // The link goes to this station's setup on the Settings page, where the fuel type is set.
+    await expect(page.getByRole('link', { name: 'Fuels' })).toHaveAttribute(
+      'href',
+      `/settings?tab=stations&setup=${stationId}&tenantId=${tenantId}`,
+    );
     await next(page).click();
     await expect(
       page.getByText('Set the fuel type for the products listed above first.'),

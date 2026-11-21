@@ -15,9 +15,8 @@ tested in `zera-return.ts` and `zera-wizard-checks.ts`).
   it is; none or several is asked, and `0` is written when no petrol moved.
 - **Rounding is ZERA's own rule** (printed on the form): whole litres, rounded to the nearest litre
   (203 401.56 becomes 203 402). Quantities are summed exactly (integers scaled by 10^6) and rounded once, on
-  the total, never per delivery. **An exact half litre is reported as it is (for example 1500.5), not
-  rounded** (the owner's choice on 2026-11-21; the form says "full litres" and is silent on halves, so this
-  is an exception to confirm with ZERA). Stored
+  the total, never per delivery. **An exact half litre rounds up** (0.5 becomes 1): the owner found that
+  ZERA does not accept a figure ending in .5, so every figure is a whole litre (2026-11-21). Stored
   quantities with more than six decimal places are refused rather than cut.
 - **Answers** are the form's fourteen questions in its own order, including the representative's email.
   Licence details (name on the licence, number, ownership COCO/CODO/DODO, province, representative name,
@@ -34,18 +33,33 @@ tested in `zera-return.ts` and `zera-wizard-checks.ts`).
   version only. They need a fresh identity check and are written to the signed audit log
   (`REPORT.EXPORTED`) in the same transaction as the read. CSV cells that would run as spreadsheet
   formulas are defused; phone numbers keep their leading +.
-- **Checks run:** 30 unit tests for the figures and wizard rules; 13 integration tests on a freshly migrated
-  database (`tests/integration/zera-return.test.ts`: nearest-litre rounding of 1000.4 + 500.4 = 1501, no
-  fuel type, ethanol, validation, versions, idempotent retry, saved return unchanged after later books
-  change, PDF and audit event, role matrix, other organisation, supervisor's other station, application-role
-  privileges); 5 browser tests (`tests/e2e/zera-return-wizard.spec.ts`, phone width, axe clean); a live
-  walk against the seeded local database as the application role, which matched hand-computed litres.
-- **Not done.** The integration suite connects as the database owner, so the row-level-security policy
-  itself is only exercised by the live walk, not by a test. Sold litres from real approved reconciliations
-  are covered by the live walk and hand-computed SQL, not by an integration fixture. The due date is shown
-  as the 3rd of the following month (the form's wording); the owner's "every second month" remark is not
-  built. Migrations 0117 and 0118 are applied only to local throwaway databases; the numbers and the UI-lock
-  manifest may shift once #266 and #267 merge. Nothing was run against production.
+- **Also enforced on the server:** a month that has not finished cannot be saved; two saves of one month at
+  the same moment take turns (an advisory lock) so each gets its own version number.
+- **No fuel type.** The blocker screen links to the station's page under Settings, and says the path: open
+  the fuel, Yes Change It, The fuel itself, Change the type of fuel (walked on the live dev server).
+- **Checks run:** 31 unit tests for the figures and wizard rules (including exact halves rounding up);
+  17 integration tests on a freshly migrated database (`tests/integration/zera-return.test.ts`: nearest-litre
+  rounding of 1000.4 + 500.4 = 1501, no fuel type, ethanol, validation, versions, idempotent retry,
+  simultaneous saves, unfinished month refused, saved return unchanged after later books change, PDF and
+  audit event, role matrix, other organisation, supervisor's other station, application-role privileges,
+  **sold litres from reconciliations in every state** (pending and draft days are not counted, so the
+  figure is `m` until every day is approved, then 1299.5 becomes 1300), and **row-level security as the
+  real `app_runtime` role** (own organisation sees its returns, another sees none, no context sees none,
+  update and delete refused)); 5 browser tests (`tests/e2e/zera-return-wizard.spec.ts`, phone width, axe
+  clean); a live walk against the seeded local database as the application role, which matched
+  hand-computed litres. The reconciliation fixture writes end states with database triggers off for that
+  one connection (the real commands are guarded and need lineage); the ZERA code under test runs normally.
+- **Licence details** are asked, and can be changed at any time, inside the ZERA wizard (every answer has a
+  Change button on the check screen) and are kept on the station. The edit-station wizard does not ask them
+  too, on purpose: one place to change them.
+- **Due date.** The check screen shows ZERA's own sentence from the form, word for word ("Complete the
+  return as at the end of each month and send it to ZERA by the 3rd (section 43 of the Petroleum Act and
+  the licence conditions)."), and works out no date of its own. The form also says "on or before the 3rd of
+  every second month" in another place; the screen uses only the section-43 sentence above.
+- **Still open.** Migrations 0117 and 0118
+  are applied only to local throwaway databases (production migrations are the owner's, done at the very
+  end); the numbers and the UI-lock manifest may shift once #266 and #267 merge. Nothing was run against
+  production.
 
 ## Side panels retired (#252) — 2026-11-21 (branch `feat/side-panels-to-wizards-252`, on top of `feat/fuel-change-wizard-249`, uncommitted)
 

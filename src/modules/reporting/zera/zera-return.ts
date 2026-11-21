@@ -10,8 +10,8 @@
  * - A product with no fuel type blocks the return until its type is set (never guessed).
  * - ZERA's own rule, printed on the form: "Volumes in full litres, rounded to the nearest litre"
  *   (203 401.56 L becomes 203 402). Amounts are summed exactly (no floating point) and rounded
- *   once, at the end. The form gives no rule for an exact half litre, so it goes up, as in ordinary
- *   rounding to the nearest whole number. Nothing is ever rounded before the final sum.
+ *   once, at the end. An exact half litre goes up (0.5 becomes 1): ZERA does not accept
+ *   a figure ending in .5, so every figure is a whole litre. Nothing is ever rounded before the final sum.
  * - `0` when nothing moved. `m` for sold litres when any day of the month has no approved report.
  */
 

@@ -439,3 +439,161 @@ describe('ZERA monthly return (PostgreSQL)', { timeout: 180_000 }, () => {
     expect(policy[0]).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
   });
 });
+
+const qs2 = (ctx: Qa1ScenarioContext) =>
+  `?tenantId=${ctx.tenantId}&stationId=${ctx.stationId}&month=${MONTH}&ethanolPercent=10`;
+
+describe(
+  'ZERA return: sold litres and row-level security (PostgreSQL)',
+  { timeout: 180_000 },
+  () => {
+    let sql2: Sql;
+    let ctx: Qa1ScenarioContext;
+    let shiftId: string;
+
+    /**
+     * Reconciliations are driven by guarded commands (state machine, lineage, locked detail). This test
+     * only needs finished reports to read, so it seeds end states with the database's triggers off for
+     * this one connection, then turns them back on. What is under test (the ZERA read and save) runs
+     * normally.
+     */
+    async function seeding<T>(work: () => Promise<T>): Promise<T> {
+      await sql2.unsafe('set session_replication_role = replica');
+      try {
+        return await work();
+      } finally {
+        await sql2.unsafe('set session_replication_role = default');
+      }
+    }
+
+    async function addReading(reconciliationId: string, litres: string) {
+      await sql2`
+      insert into app.reconciliation_meter_readings
+        (tenant_id, station_id, reconciliation_id, shift_id, nozzle_id, product_id,
+         opening_reading, closing_reading, litres_sold, unit_price, sales_value, entered_by)
+      values (${ctx.tenantId}, ${ctx.stationId}, ${reconciliationId}, ${shiftId}, ${ctx.nozzleId},
+        ${ctx.productId}, 0, ${litres}, ${litres}, 1, ${litres}, ${ctx.actors.admin.membershipId})`;
+    }
+
+    /** One day with a report in the given state and one meter reading. */
+    function day(date: string, state: string, litres: string) {
+      return seeding(async () => {
+        const existing = await sql2`
+        select id::text as id from app.station_business_days
+        where station_id = ${ctx.stationId} and business_date = ${date}`;
+        const dayId = (existing[0]?.id as string | undefined) ?? randomUUID();
+        if (!existing[0]) {
+          await sql2`
+          insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+          values (${dayId}, ${ctx.tenantId}, ${ctx.stationId}, ${date}, 'NOT_STARTED')`;
+        }
+        const reconciliationId = randomUUID();
+        await sql2`
+        insert into app.reconciliations (id, tenant_id, station_id, business_day_id, state)
+        values (${reconciliationId}, ${ctx.tenantId}, ${ctx.stationId}, ${dayId}, ${state})`;
+        await addReading(reconciliationId, litres);
+        return reconciliationId;
+      });
+    }
+
+    function approveLater(reconciliationId: string) {
+      return seeding(
+        () =>
+          sql2`update app.reconciliations set state = 'APPROVED' where id = ${reconciliationId}`,
+      );
+    }
+
+    beforeAll(async () => {
+      process.env.APP_ENV ??= 'test';
+      process.env.APP_URL ??= 'http://127.0.0.1:3000';
+      process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-zera-key';
+      process.env.AUDIT_SIGNING_KEY ??= 'integration-zera-secret';
+      sql2 = postgres(databaseUrl!, { max: 1, prepare: false });
+      ctx = await createQa1ScenarioContext(sql2, 'zera-sold');
+      await sql2`update app.products set kind = 'PETROL' where id = ${ctx.productId}`;
+      shiftId = randomUUID();
+      await sql2`
+      insert into app.shifts (id, tenant_id, station_id, business_day_id, state, planned_start_at,
+        planned_end_at, business_date)
+      values (${shiftId}, ${ctx.tenantId}, ${ctx.stationId}, ${ctx.businessDayId}, 'PLANNED',
+        '2026-09-26T06:00:00Z', '2026-09-26T14:00:00Z', '2026-09-26')`;
+    });
+    afterAll(async () => sql2?.end());
+
+    it('counts only approved, posted and locked days, and marks sold litres m until every day is', async () => {
+      // The first business day is 24 September, so every day from then to 30 September needs a report.
+      const pendingId = await day('2026-09-24', 'PENDING_APPROVAL', '50.000');
+      await day('2026-09-25', 'APPROVED', '100.250');
+      await day('2026-09-26', 'POSTED', '100.000');
+      await day('2026-09-27', 'LOCKED', '50.000');
+      const draftId = await day('2026-09-28', 'DRAFT', '999.000');
+      await day('2026-09-29', 'APPROVED', '0.250');
+      await day('2026-09-30', 'APPROVED', '0.000');
+
+      type View = {
+        result: { petrol: { sold: string }; diesel50: { sold: string }; missingDays: string[] };
+      };
+      const read = async () =>
+        (await (await call(readGet, ctx, 'admin', `/api/reports/zera${qs2(ctx)}`)).json()) as View;
+
+      // The 24th is pending and the 28th is a draft: neither counts as an approved report.
+      const before = await read();
+      expect(before.result.missingDays).toEqual(['2026-09-24', '2026-09-28']);
+      expect(before.result.petrol.sold).toBe('m');
+      expect(before.result.diesel50.sold).toBe('m');
+
+      await approveLater(pendingId);
+      await approveLater(draftId);
+      const after = await read();
+      expect(after.result.missingDays).toEqual([]);
+      // 50 + 100.25 + 100 + 50 + 999 + 0.25 + 0 = 1299.5 litres exactly: a half rounds up to 1300.
+      expect(after.result.petrol.sold).toBe('1300');
+      expect(after.result.diesel50.sold).toBe('0');
+    });
+
+    it('shows saved returns only to their own organisation, as the application role', async () => {
+      const saved = await call(savePost, ctx, 'admin', '/api/reports/zera/saved', {
+        method: 'POST',
+        body: {
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          month: MONTH,
+          ethanolPercent: 10,
+          notes: '',
+          details,
+        },
+        key: `rls-${randomUUID()}`,
+      });
+      expect(saved.status).toBe(200);
+      const asRuntime = async (tenantId: string, run: () => Promise<void>) => {
+        await sql2.unsafe('set role app_runtime');
+        try {
+          await sql2`select set_config('app.tenant_id', ${tenantId}, false)`;
+          await sql2`select set_config('app.actor_id', ${ctx.actors.admin.actorId}, false)`;
+          await sql2`select set_config('app.membership_id', ${ctx.actors.admin.membershipId}, false)`;
+          await run();
+        } finally {
+          await sql2.unsafe('reset role');
+        }
+      };
+      await asRuntime(ctx.tenantId, async () => {
+        const own = await sql2`select count(*)::int as n from app.zera_returns`;
+        expect(own[0]!.n).toBeGreaterThanOrEqual(1);
+        await expect(sql2`update app.zera_returns set month = '2026-08'`).rejects.toThrow();
+        await expect(sql2`delete from app.zera_returns`).rejects.toThrow();
+      });
+      await asRuntime(ctx.otherTenantId, async () => {
+        const foreign = await sql2`select count(*)::int as n from app.zera_returns`;
+        expect(foreign[0]!.n).toBe(0);
+      });
+      await sql2.unsafe('set role app_runtime');
+      try {
+        await sql2`select set_config('app.tenant_id', '', false)`;
+        const noContext = await sql2`select count(*)::int as n from app.zera_returns`;
+        expect(noContext[0]!.n).toBe(0);
+      } finally {
+        await sql2.unsafe('reset role');
+      }
+    });
+  },
+);

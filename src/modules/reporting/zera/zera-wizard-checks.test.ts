@@ -10,7 +10,7 @@ import {
   recentMonths,
   zeraAnswers,
   zeraCsv,
-  zeraDueDate,
+  ZERA_DEADLINE_WORDING,
   zeraSteps,
 } from './zera-wizard-checks';
 
@@ -183,8 +183,9 @@ describe('month name and due date', () => {
     expect(monthName('2026-01')).toBe('January');
   });
 
-  it('is the 3rd of the next month, across a year end', () => {
-    expect(zeraDueDate('2026-10')).toEqual({ value: '2026-11-03', label: '3 November 2026' });
-    expect(zeraDueDate('2026-12')).toEqual({ value: '2027-01-03', label: '3 January 2027' });
+  it("shows ZERA's own deadline wording exactly as printed on the form", () => {
+    expect(ZERA_DEADLINE_WORDING).toBe(
+      'Complete the return as at the end of each month and send it to ZERA by the 3rd (section 43 of the Petroleum Act and the licence conditions).',
+    );
   });
 });
