@@ -14,6 +14,7 @@ import { requireAuthenticatedActor } from '@/modules/identity';
 import type { AvailableContext } from '@/modules/context/contracts';
 import { buildActionCenter } from '@/modules/approvals/action-center-model';
 import { loadActionCenterFacts } from '@/modules/approvals/action-center';
+import { withRequestReadScope } from '@/platform/security/request-read-scope';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -234,46 +235,49 @@ async function loadWorkItems(
   if (targets.length === 0) return { items: [], more: 0, unavailable: false };
   try {
     const actor = await requireAuthenticatedActor(request);
-    const results = await Promise.all(
-      targets.map(async (target) => {
-        const center = buildActionCenter(
-          await loadActionCenterFacts(
-            request,
-            {
-              organisationId: scope.tenantId,
-              ...(target.legalEntityId ? { legalEntityId: target.legalEntityId } : {}),
-              stationId: target.stationId,
-              allStations: false,
-            },
-            actor,
-          ),
-        );
-        return {
-          unavailable: center.unavailable.length > 0,
-          items: center.items
-            .filter((item) => item.area !== 'Operations')
-            .map((item) => {
-              // What a company owes or is owed is the same whichever station is asked.
-              const shared = item.area === 'Payables' || item.area === 'Receivables';
-              // Shorter wording for the dashboard; other screens keep the full sentence.
-              const shortTitle = item.title
-                .replace(
-                  / falls due to suppliers in the next (\d+) days/,
-                  ' due to suppliers in $1 days',
-                )
-                .replace(' falls due to suppliers today', ' due to suppliers today')
-                .replace(' collected but not yet banked', ' not yet banked')
-                .replace(/ is waiting for approval$/, ' needs approval');
-              return {
-                id: shared ? `work-${item.id}` : `work-${target.stationId}-${item.id}`,
-                title: target.name && !shared ? `${target.name}: ${shortTitle}` : shortTitle,
-                detail: item.detail,
-                href: item.href,
-                needsAction: item.tone === 'attention',
-              };
-            }),
-        };
-      }),
+    // One read scope for every station, so reads that do not depend on the station run once.
+    const results = await withRequestReadScope(() =>
+      Promise.all(
+        targets.map(async (target) => {
+          const center = buildActionCenter(
+            await loadActionCenterFacts(
+              request,
+              {
+                organisationId: scope.tenantId,
+                ...(target.legalEntityId ? { legalEntityId: target.legalEntityId } : {}),
+                stationId: target.stationId,
+                allStations: false,
+              },
+              actor,
+            ),
+          );
+          return {
+            unavailable: center.unavailable.length > 0,
+            items: center.items
+              .filter((item) => item.area !== 'Operations')
+              .map((item) => {
+                // What a company owes or is owed is the same whichever station is asked.
+                const shared = item.area === 'Payables' || item.area === 'Receivables';
+                // Shorter wording for the dashboard; other screens keep the full sentence.
+                const shortTitle = item.title
+                  .replace(
+                    / falls due to suppliers in the next (\d+) days/,
+                    ' due to suppliers in $1 days',
+                  )
+                  .replace(' falls due to suppliers today', ' due to suppliers today')
+                  .replace(' collected but not yet banked', ' not yet banked')
+                  .replace(/ is waiting for approval$/, ' needs approval');
+                return {
+                  id: shared ? `work-${item.id}` : `work-${target.stationId}-${item.id}`,
+                  title: target.name && !shared ? `${target.name}: ${shortTitle}` : shortTitle,
+                  detail: item.detail,
+                  href: item.href,
+                  needsAction: item.tone === 'attention',
+                };
+              }),
+          };
+        }),
+      ),
     );
     // Each station's list is already most-urgent-first; merge them so one station's
     // information-only items cannot push another station's approval out of view.
