@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 
 import { Icon, type IconName } from '@/design-system/icons';
@@ -9,15 +10,19 @@ import { CardEmpty, CardRow, CardRows, CardTiles, SectionCard } from '@/design-s
 
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
-import { StaffPanel } from './staff-panel';
-import { AuditPanel } from '../../audit/ui/audit-panel';
 import { StationDetail, StationList } from '../../setup/ui/station-detail';
 import { AlertSettingsPanel } from '../../setup/ui/alert-settings-panel';
-import { PaymentsPanel } from '../../setup/ui/payments-panel';
 import { ReadinessPanel } from '../../setup/ui/readiness-panel';
 import { EditDocumentDetails } from './document-details-edit';
 import { AddCompany, AddStation, EditCompany, EditStation } from './structure-forms';
 import styles from './settings-workspace.module.css';
+
+// These tabs are large and only one is open at a time, so each loads when its tab is first opened.
+const StaffPanel = dynamic(() => import('./staff-panel').then((m) => m.StaffPanel));
+const AuditPanel = dynamic(() => import('../../audit/ui/audit-panel').then((m) => m.AuditPanel));
+const PaymentsPanel = dynamic(() =>
+  import('../../setup/ui/payments-panel').then((m) => m.PaymentsPanel),
+);
 
 type Tab =
   | 'organisation'

@@ -354,7 +354,7 @@
     "src/modules/sales-documents/ui/use-sales-command.tsx": "9fc57c808e035e2520a326c5d361bf63de70350ea2076943c4de57da77ed8acb",
     "src/modules/settings/ui/document-details-edit.tsx": "43d5266112a742dfe3e92cc35df9319f5368b689d0a3724d6dbd7f65593557c0",
     "src/modules/settings/ui/settings-workspace.module.css": "ff7913f9c4cf48de967e2799529607789ebd8a8afbe7cd76323e6f1f03e18063",
-    "src/modules/settings/ui/settings-workspace.tsx": "cdb86b049dffbb489390ab6e7f9970fd86b56826db62023dfd2afdae0bb70b65",
+    "src/modules/settings/ui/settings-workspace.tsx": "38502c01ffaca6aa2b2a3e7fcb75b9c713c69868c1338a7815fdd2e5265f4a78",
     "src/modules/settings/ui/sign-out-button.tsx": "455f864b68cc1f8c4faac44e38a8627c9527f21d6836568f01fc07a7f40e49e0",
     "src/modules/settings/ui/staff-access-wizard.tsx": "4ba0115c68b7aa9eeaad6bc8cc19e74bd0c640ed132d2b48b22eeea516f2cc8b",
     "src/modules/settings/ui/staff-filter.ts": "c769ff7e7bcecfb9d8bf8552acd60847cbe8b30675f5dbff3402aa3ba4205b64",

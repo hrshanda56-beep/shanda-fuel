@@ -25,6 +25,9 @@ export function getDatabase(): Database {
   const url = assertDatabaseConfigured();
   const pooledClient = postgres(url, {
     max: 10,
+    // Give up on an unreachable database quickly, and release idle connections before the pooler does.
+    connect_timeout: 10,
+    idle_timeout: 20,
     prepare: process.env.DATABASE_PREPARED_STATEMENTS === '1',
     onnotice: () => undefined,
   });
