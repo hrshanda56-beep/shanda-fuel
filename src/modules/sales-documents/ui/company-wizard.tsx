@@ -11,6 +11,7 @@ import {
   useWizard,
 } from '@/design-system/wizard';
 import { checkCompanyName, checkCompanyNumbers, checkCompanyTax } from '../company-checks';
+import { LOGO_ACCEPT, isLogoFileType, makeLogoCopies } from '../logo-image';
 import styles from './sales-documents.module.css';
 
 type CompanyStep = 'name' | 'look' | 'tax' | 'payment' | 'numbers' | 'review';
@@ -21,6 +22,8 @@ export type CompanyValue = {
   phone: string;
   email: string;
   logo: string | null;
+  /** The same logo as a PNG with its transparent background, for the loading screen. */
+  appLogo: string | null;
   colour: string | null;
   taxLabel: string;
   taxNumber: string;
@@ -64,34 +67,23 @@ export function CompanyWizard({
   const { step, errors } = wizard;
   const set = (patch: Partial<CompanyValue>) => setForm((current) => ({ ...current, ...patch }));
 
-  /** Shrinks any picture to a small JPEG on a white background, so it prints cleanly and stays light. */
+  /** Keeps two small copies of the picture: a JPEG for printing and a transparent PNG for the loading screen. */
   async function pickLogo(file: File | undefined) {
     setLogoError(null);
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setLogoError('Choose a picture file (PNG or JPG).');
+    if (!isLogoFileType(file.type)) {
+      setLogoError('Choose a picture file (PNG, JPG or SVG).');
       return;
     }
     try {
-      const bitmap = await createImageBitmap(file);
-      const scale = Math.min(1, 480 / bitmap.width, 240 / bitmap.height);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('no canvas');
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      const url = canvas.toDataURL('image/jpeg', 0.85);
-      const data = url.slice(url.indexOf(',') + 1);
-      if (data.length > 250000) {
-        setLogoError('That picture is too large. Try a smaller one.');
-        return;
-      }
-      set({ logo: data });
-    } catch {
-      setLogoError('That picture could not be read. Try a PNG or JPG file.');
+      const copies = await makeLogoCopies(file);
+      set({ logo: copies.jpeg, appLogo: copies.png });
+    } catch (error) {
+      setLogoError(
+        error instanceof Error && error.message === 'too large'
+          ? 'That picture is too large. Try a smaller one.'
+          : 'That picture could not be read. Try a PNG, JPG or SVG file.',
+      );
     }
   }
 
@@ -195,7 +187,7 @@ export function CompanyWizard({
           <Field
             id="sd-c-logo"
             label="Logo"
-            hint="Printed at the top left. A PNG or JPG; it is shrunk for you."
+            hint="Printed at the top left, and shown on the loading screen. A PNG, JPG or SVG; it is shrunk for you, and a transparent background is kept."
             optional
           >
             <div className={styles.logoRow}>
@@ -210,11 +202,11 @@ export function CompanyWizard({
               <input
                 id="sd-c-logo"
                 type="file"
-                accept="image/png,image/jpeg"
+                accept={LOGO_ACCEPT}
                 onChange={(e) => void pickLogo(e.target.files?.[0])}
               />
               {form.logo ? (
-                <Button variant="quiet" onClick={() => set({ logo: null })}>
+                <Button variant="quiet" onClick={() => set({ logo: null, appLogo: null })}>
                   Remove logo
                 </Button>
               ) : null}
