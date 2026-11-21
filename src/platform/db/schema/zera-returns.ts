@@ -14,7 +14,7 @@ import { appSchema } from './namespaces';
 import { memberships, stations } from './a1';
 
 /**
- * Every ZERA monthly return a person saved, as it was on the day (migration 0118). A correction is a
+ * Every ZERA monthly return a person saved, as it was on the day (migration 0119). A correction is a
  * new version; earlier versions stay. The application role can read and add rows, never change them.
  */
 export const zeraReturns = appSchema.table(

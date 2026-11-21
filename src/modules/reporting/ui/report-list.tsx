@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react';
 import { parseCategoryParam } from '../rail';
 import { Icon } from '../../../design-system/icons';
 import { Card } from '../../../design-system/primitives';
-import { CATEGORY_ICONS } from './report-icons';
+import { reportIcon } from './report-icons';
 import { ReportCategoryFilter, ReportsFilters } from './reports-filters';
 import { ReportActionMenu } from './report-action-menu';
 import { ReportActionStatus } from './report-action-status';
@@ -159,7 +159,7 @@ function ReportRow({
   return (
     <li className="report-row">
       <span className="report-tile" aria-hidden="true">
-        <Icon name={CATEGORY_ICONS[report.category]} size="md" />
+        <Icon name={reportIcon(report)} size="md" />
       </span>
       <div className="report-row-main">
         <Link className="row-link" href={hrefFor(defaultPeriod)}>

@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 import { Icon } from '../../../design-system/icons';
 import { Card } from '../../../design-system/primitives';
@@ -13,6 +12,7 @@ import { formatStatementAmount } from './statement';
 import { ReportActionStatus } from './report-action-status';
 import { useReportActions } from './use-report-actions';
 import { InfoTip } from '@/design-system/info-tip';
+import { TabLinks } from '@/design-system/tabs';
 
 function amount(value: string | null, unit?: StatementUnit) {
   if (value !== null && exact(value).value.isZero()) return '–';
@@ -100,17 +100,16 @@ export function StatementWorkspace({
   return (
     <Card as="section" className="panel income-card content-span" id={id} aria-label={title}>
       {tabs.length > 1 ? (
-        <nav className="income-tabs" aria-label="Related reports">
-          {tabs.map((tab) => (
-            <Link
-              key={tab.slug}
-              href={`/reports/${tab.slug}?${query}`}
-              aria-current={tab.slug === slug ? 'page' : undefined}
-            >
-              {tab.title}
-            </Link>
-          ))}
-        </nav>
+        <TabLinks
+          className="income-tabs"
+          label="Related reports"
+          tabs={tabs.map((tab) => ({
+            key: tab.slug,
+            href: `/reports/${tab.slug}?${query}`,
+            label: tab.title,
+            current: tab.slug === slug,
+          }))}
+        />
       ) : null}
 
       <div className="income-toolbar">
