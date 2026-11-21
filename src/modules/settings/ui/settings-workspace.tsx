@@ -15,6 +15,7 @@ import { StationDetail, StationList } from '../../setup/ui/station-detail';
 import { AlertSettingsPanel } from '../../setup/ui/alert-settings-panel';
 import { PaymentsPanel } from '../../setup/ui/payments-panel';
 import { ReadinessPanel } from '../../setup/ui/readiness-panel';
+import { EditDocumentDetails } from './document-details-edit';
 import { AddCompany, AddStation, EditCompany, EditStation } from './structure-forms';
 import styles from './settings-workspace.module.css';
 
@@ -432,15 +433,20 @@ export function SettingsWorkspace({
               {view.access?.canManageCompanies ? (
                 <SectionCard id="document-details" title="Quotations and invoices">
                   <CardRows label="Quotations and invoices">
-                    <CardRow
-                      title="Company details for documents"
-                      detail="The name, address, tax number and bank details printed at the top of your quotations, invoices and receipts."
-                      aside={
-                        <a className="button button-secondary" href="/sales-documents?company=1">
-                          Edit details
-                        </a>
-                      }
-                    />
+                    {legalEntities.map((legalEntity) => (
+                      <CardRow
+                        key={legalEntity.id}
+                        title={
+                          legalEntities.length > 1
+                            ? `Company details for documents: ${legalEntity.name}`
+                            : 'Company details for documents'
+                        }
+                        detail="The name, address, tax number and bank details printed at the top of your quotations, invoices and receipts."
+                        aside={
+                          <EditDocumentDetails tenantId={organisation.id} company={legalEntity} />
+                        }
+                      />
+                    ))}
                   </CardRows>
                 </SectionCard>
               ) : null}

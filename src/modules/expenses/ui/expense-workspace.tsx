@@ -17,8 +17,14 @@ import { Icon } from '@/design-system/icons';
 import { Modal } from '@/design-system/modal';
 import { NotchedCard } from '@/design-system/notched-card';
 import { Pagination, pageOf, usePageState } from '@/design-system/pagination';
-import { Checkbox } from '@/design-system/forms';
 import { formatTileMoney } from '@/modules/reporting/format';
+import { limitToSend } from '../expense-setup-checks';
+import {
+  ApprovalLimitsWizard,
+  CategoryWizard,
+  type CategoryValue,
+  type LimitsValue,
+} from './expense-setup-wizards';
 import { CashDonut } from '@/modules/cash/ui/cash-visuals';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import { isStaffFuelCategory } from '../domain';
@@ -268,11 +274,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const [reason, setReason] = useState('');
   const [paySource, setPaySource] = useState<'BANK' | 'MOBILE_MONEY' | 'REIMBURSEMENT'>('BANK');
   const [payRef, setPayRef] = useState('');
-  const [newCategory, setNewCategory] = useState('');
-  const [newCategoryFixed, setNewCategoryFixed] = useState(false);
-  const [approvalLimit, setApprovalLimit] = useState('');
-  const [secondLimit, setSecondLimit] = useState('');
-  const [supervisorLimit, setSupervisorLimit] = useState('');
 
   const current = initial?.resolution.current ?? null;
   const caps = reference?.capabilities;
@@ -410,10 +411,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
       setPaySource('BANK');
       setPayRef('');
     }
-    if (next.kind === 'categories') {
-      setNewCategory('');
-      setNewCategoryFixed(false);
-    }
     if (next.kind === 'regular') {
       setRegularSeed({
         name: '',
@@ -426,11 +423,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
         start: month.from,
         end: '',
       });
-    }
-    if (next.kind === 'limits') {
-      setApprovalLimit(reference?.policy?.stepUpThreshold ?? '');
-      setSecondLimit(reference?.policy?.secondApprovalThreshold ?? '');
-      setSupervisorLimit(reference?.policy?.supervisorApprovalLimit ?? '');
     }
     setSheet(next);
   }
@@ -593,62 +585,52 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
     );
   }
 
+  /** Adds one kind of expense from its guide. The sheet stays open, back on the updated list. */
+  function submitCategory(value: CategoryValue) {
+    const code = categoryCodeFromName(value.name);
+    if (!code) return;
+    void send(
+      {
+        commandType: 'CreateExpenseCategory',
+        tenantId,
+        legalEntityId,
+        code,
+        name: value.name,
+        classification: value.fixed ? 'FIXED_COST' : 'OPERATING',
+      },
+      `Category “${value.name}” added.`,
+      true,
+    );
+  }
+
+  function submitLimits(values: LimitsValue) {
+    void send(
+      {
+        commandType: 'SetExpensePolicy',
+        tenantId,
+        legalEntityId,
+        stepUpThreshold: limitToSend(values.stepUp),
+        secondApprovalThreshold: limitToSend(values.second),
+        supervisorApprovalLimit: limitToSend(values.supervisor),
+        ...(reference?.policy ? { expectedVersion: reference.policy.version } : {}),
+      },
+      'Approval limits saved.',
+    );
+  }
+
   async function submitSheet(event: FormEvent) {
     event.preventDefault();
     // A new expense and a regular cost are saved by their guides, not by this form.
-    if (!sheet || sheet.kind === 'new' || sheet.kind === 'regular') return;
+    if (
+      !sheet ||
+      sheet.kind === 'new' ||
+      sheet.kind === 'regular' ||
+      sheet.kind === 'categories' ||
+      sheet.kind === 'limits'
+    ) {
+      return;
+    }
     setFormError(null);
-
-    if (sheet.kind === 'categories') {
-      const name = newCategory.trim();
-      const code = categoryCodeFromName(name);
-      if (!name || !code) return setFormError('Type a name for the category, for example Repairs.');
-      return send(
-        {
-          commandType: 'CreateExpenseCategory',
-          tenantId,
-          legalEntityId,
-          code,
-          name,
-          classification: newCategoryFixed ? 'FIXED_COST' : 'OPERATING',
-        },
-        `Category “${name}” added.`,
-        true,
-      ).then(() => setNewCategory(''));
-    }
-
-    if (sheet.kind === 'limits') {
-      const first = approvalLimit.trim() === '' ? null : parseAmount(approvalLimit);
-      const second = secondLimit.trim() === '' ? null : parseAmount(secondLimit);
-      if (approvalLimit.trim() !== '' && !first) {
-        return setFormError(
-          'Under “Needs an extra identity check above”, enter an amount like 500, or leave it empty.',
-        );
-      }
-      if (secondLimit.trim() !== '' && !second) {
-        return setFormError(
-          'Under “Needs a second person to approve above”, enter an amount like 1000, or leave it empty.',
-        );
-      }
-      const supervisor = supervisorLimit.trim() === '' ? null : parseAmount(supervisorLimit);
-      if (supervisorLimit.trim() !== '' && !supervisor) {
-        return setFormError(
-          'Under “A supervisor can approve up to”, enter an amount like 100, or leave it empty.',
-        );
-      }
-      return send(
-        {
-          commandType: 'SetExpensePolicy',
-          tenantId,
-          legalEntityId,
-          stepUpThreshold: first,
-          secondApprovalThreshold: second,
-          supervisorApprovalLimit: supervisor,
-          ...(reference?.policy ? { expectedVersion: reference.policy.version } : {}),
-        },
-        'Approval limits saved.',
-      );
-    }
 
     if (sheet.kind === 'add') return;
     const { expense } = sheet;
@@ -753,7 +735,12 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
   const { total: spent, shares } = categoryShares(summary.byCategory);
   const waitingTotal = sumAmounts(waiting.map((row) => row.amount));
   const showRegularTab = Boolean(caps?.manageRecurring || (reference.templates ?? []).length > 0);
-  const guided = sheet?.kind === 'add' || sheet?.kind === 'new' || sheet?.kind === 'regular';
+  const guided =
+    sheet?.kind === 'add' ||
+    sheet?.kind === 'new' ||
+    sheet?.kind === 'regular' ||
+    sheet?.kind === 'categories' ||
+    sheet?.kind === 'limits';
   const canAddExpense = Boolean(caps?.submit || caps?.manageRecurring);
 
   return (
@@ -810,8 +797,13 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           titleId="expense-categories-title"
           notchWidth={20.5}
           actions={
-            canAddExpense || caps?.manageCategories ? (
+            canAddExpense || caps?.manageCategories || caps?.managePolicy ? (
               <>
+                {caps?.managePolicy ? (
+                  <Button variant="secondary" onClick={() => openSheet({ kind: 'limits' })}>
+                    Approval limits
+                  </Button>
+                ) : null}
                 {caps?.manageCategories ? (
                   <Button variant="secondary" onClick={() => openSheet({ kind: 'categories' })}>
                     Manage categories
@@ -852,30 +844,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
           )}
         </NotchedCard>
       </div>
-
-      {caps?.managePolicy || reference.policy ? (
-        <Card as="section" className="panel" aria-labelledby="expense-limits-title">
-          <div className="panel-heading">
-            <h2 id="expense-limits-title">Approval limits</h2>
-            {caps?.managePolicy ? (
-              <Button variant="secondary" size="sm" onClick={() => openSheet({ kind: 'limits' })}>
-                Change limits
-              </Button>
-            ) : null}
-          </div>
-          <p className={styles.muted}>
-            {reference.policy?.stepUpThreshold
-              ? `Above ${formatTileMoney(reference.policy.stepUpThreshold)}, the approver confirms their identity again. `
-              : 'No limit is set, so the approver always confirms their identity again, whatever the amount. '}
-            {reference.policy?.secondApprovalThreshold
-              ? `Above ${formatTileMoney(reference.policy.secondApprovalThreshold)}, a second person must approve.`
-              : 'No second approval by amount.'}{' '}
-            {reference.policy?.supervisorApprovalLimit
-              ? `A supervisor can approve up to ${formatTileMoney(reference.policy.supervisorApprovalLimit)}.`
-              : 'A supervisor cannot approve expenses yet.'}
-          </p>
-        </Card>
-      ) : null}
 
       <Card as="section" className="panel" aria-labelledby="expense-list-title">
         <div className="panel-heading">
@@ -1188,11 +1156,7 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
         description={guided ? undefined : sheetDescription(sheet)}
         dismissible={!busy}
         footer={
-          guided ? undefined : sheet?.kind === 'categories' ? (
-            <Button variant="secondary" onClick={closeSheet}>
-              Done
-            </Button>
-          ) : (
+          guided ? undefined : (
             <>
               <Button variant="secondary" onClick={closeSheet} disabled={busy}>
                 {sheet && ['reverse', 'reject', 'undoPay'].includes(sheet.kind)
@@ -1271,6 +1235,38 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
             onSubmit={submitRegular}
           />
         ) : null}
+        {sheet?.kind === 'categories' ? (
+          <CategoryWizard
+            key={reference.categories.length}
+            categories={reference.categories.map((category) => ({
+              categoryId: category.categoryId,
+              name: category.name,
+              note:
+                category.status !== 'ACTIVE'
+                  ? 'Switched off'
+                  : category.classification === 'OPERATING'
+                    ? ''
+                    : 'Not for manual entry',
+            }))}
+            busy={busy}
+            error={formError}
+            onClose={closeSheet}
+            onSubmit={submitCategory}
+          />
+        ) : null}
+        {sheet?.kind === 'limits' ? (
+          <ApprovalLimitsWizard
+            current={{
+              stepUp: reference.policy?.stepUpThreshold ?? '',
+              second: reference.policy?.secondApprovalThreshold ?? '',
+              supervisor: reference.policy?.supervisorApprovalLimit ?? '',
+            }}
+            busy={busy}
+            error={formError}
+            onCancel={closeSheet}
+            onSubmit={submitLimits}
+          />
+        ) : null}
         {guided ? null : (
           <>
             {formError ? <ErrorState message={formError} /> : null}
@@ -1279,100 +1275,6 @@ export function ExpenseWorkspace({ initial }: { initial?: ExpenseInitial }) {
               className="stack"
               onSubmit={(event) => void submitSheet(event)}
             >
-              {sheet?.kind === 'limits' ? (
-                <>
-                  <Field
-                    id="limit-first"
-                    label="Needs an extra identity check above (USD)"
-                    hint="The person approving must confirm it is really them."
-                    optional
-                  >
-                    <input
-                      inputMode="decimal"
-                      value={approvalLimit}
-                      onChange={(event) => setApprovalLimit(event.target.value)}
-                      placeholder="No limit"
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <Field
-                    id="limit-second"
-                    label="Needs a second person to approve above (USD)"
-                    optional
-                  >
-                    <input
-                      inputMode="decimal"
-                      value={secondLimit}
-                      onChange={(event) => setSecondLimit(event.target.value)}
-                      placeholder="No limit"
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <Field
-                    id="limit-supervisor"
-                    label="A supervisor can approve up to (USD)"
-                    hint="Anything above this goes to finance or the owner. Leave empty and supervisors cannot approve expenses."
-                    optional
-                  >
-                    <input
-                      inputMode="decimal"
-                      value={supervisorLimit}
-                      onChange={(event) => setSupervisorLimit(event.target.value)}
-                      placeholder="None"
-                      autoComplete="off"
-                    />
-                  </Field>
-                </>
-              ) : null}
-
-              {sheet?.kind === 'categories' ? (
-                <>
-                  {reference.categories.length === 0 ? (
-                    <p className={styles.hint}>
-                      No kinds of expense have been set up yet. Add the first one below.
-                    </p>
-                  ) : (
-                    <ul className={styles.categoryList} aria-label="Expense kinds">
-                      {reference.categories.map((category) => (
-                        <li key={category.categoryId}>
-                          <span>{category.name}</span>
-                          <span className={styles.muted}>
-                            {category.status !== 'ACTIVE'
-                              ? 'Switched off'
-                              : category.classification === 'OPERATING'
-                                ? ''
-                                : 'Not for manual entry'}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <Field
-                    id="new-category"
-                    label="Add a kind of expense"
-                    hint="Short and clear, for example Repairs or Staff meals."
-                  >
-                    <input
-                      value={newCategory}
-                      maxLength={160}
-                      onChange={(event) => setNewCategory(event.target.value)}
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <Checkbox
-                    checked={newCategoryFixed}
-                    onChange={(event) => setNewCategoryFixed(event.target.checked)}
-                    label="Fixed monthly cost"
-                    hint="Use this kind for costs such as rent, salaries or insurance."
-                  />
-                  <div>
-                    <Button type="submit" loading={busy}>
-                      Add
-                    </Button>
-                  </div>
-                </>
-              ) : null}
-
               {sheet &&
               (sheet.kind === 'reject' || sheet.kind === 'reverse' || sheet.kind === 'undoPay') ? (
                 <Field

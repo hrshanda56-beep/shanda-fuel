@@ -1,6 +1,9 @@
 # Fake key used by a unit test of the Clerk key check; not a real secret.
 5efaadb47dd861e233bc56365545c118340a4456:src/app/api/clerk/[[...path]]/route.test.ts:stripe-access-token:26
 5efaadb47dd861e233bc56365545c118340a4456:src/app/api/clerk/[[...path]]/route.test.ts:stripe-access-token:38
+# A file hash in the UI-lock manifest (the path contains "access"); not a secret.
+e091c85013a6d87fcd1b4634562150f977637192:docs/ui-lock/manifest.json:generic-api-key:343
+
 
 # A file hash in the UI-lock manifest (a list of file fingerprints) that looks like an API key; not a secret.
 38b7d2756cb5907f67b45b668c5d96cedc531336:docs/ui-lock/manifest.json:generic-api-key:209

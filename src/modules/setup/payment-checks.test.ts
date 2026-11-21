@@ -3,8 +3,12 @@ import {
   checkAccountCharges,
   checkAccountDetails,
   checkAccountWhere,
+  checkBalanceAmount,
+  checkBalanceDate,
+  checkBalanceStation,
   checkBankCompany,
   checkBankDetails,
+  cleanBalance,
   checkProviderCode,
   checkProviderWho,
 } from './payment-checks';
@@ -48,5 +52,18 @@ describe('payment setup checks', () => {
       }),
     );
     expect(checkBankDetails('Main', 'CBZ', '****1234')).toEqual({});
+  });
+
+  it('bank balance needs a station, a number and a date', () => {
+    expect(checkBalanceStation('')).toHaveProperty('balance-station');
+    expect(checkBalanceStation('s1')).toEqual({});
+    expect(checkBalanceAmount('')).toHaveProperty('balance-amount');
+    expect(checkBalanceAmount('abc')).toHaveProperty('balance-amount');
+    expect(checkBalanceAmount('1.23456')).toHaveProperty('balance-amount');
+    expect(checkBalanceAmount('1,250.50')).toEqual({});
+    expect(checkBalanceAmount('-20')).toEqual({});
+    expect(cleanBalance(' 1,250.50 ')).toBe('1250.50');
+    expect(checkBalanceDate('')).toHaveProperty('balance-date');
+    expect(checkBalanceDate('2026-11-20')).toEqual({});
   });
 });

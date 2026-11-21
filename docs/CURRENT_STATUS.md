@@ -1,5 +1,78 @@
 # Shanda Fuel — Current Status
 
+## Side panels retired (#252) — 2026-11-21 (branch `feat/side-panels-to-wizards-252`, on top of `feat/fuel-change-wizard-249`, uncommitted)
+
+Phase 4 of the owner feedback round. **No screen opens a side panel any more.** Every job that used
+one is now a page guide (`Modal presentation="page"`: one question per screen, pick-lists first, a
+check screen with Change buttons, then the save), or a page view. A new unit test
+(`design-system/no-side-panels.test.ts`) fails if a `presentation="side"` is added again; the `side`
+presentation stays in the design system only so its styles do not disappear.
+
+- **Settings > Payments.** Bank balance: station (skipped with one station) → balance → date → check
+  (`setup/ui/bank-balance-wizard.tsx`, checks in `payment-checks.ts`). The page-wide station box is gone.
+- **Settings > Reminders.** The four settings are listed; "Change reminders" asks about one at a time
+  with the usual choices (3 / 7 / 14 / 30 days and so on, or "Another number")
+  (`setup/ui/alert-settings-wizard.tsx`, `alert-settings-checks.ts`).
+- **Finance > Staff Fuel Benefit.** "Add a staff member" is a guide: which staff member → the usual
+  US$60 a month or their own → check; the identity check still comes first on save
+  (`customers/ui/staff-benefit-wizard.tsx`, `staff-benefit-checks.ts`).
+- **Finance > Customers > Account Controls.** "Change credit limit" (limit → approver → reason → check)
+  and "Add details to this transaction" (station if not known → vehicle → driver → voucher → approver,
+  each skippable, → check) are guides (`customers/ui/account-controls-wizards.tsx`,
+  `account-controls-checks.ts`).
+- **Suppliers > Purchase Orders > Settings.** Company and per-supplier rules are one rule per screen
+  with "No difference allowed / Up to 0.5% / Up to 1% / Another amount"; a supplier can pick "Same as
+  the company" on any rule. Someone who may look but not change sees the same screens as a read-only
+  summary (`purchasing/ui/policy-wizard.tsx`, `policy-wizard-checks.ts`).
+- **Settings > Organisation.** Edit company and Edit station are guides. "Edit details" under
+  "Quotations and invoices" opens the company-details guide in place for that company (reads
+  `GET /api/sales-documents/profile`, new, same permission as the quotations page) instead of
+  jumping to `/sales-documents?company=1`; one row per company when there are several.
+- **Settings > Staff.** "Edit access" (role → where they work → check) is a guide, and a staff member's
+  own screen is a page view. Leaving the person's page before the access guide opens keeps it to one
+  page at a time (`settings/ui/staff-access-wizard.tsx`).
+- **Finance > Cash & Banking.** Collect cash, Receive cash, Bank cash and Confirm deposits are guides;
+  Bank cash's cash lines repeat ("Add more cash to this deposit?"), and "Bank it" on a row starts
+  with the cash and its amount chosen. The history drill-in is a page view. The "Discard what you have
+  entered?" box is gone with the sheet (Back and Cancel do that now) (`cash/ui/cash-sheet-wizards.tsx`,
+  `cash/cash-sheet-checks.ts`; amounts are compared as exact decimals).
+- **Finance > Provider Payouts.** "Match a payment": payout → payment → amount → check; a single payout
+  or payment is not asked about (`settlements/ui/match-wizard.tsx`, `settlements/match-checks.ts`).
+- **Finance > Expenses.** Manage categories: the list, then add a kind (name → fixed monthly cost?
+  → check), back on the updated list. Approval limits: the card is gone and an "Approval limits"
+  button sits beside "Manage categories"; each limit is a screen with usual choices
+  (`expenses/ui/expense-setup-wizards.tsx`, `expense-setup-checks.ts`). The "Enter an expense / Add
+  a regular cost" choice was already the first screen of the guide.
+- **Not changed.** Nothing about what is saved, who may do it, the identity checks or the commands
+  and their idempotency keys. No schema or migration. The read-only purchasing tabs (Not Invoiced Yet,
+  Invoice Checks) keep their lists; they only follow the shared tab style (#254). Categories can still
+  only be added, not renamed or hidden, because there is no command for that.
+- **One behaviour change found while testing.** In Cash & Banking, when the server refuses a save with
+  a reason (a 400, for example "Attach the deposit slip before confirming this deposit with the
+  bank."), that reason is now shown on the check screen instead of "Some of the details are not
+  right", which a guide with no single field to point at made unhelpful. The save is still refused and
+  the person stays on the check screen with their answers.
+- **Checks (local).** Typecheck, lint (0 errors, 1 existing warning), format, production build, 319 unit
+  files (2,478 tests), UI-lock manifest regenerated (DEC-056).
+  - Browser: new `side-panel-wizards.spec.ts` (16 tests, development page
+    `/dev-preview/panel-wizards`) drives bank balance, staff benefit, credit limit, transaction
+    details, expense categories and limits, purchase-order settings (company, supplier, view-only),
+    Edit company, Edit station and staff access: question order, a wrong or empty answer stays on its
+    screen with a plain message, Change returns to the check screen, the exact payload saved, and
+    phone/tablet/desktop width and accessibility on the first screens. Updated: `cash-workspace` (13),
+    `provider-settlements`, `v1-panels`, `acceptance-quality`. These five files: 51 pass.
+  - Real round trips (nothing mocked; a seeded throwaway TEI Oils copy, row-level security on, dev
+    identity check granted): reminders, bank balance, Edit company, Edit station, staff access, staff
+    benefit, credit limit, approval limits, expense category, purchase-order settings, receive cash and
+    bank cash all saved through the real commands. Not exercisable with that data: Collect cash (no
+    approved shift cash left), Match a payment (no provider statement), transaction details (no
+    account-sale entries); those are covered by the browser specs above.
+  - Not run here: `settings.spec` and `staff-management.spec` need real Clerk test users
+    (`E2E_CLERK_USERS`), which only CI has. `accessibility.spec` (design-system reference page, four
+    tests) fails here; nothing under `src/design-system` or its pages changed in this work, so it is not
+    caused by it, but it was not re-run on a clean checkout.
+
+
 ## Station page, opening balances and Readiness (rest of #250, #251) — 2026-11-20 (branch `feat/fuel-change-wizard-249`, on top of the fuel wizard work, uncommitted)
 
 Finishes Phase 3 of the owner feedback round. **The editing screen is gone.** The station page
@@ -156,6 +229,7 @@ overflow); changes were only staged, nothing was written to the demo data. Not v
 "price already waiting" screen (the demo owner can take a price all the way) and the meter-day
 correction (no nozzle on the demo qualifies); both are covered by unit tests of their rules.
 
+
 ## Loading truck with each company's own logo — 2026-11-20 (branch `feat/truck-loader-257`, issue #257, uncommitted)
 
 While a page loads, a small tanker drives left to right (`design-system/loading-truck.tsx`, drawn in
@@ -201,6 +275,7 @@ First step of the owner feedback round (tracking #260). Nothing user-visible cha
 - **Not done here (later PRs in the round):** retiring the ten side panels and the one-off dialogs that do not use `ConfirmDialog` is #252, one area at a time; the new pieces are used by #249, #250, #251, #253, #256 and #258.
 - **UI lock:** re-baselined with the owner's approval (DEC-056).
 - **Checks:** typecheck, lint (one old warning), format, unit tests and the production build pass. Checked live on the local demo database (the confirm on the design-system reference page, since the demo has no purchase orders) at phone and desktop widths, light and dark, with no sideways scroll. No browser spec was added: the existing specs mock Clerk and the expenses APIs, and none covers this page.
+
 
 
 ## Loading speed, code-only slice — 2026-11-20 (branch `perf/loading-speed-259`, issue #259, uncommitted)

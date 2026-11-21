@@ -23,6 +23,7 @@ import {
   stepUpFailureMessage,
 } from './staff-step-up-diagnostics';
 import { InfoTip } from '@/design-system/info-tip';
+import { StaffAccessWizard, type StaffAccessValue } from './staff-access-wizard';
 import { StaffInviteWizard, type StaffInviteValue } from './staff-invite-wizard';
 
 type StaffOverview = NonNullable<SettingsView['staff']>;
@@ -91,35 +92,24 @@ export function EditAccessModal({
   onSave: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
   const first = member?.assignments?.[0];
-  const [role, setRole] = useState<Role>(first?.role ?? 'ATTENDANT');
-  const [scopeType, setScopeType] = useState<'TENANT' | 'LEGAL_ENTITY' | 'STATION'>(
-    (first?.scopeType as 'TENANT' | 'LEGAL_ENTITY' | 'STATION' | undefined) ?? defaultScope(role),
-  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const role: Role = first?.role ?? 'ATTENDANT';
   const entityOf = (stationId?: string) =>
     overview.scopeOptions.find((option) =>
       option.stations.some((station) => station.id === stationId),
     )?.id;
-  const [legalEntityId, setLegalEntityId] = useState(
-    first?.legalEntityId ??
-      entityOf(first?.stationId) ??
-      (overview.scopeOptions.length === 1 ? (overview.scopeOptions[0]?.id ?? '') : ''),
-  );
-  const [stationIds, setStationIds] = useState<string[]>(
-    (member?.assignments ?? []).flatMap((item) => (item.stationId ? [item.stationId] : [])),
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const entity = overview.scopeOptions.find((option) => option.id === legalEntityId);
+  const initial: StaffAccessValue = {
+    role,
+    scopeType:
+      (first?.scopeType as 'TENANT' | 'LEGAL_ENTITY' | 'STATION' | undefined) ?? defaultScope(role),
+    legalEntityId: first?.legalEntityId ?? entityOf(first?.stationId) ?? '',
+    stationIds: (member?.assignments ?? []).flatMap((item) =>
+      item.stationId ? [item.stationId] : [],
+    ),
+  };
 
-  function changeRole(next: Role) {
-    setRole(next);
-    setScopeType(defaultScope(next));
-    setStationIds([]);
-    if (defaultScope(next) === 'TENANT') setLegalEntityId('');
-  }
-
-  async function save(event: React.FormEvent) {
-    event.preventDefault();
+  async function save(value: StaffAccessValue) {
     setBusy(true);
     setError(undefined);
     try {
@@ -131,10 +121,12 @@ export function EditAccessModal({
     }
     const saved = await onSave({
       membershipId: member?.membershipId,
-      assignedRole: role,
-      scopeType,
-      ...(scopeType !== 'TENANT' && legalEntityId ? { legalEntityId } : {}),
-      stationIds: scopeType === 'STATION' ? stationIds : [],
+      assignedRole: value.role,
+      scopeType: value.scopeType,
+      ...(value.scopeType !== 'TENANT' && value.legalEntityId
+        ? { legalEntityId: value.legalEntityId }
+        : {}),
+      stationIds: value.scopeType === 'STATION' ? value.stationIds : [],
     });
     if (!saved) setError('The change was not saved. See the message on the page.');
     setBusy(false);
@@ -143,92 +135,25 @@ export function EditAccessModal({
   return (
     <Modal
       open={Boolean(member)}
-      onClose={onClose}
+      onClose={() => !busy && onClose()}
       title={member ? `Edit access for ${member.name}` : 'Edit access'}
-      description="Change the role and the stations this person can work in. It takes effect straight away."
-      presentation="side"
+      presentation="page"
+      backLabel="Staff"
+      size="sm"
+      dismissible={!busy}
     >
-      <form className={styles.staffForm} onSubmit={save}>
-        <label>
-          <span>Role</span>
-          <select value={role} onChange={(event) => changeRole(event.target.value as Role)}>
-            {(Object.keys(ROLE_LABELS) as Role[])
-              .filter((item) => item !== 'OWNER' || overview.canInviteOwner)
-              .map((item) => (
-                <option key={item} value={item}>
-                  {ROLE_LABELS[item]}
-                </option>
-              ))}
-          </select>
-        </label>
-        {scopeChoicesForRole(role).length > 1 ? (
-          <label>
-            <span>Scope</span>
-            <select
-              value={scopeType}
-              onChange={(event) => {
-                setScopeType(event.target.value as 'LEGAL_ENTITY' | 'STATION');
-                setStationIds([]);
-              }}
-            >
-              <option value="LEGAL_ENTITY">Whole company</option>
-              <option value="STATION">Selected stations</option>
-            </select>
-          </label>
-        ) : null}
-        {scopeType !== 'TENANT' ? (
-          <label>
-            <span>Company</span>
-            <select
-              required
-              value={legalEntityId}
-              onChange={(event) => {
-                setLegalEntityId(event.target.value);
-                setStationIds([]);
-              }}
-            >
-              <option value="">Choose a company</option>
-              {overview.scopeOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        {scopeType === 'STATION' ? (
-          <fieldset className={styles.staffStations}>
-            <legend>Stations</legend>
-            {entity?.stations.length ? (
-              entity.stations.map((station) => (
-                <label key={station.id} className={styles.staffCheck}>
-                  <input
-                    type="checkbox"
-                    checked={stationIds.includes(station.id)}
-                    onChange={() =>
-                      setStationIds((current) =>
-                        current.includes(station.id)
-                          ? current.filter((id) => id !== station.id)
-                          : [...current, station.id],
-                      )
-                    }
-                  />
-                  <span>
-                    {station.name} <small>{station.code}</small>
-                    {station.setup ? <small> · Setting up</small> : null}
-                  </span>
-                </label>
-              ))
-            ) : (
-              <p className={styles.note}>Choose a company to see its stations.</p>
-            )}
-          </fieldset>
-        ) : null}
-        {error ? <p role="alert">{error}</p> : null}
-        <Button type="submit" variant="primary" loading={busy}>
-          Save changes
-        </Button>
-      </form>
+      {member ? (
+        <StaffAccessWizard
+          name={member.name}
+          overview={overview}
+          roleLabels={ROLE_LABELS}
+          initial={initial}
+          busy={busy}
+          error={error}
+          onCancel={onClose}
+          onSubmit={(value) => void save(value)}
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -479,7 +404,11 @@ export function StaffPanel({
               type="button"
               variant="quiet"
               size="sm"
-              onClick={() => setEditTarget(member)}
+              onClick={() => {
+                // One page at a time: leave the person's page before the access guide opens.
+                setSelectedId(undefined);
+                setEditTarget(member);
+              }}
               disabled={busy || deactivationBusy}
             >
               Edit access
@@ -779,7 +708,9 @@ export function StaffPanel({
         onClose={() => setSelectedId(undefined)}
         title={selectedRow?.name ?? 'Staff member'}
         description={selectedRow?.staffNumber}
-        presentation="side"
+        presentation="page"
+        backLabel="Staff"
+        size="sm"
       >
         {selectedRow ? (
           <div className={styles.staffDetail}>
