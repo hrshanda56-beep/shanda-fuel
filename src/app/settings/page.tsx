@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { AccessDeniedState } from '@/design-system/primitives';
 import { PageContainer } from '@/design-system/layout';
 import { AuthorizedAppShell as AppShell } from '@/design-system/authorized-app-shell';
+import { getServerShellAccess } from '@/design-system/navigation-server';
+import { contextFromShellAccess } from '@/modules/context/page-context';
 import { AppError, isAccessRefusal } from '@/platform/errors';
 import { resolveSettings } from '@/modules/settings';
 import type { SettingsView } from '@/modules/settings';
@@ -36,12 +38,27 @@ export default async function SettingsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const request = buildSettingsRequest(await headers(), params);
+  const requestHeaders = await headers();
+  const request = buildSettingsRequest(requestHeaders, params);
   let view: SettingsView | undefined;
   let failure: unknown;
+  // The shell looks the person and their stations up for every page; the page reuses that result
+  // for its own station choice instead of asking the database a second time, and hands the same
+  // result back to the shell so it does not ask either.
+  let shellAccess: Awaited<ReturnType<typeof getServerShellAccess>> | undefined;
 
   try {
-    view = await resolveSettings(request);
+    shellAccess = await getServerShellAccess(requestHeaders);
+    const resolution = contextFromShellAccess(
+      shellAccess,
+      request,
+      '/settings',
+      new URL(request.url).searchParams,
+    );
+    view = await resolveSettings(
+      request,
+      resolution ? { resolveContext: async () => resolution } : {},
+    );
   } catch (error) {
     failure = error;
   }
@@ -51,7 +68,10 @@ export default async function SettingsPage({
   }
   if (isAccessRefusal(failure)) {
     return (
-      <AppShell pageSubtitle="Review the organisation, legal entities, stations, and account available to you.">
+      <AppShell
+        {...(shellAccess ? { shellAccess } : {})}
+        pageSubtitle="Review the organisation, legal entities, stations, and account available to you."
+      >
         <PageContainer width="narrow">
           <AccessDeniedState />
         </PageContainer>
@@ -63,6 +83,7 @@ export default async function SettingsPage({
 
   return (
     <AppShell
+      {...(shellAccess ? { shellAccess } : {})}
       userName={view.account.name}
       pageSubtitle={
         view.stationView
