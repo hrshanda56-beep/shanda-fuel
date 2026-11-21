@@ -28,6 +28,7 @@ import {
 import { DailyProfitWorkspace } from '@/modules/owner/ui/daily-profit-workspace';
 import { FinancialPositionWorkspace } from '@/modules/owner/ui/financial-position-workspace';
 import { CashDonut } from '@/modules/cash/ui/cash-visuals';
+import { TabSwitcher } from '@/design-system/tabs';
 import { profitStatementHref } from './profit-links';
 
 export type ProfitInitial = Readonly<{
@@ -272,27 +273,17 @@ export function ProfitWorkspace({ initial }: { initial: ProfitInitial }) {
           {report ? <strong>{REPORT_PERIOD_LABELS[filters.period]}</strong> : null}
           {period ? <span>{period}</span> : null}
         </p>
-        <div className="profit-tabs" role="tablist" aria-label="Profit views">
-          {(
-            [
-              ['month', monthTabLabel],
-              ['daily', 'Daily'],
-              ['position', 'Financial Position'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              id={`profit-tab-${value}`}
-              type="button"
-              role="tab"
-              aria-selected={tab === value}
-              aria-controls="profit-tabpanel"
-              onClick={() => selectTab(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <TabSwitcher
+          label="Profit views"
+          idPrefix="profit-tab"
+          value={tab}
+          onChange={selectTab}
+          tabs={[
+            { value: 'month', label: monthTabLabel, controls: 'profit-tabpanel' },
+            { value: 'daily', label: 'Daily', controls: 'profit-tabpanel' },
+            { value: 'position', label: 'Financial Position', controls: 'profit-tabpanel' },
+          ]}
+        />
       </div>
 
       {tab === 'daily' ? (

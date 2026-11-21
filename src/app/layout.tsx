@@ -5,6 +5,7 @@ import { ClerkProvider } from '@clerk/nextjs';
 import '@/design-system/styles/tokens.css';
 import '@/design-system/styles/base.css';
 import '@/design-system/styles/components.css';
+import '@/design-system/styles/tabs.css';
 import '@/design-system/styles/shell.css';
 import './globals.css';
 import '@/design-system/styles/shell-phase1.css';
