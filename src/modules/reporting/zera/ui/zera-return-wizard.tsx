@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Select } from '@/design-system/forms';
-import { Button, Card, ErrorState, Field } from '@/design-system/primitives';
+import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { WizardOptions } from '@/design-system/wizard-kit';
 import {
   WIZARD_REVIEW_HINT,
@@ -19,6 +19,8 @@ import {
   useWizard,
 } from '@/design-system/wizard';
 import type { ReturnViewJson, SavedSummary } from './types';
+import styles from './zera-document.module.css';
+import { ZeraDocument } from './zera-document';
 import {
   ZERA_OWNERSHIPS,
   ZERA_OWNERSHIP_LABELS,
@@ -77,39 +79,60 @@ function PastReturns({
   onDownload: (month: string, format: 'csv' | 'pdf', version: number) => void;
 }) {
   if (returns.length === 0) return null;
+  const longDate = (value: string) => {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime())
+      ? value.slice(0, 10)
+      : parsed.toLocaleDateString('en-GB', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'UTC',
+        });
+  };
   return (
-    <Card>
-      <h3>Returns already saved for this station</h3>
-      <ul className="form-stack">
-        {returns.map((entry) => (
-          <li key={entry.id}>
-            <strong>
-              {months.find((m) => m.value === entry.month)?.label ??
-                `${monthName(entry.month)} ${entry.month.slice(0, 4)}`}
-            </strong>{' '}
-            · version {entry.version} · saved {entry.savedAt.slice(0, 10)}{' '}
-            <Button
-              type="button"
-              variant="quiet"
-              size="sm"
-              aria-label={`Download CSV, ${entry.month} version ${entry.version}`}
-              onClick={() => onDownload(entry.month, 'csv', entry.version)}
-            >
-              CSV
-            </Button>{' '}
-            <Button
-              type="button"
-              variant="quiet"
-              size="sm"
-              aria-label={`Download PDF, ${entry.month} version ${entry.version}`}
-              onClick={() => onDownload(entry.month, 'pdf', entry.version)}
-            >
-              PDF
-            </Button>
-          </li>
-        ))}
+    <section className={styles.saved} aria-labelledby="zera-saved-heading">
+      <h3 id="zera-saved-heading" className={styles.savedHeading}>
+        Returns already saved
+      </h3>
+      <ul className={styles.savedList}>
+        {returns.map((entry) => {
+          const label =
+            months.find((m) => m.value === entry.month)?.label ??
+            `${monthName(entry.month)} ${entry.month.slice(0, 4)}`;
+          return (
+            <li key={entry.id} className={styles.savedRow}>
+              <div className={styles.savedText}>
+                <strong className={styles.savedMonth}>{label}</strong>
+                <span className={styles.savedMeta}>
+                  Version {entry.version} · saved {longDate(entry.savedAt)}
+                </span>
+              </div>
+              <div className={styles.savedActions}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  aria-label={`Download PDF, ${label} version ${entry.version}`}
+                  onClick={() => onDownload(entry.month, 'pdf', entry.version)}
+                >
+                  Download PDF
+                </Button>
+                <Button
+                  type="button"
+                  variant="quiet"
+                  size="sm"
+                  aria-label={`Download CSV, ${label} version ${entry.version}`}
+                  onClick={() => onDownload(entry.month, 'csv', entry.version)}
+                >
+                  CSV
+                </Button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
-    </Card>
+    </section>
   );
 }
 
@@ -421,7 +444,7 @@ export function ZeraReturnWizard({ tenantId, stations, months }: Props) {
         void next();
       }}
     >
-      <WizardCard>
+      <WizardCard wide={step === 'review' || step === 'done'}>
         {step === 'month' ? (
           <WizardStep
             wizard={wizard}
@@ -685,37 +708,37 @@ export function ZeraReturnWizard({ tenantId, stations, months }: Props) {
         ) : null}
 
         {step === 'done' && result ? (
-          <>
-            <div className="form-stack">
-              <WizardHeading
-                position={wizard.position}
-                total={0}
-                onHeading={wizard.captureHeading}
-                title={`ZERA return for ${monthLabel}, ${stationName}`}
-              />
-              <p role="status">
-                Saved as version {savedVersion}. Copy each answer into the ZERA form, or download
-                the saved return.
-              </p>
-              <p className="field-hint">ZERA says: “{ZERA_DEADLINE_WORDING}”</p>
-              <ul className="form-stack">
-                {answers.map((answer) => (
-                  <li key={answer.label}>
-                    <strong>{answer.label}:</strong> {answer.value || 'Not given'}{' '}
-                    <Button
-                      type="button"
-                      variant="quiet"
-                      size="sm"
-                      aria-label={`Copy ${answer.label}`}
-                      onClick={() => void copy(answer.label, answer.value)}
-                    >
-                      {copied === answer.label ? 'Copied' : 'Copy'}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+          <div className="form-stack">
+            <p role="status">
+              Saved as version {savedVersion}. Copy each answer into the ZERA form, or download the
+              saved return.
+            </p>
+            <ZeraDocument
+              answers={answers}
+              periodLabel={monthLabel}
+              stationName={stationName}
+              version={savedVersion}
+              savedOn={new Date().toLocaleDateString('en-GB', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+              })}
+              copied={copied}
+              onCopy={(label, value) => void copy(label, value)}
+            />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <Button type="button" onClick={() => void download(month, 'pdf', savedVersion ?? 0)}>
+                Download PDF
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void download(month, 'csv', savedVersion ?? 0)}
+              >
+                Download CSV
+              </Button>
             </div>
-          </>
+          </div>
         ) : null}
       </WizardCard>
 

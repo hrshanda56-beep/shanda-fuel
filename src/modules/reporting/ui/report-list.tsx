@@ -16,6 +16,18 @@ import { categoryLabel, reportsFor, type ReportDefinition } from '../catalog';
 import { applyReportFilters, parseReportFilters, resolveReportFilters } from '../filters';
 import { businessToday } from '../period';
 
+/** The reports most people open; the rest sit behind "View all reports". */
+const MAIN_REPORTS: ReadonlySet<string> = new Set([
+  'profit-loss',
+  'cash-movement',
+  'daily-reconciliation',
+  'sales-by-period',
+  'stock-variance',
+  'supplier-statement',
+  'customer-ageing',
+  'zera-return',
+]);
+
 /** What the person chose to do with a report; the period is chosen next. */
 type RowAction = { kind: 'view' } | { kind: 'share' } | { kind: 'export'; format: ExportFormat };
 
@@ -47,9 +59,14 @@ export function ReportList({
   const searchParams = useSearchParams();
   const actions = useReportActions();
   const category = parseCategoryParam(searchParams.get('category'));
-  const reports = reportsFor(financeReports).filter(
+  const [showAll, setShowAll] = useState(false);
+  const everything = reportsFor(financeReports).filter(
     (report) => !category || report.category === category,
   );
+  // Picking a category is already a request for more, so it shows everything in it.
+  const main = everything.filter((report) => MAIN_REPORTS.has(report.slug));
+  const narrowed = !category && !showAll && main.length > 0 && main.length < everything.length;
+  const reports = narrowed ? main : everything;
   const pageFilters = useMemo(() => parseReportFilters(searchParams), [searchParams]);
 
   return (
@@ -91,6 +108,18 @@ export function ReportList({
           />
         ))}
       </ul>
+      {narrowed || (showAll && !category && main.length < everything.length) ? (
+        <div className="report-show-all">
+          <button
+            type="button"
+            className="button button-secondary"
+            aria-expanded={showAll}
+            onClick={() => setShowAll((value) => !value)}
+          >
+            {showAll ? 'Show main reports only' : `View all reports (${everything.length})`}
+          </button>
+        </div>
+      ) : null}
     </Card>
   );
 }

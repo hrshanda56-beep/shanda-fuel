@@ -142,7 +142,7 @@ export function useWizard<S extends string>({
 export type Wizard<S extends string = string> = ReturnType<typeof useWizard<S>>;
 
 /** The line under every "Check ..." screen, so they all read the same. */
-export const WIZARD_REVIEW_HINT = 'Nothing is saved until you press the button below.';
+export const WIZARD_REVIEW_HINT = 'Nothing is saved until you confirm.';
 
 /**
  * The white card every step sits in. Set `ownDraft` when the wizard saves its own progress with
@@ -151,15 +151,55 @@ export const WIZARD_REVIEW_HINT = 'Nothing is saved until you press the button b
 export function WizardCard({
   children,
   ownDraft = false,
+  wide = false,
 }: {
   children: ReactNode;
   ownDraft?: boolean;
+  /** Fill the page width. For check screens that list many answers rather than ask one question. */
+  wide?: boolean;
 }) {
   return (
-    <Card className={styles.wizard} {...(ownDraft ? { 'data-no-page-draft': '' } : {})}>
+    <Card
+      className={wide ? `${styles.wizard} ${styles.wizardWide}` : styles.wizard}
+      {...(ownDraft ? { 'data-no-page-draft': '' } : {})}
+    >
       {children}
     </Card>
   );
+}
+
+/** Buttons that only move forward. A screen whose button saves something never moves on by itself. */
+const FORWARD_LABEL = /^(continue|next|check|review)\b/i;
+
+/**
+ * When a screen asks one single-choice question (one dropdown, or one set of big answers) and the
+ * person picks with the mouse or a finger, carry on straight away: nothing else is left to fill in.
+ * Keyboard changes are left alone so arrowing through a list does not skip past the answer.
+ * It presses the real Continue button, so the usual checks still run.
+ */
+function autoContinue(target: HTMLElement, root: HTMLElement | null, lastKey: number) {
+  const isSelect = target instanceof HTMLSelectElement;
+  const isRadio = target instanceof HTMLInputElement && target.type === 'radio';
+  if (!isSelect && !isRadio) return;
+  if (isSelect && !target.value) return;
+  if (Date.now() - lastKey < 600) return;
+  window.setTimeout(() => {
+    if (!root || !root.isConnected) return;
+    const controls = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        'input:not([type=hidden]):not([disabled]), textarea:not([disabled]), select:not([disabled])',
+      ),
+    );
+    const alone = isSelect
+      ? controls.length === 1
+      : controls.every(
+          (c) => c instanceof HTMLInputElement && c.type === 'radio' && c.name === target.name,
+        );
+    if (!alone) return;
+    const button = root.querySelector<HTMLButtonElement>(`.${styles.actions} button`);
+    if (!button || button.disabled || !FORWARD_LABEL.test(button.textContent?.trim() ?? '')) return;
+    button.click();
+  }, 120);
 }
 
 /** One screen: "Step 2 of 7", the question, an optional hint, then the answers. */
@@ -167,21 +207,62 @@ export function WizardStep({
   wizard,
   title,
   hint,
+  calm = true,
   children,
 }: {
   wizard: Pick<Wizard, 'position' | 'total' | 'captureHeading'>;
   title: string;
   hint?: string;
+  /** A thin progress bar and a small, faint, italic hint (the default); false gives "Step 2 of 7". */
+  calm?: boolean;
   children: ReactNode;
 }) {
+  const page = useRef<HTMLDivElement>(null);
+  const lastKey = useRef(0);
+  // Start in the first box, so people can type straight away.
+  useEffect(() => {
+    const root = page.current;
+    if (!root || root.contains(document.activeElement)) return;
+    const timer = window.setTimeout(() => {
+      root
+        .querySelector<HTMLElement>(
+          'input:not([type=radio]):not([type=checkbox]):not([type=hidden]):not([type=file]):not([disabled]), textarea:not([disabled]), select:not([disabled])',
+        )
+        ?.focus({ preventScroll: true });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [title]);
   return (
-    <div className={styles.page}>
+    // Enter in a box does what the Continue button does. A screen opts out with `data-no-enter`.
+    <div
+      ref={page}
+      className={styles.page}
+      onChange={(event) => autoContinue(event.target as HTMLElement, page.current, lastKey.current)}
+      onKeyDown={(event) => {
+        if (event.key !== 'Tab' && event.key !== 'Enter' && event.key !== 'Shift') {
+          lastKey.current = Date.now();
+        }
+        const target = event.target as HTMLElement;
+        if (event.key !== 'Enter' || event.defaultPrevented || event.nativeEvent.isComposing)
+          return;
+        if (target.tagName !== 'INPUT' || target.closest('[data-no-enter], [role=combobox]'))
+          return;
+        const type = (target as HTMLInputElement).type;
+        if (type === 'checkbox' || type === 'radio' || type === 'button' || type === 'submit')
+          return;
+        const button = page.current?.querySelector<HTMLButtonElement>(`.${styles.actions} button`);
+        if (!button || button.disabled) return;
+        event.preventDefault();
+        button.click();
+      }}
+    >
       <WizardHeading
         position={wizard.position}
         total={wizard.total}
         onHeading={wizard.captureHeading}
         title={title}
         hint={hint}
+        calm={calm}
       />
       {children}
     </div>
@@ -195,25 +276,40 @@ export function WizardHeading({
   onHeading,
   title,
   hint,
+  calm = true,
 }: {
   position: number;
   total: number;
   onHeading: (element: HTMLHeadingElement | null) => void;
   title: string;
   hint?: string;
+  calm?: boolean;
 }) {
   return (
     <>
       {/* A lone first question (before the flow's steps are known) passes `total` 0 to hide this. */}
       {total > 0 ? (
-        <p className={styles.stepCount}>
-          Step {position} of {total}
-        </p>
+        calm ? (
+          <div
+            className={styles.progress}
+            role="progressbar"
+            aria-label="Progress"
+            aria-valuemin={1}
+            aria-valuemax={total}
+            aria-valuenow={position}
+          >
+            <span style={{ width: `${Math.round((position / total) * 100)}%` }} />
+          </div>
+        ) : (
+          <p className={styles.stepCount}>
+            Step {position} of {total}
+          </p>
+        )
       ) : null}
       <h2 ref={onHeading} tabIndex={-1} className={styles.question}>
         {title}
       </h2>
-      {hint ? <p className={styles.hint}>{hint}</p> : null}
+      {hint ? <p className={calm ? styles.hintCalm : styles.hint}>{hint}</p> : null}
     </>
   );
 }
@@ -310,6 +406,11 @@ export function WizardSummaryRow({
       ) : null}
     </div>
   );
+}
+
+/** A small, faint, italic line for something the person may like to know, never to act on. */
+export function WizardQuiet({ children }: { children: ReactNode }) {
+  return <p className={styles.quiet}>{children}</p>;
 }
 
 export function WizardNotice({ children }: { children: ReactNode }) {

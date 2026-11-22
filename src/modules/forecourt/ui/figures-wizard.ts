@@ -25,8 +25,12 @@ export type ScreenInput = {
   hasVisiting: boolean;
   /** One id per pump meter (nozzle), in forecourt order. */
   pumpIds: readonly string[];
-  /** One id per payment line the person has added. */
+  /** The ways customers usually pay, each asked on its own screen (blank means none). */
+  namedPayments: readonly string[];
+  /** One id per extra payment line the person has added, after the named ways. */
   paymentKeys: readonly string[];
+  /** The extra payment lines that first ask who it was for (a customer, or a staff name). */
+  paymentWho: readonly string[];
   expenseKeys: readonly string[];
   tankIds: readonly string[];
   /** The differences that need an explanation, in the order they are asked. */
@@ -39,9 +43,19 @@ export function buildScreens(input: ScreenInput): FigureScreen[] {
   if (input.hasVisiting) screens.push({ id: 'visiting', step: 'Team' });
   if (input.pumpIds.length === 0) screens.push({ id: 'no-pumps', step: 'Pumps' });
   for (const id of input.pumpIds) screens.push({ id: `pump:${id}`, step: 'Pumps' });
-  for (const key of input.paymentKeys) screens.push({ id: `payment:${key}`, step: 'Payments' });
+  for (const method of input.namedPayments)
+    screens.push({ id: `payname:${method}`, step: 'Payments' });
+  for (const key of input.paymentKeys) {
+    if (input.paymentWho.includes(key)) screens.push({ id: `paywho:${key}`, step: 'Payments' });
+    screens.push({ id: `payment:${key}`, step: 'Payments' });
+  }
   screens.push({ id: 'payments-more', step: 'Payments' });
-  for (const key of input.expenseKeys) screens.push({ id: `expense:${key}`, step: 'Expenses' });
+  // An expense is three short questions: what for, how much, and how it was paid.
+  for (const key of input.expenseKeys) {
+    screens.push({ id: `expense:${key}`, step: 'Expenses' });
+    screens.push({ id: `expenseamt:${key}`, step: 'Expenses' });
+    screens.push({ id: `expensepay:${key}`, step: 'Expenses' });
+  }
   screens.push({ id: 'expenses-more', step: 'Expenses' });
   screens.push({ id: 'cash', step: 'Cash' });
   if (input.tankIds.length === 0) screens.push({ id: 'no-tanks', step: 'Tank dips' });
@@ -70,7 +84,7 @@ export function neighbourScreen(
   return screens[indexOfScreen(screens, id) + direction] ?? null;
 }
 
-/** "Question 5 of 14". The total grows when a payment or expense line is added. */
+/** Position on the progress bar. The total grows when a payment or expense line is added. */
 export function screenPosition(screens: readonly FigureScreen[], id: string) {
   return { position: indexOfScreen(screens, id) + 1, total: screens.length };
 }
@@ -103,7 +117,7 @@ export function resumeScreen(screens: readonly FigureScreen[], answered: Answere
           ? answered.pumps.has(key!)
           : kind === 'payment'
             ? answered.payments.has(key!)
-            : kind === 'payments-more'
+            : kind === 'payname' || kind === 'payments-more'
               ? answered.paymentsDone
               : kind === 'cash'
                 ? answered.cash

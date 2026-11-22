@@ -17,6 +17,7 @@ import type { StockSignal } from '../../approvals/operations-alerts';
 import { parseCalibrationText } from '../calibration';
 import type { TankDetail } from '../tank-detail';
 import { TankDrum } from './tank-drum';
+import { StockCorrectionWizard, type StockCorrectionValue } from './stock-correction-wizard';
 import { fuelKind, tankLevel } from './tank-overview-model';
 import {
   TANK_TABS,
@@ -119,12 +120,43 @@ export function TankDetailView({
   );
   const [dipSaving, setDipSaving] = useState(false);
   const [dipError, setDipError] = useState<string | null>(null);
+  const [fixOpen, setFixOpen] = useState(false);
+  const [fixSaving, setFixSaving] = useState(false);
 
   function selectTab(next: TankTab) {
     setTab(next);
     const url = new URL(window.location.href);
     url.searchParams.set('tab', next);
     window.history.replaceState(window.history.state, '', url);
+  }
+
+  async function saveCorrection(value: StockCorrectionValue) {
+    setFixSaving(true);
+    try {
+      const response = await fetch('/api/inventory/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+        body: JSON.stringify({
+          commandType: 'PostInventoryAdjustment',
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          tankId: tank.id,
+          quantityLitres: value.quantity,
+          effectiveAt: new Date().toISOString(),
+          movementType: value.movementType,
+          reason: value.reason,
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { message?: string };
+      if (!response.ok) throw new Error(body.message ?? 'The correction could not be saved.');
+      toast.success('Stock corrected. The change is on the tank’s history.');
+      setFixOpen(false);
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The correction could not be saved.');
+    } finally {
+      setFixSaving(false);
+    }
   }
 
   async function recordDip() {
@@ -341,20 +373,42 @@ export function TankDetailView({
 
   return (
     <div className="stack stack-lg tank-page">
+      <div className="tank-back">
+        <Link className="button button-quiet button-sm" href={inventoryHref}>
+          ← All tanks
+        </Link>
+      </div>
       <PageHeader
         eyebrow={`${context.stationName} · ${tank.productName}`}
         title={`Tank ${tank.code}`}
         headingLevel="h2"
         titleId="tank-detail-title"
         actions={
-          <>
-            <Link className="button button-quiet" href={streamHref}>
-              Cost history
-            </Link>
-            <Link className="button button-quiet" href={inventoryHref}>
-              Back to inventory
-            </Link>
-          </>
+          <TabSwitcher
+            className="tank-tabs"
+            label="Tank details"
+            idPrefix="tank-tab"
+            data-solo={canManage ? undefined : 'true'}
+            value={tab}
+            onChange={selectTab}
+            tabs={[
+              ...availableTabs.map((item) => ({
+                value: item.value,
+                label: item.label,
+                controls: 'tank-tabpanel',
+                className: item.value === 'settings' ? undefined : 'tank-tab-narrow',
+              })),
+              // On a wide screen dips and movements sit side by side, so one tab stands for both.
+              {
+                value: 'dips' as TankTab,
+                label: 'Dips and movements',
+                controls: 'tank-tabpanel',
+                className: 'tank-tab-wide',
+                id: null,
+                selected: tab !== 'settings',
+              },
+            ]}
+          />
         }
       />
 
@@ -380,9 +434,10 @@ export function TankDetailView({
           </span>
         </div>
         <div className="tank-hero-main">
+          <p className="tank-hero-label">On the books</p>
           <p className="tank-hero-figure">
             <strong>{formatQuantity(tank.bookLitres, tank.unit)}</strong>
-            <span> of {formatQuantity(tank.capacityLitres, tank.unit)} on the books</span>
+            <span> of {formatQuantity(tank.capacityLitres, tank.unit)}</span>
           </p>
           <div className="tank-hero-verdict">
             {lastSignal ? (
@@ -394,11 +449,21 @@ export function TankDetailView({
                 No dip yet. Record one to check the books against the tank.
               </span>
             )}
+          </div>
+          <div className="tank-hero-actions">
             {canManage ? (
-              <Button type="button" onClick={() => setDipOpen(true)}>
-                Record a dip
-              </Button>
+              <>
+                <Button type="button" onClick={() => setDipOpen(true)}>
+                  Record a dip
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setFixOpen(true)}>
+                  Correct stock
+                </Button>
+              </>
             ) : null}
+            <Link className="button button-quiet" href={streamHref}>
+              Cost history
+            </Link>
           </div>
         </div>
         <dl className="tank-hero-stats">
@@ -416,32 +481,6 @@ export function TankDetailView({
           </div>
         </dl>
       </Card>
-
-      <TabSwitcher
-        className="tank-tabs"
-        label="Tank details"
-        idPrefix="tank-tab"
-        data-solo={canManage ? undefined : 'true'}
-        value={tab}
-        onChange={selectTab}
-        tabs={[
-          ...availableTabs.map((item) => ({
-            value: item.value,
-            label: item.label,
-            controls: 'tank-tabpanel',
-            className: item.value === 'settings' ? undefined : 'tank-tab-narrow',
-          })),
-          // On a wide screen dips and movements sit side by side, so one tab stands for both.
-          {
-            value: 'dips' as TankTab,
-            label: 'Dips and movements',
-            controls: 'tank-tabpanel',
-            className: 'tank-tab-wide',
-            id: null,
-            selected: tab !== 'settings',
-          },
-        ]}
-      />
 
       <div id="tank-tabpanel" role="tabpanel" aria-labelledby={`tank-tab-${tab}`}>
         {tab !== 'settings' ? (
@@ -693,6 +732,25 @@ export function TankDetailView({
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={fixOpen}
+        onClose={() => setFixOpen(false)}
+        title="Correct stock"
+        presentation="page"
+        backLabel="Tank"
+        dismissible={!fixSaving}
+      >
+        {fixOpen ? (
+          <StockCorrectionWizard
+            bookQuantity={tank.bookLitres.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')}
+            unit={tank.unit}
+            busy={fixSaving}
+            onCancel={() => setFixOpen(false)}
+            onSubmit={(value) => void saveCorrection(value)}
+          />
+        ) : null}
       </Modal>
 
       <StepUpDialog

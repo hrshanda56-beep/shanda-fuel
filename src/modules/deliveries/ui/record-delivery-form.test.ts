@@ -64,7 +64,8 @@ const editing: DeliveryEdit = {
 describe('RecordDelivery guide', () => {
   it('starts a new delivery with one question, who delivered the fuel', () => {
     const html = render();
-    expect(html).toContain('Step 1 of 9');
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuemax="11"');
     expect(html).toContain('Who delivered the fuel?');
     // Only one tank, so the tank question is left out, and nothing later is on screen yet.
     expect(html).not.toContain('Which fuel, and which tank?');

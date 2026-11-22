@@ -227,7 +227,13 @@ export async function readSavedZeraReturnFromRequest(
   request: Request,
   input: unknown,
   format: 'csv' | 'pdf',
-): Promise<{ month: string; version: number; answers: { label: string; value: string }[] }> {
+): Promise<{
+  month: string;
+  version: number;
+  answers: { label: string; value: string }[];
+  stationName: string;
+  savedAt: string;
+}> {
   const parsed = listSchema.safeParse(input);
   if (!parsed.success || !parsed.data.month) {
     throw new AppError('VALIDATION_FAILED', 'Choose a month.');
@@ -249,8 +255,9 @@ export async function readSavedZeraReturnFromRequest(
       month: string;
       version: number;
       answers: { label: string; value: string }[];
+      saved_at: string;
     }>(sql`
-      select month, version, answers
+      select month, version, answers, created_at::text as saved_at
       from app.zera_returns
       where tenant_id = ${query.tenantId} and station_id = ${query.stationId}
         and month = ${query.month}
@@ -286,6 +293,12 @@ export async function readSavedZeraReturnFromRequest(
       getAuditSigningKey(),
       transaction,
     );
-    return row;
+    return {
+      month: row.month,
+      version: row.version,
+      answers: row.answers,
+      stationName: named?.name ?? '',
+      savedAt: row.saved_at,
+    };
   });
 }

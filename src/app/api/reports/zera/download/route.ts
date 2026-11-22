@@ -1,5 +1,5 @@
 import { AppError } from '../../../../../platform/errors';
-import { buildPdfFromCsv } from '../../../../../modules/reporting/export-documents';
+import { buildZeraPdf } from '../../../../../modules/reporting/zera/zera-pdf';
 import { readSavedZeraReturnFromRequest } from '../../../../../modules/reporting/zera/save-zera';
 import { monthName, zeraCsv } from '../../../../../modules/reporting/zera/zera-wizard-checks';
 import { apiErrorResponse, withRequestObservability } from '../../../../../platform/observability';
@@ -23,9 +23,12 @@ export const GET = withRequestObservability(
         format === 'csv'
           ? csv
           : (new Uint8Array(
-              buildPdfFromCsv(csv, {
-                title: 'ZERA Monthly Return',
-                subtitle: `${monthName(saved.month)} ${saved.month.slice(0, 4)} · version ${saved.version}`,
+              buildZeraPdf({
+                answers: saved.answers,
+                periodLabel: `${monthName(saved.month)} ${saved.month.slice(0, 4)}`,
+                stationName: saved.stationName,
+                version: saved.version,
+                savedAt: saved.savedAt,
               }),
             ) as unknown as BodyInit);
       return new Response(body, {

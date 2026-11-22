@@ -201,9 +201,8 @@ function renderControlRoom(runsTheDay: boolean) {
 it('renders Operations overview without fetching it again on mount', () => {
   const html = renderControlRoom(true);
   expect(html).not.toContain('Loading operations');
-  // Someone who runs the shift sees one question at a time (#253): the day header with the
-  // business date is behind "View today's summary", which is offered instead.
-  expect(html).toContain('View today’s summary');
+  // Someone who runs the shift sees one question at a time (#253): no day header, just the next step.
+  expect(html).not.toContain('View today’s summary');
   expect(html).not.toContain('18 Oct 2026');
 });
 it('keeps the day card from someone who cannot run the day', () => {

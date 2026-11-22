@@ -655,29 +655,23 @@ export function ValuationStreamDetail({
     value === null ? '—' : `${formatMoney(value, stream.currency ?? 'USD')}${suffix}`;
   return (
     <div className="content-grid valuation-workspace">
+      <div className="valuation-back content-span">
+        <Link className="button button-quiet button-sm" href={returnHref ?? contextHref}>
+          {returnHref ? '← Back to the reconciliation' : '← Stock value'}
+        </Link>
+      </div>
       <PageHeader
-        eyebrow="Stock cost"
         title={`${stream.tank.code} · ${stream.product.name}`}
         headingLevel="h2"
         titleId="valuation-stream-title"
         description={`Last cost update ${date(stream.lastValuationOrCostEventAt)}`}
         actions={
-          <>
-            {returnHref ? (
-              <Link className="button button-quiet" href={returnHref}>
-                Back to the reconciliation
-              </Link>
-            ) : null}
-            <Link className="button button-quiet" href={contextHref}>
-              Back to stock value
-            </Link>
-            <RequestRevaluationDialog
-              context={context}
-              stream={stream}
-              capability={data.capabilities.request}
-              onSuccess={load}
-            />
-          </>
+          <RequestRevaluationDialog
+            context={context}
+            stream={stream}
+            capability={data.capabilities.request}
+            onSuccess={load}
+          />
         }
       />
       <section
@@ -733,11 +727,9 @@ export function ValuationStreamDetail({
           </InfoTip>
         </div>
         {data.revaluations.length === 0 ? (
-          <EmptyState
-            layout="block"
-            title="No cost changes"
-            message="None requested for this tank."
-          />
+          <p className="valuation-empty">
+            <strong>No cost changes yet.</strong> None have been requested for this tank.
+          </p>
         ) : (
           <TableScrollRegion label="Cost changes for this tank">
             <table className="data-table">

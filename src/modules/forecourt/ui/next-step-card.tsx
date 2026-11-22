@@ -204,15 +204,11 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
       aria-labelledby="next-step-title"
       data-done={step.stage === null || undefined}
     >
-      {embedded ? (
-        step.stage === null ? null : (
-          <p className="next-step-count">
-            Step {Math.min(step.stage, SHOWN_STEPS.length - 1) + 1} of {SHOWN_STEPS.length}
-          </p>
-        )
-      ) : (
-        <p className="eyebrow">Quick actions</p>
-      )}
+      {embedded && step.stage !== null ? (
+        <p className="next-step-count">
+          Step {Math.min(step.stage, SHOWN_STEPS.length - 1) + 1} of {SHOWN_STEPS.length}
+        </p>
+      ) : null}
       <h2 id="next-step-title">{step.title}</h2>
       {notice ? (
         <p className="next-step-detail" role="status">
@@ -258,7 +254,7 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
             {askingReason.label}
           </Button>
         </div>
-      ) : action?.kind === 'command' ? (
+      ) : action?.kind === 'command' && !(error && fixLink) ? (
         <Button
           variant="primary"
           className="next-step-action"
@@ -266,16 +262,6 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
           loading={busy}
         >
           {action.label}
-        </Button>
-      ) : null}
-      {!askingReason && step.alternative ? (
-        <Button
-          variant="secondary"
-          className="next-step-action"
-          onClick={() => void run(step.alternative ?? null)}
-          disabled={busy}
-        >
-          {step.alternative.label}
         </Button>
       ) : null}
       <ol

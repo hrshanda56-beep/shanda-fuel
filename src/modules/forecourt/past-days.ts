@@ -22,6 +22,10 @@ export type PastDaysData = {
   /** The station-local business date today. */
   today: string;
   goLiveDate: string | null;
+  /** The station's IANA timezone, used to place a shift's start on the chosen day. */
+  timezone: string;
+  /** The station's active shifts, so the person can say which one they are recording. */
+  shiftTemplates: { id: string; name: string; startTime: string | null; durationMinutes: number }[];
   /** The person may open a past day at all (supervisor and above). */
   canRecord: boolean;
   /** The person may go back the full window, not just a week (owner level). */
@@ -114,8 +118,26 @@ export async function getPastDaysFromRequest(
       order by business_date desc
     `);
     const existingDates = new Set(days.map((day) => day.date));
+    const templates = await transaction.execute<{
+      id: string;
+      name: string;
+      startTime: string | null;
+      durationMinutes: number;
+    }>(sql`
+      select t.id, t.name, t.start_time::text as "startTime", t.duration_minutes as "durationMinutes"
+      from app.shift_templates t
+      where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId} and t.active
+      order by t.start_time nulls last, t.code
+    `);
     return {
       stationName: row.name,
+      timezone: row.timezone,
+      shiftTemplates: templates.map((t) => ({
+        id: t.id,
+        name: t.name,
+        startTime: t.startTime,
+        durationMinutes: Number(t.durationMinutes),
+      })),
       today,
       goLiveDate: row.go_live_date ?? null,
       canRecord,

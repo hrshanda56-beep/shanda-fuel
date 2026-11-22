@@ -412,7 +412,7 @@ function Questions({
         <WizardStep
           wizard={alone}
           title="Do you want to add the opening balances now?"
-          hint="These are the figures the station starts with: fuel in the tanks, cash, bank, what customers owe and unpaid supplier invoices. You can skip any of them."
+          hint="Fuel, cash, bank, debts. You can skip any."
         >
           <WizardResumeNotice
             offer={draft.offer}
@@ -474,7 +474,7 @@ function Questions({
         <WizardStep
           wizard={alone}
           title={`How much fuel is in ${tankLabel(tank.code)}?`}
-          hint={`${tank.fuel}. Tank ${wizard.index + 1} of ${left.tank.length}. It holds up to ${Number(tank.capacityLitres).toLocaleString('en-US')} litres.`}
+          hint={`${tank.fuel} · holds up to ${Number(tank.capacityLitres).toLocaleString('en-US')} litres`}
         >
           <Field id="litres" label="Litres in the tank" error={errors.litres} required>
             <input
@@ -488,7 +488,7 @@ function Questions({
           <Field
             id="value"
             label="What is that fuel worth in US$?"
-            hint="Optional. Leave it empty if you do not know."
+            hint="Optional."
             error={errors.value}
             optional
           >

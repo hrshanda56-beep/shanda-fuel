@@ -348,7 +348,7 @@ function Loop({
       <WizardAnother
         wizard={alone}
         title={`${station.stationName} still needs ${sayTasks(left)}`}
-        hint="Everything you answered is saved. You can go through what is left again, or leave it for now."
+        hint="Your answers are saved."
         yesLabel="Go through it again"
         noLabel={hasNext ? 'Leave it, go to the next station' : 'Leave it for now'}
         onYes={() => setOffered(new Set())}

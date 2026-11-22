@@ -19,7 +19,9 @@ import {
 const input = (over: Partial<ScreenInput> = {}): ScreenInput => ({
   hasVisiting: false,
   pumpIds: ['a', 'b'],
+  namedPayments: ['CASH', 'POS'],
   paymentKeys: [],
+  paymentWho: [],
   expenseKeys: [],
   tankIds: ['t1'],
   explain: [],
@@ -34,6 +36,8 @@ describe('figures wizard: the screens and their order', () => {
       'team',
       'pump:a',
       'pump:b',
+      'payname:CASH',
+      'payname:POS',
       'payments-more',
       'expenses-more',
       'cash',
@@ -51,8 +55,18 @@ describe('figures wizard: the screens and their order', () => {
     const result = ids({ paymentKeys: ['p1', 'p2'], expenseKeys: ['e1'] });
     expect(result.indexOf('payment:p1')).toBeLessThan(result.indexOf('payment:p2'));
     expect(result.indexOf('payment:p2')).toBeLessThan(result.indexOf('payments-more'));
-    expect(result.indexOf('expense:e1')).toBeLessThan(result.indexOf('expenses-more'));
+    expect(result.indexOf('expensepay:e1')).toBeLessThan(result.indexOf('expenses-more'));
     expect(result.indexOf('payments-more')).toBeLessThan(result.indexOf('expense:e1'));
+  });
+
+  it('splits an expense into what for, how much and how paid; asks who first when needed', () => {
+    const result = ids({ expenseKeys: ['e1'], paymentKeys: ['p1'], paymentWho: ['p1'] });
+    expect(result.slice(result.indexOf('expense:e1'), result.indexOf('expense:e1') + 3)).toEqual([
+      'expense:e1',
+      'expenseamt:e1',
+      'expensepay:e1',
+    ]);
+    expect(result.indexOf('paywho:p1')).toBe(result.indexOf('payment:p1') - 1);
   });
 
   it('says so when there are no pumps or tanks, and asks for each explanation before submit', () => {
@@ -95,7 +109,9 @@ describe('figures wizard: where to resume', () => {
     tanks: new Set(),
     explained: new Set(),
   };
-  const screens = buildScreens(input({ paymentKeys: ['p1'], explain: ['CASH'] }));
+  const screens = buildScreens(
+    input({ namedPayments: [], paymentKeys: ['p1'], explain: ['CASH'] }),
+  );
 
   it('starts at the team when nothing is saved', () => {
     expect(resumeScreen(screens, none)).toBe('team');
@@ -111,6 +127,13 @@ describe('figures wizard: where to resume', () => {
     expect(resumeScreen(screens, { ...afterPumps, payments: new Set(['p1']) })).toBe(
       'payments-more',
     );
+  });
+
+  it('asks the named ways of paying first, and lands on the first of them after the pumps', () => {
+    const named = buildScreens(input());
+    const afterPumps = { ...none, team: true, pumps: new Set(['a', 'b']) };
+    expect(resumeScreen(named, afterPumps)).toBe('payname:CASH');
+    expect(resumeScreen(named, { ...afterPumps, paymentsDone: true })).toBe('cash');
   });
 
   it('then to the cash, the tank dips and the explanations', () => {

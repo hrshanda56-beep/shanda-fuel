@@ -428,7 +428,7 @@ export function StationSetupWizard({
               <NumericInput
                 id="ssw-difference"
                 label={`Ask for an explanation above (${unitWord(fuel.unit)})`}
-                hint="How far the dip reading may be from the book stock before the difference must be explained."
+                hint="How far the dip may differ before you must explain."
                 optional
                 error={e('difference')}
                 value={tankValue.difference}

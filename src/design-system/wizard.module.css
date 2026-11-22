@@ -8,7 +8,23 @@
 .wizard {
   width: min(100%, 40rem);
   margin-inline: auto;
-  padding: var(--space-6) var(--space-5);
+  padding: var(--space-8, 2.5rem) var(--space-7, 2.25rem);
+  border-radius: 1.5rem;
+  border: 1px solid var(--border-subtle);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.04) inset,
+    0 24px 48px -24px rgb(0 0 0 / 0.45);
+}
+
+.wizardWide {
+  width: 100%;
+}
+
+@media (max-width: 40rem) {
+  .wizard {
+    padding: var(--space-6) var(--space-4);
+    border-radius: 1.25rem;
+  }
 }
 
 .stepCount {
@@ -19,8 +35,10 @@
 
 .question {
   margin: 0;
-  font-size: 1.5rem;
-  line-height: 1.25;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   outline: none;
 }
 
@@ -29,10 +47,68 @@
   color: var(--text-muted);
 }
 
+/* The figures wizard: a thin bar for progress and a hint that never competes with the question. */
+.progress {
+  height: 0.1875rem;
+  border-radius: 999px;
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hintCalm {
+  margin: calc(var(--space-3) * -1) 0 0;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.quiet {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+  opacity: 0.8;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.actions > :first-child {
+  min-width: 9rem;
+  min-height: 3rem;
+  font-weight: 600;
+}
+
+/* Cancel and Back recede so the one next step is obvious. */
+.actions > :not(:first-child) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.actions > :not(:first-child):hover {
+  color: var(--text-primary, inherit);
+}
+
+@media (max-width: 30rem) {
+  .actions > :first-child {
+    flex: 1 1 100%;
+  }
 }
 
 .choices {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { formatUsd } from '@/design-system/formatters';
 import { Field, NumericInput } from '@/design-system/primitives';
@@ -44,6 +44,7 @@ export function StaffBenefitWizard({
   const [membershipId, setMembershipId] = useState('');
   const [mode, setMode] = useState<UsualOrOwn | null>(null);
   const [own, setOwn] = useState('');
+  const picked = useRef(false);
   const limit = mode === 'usual' ? USUAL_MONTHLY_LIMIT : own;
 
   const wizard = useWizard<BenefitStep>({
@@ -53,6 +54,14 @@ export function StaffBenefitWizard({
   });
   const { step, errors } = wizard;
   const person = staff.find((option) => option.membershipId === membershipId);
+
+  // Choosing someone from the list carries straight on, once the choice has been stored.
+  useEffect(() => {
+    if (!picked.current) return;
+    picked.current = false;
+    if (step === 'who' && membershipId) next();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [membershipId]);
 
   function next() {
     if (step === 'who') return wizard.advance(checkStaffMember(membershipId), 'limit', 'review');
@@ -90,6 +99,9 @@ export function StaffBenefitWizard({
               options={staff}
               value={membershipId}
               onChange={setMembershipId}
+              onPick={() => {
+                picked.current = true;
+              }}
             />
           </Field>
           <WizardActions wizard={wizard} onContinue={next} />

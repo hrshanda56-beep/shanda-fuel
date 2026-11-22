@@ -271,7 +271,7 @@ export function TankWizard({
       <WizardStep
         wizard={shown}
         title="How big a difference is acceptable?"
-        hint="Each time the tank is dipped, the dip is compared with the stock the books expect."
+        hint="Each dip is compared with the stock the books expect."
       >
         <WizardUsualOrOwn
           label="Check differences"

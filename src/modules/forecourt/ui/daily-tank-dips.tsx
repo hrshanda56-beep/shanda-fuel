@@ -201,46 +201,67 @@ export function DailyTankDips({
               className="tank-row"
               data-saved={savedTanks.has(tank.tankId) && dip ? '' : undefined}
             >
-              <header className="pump-row-head">
-                <h3>{tank.productName}</h3>
-                {dip?.measuredAt ? (
-                  <p className="pump-row-meta">
-                    Dipped {formatTimeInTimeZone(dip.measuredAt, timezone)}
-                  </p>
-                ) : null}
-              </header>
-              <div className="tank-row-readings">
-                <PumpReadout
-                  label="Expected"
-                  value={tank.expectedLitres ? formatQuantity(tank.expectedLitres, tank.unit) : '—'}
-                />
-                {dip ? (
-                  <>
-                    <PumpReadout
-                      label="Dip on this sheet"
-                      value={formatQuantity(dip.physicalLitres, tank.unit)}
-                    />
-                    <PumpReadout
-                      label="Difference"
-                      value={
+              {onlyTankId ? (
+                // One tank on its own screen: the question is already the heading, so the row is
+                // just the box and one small line.
+                <p className="tank-row-quiet">
+                  Expected{' '}
+                  {tank.expectedLitres ? formatQuantity(tank.expectedLitres, tank.unit) : '—'}
+                  {dip
+                    ? ` · Dip ${formatQuantity(dip.physicalLitres, tank.unit)}${
                         variance !== null
-                          ? `${Number(variance) > 0 ? '+' : ''}${formatQuantity(variance, tank.unit)}`
-                          : '—'
-                      }
-                      result
-                    />
-                    <PumpReadout
-                      label="Result"
-                      value={
-                        <span className="tank-result" data-tone={tone}>
-                          {tank.toleranceLitres === null ? 'No allowed difference set' : label}
-                        </span>
-                      }
-                      result
-                    />
-                  </>
-                ) : null}
-              </div>
+                          ? ` · Difference ${Number(variance) > 0 ? '+' : ''}${formatQuantity(variance, tank.unit)}`
+                          : ''
+                      } · ${tank.toleranceLitres === null ? 'No allowed difference set' : label}`
+                    : ''}
+                </p>
+              ) : null}
+              {onlyTankId ? null : (
+                <header className="pump-row-head">
+                  <h3>{tank.productName}</h3>
+                  {dip?.measuredAt ? (
+                    <p className="pump-row-meta">
+                      Dipped {formatTimeInTimeZone(dip.measuredAt, timezone)}
+                    </p>
+                  ) : null}
+                </header>
+              )}
+              {onlyTankId ? null : (
+                <div className="tank-row-readings">
+                  <PumpReadout
+                    label="Expected"
+                    value={
+                      tank.expectedLitres ? formatQuantity(tank.expectedLitres, tank.unit) : '—'
+                    }
+                  />
+                  {dip ? (
+                    <>
+                      <PumpReadout
+                        label="Dip on this sheet"
+                        value={formatQuantity(dip.physicalLitres, tank.unit)}
+                      />
+                      <PumpReadout
+                        label="Difference"
+                        value={
+                          variance !== null
+                            ? `${Number(variance) > 0 ? '+' : ''}${formatQuantity(variance, tank.unit)}`
+                            : '—'
+                        }
+                        result
+                      />
+                      <PumpReadout
+                        label="Result"
+                        value={
+                          <span className="tank-result" data-tone={tone}>
+                            {tank.toleranceLitres === null ? 'No allowed difference set' : label}
+                          </span>
+                        }
+                        result
+                      />
+                    </>
+                  ) : null}
+                </div>
+              )}
               {!dip && !editable ? <p className="muted-small">No dip was recorded.</p> : null}
               {editable ? (
                 <div className="tank-row-entry">

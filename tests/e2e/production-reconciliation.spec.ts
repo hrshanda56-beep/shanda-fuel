@@ -1,5 +1,4 @@
 import { seedClerkIdentity, authenticateClerk, establishClerkStepUp } from './clerk-fixtures';
-import { openDaySummary } from './fixtures/day-summary';
 import AxeBuilder from '@axe-core/playwright';
 import {
   expect,
@@ -353,18 +352,11 @@ test.describe('production reconciliation persistence', () => {
     // This scenario runs with CI's Better Auth provider. Rendering the control
     // room must not require a ClerkProvider or crash before its content loads.
     await expect(controlRoom).toBeVisible();
-    await openDaySummary(page);
-    await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
+    // The one next step is offered; the day summary (shifts list, day card) is not shown.
+    await expect(controlRoom.locator('#next-step-title')).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Close Shift' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
-    await expect(
-      controlRoom
-        .locator('article.operations-shift-row strong')
-        .filter({
-          hasText: '08:00 – 16:00',
-        })
-        .first(),
-    ).toBeVisible();
+    await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toHaveCount(0);
 
     const closeMeters = controlRoom.getByRole('button', { name: 'Close Shift' }).first();
     await closeMeters.focus();
@@ -393,11 +385,10 @@ test.describe('production reconciliation persistence', () => {
       })}`,
     );
 
-    await openDaySummary(page);
-    const shiftRow = page
-      // The approved layout no longer prints raw shift ids; rows carry data-shift-id.
-      .locator(`article.operations-shift-row[data-shift-id="${ids.controlRoomShift}"]`);
-    const closeMeters = shiftRow.getByRole('button', { name: 'Close Shift' });
+    const closeMeters = page
+      .locator('[aria-label="Operations control room"]')
+      .getByRole('button', { name: 'Close Shift' })
+      .first();
     await expect(closeMeters).toBeVisible();
     await client.unsafe(
       `update app.shifts set version = version + 1 where id = '${ids.controlRoomShift}'`,

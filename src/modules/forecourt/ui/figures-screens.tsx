@@ -6,13 +6,11 @@ import { Button, Field, NumericInput } from '../../../design-system/primitives';
 import {
   WizardActions,
   WizardNotice,
+  WizardQuiet,
   WizardStep,
-  WizardSummary,
-  WizardSummaryRow,
 } from '../../../design-system/wizard';
 import { WizardOptions, type WizardOption } from '../../../design-system/wizard-kit';
 import { paymentNeeds } from './figures-wizard';
-import { PumpReadout } from './pump-readout';
 
 /**
  * The questions of the shift figures, one per screen (#253). Each component draws one screen and
@@ -42,21 +40,37 @@ function Screen({
   children,
   problem,
   nav,
+  enterContinues = true,
 }: {
   title: string;
   hint?: string;
   children: ReactNode;
   problem?: string | null;
   nav: Navigation;
+  /** Enter in a single-line box moves on. Off where the box has its own button. */
+  enterContinues?: boolean;
 }) {
   return (
-    <WizardStep wizard={nav.frame} title={title} hint={hint}>
-      {children}
-      {problem ? (
-        <p className="field-error" role="alert">
-          {problem}
-        </p>
-      ) : null}
+    <WizardStep wizard={nav.frame} title={title} hint={hint} calm>
+      <div
+        className="wizard-fields"
+        {...(enterContinues ? {} : { 'data-no-enter': '' })}
+        onKeyDown={(event) => {
+          const target = event.target as HTMLElement;
+          if (!enterContinues || event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+          if (target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'checkbox') {
+            event.preventDefault();
+            nav.onContinue();
+          }
+        }}
+      >
+        {children}
+        {problem ? (
+          <p className="field-error" role="alert">
+            {problem}
+          </p>
+        ) : null}
+      </div>
       <WizardActions
         wizard={{ atStart: false, back: nav.onBack }}
         onContinue={nav.onContinue}
@@ -124,7 +138,7 @@ export function NoPumpsScreen({ nav }: { nav: Navigation }) {
   return (
     <Screen
       title="No pumps are set up yet"
-      hint="Your manager needs to set up the pumps for this station before readings can be entered."
+      hint="Ask your manager to set them up."
       nav={{ ...nav, continueLabel: 'Continue' }}
     >
       {null}
@@ -141,9 +155,7 @@ export function PumpScreen({
   error,
   unit,
   litresLabel,
-  litresSold,
-  priceText,
-  salesValue,
+  result,
   belowOpening,
   noPrice,
   onChange,
@@ -160,9 +172,8 @@ export function PumpScreen({
   error?: string;
   unit: string;
   litresLabel: string;
-  litresSold: string;
-  priceText: string;
-  salesValue: string;
+  /** "643 L sold · USD 964.50", empty until a reading is typed. */
+  result: string;
   belowOpening: boolean;
   noPrice: boolean;
   onChange: (value: string) => void;
@@ -174,8 +185,8 @@ export function PumpScreen({
   const id = `closing-${pumpLabel.replace(/\W+/g, '-').toLowerCase()}`;
   return (
     <Screen
-      title={`What does the meter show now on ${pumpLabel.toLowerCase()}?`}
-      hint={`${fuelName}. It showed ${opening} when the shift opened.`}
+      title={`What does the meter show on ${pumpLabel.toLowerCase()}?`}
+      hint={`${fuelName}. Opening ${opening}.`}
       nav={nav}
     >
       {correcting ? (
@@ -189,7 +200,7 @@ export function PumpScreen({
       ) : null}
       <NumericInput
         id={id}
-        label="Closing reading"
+        label="Reading now"
         value={closing}
         error={error}
         onChange={(event) => onChange(event.target.value)}
@@ -197,19 +208,19 @@ export function PumpScreen({
         required
         autoComplete="off"
       />
-      <div className="pump-row-readings">
-        <PumpReadout label={litresLabel} value={litresSold} result />
-        <PumpReadout label="Price / litre" value={priceText} />
-        <PumpReadout label="Sales value" value={salesValue} result />
-      </div>
+      {result && !belowOpening ? (
+        <WizardQuiet>
+          {litresLabel === 'Kilograms sold' ? 'Kilograms' : 'Litres'} sold: {result}
+        </WizardQuiet>
+      ) : null}
       {belowOpening && !error ? (
         <p className="field-error" role="alert">
-          The closing reading is lower than the opening reading. Check both numbers.
+          That is lower than the opening reading. Check both numbers.
         </p>
       ) : null}
       {noPrice ? (
         <p className="field-error" role="alert">
-          No selling price is set for this fuel. Ask your manager before continuing.
+          No selling price is set for this fuel. Ask your manager.
         </p>
       ) : null}
       {correctionButton}
@@ -221,7 +232,7 @@ export function PumpScreen({
 
 type Choice = { value: string; label: string };
 
-/** "Did customers pay another way?": pick a way, or say that is all. */
+/** "Any other way?": pick one, or say no. One tap either way, so there is no Continue button. */
 export function AddMoreScreen({
   nav,
   title,
@@ -247,7 +258,7 @@ export function AddMoreScreen({
     { value: '__done', label: doneLabel },
   ];
   return (
-    <WizardStep wizard={nav.frame} title={title} hint={hint}>
+    <WizardStep wizard={nav.frame} title={title} hint={hint} calm>
       <WizardOptions<string>
         label={title}
         name={name}
@@ -255,98 +266,83 @@ export function AddMoreScreen({
         value={null}
         onPick={(value) => (value === '__done' ? onDone() : onPick(value))}
       />
-      <WizardActions
-        wizard={{ atStart: false, back: nav.onBack }}
-        onContinue={onDone}
-        continueLabel="That is all"
-      />
+      <div className="wizard-back">
+        <Button type="button" variant="secondary" onClick={nav.onBack}>
+          Back
+        </Button>
+      </div>
     </WizardStep>
   );
 }
 
-export function PaymentLineScreen({
+/** One of the usual ways of paying: a single amount, left empty when nobody paid this way. */
+export function PaymentNameScreen({
   nav,
-  number,
-  method,
-  methods,
+  title,
   amount,
-  reference,
+  error,
+  onAmount,
+}: {
+  nav: Navigation;
+  title: string;
+  amount: string;
+  error?: string;
+  onAmount: (value: string) => void;
+}) {
+  return (
+    <Screen title={title} hint="Leave empty if none." nav={nav}>
+      <NumericInput
+        id="payment-name-amount"
+        label="Amount"
+        value={amount}
+        error={error}
+        onChange={(event) => onAmount(event.target.value)}
+        unit="USD"
+        autoComplete="off"
+      />
+    </Screen>
+  );
+}
+
+/** A way of paying that is for a named person: the customer, or who received the fuel. */
+export function PaymentWhoScreen({
+  nav,
+  method,
   customerAccountId,
   beneficiaryName,
   customers,
   errors,
-  onMethod,
-  onAmount,
-  onReference,
   onCustomer,
   onBeneficiary,
   onRemove,
-  runningTotal,
 }: {
   nav: Navigation;
-  number: number;
   method: string;
-  methods: readonly Choice[];
-  amount: string;
-  reference: string;
   customerAccountId: string;
   beneficiaryName: string;
   customers: readonly Choice[];
   errors: Record<string, string>;
-  onMethod: (value: string) => void;
-  onAmount: (value: string) => void;
-  onReference: (value: string) => void;
   onCustomer: (value: string) => void;
   onBeneficiary: (value: string) => void;
   onRemove: () => void;
-  /** "Entered so far" across every line, shown beside the amount. */
-  runningTotal?: string;
 }) {
   const needs = paymentNeeds(method);
   return (
     <Screen
-      title={
-        number > 1
-          ? `How much did customers pay this way? (line ${number})`
-          : 'How much did customers pay this way?'
-      }
-      hint="One way of paying at a time. The total should match the expected sales."
+      title={needs.customer ? 'Which customer?' : 'Who received the fuel?'}
       nav={{
         ...nav,
         extra: (
           <Button type="button" variant="quiet" onClick={onRemove}>
-            Remove this line
+            Remove
           </Button>
         ),
       }}
     >
-      <Field id={`payment-method-${number}`} label="Paid by">
-        <select
-          id={`payment-method-${number}`}
-          value={method}
-          onChange={(event) => onMethod(event.target.value)}
-        >
-          {methods.map((choice) => (
-            <option key={choice.value} value={choice.value}>
-              {choice.label}
-            </option>
-          ))}
-        </select>
-      </Field>
       {needs.customer ? (
-        <Field
-          id={`payment-customer-${number}`}
-          label="Customer"
-          hint={
-            method === 'CUSTOMER_CREDIT'
-              ? 'Who is buying on credit.'
-              : 'Whose prepaid balance pays for this.'
-          }
-          error={errors.customer}
-          required
-        >
+        <Field id="payment-customer" label="Customer" error={errors.customer} required>
           <select
-            id={`payment-customer-${number}`}
+            id="payment-customer"
             value={customerAccountId}
             onChange={(event) => onCustomer(event.target.value)}
           >
@@ -358,141 +354,155 @@ export function PaymentLineScreen({
             ))}
           </select>
         </Field>
-      ) : null}
-      {needs.beneficiary ? (
-        <Field
-          id={`payment-beneficiary-${number}`}
-          label="Who received the fuel"
-          hint="Name of the staff member or manager."
-          error={errors.beneficiary}
-          required
-        >
+      ) : (
+        <Field id="payment-beneficiary" label="Name" error={errors.beneficiary} required>
           <input
-            id={`payment-beneficiary-${number}`}
+            id="payment-beneficiary"
             value={beneficiaryName}
             maxLength={160}
             onChange={(event) => onBeneficiary(event.target.value)}
           />
         </Field>
-      ) : null}
-      <NumericInput
-        id={`payment-amount-${number}`}
-        label="Amount"
-        value={amount}
-        error={errors.amount}
-        onChange={(event) => onAmount(event.target.value)}
-        unit="USD"
-        required
-        autoComplete="off"
-      />
-      <Field id={`payment-reference-${number}`} label="Reference or note" optional>
-        <input
-          id={`payment-reference-${number}`}
-          value={reference}
-          onChange={(event) => onReference(event.target.value)}
-        />
-      </Field>
-      {runningTotal ? (
-        <p className="entry-sum">
-          Entered so far<strong>{runningTotal}</strong>
-        </p>
-      ) : null}
+      )}
     </Screen>
   );
 }
 
-export function ExpenseLineScreen({
+/** How much was paid a way picked from "any other way". */
+export function PaymentLineScreen({
   nav,
-  number,
-  category,
-  description,
+  title,
   amount,
-  paymentMethod,
-  methods,
-  errors,
-  onCategory,
-  onDescription,
+  error,
   onAmount,
-  onMethod,
   onRemove,
-  runningTotal,
 }: {
   nav: Navigation;
-  number: number;
-  category: string;
-  description: string;
+  title: string;
   amount: string;
-  paymentMethod: string;
-  methods: readonly Choice[];
-  errors: Record<string, string>;
-  onCategory: (value: string) => void;
-  onDescription: (value: string) => void;
+  error?: string;
   onAmount: (value: string) => void;
-  onMethod: (value: string) => void;
   onRemove: () => void;
-  runningTotal?: string;
 }) {
   return (
     <Screen
-      title={number > 1 ? `What was paid out? (expense ${number})` : 'What was paid out?'}
-      hint="One expense at a time."
+      title={title}
       nav={{
         ...nav,
         extra: (
           <Button type="button" variant="quiet" onClick={onRemove}>
-            Remove this expense
+            Remove
           </Button>
         ),
       }}
     >
-      <Field id={`expense-category-${number}`} label="What for" error={errors.category} required>
-        <input
-          id={`expense-category-${number}`}
-          value={category}
-          onChange={(event) => onCategory(event.target.value)}
-        />
-      </Field>
-      <Field
-        id={`expense-description-${number}`}
-        label="Details"
-        error={errors.description}
-        required
-      >
-        <input
-          id={`expense-description-${number}`}
-          value={description}
-          onChange={(event) => onDescription(event.target.value)}
-        />
-      </Field>
       <NumericInput
-        id={`expense-amount-${number}`}
+        id="payment-line-amount"
         label="Amount"
         value={amount}
-        error={errors.amount}
+        error={error}
         onChange={(event) => onAmount(event.target.value)}
         unit="USD"
         required
         autoComplete="off"
       />
-      <Field id={`expense-payment-${number}`} label="Paid with">
-        <select
-          id={`expense-payment-${number}`}
-          value={paymentMethod}
-          onChange={(event) => onMethod(event.target.value)}
-        >
-          {methods.map((choice) => (
-            <option key={choice.value} value={choice.value}>
-              {choice.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-      {runningTotal ? (
-        <p className="entry-sum">
-          Entered so far<strong>{runningTotal}</strong>
-        </p>
-      ) : null}
     </Screen>
+  );
+}
+
+/** First question of an expense: what the money was for, in a few words. */
+export function ExpenseWhatScreen({
+  nav,
+  value,
+  error,
+  onChange,
+  onRemove,
+}: {
+  nav: Navigation;
+  value: string;
+  error?: string;
+  onChange: (value: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Screen
+      title="What was paid for?"
+      hint="For example repairs, or cleaning supplies."
+      nav={{
+        ...nav,
+        extra: (
+          <Button type="button" variant="quiet" onClick={onRemove}>
+            Remove
+          </Button>
+        ),
+      }}
+    >
+      <Field id="expense-what" label="What for" error={error} required>
+        <input
+          id="expense-what"
+          value={value}
+          maxLength={160}
+          autoComplete="off"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </Field>
+    </Screen>
+  );
+}
+
+export function ExpenseAmountScreen({
+  nav,
+  amount,
+  error,
+  onAmount,
+}: {
+  nav: Navigation;
+  amount: string;
+  error?: string;
+  onAmount: (value: string) => void;
+}) {
+  return (
+    <Screen title="How much was it?" nav={nav}>
+      <NumericInput
+        id="expense-amount"
+        label="Amount"
+        value={amount}
+        error={error}
+        onChange={(event) => onAmount(event.target.value)}
+        unit="USD"
+        required
+        autoComplete="off"
+      />
+    </Screen>
+  );
+}
+
+/** How it was paid: one tap picks the way and moves on. */
+export function ExpensePaidScreen({
+  nav,
+  methods,
+  value,
+  onPick,
+  onContinue,
+}: {
+  nav: Pick<Navigation, 'frame' | 'onBack'>;
+  methods: readonly Choice[];
+  value: string;
+  onPick: (value: string) => void;
+  /** For when the way already shown (Cash) is the right one. */
+  onContinue: () => void;
+}) {
+  return (
+    <WizardStep wizard={nav.frame} title="How was it paid?" calm>
+      <WizardOptions<string>
+        label="How was it paid?"
+        name="expense-paid"
+        options={methods.map((choice) => ({ value: choice.value, label: choice.label }))}
+        value={value}
+        onPick={onPick}
+      />
+      <WizardActions wizard={{ atStart: false, back: nav.onBack }} onContinue={onContinue} />
+    </WizardStep>
   );
 }
 
@@ -503,25 +513,23 @@ export function CashScreen({
   value,
   error,
   onChange,
-  rows,
+  expected,
+  difference,
 }: {
   nav: Navigation;
   value: string;
   error?: string;
   onChange: (value: string) => void;
-  /** Cash we expected, paid out, expected after payouts and the difference. */
-  rows: readonly { label: string; value: string }[];
+  /** Cash we expected to be holding, after payouts. */
+  expected: string;
+  /** The cash difference, empty until a count is typed. */
+  difference: string | null;
 }) {
   return (
-    <Screen
-      title="How much cash did you count?"
-      hint="Count the cash you are holding and enter the total."
-      nav={nav}
-    >
+    <Screen title="How much cash did you count?" nav={nav}>
       <NumericInput
         id="cash-counted"
         label="Cash counted"
-        hint="The figures below update as you type."
         value={value}
         error={error}
         onChange={(event) => onChange(event.target.value)}
@@ -529,16 +537,10 @@ export function CashScreen({
         required
         autoComplete="off"
       />
-      <WizardSummary>
-        {rows.map((row) => (
-          <WizardSummaryRow key={row.label} label={row.label}>
-            {row.value}
-          </WizardSummaryRow>
-        ))}
-      </WizardSummary>
-      <p className="semantic-note">
-        Counting the cash here does not bank it. Collection and banking are recorded under Cash.
-      </p>
+      <WizardQuiet>
+        Expected {expected}
+        {difference ? ` · Difference ${difference}` : ''}
+      </WizardQuiet>
     </Screen>
   );
 }
@@ -559,7 +561,7 @@ export function TankScreen({
   children: ReactNode;
 }) {
   return (
-    <Screen title={title} hint={hint} nav={nav} problem={problem}>
+    <Screen title={title} hint={hint} nav={nav} problem={problem} enterContinues={false}>
       {children}
     </Screen>
   );
@@ -584,7 +586,7 @@ export function ExplainScreen({
 }) {
   return (
     <Screen title={question} hint={detail} nav={nav}>
-      <Field id={id} label="Your explanation" error={error} required>
+      <Field id={id} label="Explanation" error={error} required>
         <textarea
           id={id}
           rows={4}
@@ -602,11 +604,14 @@ export function SubmitScreen({
   onBack,
   checklist,
   banners,
+  summary,
   children,
   actions,
 }: {
   frame: Frame;
   onBack: () => void;
+  /** One small line with the sales and cash differences. */
+  summary?: string;
   checklist: readonly { label: string; ok: boolean }[];
   banners?: ReactNode;
   /** Photos and papers. */
@@ -615,11 +620,7 @@ export function SubmitScreen({
   actions: ReactNode;
 }) {
   return (
-    <WizardStep
-      wizard={frame}
-      title="Check the shift, then submit"
-      hint="Nothing goes to review until you press Submit for review."
-    >
+    <WizardStep wizard={frame} title="Ready to submit?" calm>
       <ul className="entry-checklist" aria-label="Before you submit">
         {checklist.map((item) => (
           <li key={item.label} data-ok={item.ok || undefined}>
@@ -628,6 +629,7 @@ export function SubmitScreen({
           </li>
         ))}
       </ul>
+      {summary ? <WizardQuiet>{summary}</WizardQuiet> : null}
       {banners}
       {children}
       <div className="form-actions">

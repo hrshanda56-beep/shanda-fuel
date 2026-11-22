@@ -184,12 +184,7 @@ export function CompanyWizard({
           title="How should your documents look?"
           hint="You can leave this empty and carry on."
         >
-          <Field
-            id="sd-c-logo"
-            label="Logo"
-            hint="Printed at the top left, and shown on the loading screen. A PNG, JPG or SVG; it is shrunk for you, and a transparent background is kept."
-            optional
-          >
+          <Field id="sd-c-logo" label="Logo" hint="PNG, JPG or SVG. Shown top left." optional>
             <div className={styles.logoRow}>
               {form.logo ? (
                 // eslint-disable-next-line @next/next/no-img-element -- a small inline preview of the chosen picture

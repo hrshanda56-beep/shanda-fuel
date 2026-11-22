@@ -2,7 +2,6 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
 import { mockEmptyWorkContext } from './fixtures/context-route';
-import { openDaySummary } from './fixtures/day-summary';
 import { mockContext, mockOverview, STATION, TENANT } from './fixtures/data-filled';
 import { mockReconciliationDetails } from './fixtures/reconciliation-detail';
 
@@ -98,8 +97,7 @@ test.describe('console hygiene', () => {
     await mockOverview(page);
     await mockReconciliationDetails(page);
     await page.goto(`/operations/daily?tenantId=${TENANT}&stationId=${STATION}`);
-    await openDaySummary(page);
-    await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
+    await expect(page.locator('#next-step-title')).toBeVisible();
     await page.locator('nav a[href^="/stations/"]:visible', { hasText: 'Reconciliations' }).click();
     await expect(page).toHaveURL(/\/reconciliations/);
     await expect(
@@ -108,8 +106,7 @@ test.describe('console hygiene', () => {
     await page.goBack();
     await expect(page).toHaveURL(/\/operations\/daily/);
     // Coming back loads the page fresh, so it opens on the next step again.
-    await openDaySummary(page);
-    await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
+    await expect(page.locator('#next-step-title')).toBeVisible();
     await page.goForward();
     await expect(page).toHaveURL(/\/reconciliations/);
     await expect(

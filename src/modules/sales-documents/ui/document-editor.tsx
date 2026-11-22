@@ -815,7 +815,7 @@ export function DocumentEditor({
 
         {step === 'review' ? (
           <div className={styles.page}>
-            {heading(`Check your ${label}`, 'Nothing is saved until you press the button below.')}
+            {heading(`Check your ${label}`, 'Nothing is saved until you confirm.')}
             <div className={styles.summary}>
               <div className={styles.summaryRow}>
                 <span>
