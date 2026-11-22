@@ -63,6 +63,8 @@ import {
 } from './domain';
 import { resolveForecourtCommandContext } from './application';
 import { shiftOpensAt } from './shift-schedule';
+import { refusePastDay } from './past-day-rules';
+import { isPermissionGranted } from '../../platform/security/permissions';
 import { meterNotWorkingForShiftMessage } from './shift-close-messages';
 import { readLockBlockers } from './lock-blockers';
 import { ensureDefaultExpenseCategories } from '../expenses/default-categories';
@@ -925,6 +927,111 @@ export async function openBusinessDayFromRequest(request: Request, input: unknow
           stationId: context.stationId,
           businessDayId: day.id,
           businessDate: day.date,
+          openedAt: now,
+        }),
+      };
+    },
+  });
+}
+
+const openPastBusinessDayPayload = z
+  .object({
+    commandType: z.literal('OpenPastBusinessDay').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    businessDayId: z.string().uuid(),
+    /** The station-local date being recorded, YYYY-MM-DD. */
+    businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .strict();
+
+/**
+ * Open a business day for a date that has already passed, so its figures can be entered after the
+ * fact. The day is created OPEN and marked as entered late, with who recorded it and when. The date
+ * rules (not today, after go-live, inside the window, owner for older days) live in past-day-rules.
+ */
+export async function openPastBusinessDayFromRequest(request: Request, input: unknown) {
+  const payload = openPastBusinessDayPayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  const ownerLevel = isPermissionGranted({
+    actor: context.authority.authorization,
+    permissionCode: 'business_day.lock',
+    requestedScope: context.scope,
+  });
+  return executeForecourtCommand({
+    context,
+    commandType: 'OpenPastBusinessDay',
+    idempotencyKey: key,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'StationBusinessDay',
+    subjectId: payload.businessDayId,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const now = await serverNow(transaction);
+      const station = await loadStationTimezone(transaction, context.tenantId, context.stationId);
+      const goLive = (
+        await transaction.execute<{ go_live_date: string | null }>(sql`
+          select go_live_date from app.stations
+          where tenant_id = ${context.tenantId} and id = ${context.stationId}
+        `)
+      )[0]?.go_live_date;
+      const existing = await transaction.execute<{ business_date: string }>(sql`
+        select business_date from app.station_business_days
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and business_date = ${payload.businessDate}
+      `);
+      const refusal = refusePastDay({
+        date: payload.businessDate,
+        today: deriveBusinessDate(now, station.timezone),
+        goLiveDate: goLive ?? null,
+        canGoBeyondSupervisorWindow: ownerLevel,
+        existingDates: new Set(existing.map((row) => row.business_date)),
+      });
+      if (refusal) {
+        throw new AppError(
+          refusal.code === 'ALREADY_EXISTS' ? 'CONFLICT' : 'VALIDATION_FAILED',
+          refusal.message,
+          { reason: refusal.code },
+        );
+      }
+      try {
+        await transaction.execute(sql`
+          insert into app.station_business_days
+            (id, tenant_id, station_id, business_date, state, version, opened_at,
+             entered_late, entered_late_by, entered_late_at)
+          values (${payload.businessDayId}, ${context.tenantId}, ${context.stationId},
+            ${payload.businessDate}, 'NOT_STARTED', 0, null,
+            true, ${context.actor.membershipId}, ${now}::timestamptz)
+        `);
+        // A day is always created NOT_STARTED and then opened, exactly like a live day.
+        await transaction.execute(sql`
+          update app.station_business_days set state = 'OPEN', opened_at = ${now}::timestamptz,
+            version = version + 1, updated_at = ${now}::timestamptz
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${payload.businessDayId} and version = 0
+        `);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new AppError(
+            'CONFLICT',
+            'This day already has a record. Open it from the day list instead.',
+            { reason: 'ALREADY_EXISTS' },
+          );
+        }
+        throw error;
+      }
+      return {
+        result: { businessDayId: payload.businessDayId, businessDate: payload.businessDate },
+        after: { businessDayId: payload.businessDayId, state: 'OPEN', enteredLate: true },
+        event: businessDayOpenedEvent({
+          eventId: randomUUID(),
+          tenantId: context.tenantId,
+          legalEntityId: context.legalEntityId,
+          stationId: context.stationId,
+          businessDayId: payload.businessDayId,
+          businessDate: payload.businessDate as never,
           openedAt: now,
         }),
       };

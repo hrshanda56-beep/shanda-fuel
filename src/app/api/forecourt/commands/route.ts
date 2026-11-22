@@ -23,6 +23,7 @@ import {
   lockReconciliationFromRequest,
   markNotOperatedFromRequest,
   openBusinessDayFromRequest,
+  openPastBusinessDayFromRequest,
   postReconciliationFromRequest,
   preparePriceActivationFromRequest,
   requestPriceChangeFromRequest,
@@ -68,6 +69,7 @@ const COMMAND_TYPES = [
   'PreparePriceActivation',
   'ActivatePriceChange',
   'OpenBusinessDay',
+  'OpenPastBusinessDay',
   'CloseBusinessDay',
   'StartShift',
   'ConfirmBoundary',
@@ -170,6 +172,9 @@ export const POST = withRequestObservability(
           break;
         case 'OpenBusinessDay':
           result = await openBusinessDayFromRequest(request, body);
+          break;
+        case 'OpenPastBusinessDay':
+          result = await openPastBusinessDayFromRequest(request, body);
           break;
         case 'CloseBusinessDay':
           result = await closeBusinessDayFromRequest(request, body);
