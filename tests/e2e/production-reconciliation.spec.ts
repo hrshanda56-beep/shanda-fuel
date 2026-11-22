@@ -376,70 +376,73 @@ test.describe('production reconciliation persistence', () => {
     context,
     page,
   }) => {
+    // A day of its own, so the submitted figures (which the database will not let anyone delete)
+    // never touch the shared fixture day. Everything is idempotent for Playwright retries.
+    const staleDay = 'a5e00000-0000-4000-8000-000000000221';
+    const staleShift = 'a5e00000-0000-4000-8000-000000000231';
+    const staleReconciliation = 'a5e00000-0000-4000-8000-000000000241';
+    const staleRevision = 'a5e00000-0000-4000-8000-000000000251';
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${staleDay}', '${ids.tenant}', '${ids.station}', '2026-09-25', 'NOT_STARTED')
+        on conflict (id) do nothing;
+      update app.station_business_days set state='OPEN', opened_at=coalesce(opened_at, now())
+        where id='${staleDay}' and state='NOT_STARTED';
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values
+        ('${staleShift}', '${ids.tenant}', '${ids.station}', '${staleDay}', 'PLANNED', '2026-09-25T06:00:00Z', '2026-09-25T14:00:00Z', '2026-09-25')
+        on conflict (id) do nothing;
+      update app.shifts set state='OPEN', opened_at=coalesce(opened_at, now())
+        where id='${staleShift}' and state='PLANNED';
+      insert into app.reconciliations (id, tenant_id, station_id, business_day_id, shift_id, state)
+        values ('${staleReconciliation}', '${ids.tenant}', '${ids.station}', '${staleDay}', '${staleShift}', 'DRAFT')
+        on conflict (id) do nothing;
+      update app.reconciliations set state = 'READY' where id = '${staleReconciliation}' and state = 'DRAFT';
+      update app.reconciliations set state = 'SUBMITTED' where id = '${staleReconciliation}' and state = 'READY';
+      insert into app.reconciliation_revisions
+        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, variance_classification, declarations, source_segment_ids, source_shift_ids)
+      values ('${staleRevision}', '${ids.tenant}', '${ids.station}', '${staleReconciliation}', 1, 'READY', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)
+        on conflict (id) do nothing;
+      update app.reconciliation_revisions set state = 'SUBMITTED' where id = '${staleRevision}' and state = 'READY';
+    `);
+
+    const posts: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST') posts.push(request.url());
+    });
     await authenticate(context, supervisorToken);
     await gotoAndWaitForHydration(
       page,
       `/operations/daily?${new URLSearchParams({
         tenantId: ids.tenant,
         stationId: ids.station,
-        businessDayId: ids.day,
+        businessDayId: staleDay,
       })}`,
     );
-
-    // The screen offers one next step for the first open shift. Find which shift that is from the
-    // "Start entering figures" link, then give it submitted figures so Close Shift is offered.
-    const startLink = page
+    const closeShift = page
       .locator('[aria-label="Operations control room"]')
-      .getByRole('link', { name: 'Start entering figures' });
-    await expect(startLink).toBeVisible();
-    const targetShiftId = new URL(
-      (await startLink.getAttribute('href')) ?? '',
-      'http://127.0.0.1',
-    ).searchParams.get('shiftId');
-    expect(targetShiftId).toBeTruthy();
-    const staleReconciliation = crypto.randomUUID();
-    const staleRevision = crypto.randomUUID();
-    await client.unsafe(`
-      insert into app.reconciliations (id, tenant_id, station_id, business_day_id, shift_id, state)
-      values ('${staleReconciliation}', '${ids.tenant}', '${ids.station}', '${ids.day}', '${targetShiftId}', 'DRAFT');
-      update app.reconciliations set state = 'READY' where id = '${staleReconciliation}';
-      update app.reconciliations set state = 'SUBMITTED' where id = '${staleReconciliation}';
-      insert into app.reconciliation_revisions
-        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, variance_classification, declarations, source_segment_ids, source_shift_ids)
-      values ('${staleRevision}', '${ids.tenant}', '${ids.station}', '${staleReconciliation}', 1, 'READY', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb);
-      update app.reconciliation_revisions set state = 'SUBMITTED' where id = '${staleRevision}';
-    `);
-    try {
-      await page.reload();
-      await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
-      const closeMeters = page
-        .locator('[aria-label="Operations control room"]')
-        .getByRole('button', { name: /^Close shift/i })
-        .first();
-      await expect(closeMeters).toBeVisible();
-      await client.unsafe(
-        `update app.shifts set version = version + 1 where id = '${targetShiftId}'`,
-      );
+      .getByRole('button', { name: /^Close shift/i })
+      .first();
+    await expect(closeShift).toBeVisible();
+    await client.unsafe(`update app.shifts set version = version + 1 where id = '${staleShift}'`);
 
-      const responsePromise = page.waitForResponse(
-        (response) =>
-          response.url().includes('/api/forecourt/commands') &&
-          response.request().method() === 'POST',
-      );
-      await closeMeters.click();
-      await acceptConfirmation(page);
-      const response = await responsePromise;
-      expect(response.status()).toBe(409);
-      await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
-      await expect(
-        page.getByText(/authoritative state has been refreshed; review it before trying again/i),
-      ).toBeVisible();
-    } finally {
-      await client.unsafe(`
-        delete from app.reconciliation_revisions where id = '${staleRevision}';
-        delete from app.reconciliations where id = '${staleReconciliation}';
-      `);
-    }
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/forecourt/commands') &&
+        response.request().method() === 'POST',
+      { timeout: 15_000 },
+    );
+    await closeShift.click();
+    await acceptConfirmation(page);
+    const response = await responsePromise.catch((error) => {
+      throw new Error(`No command was sent. POSTs seen: ${JSON.stringify(posts)}. ${error}`);
+    });
+    expect(response.status()).toBe(409);
+    await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
+    await expect(
+      page.getByText(/authoritative state has been refreshed; review it before trying again/i),
+    ).toBeVisible();
   });
 
   // Needs a real Clerk second factor for the manager (step-up). The test Clerk instance has none
