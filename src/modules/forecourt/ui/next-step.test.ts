@@ -122,7 +122,9 @@ describe('nextStep', () => {
       },
       askReason: { field: 'reasonWithoutReconciliation' },
     });
-    expect((result.action as { confirm?: string }).confirm).toContain('Close this shift and end the business day?');
+    expect((result.action as { confirm?: string }).confirm).toContain(
+      'Close this shift and end the business day?',
+    );
   });
 
   it('asks for no reason when figures are already approved', () => {

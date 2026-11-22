@@ -1618,7 +1618,10 @@ async function runShiftLifecycleCommand(
             context.stationId,
             payload.shiftTemplateId,
           );
-          const reach = await transaction.execute<{ open_count: number; last_end: string | null }>(sql`
+          const reach = await transaction.execute<{
+            open_count: number;
+            last_end: string | null;
+          }>(sql`
             select count(*) filter (where s.state <> 'COMPLETED')::int as open_count,
               max(coalesce(s.completed_at, s.planned_end_at))
                 filter (where s.state = 'COMPLETED')::text as last_end

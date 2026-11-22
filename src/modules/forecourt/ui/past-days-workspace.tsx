@@ -85,13 +85,12 @@ export function PastDaysWorkspace({
         return;
       }
       // Straight on to the shift: start it for that day, then the shift screens ask who was on duty.
-      const plannedStartAt =
-        chosenTemplate?.startTime
-          ? stationLocalToInstant(
-              `${date}T${chosenTemplate.startTime.slice(0, 5)}`,
-              data.timezone,
-            )?.toISOString()
-          : undefined;
+      const plannedStartAt = chosenTemplate?.startTime
+        ? stationLocalToInstant(
+            `${date}T${chosenTemplate.startTime.slice(0, 5)}`,
+            data.timezone,
+          )?.toISOString()
+        : undefined;
       if (!chosenTemplate || !plannedStartAt) {
         // No shift can be started for them; the day is recorded, so carry on from its page.
         router.push(daily({ businessDayId }));
@@ -205,21 +204,20 @@ export function PastDaysWorkspace({
   );
 
   /** Quiet links to the two side screens, so the main screen asks one thing only. */
-  const sideLinks =
-    (data.canGoBack || data.recorded.length > 0) && (
-      <div className="ops-wizard-links past-days-links">
-        {data.recorded.length > 0 ? (
-          <Button type="button" variant="quiet" onClick={() => setView('recorded')}>
-            Days already added
-          </Button>
-        ) : null}
-        {data.canGoBack ? (
-          <Button type="button" variant="quiet" onClick={() => setView('start')}>
-            Station start date
-          </Button>
-        ) : null}
-      </div>
-    );
+  const sideLinks = (data.canGoBack || data.recorded.length > 0) && (
+    <div className="ops-wizard-links past-days-links">
+      {data.recorded.length > 0 ? (
+        <Button type="button" variant="quiet" onClick={() => setView('recorded')}>
+          Days already added
+        </Button>
+      ) : null}
+      {data.canGoBack ? (
+        <Button type="button" variant="quiet" onClick={() => setView('start')}>
+          Station start date
+        </Button>
+      ) : null}
+    </div>
+  );
 
   if (view === 'start' && data.canGoBack) {
     return (
