@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+import { openDaySummary } from './fixtures/day-summary';
+
 import {
   mockContext,
   mockOverview,
@@ -60,6 +62,8 @@ test.describe('data-filled screens', () => {
       await expect(glance).toHaveCount(0);
       await expect(page.locator('section[aria-labelledby="day-history-title"]')).toHaveCount(0);
 
+      // Someone who runs the shift lands on one question (#253); the day summary is one tap away.
+      await openDaySummary(page);
       await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
       await expect(page.getByText('Shift board ·', { exact: false })).toHaveCount(0);
       await expect(page.locator('.ops-hero')).toBeVisible();
@@ -169,6 +173,7 @@ test.describe('data-filled screens', () => {
       await mockContext(page, '/operations/daily');
       await mockOverview(page);
       await page.goto(`/operations/daily?tenantId=${TENANT}&stationId=${STATION}`);
+      await openDaySummary(page);
       await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
       await expect(page.locator('.status').first()).toBeVisible();
       expect(await wordsSplitAcrossLines(page, '.status'), `daily ops ${width}`).toEqual([]);
