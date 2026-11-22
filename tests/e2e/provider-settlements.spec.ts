@@ -210,9 +210,10 @@ test.describe('provider settlement workspace', () => {
     await page.getByRole('button', { name: 'Match', exact: true }).click();
     const matchDialog = page.getByRole('dialog', { name: 'Match a payment' });
     await expect(matchDialog).toBeVisible();
-    await matchDialog.getByLabel('Provider payout').selectOption('settlement-1');
-    await matchDialog.getByLabel('Customer payment').selectOption('payment-1');
+    // One payout and one payment: nothing to choose, so the guide starts at the amount.
     await matchDialog.getByLabel('Amount to match').fill('40.0000');
+    await matchDialog.getByRole('button', { name: 'Continue' }).click();
+    await expect(matchDialog.getByRole('heading', { name: 'Check the match' })).toBeVisible();
     await matchDialog.getByRole('button', { name: 'Match', exact: true }).click();
     await page.getByRole('tab', { name: 'Provider Payouts' }).click();
     await expect(
@@ -348,9 +349,8 @@ test.describe('provider settlement workspace', () => {
     await waitForHydration(page);
     await page.getByRole('button', { name: 'Match', exact: true }).click();
     const matchDialog = page.getByRole('dialog', { name: 'Match a payment' });
-    await matchDialog.getByLabel('Provider payout').selectOption('settlement-1');
-    await matchDialog.getByLabel('Customer payment').selectOption('payment-1');
     await matchDialog.getByLabel('Amount to match').fill('40.0000');
+    await matchDialog.getByRole('button', { name: 'Continue' }).click();
     await matchDialog.getByRole('button', { name: 'Match', exact: true }).click();
     await expect(
       page.getByRole('alert').getByText('The provider settlement is stale'),

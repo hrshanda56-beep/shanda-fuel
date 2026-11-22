@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
-import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
+import { formatBusinessDate, formatQuantity } from '@/design-system/formatters';
 import { InfoTip } from '@/design-system/info-tip';
 import {
   AccessDeniedState,
@@ -28,6 +28,7 @@ import {
 import { DailyProfitWorkspace } from '@/modules/owner/ui/daily-profit-workspace';
 import { FinancialPositionWorkspace } from '@/modules/owner/ui/financial-position-workspace';
 import { CashDonut } from '@/modules/cash/ui/cash-visuals';
+import { TabSwitcher } from '@/design-system/tabs';
 import { profitStatementHref } from './profit-links';
 
 export type ProfitInitial = Readonly<{
@@ -125,7 +126,13 @@ function StationTable({ view }: { view: ProfitView }) {
             <th scope="col">Cost of fuel</th>
             <th scope="col">Expenses</th>
             <th scope="col">Profit</th>
-            <th scope="col">Profit per litre</th>
+            <th scope="col">
+              {view.unit === 'KILOGRAMS'
+                ? 'Profit per kilogram'
+                : view.unit === 'LITRES'
+                  ? 'Profit per litre'
+                  : 'Profit per litre or kilogram'}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -141,7 +148,9 @@ function StationTable({ view }: { view: ProfitView }) {
               <td data-label="Profit" data-negative={isNegative(station.profit) || undefined}>
                 {moneyOrUnavailable(station.profit)}
               </td>
-              <td data-label="Profit per litre">{formatPerLitre(station.perLitre)}</td>
+              <td data-label="Profit per unit sold">
+                {formatPerLitre(station.perLitre, station.unit)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -167,7 +176,7 @@ function FuelTable({ view, links }: { view: ProfitView; links: ReactNode }) {
           <thead>
             <tr>
               <th scope="col">Fuel</th>
-              <th scope="col">Litres sold</th>
+              <th scope="col">Quantity sold</th>
               <th scope="col">Fuel sold</th>
               <th scope="col">Average price</th>
             </tr>
@@ -176,12 +185,15 @@ function FuelTable({ view, links }: { view: ProfitView; links: ReactNode }) {
             {view.fuels.map((fuel) => (
               <tr key={fuel.productId}>
                 <th scope="row">{fuel.name}</th>
-                <td data-label="Litres sold">{formatLitres(fuel.litres)}</td>
+                <td data-label="Quantity sold">{formatQuantity(fuel.litres, fuel.unit)}</td>
                 <td data-label="Fuel sold">{moneyOrUnavailable(fuel.sales)}</td>
                 <td data-label="Average price">
                   {fuel.pricePerLitre === null
                     ? 'Not available'
-                    : formatPerLitre(fuel.pricePerLitre).replace(' per litre', '')}
+                    : formatPerLitre(fuel.pricePerLitre, fuel.unit).replace(
+                        / per (litre|kilogram)$/,
+                        '',
+                      )}
                 </td>
               </tr>
             ))}
@@ -261,115 +273,103 @@ export function ProfitWorkspace({ initial }: { initial: ProfitInitial }) {
           {report ? <strong>{REPORT_PERIOD_LABELS[filters.period]}</strong> : null}
           {period ? <span>{period}</span> : null}
         </p>
-        <div className="profit-tabs" role="tablist" aria-label="Profit views">
-          {(
-            [
-              ['month', monthTabLabel],
-              ['daily', 'Daily'],
-              ['position', 'Financial Position'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              id={`profit-tab-${value}`}
-              type="button"
-              role="tab"
-              aria-selected={tab === value}
-              aria-controls="profit-tabpanel"
-              onClick={() => selectTab(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <TabSwitcher
+          label="Profit views"
+          idPrefix="profit-tab"
+          value={tab}
+          onChange={selectTab}
+          tabs={[
+            { value: 'month', label: monthTabLabel, controls: 'profit-tabpanel' },
+            { value: 'daily', label: 'Daily', controls: 'profit-tabpanel' },
+            { value: 'position', label: 'Financial Position', controls: 'profit-tabpanel' },
+          ]}
+        />
       </div>
 
-      {tab === 'daily' ? (
-        <div id="profit-tabpanel" role="tabpanel" aria-labelledby="profit-tab-daily">
+      <div id="profit-tabpanel" role="tabpanel" aria-labelledby={`profit-tab-${tab}`}>
+        {tab === 'daily' ? (
           <DailyProfitWorkspace embedded initial={initial} links={links} />
-        </div>
-      ) : tab === 'position' ? (
-        <div id="profit-tabpanel" role="tabpanel" aria-labelledby="profit-tab-position">
+        ) : tab === 'position' ? (
           <FinancialPositionWorkspace initial={initial} links={links} />
-        </div>
-      ) : initial.badRange ? (
-        <EmptyState
-          title="Choose both dates"
-          message="Pick a start date and an end date, with the start on or before the end."
-        />
-      ) : initial.error && initial.restricted ? (
-        <AccessDeniedState message={initial.error} />
-      ) : initial.error ? (
-        <ErrorState
-          title="Profit could not be loaded"
-          message={initial.error}
-          action={
-            <button
-              type="button"
-              className="button button-secondary"
-              onClick={() => router.refresh()}
-            >
-              Try again
-            </button>
-          }
-        />
-      ) : view && report ? (
-        <div className="profit-body">
-          {view.state === 'no-sales' ? (
-            <Card
-              as="section"
-              className="panel profit-panel"
-              aria-labelledby="profit-summary-title"
-            >
-              <div className="panel-heading">
-                <h2 id="profit-summary-title">Profit</h2>
-                <StatusBadge tone="warning">No sales</StatusBadge>
-              </div>
-              <EmptyState
-                layout="block"
-                title="No fuel sales yet"
-                message={view.explanation ?? view.headline}
-                icon="chart"
-              />
-            </Card>
-          ) : (
-            <div className="profit-overview">
+        ) : initial.badRange ? (
+          <EmptyState
+            title="Choose both dates"
+            message="Pick a start date and an end date, with the start on or before the end."
+          />
+        ) : initial.error && initial.restricted ? (
+          <AccessDeniedState message={initial.error} />
+        ) : initial.error ? (
+          <ErrorState
+            title="Profit could not be loaded"
+            message={initial.error}
+            action={
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => router.refresh()}
+              >
+                Try again
+              </button>
+            }
+          />
+        ) : view && report ? (
+          <div className="profit-body">
+            {view.state === 'no-sales' ? (
               <Card
                 as="section"
                 className="panel profit-panel"
                 aria-labelledby="profit-summary-title"
               >
                 <div className="panel-heading">
-                  <span className="heading-with-tip">
-                    <h2 id="profit-summary-title">Profit</h2>
-                    <InfoTip text={[view.headline, view.explanation].filter(Boolean).join(' ')} />
-                  </span>
-                  {view.profit !== null ? (
-                    <StatusBadge tone={isNegative(view.profit) ? 'critical' : 'positive'}>
-                      {isNegative(view.profit) ? 'Loss' : 'Profit'}
-                    </StatusBadge>
-                  ) : (
-                    <StatusBadge tone="warning">Not worked out yet</StatusBadge>
-                  )}
+                  <h2 id="profit-summary-title">Profit</h2>
+                  <StatusBadge tone="warning">No sales</StatusBadge>
                 </div>
-                <p
-                  className="profit-hero"
-                  data-tone={
-                    view.profit === null ? 'missing' : isNegative(view.profit) ? 'bad' : 'good'
-                  }
-                >
-                  {moneyOrUnavailable(view.profit)}
-                </p>
-                <SalesSplit view={view} />
+                <EmptyState
+                  layout="block"
+                  title="No fuel sales yet"
+                  message={view.explanation ?? view.headline}
+                  icon="chart"
+                />
               </Card>
-              <FuelTable view={view} links={links} />
-            </div>
-          )}
+            ) : (
+              <div className="profit-overview">
+                <Card
+                  as="section"
+                  className="panel profit-panel"
+                  aria-labelledby="profit-summary-title"
+                >
+                  <div className="panel-heading">
+                    <span className="heading-with-tip">
+                      <h2 id="profit-summary-title">Profit</h2>
+                      <InfoTip text={[view.headline, view.explanation].filter(Boolean).join(' ')} />
+                    </span>
+                    {view.profit !== null ? (
+                      <StatusBadge tone={isNegative(view.profit) ? 'critical' : 'positive'}>
+                        {isNegative(view.profit) ? 'Loss' : 'Profit'}
+                      </StatusBadge>
+                    ) : (
+                      <StatusBadge tone="warning">Not worked out yet</StatusBadge>
+                    )}
+                  </div>
+                  <p
+                    className="profit-hero"
+                    data-tone={
+                      view.profit === null ? 'missing' : isNegative(view.profit) ? 'bad' : 'good'
+                    }
+                  >
+                    {moneyOrUnavailable(view.profit)}
+                  </p>
+                  <SalesSplit view={view} />
+                </Card>
+                <FuelTable view={view} links={links} />
+              </div>
+            )}
 
-          {view.state !== 'no-sales' ? <StationTable view={view} /> : null}
-          {view.state !== 'no-sales' && view.fuels.length > 0 ? null : links}
-        </div>
-      ) : null}
+            {view.state !== 'no-sales' ? <StationTable view={view} /> : null}
+            {view.state !== 'no-sales' && view.fuels.length > 0 ? null : links}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

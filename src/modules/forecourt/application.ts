@@ -117,6 +117,18 @@ export const FORECOURT_COMMAND_POLICY = {
     assuranceRequirement: 'STANDARD',
     requiresExpectedVersion: true,
   },
+  OpenPastBusinessDay: {
+    permissionCode: 'business_day.open',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: false,
+  },
+  SetStationGoLiveDate: {
+    permissionCode: 'business_day.open',
+    requiredScopeType: 'STATION',
+    assuranceRequirement: 'STANDARD',
+    requiresExpectedVersion: false,
+  },
   CloseBusinessDay: {
     permissionCode: 'business_day.close',
     requiredScopeType: 'STATION',
@@ -542,6 +554,8 @@ export const FORECOURT_VERSION_SUBJECT: Record<ForecourtCommandType, ForecourtVe
   ActivateStation: 'Station',
   DefineShiftTemplate: 'ShiftTemplate',
   OpenBusinessDay: 'StationBusinessDay',
+  OpenPastBusinessDay: 'StationBusinessDay',
+  SetStationGoLiveDate: 'Station',
   CloseBusinessDay: 'StationBusinessDay',
   StartShift: 'Shift',
   CloseMeters: 'Shift',

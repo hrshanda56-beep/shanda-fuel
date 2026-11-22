@@ -20,7 +20,7 @@ import {
   LoadingState,
   StatusBadge,
 } from '@/design-system/primitives';
-import { formatLitres, formatStatusLabel } from '@/design-system/formatters';
+import { formatQuantity, formatStatusLabel } from '@/design-system/formatters';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { AddCustomer } from './add-customer';
 import type {
@@ -51,7 +51,7 @@ function accountTypeLabel(type: CustomerAccount['accountType']): string {
     case 'PREPAID_VALUE':
       return 'Prepaid value';
     case 'PREPAID_LITRES':
-      return 'Prepaid litres';
+      return 'Prepaid fuel';
   }
 }
 
@@ -79,7 +79,10 @@ function accountIndicator(account: CustomerAccount): string {
   }
   if (account.productBalances.length === 0) return 'No product balance';
   return account.productBalances
-    .map((product) => `${product.productCode} ${formatLitres(product.availableLitres)}`)
+    .map(
+      (product) =>
+        `${product.productCode} ${formatQuantity(product.availableLitres, product.unit)}`,
+    )
     .join(' · ');
 }
 
@@ -113,7 +116,7 @@ function accountFigures(account: CustomerAccount): Array<{ label: string; value:
     ? [{ label: 'Fuel prepaid', value: 'No product balance' }]
     : account.productBalances.map((product) => ({
         label: `${product.productName} prepaid`,
-        value: `${formatLitres(product.availableLitres)} available`,
+        value: `${formatQuantity(product.availableLitres, product.unit)} available`,
       }));
 }
 

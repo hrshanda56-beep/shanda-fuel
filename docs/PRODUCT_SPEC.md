@@ -506,6 +506,16 @@ approved-fuel auditability, cash custody minimums, customer-account sequencing,
 and close-summary content are recorded above and are no longer unresolved.
 
 
+### 16.4 Quotations, invoices and receipts (2026-11-18, DEC-045)
+
+A company can make quotations, invoices and receipts with its own letterhead, numbering prefix,
+tax label and rate, terms and payment details, for a saved customer or a one-off recipient, with
+fuel lines (default price from the station price, editable) or any typed line. Numbers are
+gap-free per company, document type and year; an issued document cannot be edited (only accepted
+or cancelled, with the number kept); a receipt cannot exceed what an invoice still owes. These
+documents are standalone: they do not post to the customer ledger, cash, profit or reports, and
+they are not tax-authority (fiscal) invoices. Voiding needs a fresh identity check.
+
 ### Unified expense integration — 2026-10-19
 
 Approved unified expense direction: one independent expense identity combines incoming finance approvals/settlements/attachments/recognition with immutable fact versions and optional shift association. Payment remains separate from expense recognition. Reconciliation must use exact immutable source versions.

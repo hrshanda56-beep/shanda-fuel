@@ -76,6 +76,7 @@ describe('editing a draft delivery (PostgreSQL)', { timeout: 120_000 }, () => {
       deliveryNoteNumber: 'EDITED-NOTE-1',
       noteQuantityLitres: '520',
       actualQuantityLitres: '510.5',
+      varianceCause: 'TEMPERATURE',
       transporter: 'Moyo Haulage',
       truckRegistration: 'ABC 1234',
     });

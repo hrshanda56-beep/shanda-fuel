@@ -1,3 +1,11 @@
+import {
+  BLEND_PERCENTS,
+  PRODUCT_KINDS,
+  PRODUCT_KIND_LABELS,
+  parseProductKindInput,
+  type BlendPercent,
+  type ProductKind,
+} from '../../platform/domain/product-order';
 import type { ConfigurationSetupOverview } from './contracts';
 
 /**
@@ -115,7 +123,7 @@ export function buildGuidedSteps(data: Data): readonly GuidedStep[] {
     products.length === 0
       ? {
           id: 'pumps',
-          title: 'Pumps and nozzles',
+          title: 'Pumps & Nozzles',
           purpose: 'The pumps on the forecourt, and the nozzle and meter on each.',
           status: 'blocked',
           summary: 'Pumps come after fuel types.',
@@ -124,7 +132,7 @@ export function buildGuidedSteps(data: Data): readonly GuidedStep[] {
         }
       : {
           id: 'pumps',
-          title: 'Pumps and nozzles',
+          title: 'Pumps & Nozzles',
           purpose: 'The pumps on the forecourt, and the nozzle and meter on each.',
           status: nozzles.length > 0 && pumpsWithoutNozzle.length === 0 ? 'done' : 'todo',
           summary:
@@ -176,6 +184,67 @@ export function buildGuidedSteps(data: Data): readonly GuidedStep[] {
   return [fuel, priceStep, tankStep, pumpStep, shiftStep, supervisorStep];
 }
 
+export type FuelUnitChoice = 'LITRES' | 'KILOGRAMS';
+
+/**
+ * The unit a fuel of this type is normally measured in: gas in kilograms, every other fuel in
+ * litres. Only the starting choice; the person can change it before saving.
+ */
+export function defaultUnitForKind(kind: string): FuelUnitChoice {
+  return kind === 'GAS' ? 'KILOGRAMS' : 'LITRES';
+}
+
+/** How a unit reads to a person: "litres" or "kilograms (kg)". */
+export function unitLabel(unit: FuelUnitChoice): string {
+  return unit === 'KILOGRAMS' ? 'Kilograms (kg)' : 'Litres';
+}
+
+export type FuelCardStatus = Readonly<{
+  productId: string;
+  name: string;
+  status: 'done' | 'todo';
+  /** What this fuel has so far, or what it still needs. */
+  summary: string;
+}>;
+
+/**
+ * Where one fuel stands. The same rules as the whole-station steps, applied to this fuel alone:
+ * a price in use, at least one tank (each with an acceptable difference) and at least one nozzle.
+ * A pump with no nozzle yet is not held against any single fuel.
+ */
+export function buildFuelCards(data: Data): readonly FuelCardStatus[] {
+  const prices = data.prices ?? [];
+  const tanks = (data.tanks ?? []).filter((t) => t.status === 'ACTIVE');
+  const nozzles = (data.nozzles ?? []).filter((n) => n.status === 'ACTIVE');
+  return (data.products ?? [])
+    .filter((p) => p.status === 'ACTIVE')
+    .map((product) => {
+      const priced = prices.some((p) => p.productId === product.id && p.state === 'ACTIVE');
+      const waiting = prices.some(
+        (p) => p.productId === product.id && p.state !== 'ACTIVE' && p.state !== 'SUPERSEDED',
+      );
+      const ownTanks = tanks.filter((t) => t.productId === product.id);
+      const missingTolerance = ownTanks.filter((t) => t.acceptableVarianceLitres === null).length;
+      const ownNozzles = nozzles.filter((n) => n.productId === product.id);
+      const needed: string[] = [];
+      if (!priced) needed.push(waiting ? 'price approval' : 'a price');
+      if (ownTanks.length === 0) needed.push('a tank');
+      else if (missingTolerance > 0) {
+        needed.push(`an acceptable difference on ${count(missingTolerance, 'tank')}`);
+      }
+      if (ownNozzles.length === 0) needed.push('a nozzle');
+      return {
+        productId: product.id,
+        name: product.name,
+        status: needed.length === 0 ? ('done' as const) : ('todo' as const),
+        summary:
+          needed.length === 0
+            ? `${count(ownTanks.length, 'tank')} · ${count(ownNozzles.length, 'nozzle')}${product.unit === 'KILOGRAMS' ? ' · sold in kilograms' : ''}`
+            : `Needs ${needed.join(', ')}.`,
+      };
+    });
+}
+
 /** The step to open next: the first one that still needs doing and can be done. */
 export function firstOpenStep(steps: readonly GuidedStep[]): GuidedStepId | null {
   return steps.find((s) => s.status === 'todo')?.id ?? null;
@@ -222,6 +291,27 @@ export function hoursToMinutes(text: string): number | null {
   if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
   const minutes = Math.round(Number(value) * 60);
   return minutes > 0 && minutes <= 24 * 60 ? minutes : null;
+}
+
+const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/** Minutes from a start time to an end time on the clock. An end that is earlier means the next day. */
+export function minutesBetween(start: string, end: string): number | null {
+  const a = CLOCK.exec(start);
+  const b = CLOCK.exec(end);
+  if (!a || !b) return null;
+  const from = Number(a[1]) * 60 + Number(a[2]);
+  const to = Number(b[1]) * 60 + Number(b[2]);
+  if (from === to) return null;
+  return (to - from + 24 * 60) % (24 * 60);
+}
+
+/** The clock time a shift ends, given when it starts and how long it runs. */
+export function endTimeFrom(start: string, durationMinutes: number): string {
+  const a = CLOCK.exec(start.slice(0, 5));
+  if (!a) return '';
+  const total = (Number(a[1]) * 60 + Number(a[2]) + durationMinutes) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
 export function describeDuration(minutes: number): string {
@@ -332,4 +422,68 @@ export function friendlyPriceError(status: number, message?: string): string {
     return 'Approved. It starts once the pump meters are read for the price change.';
   }
   return friendlySetupError(status, message);
+}
+
+export type FuelChoiceErrors = Partial<Record<'kind' | 'blendPercent' | 'name', string>>;
+
+/**
+ * Checks the "Add a fuel type" form the same way the server contract does, in plain words. A
+ * percentage left over from an earlier Blend choice is dropped for any other kind.
+ */
+export function validateFuelChoice(input: {
+  kind: string;
+  blendPercent: string;
+  name: string;
+}):
+  | { ok: true; value: { kind: ProductKind; blendPercent: BlendPercent | null; name: string } }
+  | { ok: false; errors: FuelChoiceErrors } {
+  if (!(PRODUCT_KINDS as readonly string[]).includes(input.kind)) {
+    return { ok: false, errors: { kind: 'Choose the type of fuel.' } };
+  }
+  const kind = input.kind as ProductKind;
+  const percent = kind === 'BLEND' ? Number(input.blendPercent) : null;
+  if (kind === 'BLEND' && !(BLEND_PERCENTS as readonly number[]).includes(percent as number)) {
+    return { ok: false, errors: { blendPercent: 'Choose the blend: 5%, 10%, 15% or 20%.' } };
+  }
+  const name = input.name.trim();
+  if (!name) {
+    return {
+      ok: false,
+      errors: {
+        name:
+          kind === 'OTHER'
+            ? 'Enter the name of the fuel, for example Paraffin.'
+            : 'Enter the name of the fuel, for example Diesel.',
+      },
+    };
+  }
+  return { ok: true, value: parseProductKindInput({ kind, blendPercent: percent, name }) };
+}
+
+/** Checks only the type (and blend percentage) of a fuel that already exists. */
+export function validateFuelKind(input: {
+  kind: string;
+  blendPercent: string;
+}):
+  | { ok: true; value: { kind: ProductKind; blendPercent: BlendPercent | null } }
+  | { ok: false; errors: FuelChoiceErrors } {
+  if (!(PRODUCT_KINDS as readonly string[]).includes(input.kind)) {
+    return { ok: false, errors: { kind: 'Choose the type of fuel.' } };
+  }
+  const kind = input.kind as ProductKind;
+  const percent = kind === 'BLEND' ? Number(input.blendPercent) : null;
+  if (kind === 'BLEND' && !(BLEND_PERCENTS as readonly number[]).includes(percent as number)) {
+    return { ok: false, errors: { blendPercent: 'Choose the blend: 5%, 10%, 15% or 20%.' } };
+  }
+  return { ok: true, value: { kind, blendPercent: percent as BlendPercent | null } };
+}
+
+/** The type of a fuel in plain words, or null when none has been chosen yet. */
+export function describeFuelKind(
+  kind: string | null | undefined,
+  blendPercent: number | null | undefined,
+): string | null {
+  if (!kind || !(PRODUCT_KINDS as readonly string[]).includes(kind)) return null;
+  const label = PRODUCT_KIND_LABELS[kind as ProductKind];
+  return kind === 'BLEND' && blendPercent ? `${label} ${blendPercent}%` : label;
 }

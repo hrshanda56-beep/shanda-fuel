@@ -1,3 +1,4 @@
+import { quantityUnitLabel } from '../../../design-system/formatters';
 import 'server-only';
 
 import { sql, type SQL } from 'drizzle-orm';
@@ -51,11 +52,13 @@ export const readTankDipHistory: TableReportReader = async (transaction, filters
     station: string;
     tank: string;
     product: string;
+    unit: string;
     physical_litres: string;
     notes: string | null;
   }>(sql`
     select d.business_date, ${utc('d.measured_at')} as measured_at, s.name as station,
-      t.code as tank, p.name as product, d.physical_litres::text as physical_litres, d.notes
+      t.code as tank, p.name as product, p.unit as unit,
+      d.physical_litres::text as physical_litres, d.notes
     from app.tank_dips d
     join app.stations s on s.tenant_id = d.tenant_id and s.id = d.station_id
     join app.tanks t on t.tenant_id = d.tenant_id and t.station_id = d.station_id and t.id = d.tank_id
@@ -73,6 +76,7 @@ export const readTankDipHistory: TableReportReader = async (transaction, filters
     station: row.station,
     tank: row.tank,
     product: row.product,
+    unit: quantityUnitLabel(row.unit),
     physicalLitres: row.physical_litres,
     notes: row.notes,
   }));
@@ -96,12 +100,13 @@ export const readStockMovements: TableReportReader = async (transaction, filters
     station: string;
     tank: string;
     product: string;
+    unit: string;
     movement_type: string;
     quantity_litres: string;
     reason: string | null;
   }>(sql`
     select m.business_date, ${utc('m.effective_at')} as effective_at, s.name as station,
-      t.code as tank, p.name as product, ${MOVEMENT_LABELS} as movement_type,
+      t.code as tank, p.name as product, p.unit as unit, ${MOVEMENT_LABELS} as movement_type,
       m.quantity_litres::text as quantity_litres, m.reason
     from app.inventory_movements m
     join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
@@ -120,6 +125,7 @@ export const readStockMovements: TableReportReader = async (transaction, filters
     station: row.station,
     tank: row.tank,
     product: row.product,
+    unit: quantityUnitLabel(row.unit),
     movementType: row.movement_type,
     quantityLitres: row.quantity_litres,
     reason: row.reason,
@@ -133,22 +139,65 @@ export const readDeliveryVariance: TableReportReader = async (transaction, filte
     product: string;
     delivery_note: string;
     supplier: string | null;
+    unit: string;
     note_litres: string;
     actual_litres: string;
     shortage_excess: string;
     short_compartments: number;
     broken_seals: number;
+    cause: string | null;
+    responsible: string | null;
+    claim: string | null;
+    approval: string | null;
+    expected_back: string | null;
+    paid_back: string | null;
+    paid_back_by: string | null;
   }>(sql`
     select f.business_date, s.name as station, p.name as product,
-      f.delivery_note_number as delivery_note, sup.legal_name as supplier,
+      f.delivery_note_number as delivery_note, sup.legal_name as supplier, p.unit as unit,
       f.note_quantity_litres::text as note_litres, f.actual_quantity_litres::text as actual_litres,
       f.shortage_excess_litres::text as shortage_excess,
       (select count(*)::int from app.fuel_delivery_compartments c
         where c.tenant_id = f.tenant_id and c.delivery_id = f.id
           and c.received_litres < c.note_litres) as short_compartments,
       (select count(*)::int from app.fuel_delivery_compartment_seals sl
-        where sl.tenant_id = f.tenant_id and sl.delivery_id = f.id and not sl.intact) as broken_seals
+        where sl.tenant_id = f.tenant_id and sl.delivery_id = f.id and not sl.intact) as broken_seals,
+      case f.variance_cause
+        when 'THEFT_SUSPECTED' then 'Fuel may have been taken'
+        when 'TEMPERATURE' then 'Weather or temperature'
+        when 'MEASURING_ERROR' then 'Measuring or dip error'
+        when 'SPILL_OR_LEAK' then 'Spill or leak'
+        when 'LOADING_SHORT' then 'The depot loaded less than the note says'
+        when 'OTHER' then 'Something else'
+      end as cause,
+      case lc.liable_party
+        when 'DRIVER' then 'The driver'
+        when 'TRANSPORTER' then 'The transport company'
+        when 'SUPPLIER' then 'The fuel supplier'
+        when 'OTHER' then 'Someone else'
+      end as responsible,
+      case lc.status
+        when 'RAISED' then 'Claim raised'
+        when 'SETTLED' then 'Paid back'
+        when 'WRITTEN_OFF' then 'Written off'
+      end as claim,
+      case lc.approval_status
+        when 'PENDING' then 'Waiting for approval'
+        when 'APPROVED' then 'Approved'
+        when 'REJECTED' then 'Sent back'
+      end as approval,
+      case when lc.expected_amount is not null
+        then lc.currency || ' ' || lc.expected_amount::text end as expected_back,
+      case when lc.recovered_amount is not null
+        then lc.currency || ' ' || lc.recovered_amount::text end as paid_back,
+      case when lc.recovered_amount is not null then case lc.settlement_method
+        when 'CASH' then 'Cash received'
+        when 'TRANSPORT_BILL' then 'Taken off the transport bill'
+        when 'SUPPLIER_BALANCE' then 'Taken off the supplier balance'
+      end end as paid_back_by
     from app.fuel_deliveries f
+    left join app.fuel_delivery_loss_claims lc
+      on lc.tenant_id = f.tenant_id and lc.delivery_id = f.id
     join app.stations s on s.tenant_id = f.tenant_id and s.id = f.station_id
     join app.products p on p.tenant_id = f.tenant_id and p.id = f.product_id
     left join app.suppliers sup on sup.tenant_id = f.tenant_id and sup.id = f.supplier_id
@@ -166,11 +215,19 @@ export const readDeliveryVariance: TableReportReader = async (transaction, filte
     product: row.product,
     deliveryNote: row.delivery_note,
     supplier: row.supplier,
+    unit: quantityUnitLabel(row.unit),
     noteLitres: row.note_litres,
     actualLitres: row.actual_litres,
     shortageExcessLitres: row.shortage_excess,
     shortCompartments: String(row.short_compartments),
     brokenSeals: String(row.broken_seals),
+    cause: row.cause,
+    responsible: row.responsible,
+    claim: row.claim,
+    approval: row.approval,
+    expectedBack: row.expected_back,
+    paidBack: row.paid_back,
+    paidBackBy: row.paid_back_by,
   }));
 };
 

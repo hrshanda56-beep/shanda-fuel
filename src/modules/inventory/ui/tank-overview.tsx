@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
-import { formatBusinessDate, formatLitres } from '../../../design-system/formatters';
+import { formatBusinessDate, formatQuantity } from '../../../design-system/formatters';
 import {
   Button,
   Card,
@@ -12,7 +12,7 @@ import {
   Skeleton,
   StatusBadge,
 } from '../../../design-system/primitives';
-import { formatTileLitres } from '../../reporting/format';
+import { formatTileQuantity } from '../../reporting/format';
 import { classifyStockVariance } from '../../approvals/operations-alerts';
 import { TankDrum } from './tank-drum';
 import { placeholderTankCount } from './tank-detail-model';
@@ -160,7 +160,8 @@ export function TankOverview({
             {tanks.map((tank) => {
               const level = tankLevel(tank);
               const streamPath = `/inventory/tanks/${tank.tankId}`;
-              const compact = (value: string | null) => formatTileLitres(value).replace(' L', 'L');
+              const compact = (value: string | null) =>
+                formatTileQuantity(value, tank.unit).replace(' L', 'L').replace(' kg', 'kg');
               return (
                 <li key={tank.tankId}>
                   <Link
@@ -179,6 +180,7 @@ export function TankOverview({
                         variance={tank.physicalLitres === null ? null : tank.varianceLitres}
                         tolerance={tank.acceptableVarianceLitres ?? null}
                         red={tank.varianceRedLitres ?? null}
+                        unit={tank.unit}
                       />
                     </span>
                     <span className="tank-figure">
@@ -257,7 +259,13 @@ function StockSignalBadge({
   variance,
   tolerance,
   red,
-}: Readonly<{ variance: string | null; tolerance: string | null; red: string | null }>) {
+  unit,
+}: Readonly<{
+  variance: string | null;
+  tolerance: string | null;
+  red: string | null;
+  unit?: 'LITRES' | 'KILOGRAMS';
+}>) {
   const signal = classifyStockVariance(variance, tolerance, red);
   if (signal === 'unjudged') {
     // No allowed difference is set, so we cannot judge it, but a real gap should still be seen.
@@ -265,7 +273,8 @@ function StockSignalBadge({
     const below = variance.startsWith('-');
     return (
       <StatusBadge tone="neutral">
-        {formatLitres(below ? variance.slice(1) : variance)} {below ? 'under' : 'over'} books
+        {formatQuantity(below ? variance.slice(1) : variance, unit)} {below ? 'under' : 'over'}{' '}
+        books
       </StatusBadge>
     );
   }

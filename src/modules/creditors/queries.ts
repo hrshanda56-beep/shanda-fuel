@@ -4,12 +4,16 @@ import { sql } from 'drizzle-orm';
 import { authorize } from '../../platform/security/permissions';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import type { AuthenticatedActorContext } from '../identity';
+import { asQuantityUnit } from '../../design-system/formatters';
 import { creditLimitPosition } from './credit-limit';
 import { DEFAULT_DUE_SOON_DAYS } from './due-status';
 import { paymentNeedsProofFlag } from './payment-proof';
 import { resolveSupplierReadContext } from './read-context';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 type SummaryRow = {
+  provides_fuel: boolean;
+  provides_transport: boolean;
   supplier_id: string;
   code: string;
   legal_name: string;
@@ -130,6 +134,7 @@ export async function getSupplierSummaryFromRequest(
         coalesce(m.total, '0') as total,
         s.credit_limit::text as credit_limit,
         s.contact_name, s.contact_phone, s.contact_email, s.default_credit_days,
+        s.provides_fuel, s.provides_transport,
         s.version
       from app.suppliers s
       left join document_totals d on d.supplier_id = s.id
@@ -162,6 +167,8 @@ export async function getSupplierSummaryFromRequest(
       contactPhone: row.contact_phone,
       contactEmail: row.contact_email,
       defaultCreditDays: row.default_credit_days === null ? null : Number(row.default_credit_days),
+      providesFuel: row.provides_fuel,
+      providesTransport: row.provides_transport,
     }));
   });
 }
@@ -332,9 +339,9 @@ export async function getSupplierInvoiceChoicesFromRequest(
   });
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const products = await transaction.execute<{ id: string; name: string }>(sql`
-      select id, name from app.products
-      where tenant_id = ${context.tenantId} and status = 'ACTIVE'
-      order by name
+      select p.id, p.name from app.products p
+      where p.tenant_id = ${context.tenantId} and p.status = 'ACTIVE'
+      order by ${productOrderSql('p')}
     `);
     const stations = await transaction.execute<{ id: string; name: string }>(sql`
       select id, name from app.stations
@@ -364,20 +371,50 @@ export async function getSupplierInvoiceChoicesFromRequest(
           business_date: string;
           received: string;
           on_note: string;
+          unit: string;
+          bill_kind: string;
         }>(sql`
-          select d.id, d.station_id, d.product_id, d.delivery_note_number, d.business_date,
-            d.actual_quantity_litres::text as received, d.note_quantity_litres::text as on_note
-          from app.fuel_deliveries d
-          join app.stations s on s.tenant_id = d.tenant_id and s.id = d.station_id
-          where d.tenant_id = ${context.tenantId}
-            and s.legal_entity_id = ${context.legalEntityId}
-            and d.supplier_id = ${input.supplierId}
-            and d.status = 'CONFIRMED'
-            and not exists (
-              select 1 from app.supplier_document_delivery_refs r
-              where r.tenant_id = d.tenant_id and r.delivery_id = d.id
-                and r.active and r.document_type = 'INVOICE')
-          order by d.delivered_at desc, d.id
+          select * from (
+            select d.id, d.station_id, d.product_id, d.delivery_note_number, d.business_date,
+              d.actual_quantity_litres::text as received, d.note_quantity_litres::text as on_note,
+              p.unit, 'FUEL' as bill_kind, d.delivered_at
+            from app.fuel_deliveries d
+            join app.products p on p.tenant_id = d.tenant_id and p.id = d.product_id
+            join app.stations s on s.tenant_id = d.tenant_id and s.id = d.station_id
+            where d.tenant_id = ${context.tenantId}
+              and s.legal_entity_id = ${context.legalEntityId}
+              and d.supplier_id = ${input.supplierId}
+              and d.status = 'CONFIRMED'
+              and not exists (
+                select 1 from app.supplier_document_delivery_refs r
+                where r.tenant_id = d.tenant_id and r.delivery_id = d.id
+                  and r.active and r.document_type = 'INVOICE' and r.kind = 'FUEL')
+            union all
+            -- Deliveries this company carried and has not sent a transport bill for yet. When the
+            -- company also supplied the fuel, the transport bill is offered once the fuel is invoiced.
+            select d.id, d.station_id, d.product_id, d.delivery_note_number, d.business_date,
+              d.actual_quantity_litres::text as received, d.note_quantity_litres::text as on_note,
+              p.unit, 'TRANSPORT' as bill_kind, d.delivered_at
+            from app.fuel_deliveries d
+            join app.products p on p.tenant_id = d.tenant_id and p.id = d.product_id
+            join app.stations s on s.tenant_id = d.tenant_id and s.id = d.station_id
+            where d.tenant_id = ${context.tenantId}
+              and s.legal_entity_id = ${context.legalEntityId}
+              and d.transporter_supplier_id = ${input.supplierId}
+              and d.status = 'CONFIRMED'
+              and not exists (
+                select 1 from app.supplier_document_delivery_refs r
+                where r.tenant_id = d.tenant_id and r.delivery_id = d.id
+                  and r.active and r.document_type = 'INVOICE' and r.kind = 'TRANSPORT')
+              and (
+                d.supplier_id is distinct from ${input.supplierId}
+                or exists (
+                  select 1 from app.supplier_document_delivery_refs r
+                  where r.tenant_id = d.tenant_id and r.delivery_id = d.id
+                    and r.active and r.document_type = 'INVOICE' and r.kind = 'FUEL')
+              )
+          ) open_deliveries
+          order by delivered_at desc, id
           limit 100
         `)
       : [];
@@ -398,6 +435,8 @@ export async function getSupplierInvoiceChoicesFromRequest(
         businessDate: row.business_date,
         receivedLitres: row.received,
         noteLitres: row.on_note,
+        unit: asQuantityUnit(row.unit),
+        billKind: row.bill_kind === 'TRANSPORT' ? ('TRANSPORT' as const) : ('FUEL' as const),
       })),
     };
   });

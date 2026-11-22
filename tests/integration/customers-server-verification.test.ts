@@ -895,7 +895,7 @@ describe('Customers server-side verification (real PostgreSQL, real route handle
       direction: 'DECREASE',
     });
     expect(detail.body.fuelProducts).toEqual([
-      { id: ids.product, code: 'CV-PETROL', name: 'CV Petrol' },
+      { id: ids.product, code: 'CV-PETROL', name: 'CV Petrol', unit: 'LITRES' },
     ]);
 
     // List read: both customers appear once, with the right number of accounts and no activity detail.

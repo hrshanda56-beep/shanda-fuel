@@ -2,17 +2,26 @@
 
 import Decimal from 'decimal.js';
 import Link from 'next/link';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Notice } from '@/design-system/feedback';
-import { Checkbox, Select } from '@/design-system/forms';
-import { formatLitres } from '@/design-system/formatters';
+import { Checkbox, OTHER_VALUE, Select } from '@/design-system/forms';
+import { formatQuantity, type QuantityUnit } from '@/design-system/formatters';
 import { useToast } from '@/design-system/feedback-provider';
 import { Modal } from '@/design-system/modal';
 import { Button, StatusBadge } from '@/design-system/primitives';
 import { StepUpDialog } from '../../setup/ui/step-up-dialog';
 import { RecordDelivery, type DeliveryEdit } from './record-delivery';
+import { PurchaseOrderChoice } from './purchase-order-choice';
+import {
+  buildPurchaseOrderStep,
+  noPoReasonLabel,
+  purchaseOrderChoiceProblem,
+} from '../purchase-order-choice';
+import { friendlyMessage } from '../../purchasing/ui/purchasing-client';
 import type { DeliveryDetail } from '../queries';
 import { InfoTip } from '@/design-system/info-tip';
+import { DeliveryLoss, hasLoss } from './delivery-loss';
+import type { VarianceCause } from '../variance-assessment';
 
 export type DeliveryDetailsContext = Readonly<{
   tenantId: string;
@@ -95,7 +104,14 @@ function editStart(data: DeliveryDetail): DeliveryEdit['start'] {
     deliveredAt: delivery.deliveredAt,
     noteLitres: plainLitres(delivery.noteLitres),
     receivedLitres: plainLitres(delivery.receivedLitres),
-    transporter: delivery.transporter ?? '',
+    carrier: delivery.transporterSupplierId
+      ? delivery.transporterSupplierId === delivery.supplierId
+        ? 'SUPPLIER'
+        : delivery.transporterSupplierId
+      : delivery.transporter
+        ? OTHER_VALUE
+        : '',
+    transporter: delivery.transporterSupplierId ? '' : (delivery.transporter ?? ''),
     driver: data.driverConfirmation?.driverName ?? delivery.driver ?? '',
     truck: delivery.truckRegistration ?? '',
     compartments: data.compartments.map((row) => ({
@@ -109,16 +125,14 @@ function editStart(data: DeliveryDetail): DeliveryEdit['start'] {
     driverConfirmed: data.driverConfirmation?.confirmed ?? false,
     noPo: delivery.noPoReason ?? '',
     noPoNote: delivery.noPoNote ?? '',
+    linkedOrder: delivery.purchaseOrderNumber ?? '',
+    variance: {
+      cause: (delivery.varianceCause as VarianceCause | null) ?? '',
+      note: delivery.varianceNote ?? '',
+      temperature: delivery.loadTemperatureC ?? '',
+    },
   };
 }
-
-const NO_PO_REASONS: Record<string, string> = {
-  EMERGENCY_PURCHASE: 'Emergency purchase',
-  CASH_PURCHASE: 'Bought for cash',
-  SUPPLIER_DIRECT: 'The supplier delivered without an order',
-  PO_NOT_RAISED: 'The order was not raised in time',
-  OTHER: 'Another reason',
-};
 
 const WATER_RESULTS = [
   { value: 'PASS', label: 'Passed, no water found' },
@@ -134,11 +148,15 @@ function sum(values: readonly string[]): string | null {
   return total.toString();
 }
 
-function varianceText(note: string, received: string): { label: string; tone: 'ok' | 'bad' } {
+function varianceText(
+  note: string,
+  received: string,
+  unit?: QuantityUnit,
+): { label: string; tone: 'ok' | 'bad' } {
   if (!LITRES.test(note) || !LITRES.test(received)) return { label: '', tone: 'ok' };
   const difference = new Decimal(received).minus(note);
   if (difference.isZero()) return { label: 'Matches the note', tone: 'ok' };
-  const amount = formatLitres(difference.abs().toString());
+  const amount = formatQuantity(difference.abs().toString(), unit);
   return difference.isNegative()
     ? { label: `Short by ${amount}`, tone: 'bad' }
     : { label: `Over by ${amount}`, tone: 'bad' };
@@ -233,6 +251,16 @@ export function DeliveryDetails({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  /** The answer to "is there a purchase order?", asked inline when confirming finds none. */
+  const [poChoice, setPoChoice] = useState('');
+  const [poNote, setPoNote] = useState('');
+  const [poError, setPoError] = useState<string | null>(null);
+  const poKey = useRef({ answer: '', key: crypto.randomUUID() });
+  const onPoChange = useCallback((next: { value: string; note: string }) => {
+    setPoChoice(next.value);
+    setPoNote(next.note);
+    setPoError(null);
+  }, []);
   /** One key per confirm attempt, so a retry after the identity check is not a second confirm. */
   const confirmKey = useRef(crypto.randomUUID());
   const [message, setMessage] = useState<{ tone: 'positive' | 'critical'; text: string } | null>(
@@ -277,7 +305,7 @@ export function DeliveryDetails({
   /** Checks everything that changed before sending, so nothing is half saved over a typing slip. */
   function problem(): string | null {
     if (compartmentsChanged && (!noteMatches || !receivedMatches)) {
-      return `The compartments must add up to ${formatLitres(delivery.noteLitres)} on the note and ${formatLitres(delivery.receivedLitres)} received. Check the litres in every compartment.`;
+      return `The compartments must add up to ${formatQuantity(delivery.noteLitres, delivery.unit)} on the note and ${formatQuantity(delivery.receivedLitres, delivery.unit)} received. Check the litres in every compartment.`;
     }
     if (waterChanged && water.result !== 'PASS' && water.result !== 'FAIL') {
       return 'Choose the water test result before saving.';
@@ -290,9 +318,42 @@ export function DeliveryDetails({
 
   /** Confirming puts the fuel on the tank's books, so it asks first and may need an identity check. */
   async function confirmDelivery() {
+    if (purchaseOrderMissing) {
+      const found = purchaseOrderChoiceProblem(poChoice, poNote);
+      if (found) {
+        setPoError(found);
+        return;
+      }
+    }
     setConfirming(true);
     setMessage(null);
     try {
+      if (purchaseOrderMissing) {
+        // The answer is saved first, so confirming is never refused for a missing order.
+        const step = buildPurchaseOrderStep(poChoice, poNote, ids);
+        if (step) {
+          const answer = `${poChoice}:${poNote.trim()}`;
+          if (poKey.current.answer !== answer) {
+            poKey.current = { answer, key: crypto.randomUUID() };
+          }
+          try {
+            await send(step.body.commandType, step.body, {
+              url: step.url,
+              key: poKey.current.key,
+            });
+          } catch (error) {
+            // A fresh identity check is handled by the outer handler, which asks for it.
+            if (error instanceof CommandError && error.code === 'STEP_UP_REQUIRED') throw error;
+            const text = friendlyMessage(
+              error instanceof Error ? error.message : '',
+              'The purchase order answer could not be saved. Try again.',
+            );
+            setPoError(text);
+            return;
+          }
+          await reload();
+        }
+      }
       await send(
         'ConfirmDelivery',
         { ...ids },
@@ -301,7 +362,7 @@ export function DeliveryDetails({
       confirmKey.current = crypto.randomUUID();
       setConfirmOpen(false);
       await reload();
-      const done = `Delivery ${delivery.deliveryNoteNumber} is confirmed. ${formatLitres(delivery.receivedLitres)} of ${delivery.productName} is now on the tank's books.`;
+      const done = `Delivery ${delivery.deliveryNoteNumber} is confirmed. ${formatQuantity(delivery.receivedLitres, delivery.unit)} of ${delivery.productName} is now on the tank's books.`;
       toast.success(done);
       setMessage({ tone: 'positive', text: done });
       // The banner sits above the sheet, so bring it into view if the person had scrolled down.
@@ -408,7 +469,7 @@ export function DeliveryDetails({
           : 'Not confirmed yet'}
     </StatusBadge>
   );
-  const difference = varianceText(delivery.noteLitres, delivery.receivedLitres);
+  const difference = varianceText(delivery.noteLitres, delivery.receivedLitres, delivery.unit);
   const stateLine = editing
     ? 'You are editing this delivery. Save your changes when you are done, or cancel to leave it as it was.'
     : canEdit
@@ -452,13 +513,6 @@ export function DeliveryDetails({
       text: 'Every delivery must say who delivered the fuel before it can be confirmed.',
     });
   }
-  if (purchaseOrderMissing) {
-    blockers.push({
-      title: 'This delivery has no purchase order',
-      text: 'Link it to a purchase order, or record why there is none, before confirming it.',
-      href: purchasingHref,
-    });
-  }
   if (data.waterTestRequired && data.waterTest === null) {
     blockers.push({
       title: 'A water test is needed first',
@@ -468,13 +522,14 @@ export function DeliveryDetails({
   const purchaseOrderLine = delivery.purchaseOrderNumber ? (
     `Order ${delivery.purchaseOrderNumber}`
   ) : delivery.noPoReason ? (
-    `None. ${NO_PO_REASONS[delivery.noPoReason] ?? 'Recorded without an order'}`
+    `None. ${noPoReasonLabel(delivery.noPoReason)}`
   ) : canEdit ? (
     <>
       <span className="dd-diff" data-tone="bad">
-        Not linked, and no reason recorded.
+        Not answered yet.
       </span>{' '}
-      <Link href={purchasingHref}>Open Purchasing to link one</Link>
+      You pick an order, or say why there is none, when you confirm the delivery. You can also{' '}
+      <Link href={purchasingHref}>open Purchasing</Link>.
     </>
   ) : (
     <span className="dd-empty">None</span>
@@ -544,9 +599,11 @@ export function DeliveryDetails({
             <Line label="Transporter">{delivery.transporter ?? notRecorded}</Line>
             <Line label="Truck">{delivery.truckRegistration ?? notRecorded}</Line>
             <Line label="Driver">{delivery.driver ?? notRecorded}</Line>
-            <Line label="On the delivery note">{formatLitres(delivery.noteLitres)}</Line>
+            <Line label="On the delivery note">
+              {formatQuantity(delivery.noteLitres, delivery.unit)}
+            </Line>
             <Line label="Received" hint={difference.tone === 'bad' ? difference.label : undefined}>
-              {formatLitres(delivery.receivedLitres)}
+              {formatQuantity(delivery.receivedLitres, delivery.unit)}
             </Line>
             <Line label="Business day">
               {new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' }).format(
@@ -565,8 +622,9 @@ export function DeliveryDetails({
             {compartmentsBadge}
           </div>
           <InfoTip>
-            One line per truck compartment. Together they must match the litres on the note and the
-            litres received.
+            One line per truck compartment. Together they must match the{' '}
+            {delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'} on the note and the
+            {delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'} received.
           </InfoTip>
           <table className="dd-table">
             <thead>
@@ -580,7 +638,11 @@ export function DeliveryDetails({
             </thead>
             <tbody>
               {compartments.map((compartment, index) => {
-                const variance = varianceText(compartment.noteLitres, compartment.receivedLitres);
+                const variance = varianceText(
+                  compartment.noteLitres,
+                  compartment.receivedLitres,
+                  delivery.unit,
+                );
                 const hasValues =
                   compartment.noteLitres !== '' || compartment.receivedLitres !== '';
                 return (
@@ -605,7 +667,7 @@ export function DeliveryDetails({
                       {editable ? (
                         <span className="dd-input">
                           <input
-                            aria-label={`Compartment ${index + 1}, litres on the note`}
+                            aria-label={`Compartment ${index + 1}, ${delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'} on the note`}
                             inputMode="decimal"
                             value={compartment.noteLitres}
                             onChange={(event) =>
@@ -615,7 +677,7 @@ export function DeliveryDetails({
                           <span>L</span>
                         </span>
                       ) : hasValues ? (
-                        formatLitres(compartment.noteLitres)
+                        formatQuantity(compartment.noteLitres, delivery.unit)
                       ) : (
                         notRecorded
                       )}
@@ -624,7 +686,7 @@ export function DeliveryDetails({
                       {editable ? (
                         <span className="dd-input">
                           <input
-                            aria-label={`Compartment ${index + 1}, litres received`}
+                            aria-label={`Compartment ${index + 1}, ${delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'} received`}
                             inputMode="decimal"
                             value={compartment.receivedLitres}
                             onChange={(event) =>
@@ -634,7 +696,7 @@ export function DeliveryDetails({
                           <span>L</span>
                         </span>
                       ) : hasValues ? (
-                        formatLitres(compartment.receivedLitres)
+                        formatQuantity(compartment.receivedLitres, delivery.unit)
                       ) : (
                         notRecorded
                       )}
@@ -721,10 +783,10 @@ export function DeliveryDetails({
               <tr>
                 <th scope="row">Together</th>
                 <td data-label="On the note">
-                  {totalNote === null ? '—' : formatLitres(totalNote)}
+                  {totalNote === null ? '—' : formatQuantity(totalNote, delivery.unit)}
                 </td>
                 <td data-label="Received">
-                  {totalReceived === null ? '—' : formatLitres(totalReceived)}
+                  {totalReceived === null ? '—' : formatQuantity(totalReceived, delivery.unit)}
                 </td>
                 <td colSpan={2} data-label="Check">
                   {totalNote === null || totalReceived === null ? (
@@ -742,10 +804,10 @@ export function DeliveryDetails({
                       {[
                         noteMatches
                           ? null
-                          : `The note total should be ${formatLitres(delivery.noteLitres)}`,
+                          : `The note total should be ${formatQuantity(delivery.noteLitres, delivery.unit)}`,
                         receivedMatches
                           ? null
-                          : `The received total should be ${formatLitres(delivery.receivedLitres)}`,
+                          : `The received total should be ${formatQuantity(delivery.receivedLitres, delivery.unit)}`,
                       ]
                         .filter(Boolean)
                         .join('. ')}
@@ -910,6 +972,15 @@ export function DeliveryDetails({
               </Line>
             </dl>
           </section>
+          {hasLoss(delivery) ? (
+            <DeliveryLoss
+              data={data}
+              context={context}
+              onSaved={() => {
+                void reload().then(() => toast.success('The claim was saved.'));
+              }}
+            />
+          ) : null}
         </div>
       </article>
 
@@ -931,7 +1002,8 @@ export function DeliveryDetails({
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title="Edit delivery"
-        presentation="side"
+        presentation="page"
+        backLabel="Deliveries"
         size="lg"
       >
         {canEditForm && delivery.tankId ? (
@@ -960,7 +1032,7 @@ export function DeliveryDetails({
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         title="Confirm this delivery?"
-        description={`This puts ${formatLitres(delivery.receivedLitres)} of ${delivery.productName} on the tank's books and records you as the person who checked the delivery. The compartments and water test can no longer be changed afterwards.`}
+        description={`This puts ${formatQuantity(delivery.receivedLitres, delivery.unit)} of ${delivery.productName} on the tank's books and records you as the person who checked the delivery. The compartments and water test can no longer be changed afterwards.`}
         size="sm"
         footer={
           <>
@@ -988,9 +1060,24 @@ export function DeliveryDetails({
             ) : null}
           </Notice>
         ))}
+        {purchaseOrderMissing ? (
+          <PurchaseOrderChoice
+            id="dd-po"
+            tenantId={context.tenantId}
+            stationId={context.stationId}
+            supplierId={delivery.supplierId ?? ''}
+            productId={delivery.productId}
+            value={poChoice}
+            note={poNote}
+            onChange={onPoChange}
+            error={poError ?? undefined}
+            disabled={confirming}
+          />
+        ) : null}
         {blockers.length === 0 && !compartmentsAddUp ? (
           <Notice tone="warning" title="The compartments are not filled in">
-            You can still confirm, but the litres per truck compartment are not on the record.
+            You can still confirm, but the {delivery.unit === 'KILOGRAMS' ? 'kilograms' : 'litres'}{' '}
+            per truck compartment are not on the record.
           </Notice>
         ) : null}
       </Modal>

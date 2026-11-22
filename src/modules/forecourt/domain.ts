@@ -527,9 +527,9 @@ export function requestPriceChange(price: SellingPrice): SellingPrice {
   return { ...price, state: 'PENDING_APPROVAL' };
 }
 /**
- * The requester may not approve their own price while another approver exists. The caller
- * supplies whether one does (see platform/security/separation-of-duties); omitting it keeps the
- * strict rule, so only a caller that has checked can allow a solo owner through.
+ * The requester may not approve their own price, unless they are an owner (DEC-057). The caller
+ * supplies whether self-approval is blocked (see platform/security/separation-of-duties);
+ * omitting it keeps the strict rule, so only a caller that has checked can let an owner through.
  */
 export function approvePriceChange(
   price: SellingPrice,

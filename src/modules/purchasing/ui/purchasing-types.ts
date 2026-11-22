@@ -4,6 +4,7 @@ export type OrderLine = {
   productId: string;
   productCode: string;
   productName: string;
+  productUnit?: 'LITRES' | 'KILOGRAMS';
   orderedLitres: string;
   agreedUnitPrice: string | null;
   status: string;
@@ -66,11 +67,12 @@ export type PurchaseOrderDetailData = PurchaseOrder & {
 
 export type OrderReference = {
   suppliers: { id: string; code: string; legalName: string }[];
-  products: { id: string; code: string; name: string }[];
+  products: { id: string; code: string; name: string; unit?: 'LITRES' | 'KILOGRAMS' }[];
   linkableDeliveries: {
     id: string;
     deliveryNoteNumber: string;
     productId: string;
+    unit?: 'LITRES' | 'KILOGRAMS';
     status: string;
     actualQuantityLitres: string;
     businessDate: string;
@@ -84,6 +86,7 @@ export type ExposureDelivery = {
   deliveryNoteNumber: string;
   businessDate: string;
   state: string;
+  unit?: 'LITRES' | 'KILOGRAMS';
   acceptedLitres: string;
   netBilledLitres: string;
   unbilledLitres: string;
@@ -97,6 +100,7 @@ export type ExposureSupplier = {
   supplierId: string | null;
   legalName: string | null;
   supplierUnassigned: boolean;
+  unit?: 'LITRES' | 'KILOGRAMS' | 'MIXED';
   unbilledLitres: string;
   unbilledValue: string;
   unpricedUnbilledLitres: string;
@@ -106,7 +110,12 @@ export type ExposureSupplier = {
 export type ExposureData = {
   asOf: string;
   suppliers: ExposureSupplier[];
-  totals: { unbilledLitres: string; unbilledValue: string; unpricedUnbilledLitres: string };
+  totals: {
+    unit?: 'LITRES' | 'KILOGRAMS' | 'MIXED';
+    unbilledLitres: string;
+    unbilledValue: string;
+    unpricedUnbilledLitres: string;
+  };
 };
 
 export type CheckFinding = {
@@ -121,6 +130,7 @@ export type CheckRow = {
   businessDate: string;
   supplierId: string | null;
   supplierUnassigned: boolean;
+  unit?: 'LITRES' | 'KILOGRAMS';
   noteLitres: string;
   acceptedLitres: string;
   receivedVsNoteLitres: string;
@@ -154,6 +164,7 @@ export type PolicyView = {
   vatMode: string | null;
   defaultVatRate: string | null;
   requireInvoiceLines: boolean | null;
+  requireTransportBill?: boolean | null;
 };
 
 export type PolicyData = {
@@ -172,5 +183,6 @@ export type PolicyData = {
     vatMode: string;
     defaultVatRate: string | null;
     requireInvoiceLines: boolean;
+    requireTransportBill?: boolean;
   };
 };

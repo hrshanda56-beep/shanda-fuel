@@ -2,7 +2,11 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { formatBusinessDate, formatLitres } from '../../../design-system/formatters';
+import {
+  formatBusinessDate,
+  formatCombinedQuantity,
+  formatQuantity,
+} from '../../../design-system/formatters';
 import { MetricCard } from '../../../design-system/layout';
 import {
   Card,
@@ -222,7 +226,7 @@ export function ManagementReportDashboard({
               <MetricCard
                 label="Accounted sales"
                 value={formatTileMoney(report.sales.salesValue)}
-                meta={`${formatLitres(report.sales.litresSold)} litres sold`}
+                meta={`${formatCombinedQuantity(report.sales.litresSold, report.sales.unit)} sold`}
                 href={detailHref('sales')}
               />
               <MetricCard
@@ -290,7 +294,7 @@ export function ManagementReportDashboard({
                       <tr>
                         <th scope="col">Date / station</th>
                         <th scope="col">Product</th>
-                        <th scope="col">Litres</th>
+                        <th scope="col">Quantity</th>
                         <th scope="col">Sales value</th>
                         <th scope="col">Average price</th>
                         <th scope="col">IDs</th>
@@ -307,8 +311,8 @@ export function ManagementReportDashboard({
                           <td data-label="Product">
                             {row.productCode} · {row.productName}
                           </td>
-                          <td data-label="Litres" className="numeric">
-                            {formatLitres(row.litres)}
+                          <td data-label="Quantity" className="numeric">
+                            {formatQuantity(row.litres, row.unit)}
                           </td>
                           <td data-label="Sales value" className="numeric">
                             {formatTileMoney(row.salesValue)}

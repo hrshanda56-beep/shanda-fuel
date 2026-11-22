@@ -9,7 +9,11 @@ import { getAuditSigningKey } from '../../platform/config/env';
 import { AppError } from '../../platform/errors';
 import { appendSecurityEvent } from '../audit/contracts';
 import { resolveTenantExecutionContext, type TenantExecutionContext } from '../tenancy/authority';
-import { authorize, type PermissionCode } from '../../platform/security/permissions';
+import {
+  authorize,
+  isPermissionGranted,
+  type PermissionCode,
+} from '../../platform/security/permissions';
 import { forecourtIdempotencyRecords } from '../../platform/db/schema/a3';
 
 export type OpeningBalanceTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -51,6 +55,24 @@ export function authorizeOpeningBalanceCommand(
     permissionCode,
     requestedScope: context.scope,
   });
+}
+
+/**
+ * Looking at the opening balances needs the role grant only. The recent identity check (step-up)
+ * is asked for when something is changed, so an owner who has not just confirmed their identity
+ * still sees the page instead of being told they have no access.
+ */
+export function authorizeOpeningBalanceRead(context: OpeningBalanceCommandContext): void {
+  const input = {
+    actor: context.authority.authorization,
+    permissionCode: 'finance.opening_balance.manage' as const,
+    requestedScope: context.scope,
+  };
+  if (!isPermissionGranted(input)) {
+    throw new AppError('FORBIDDEN', 'The actor is not authorized for this action or scope', {
+      permissionCode: input.permissionCode,
+    });
+  }
 }
 
 export function requestHash(value: unknown): string {

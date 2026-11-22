@@ -1,4 +1,5 @@
 import type { ManagementReport } from './contracts';
+import { combineQuantityUnits, type CombinedUnit } from '../../design-system/formatters';
 import { formatMoney, subtractExact, sumExact } from './domain';
 
 export type DashboardSnapshot = Readonly<{
@@ -7,7 +8,12 @@ export type DashboardSnapshot = Readonly<{
   /** Cash the sales say should have been handed in, against what was actually collected. */
   cash: Readonly<{ expected: string; collected: string; difference: string }>;
   /** Dip reading minus expected stock, summed over tanks that have a reading; null when none do. */
-  stockVariance: Readonly<{ litres: string | null; tanksMeasured: number; tanksTotal: number }>;
+  stockVariance: Readonly<{
+    litres: string | null;
+    unit: CombinedUnit;
+    tanksMeasured: number;
+    tanksTotal: number;
+  }>;
 }>;
 
 /**
@@ -40,6 +46,7 @@ export function buildDashboardSnapshot(report: ManagementReport): DashboardSnaps
     },
     stockVariance: {
       litres: measured.length === 0 ? null : sumExact(measured.map((row) => row.varianceLitres!)),
+      unit: combineQuantityUnits(measured.map((row) => row.unit)),
       tanksMeasured: measured.length,
       tanksTotal: report.inventory.rows.length,
     },

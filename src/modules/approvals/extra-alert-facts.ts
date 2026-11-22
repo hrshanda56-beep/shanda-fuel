@@ -1,4 +1,5 @@
 import 'server-only';
+import { asQuantityUnit } from '../../design-system/formatters';
 import { sql } from 'drizzle-orm';
 import type { InventoryCommandContext, InventoryTransaction } from '../inventory/application';
 import { buildCustomerAlertFacts } from '../customers/alert-facts';
@@ -10,6 +11,7 @@ import {
   type ExtraAlertFacts,
   type ExtraAlertSettings,
 } from './extra-alerts';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 /**
  * Read-only facts for the extra alerts at one station. Every part the person may not see comes
@@ -94,9 +96,10 @@ export async function loadExtraAlertFacts(
           sold_price: string;
           approved_price: string;
           litres: string;
+          unit: string;
         }>(sql`
       select bd.business_date, p.name as product, mr.unit_price::text as sold_price,
-        sp.unit_price::text as approved_price, sum(mr.litres_sold)::text as litres
+        sp.unit_price::text as approved_price, sum(mr.litres_sold)::text as litres, p.unit as unit
       from app.reconciliation_meter_readings mr
       join app.reconciliations r on r.tenant_id = mr.tenant_id and r.station_id = mr.station_id
         and r.id = mr.reconciliation_id
@@ -108,8 +111,8 @@ export async function loadExtraAlertFacts(
         and r.state in ('SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'POSTED', 'LOCKED')
         and bd.business_date::date >= ${today}::date - ${lookback}::int
         and mr.unit_price < sp.unit_price
-      group by bd.business_date, p.name, mr.unit_price, sp.unit_price
-      order by bd.business_date desc, p.name
+      group by bd.business_date, p.name, p.unit, p.display_order, p.kind, mr.unit_price, sp.unit_price
+      order by bd.business_date desc, ${productOrderSql('p')}
       limit 20`)
       ).map((row) => ({
         businessDate: row.business_date,
@@ -117,6 +120,7 @@ export async function loadExtraAlertFacts(
         soldPrice: row.sold_price,
         approvedPrice: row.approved_price,
         litres: row.litres,
+        unit: asQuantityUnit(row.unit),
       }))
     : null;
 
@@ -128,9 +132,10 @@ export async function loadExtraAlertFacts(
           product: string;
           delivery_note: string;
           short: string;
+          unit: string;
         }>(sql`
       select f.id, f.business_date, p.name as product, f.delivery_note_number as delivery_note,
-        (-f.shortage_excess_litres)::text as short
+        (-f.shortage_excess_litres)::text as short, p.unit as unit
       from app.fuel_deliveries f
       join app.products p on p.tenant_id = f.tenant_id and p.id = f.product_id
       where f.tenant_id = ${tenantId} and f.station_id = ${stationId} and f.status = 'CONFIRMED'
@@ -144,6 +149,7 @@ export async function loadExtraAlertFacts(
         product: row.product,
         deliveryNote: row.delivery_note,
         shortLitres: row.short,
+        unit: asQuantityUnit(row.unit),
       }))
     : null;
 
@@ -154,14 +160,15 @@ export async function loadExtraAlertFacts(
           tank_code: string;
           product: string;
           litres: string;
+          unit: string;
         }>(sql`
-      select t.id as tank_id, t.code as tank_code, p.name as product,
+      select t.id as tank_id, t.code as tank_code, p.name as product, p.unit as unit,
         sum(m.quantity_litres)::text as litres
       from app.inventory_movements m
       join app.tanks t on t.tenant_id = m.tenant_id and t.station_id = m.station_id and t.id = m.tank_id
       join app.products p on p.tenant_id = m.tenant_id and p.id = m.product_id
       where m.tenant_id = ${tenantId} and m.station_id = ${stationId}
-      group by t.id, t.code, p.name
+      group by t.id, t.code, p.name, p.unit
       having sum(m.quantity_litres) < 0
       order by sum(m.quantity_litres), t.code
       limit 20`)
@@ -170,6 +177,7 @@ export async function loadExtraAlertFacts(
         tankCode: row.tank_code,
         product: row.product,
         litres: row.litres,
+        unit: asQuantityUnit(row.unit),
       }))
     : null;
 

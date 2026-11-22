@@ -6,11 +6,12 @@ import { useState, type FormEvent } from 'react';
 import { useConfirm, useToast } from '@/design-system/feedback-provider';
 import { PageHeader } from '@/design-system/layout';
 import { Notice } from '@/design-system/feedback';
-import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
+import { formatBusinessDate, formatQuantity } from '@/design-system/formatters';
 import { Modal } from '@/design-system/modal';
 import { Button, Card, EmptyState, Field, StatusBadge } from '@/design-system/primitives';
 import { Pagination, usePagination } from '@/design-system/pagination';
 import { TableScrollRegion } from '@/design-system/table';
+import { TabSwitcher } from '@/design-system/tabs';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { StockSignal } from '../../approvals/operations-alerts';
 import { parseCalibrationText } from '../calibration';
@@ -67,8 +68,8 @@ function stationDateTime(value: string, timeZone: string): string {
 
 const LITRES = /^\d+(?:\.\d{1,3})?$/;
 
-function signed(value: string): string {
-  const text = formatLitres(value);
+function signed(value: string, unit?: 'LITRES' | 'KILOGRAMS'): string {
+  const text = formatQuantity(value, unit);
   return value.startsWith('-') || value === '0' ? text : `+${text}`;
 }
 
@@ -90,6 +91,8 @@ export function TankDetailView({
   const confirm = useConfirm();
   const toast = useToast();
   const { tank, dips, movements, canManage, stationTimezone, chart } = initialData;
+  const unitWord = tank.unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
+  const UnitWord = tank.unit === 'KILOGRAMS' ? 'Kilograms' : 'Litres';
   const [chartUnit, setChartUnit] = useState(chart?.unit ?? 'mm');
   const [chartText, setChartText] = useState('');
   const [chartSaving, setChartSaving] = useState(false);
@@ -127,7 +130,7 @@ export function TankDetailView({
   async function recordDip() {
     const litresText = dipLitres.trim();
     if (!LITRES.test(litresText)) {
-      setDipError('Enter the litres you measured, for example 19500.');
+      setDipError(`Enter the ${unitWord} you measured, for example 19500.`);
       return;
     }
     setDipSaving(true);
@@ -148,7 +151,7 @@ export function TankDetailView({
       const body = (await response.json().catch(() => ({}))) as { message?: string };
       if (!response.ok) {
         throw new Error(
-          body.message ?? 'The dip could not be saved. Check the litres and try again.',
+          body.message ?? `The dip could not be saved. Check the ${unitWord} and try again.`,
         );
       }
       setDipOpen(false);
@@ -219,22 +222,25 @@ export function TankDetailView({
     if (yellowText && !LITRES.test(yellowText)) {
       return setMessage({
         tone: 'critical',
-        text: 'Enter the yellow limit in litres, for example 20.',
+        text: `Enter the amount to explain in ${unitWord}, for example 20.`,
       });
     }
     if (redText && !LITRES.test(redText)) {
       return setMessage({
         tone: 'critical',
-        text: 'Enter the red limit in litres, for example 40.',
+        text: `Enter the urgent amount in ${unitWord}, for example 40.`,
       });
     }
     if (redText && !yellowText) {
-      return setMessage({ tone: 'critical', text: 'Set the yellow limit before the red one.' });
+      return setMessage({
+        tone: 'critical',
+        text: 'Set the amount to explain before the urgent amount.',
+      });
     }
     if (redText && Number(redText) < Number(yellowText)) {
       return setMessage({
         tone: 'critical',
-        text: 'The red limit cannot be lower than the yellow limit.',
+        text: 'The urgent amount cannot be lower than the amount to explain.',
       });
     }
     setSaving(true);
@@ -375,8 +381,8 @@ export function TankDetailView({
         </div>
         <div className="tank-hero-main">
           <p className="tank-hero-figure">
-            <strong>{formatLitres(tank.bookLitres)}</strong>
-            <span> of {formatLitres(tank.capacityLitres)} on the books</span>
+            <strong>{formatQuantity(tank.bookLitres, tank.unit)}</strong>
+            <span> of {formatQuantity(tank.capacityLitres, tank.unit)} on the books</span>
           </p>
           <div className="tank-hero-verdict">
             {lastSignal ? (
@@ -398,11 +404,11 @@ export function TankDetailView({
         <dl className="tank-hero-stats">
           <div>
             <dt>Last measured</dt>
-            <dd>{lastDip ? formatLitres(lastDip.physicalLitres) : '—'}</dd>
+            <dd>{lastDip ? formatQuantity(lastDip.physicalLitres, tank.unit) : '—'}</dd>
           </div>
           <div className="tank-hero-diff">
             <dt>Difference</dt>
-            <dd>{lastDip ? signed(lastDip.varianceLitres) : '—'}</dd>
+            <dd>{lastDip ? signed(lastDip.varianceLitres, tank.unit) : '—'}</dd>
           </div>
           <div>
             <dt>Checked</dt>
@@ -411,37 +417,31 @@ export function TankDetailView({
         </dl>
       </Card>
 
-      <div
+      <TabSwitcher
         className="tank-tabs"
-        role="tablist"
-        aria-label="Tank details"
+        label="Tank details"
+        idPrefix="tank-tab"
         data-solo={canManage ? undefined : 'true'}
-      >
-        {availableTabs.map((item) => (
-          <button
-            key={item.value}
-            id={`tank-tab-${item.value}`}
-            type="button"
-            role="tab"
-            className={item.value === 'settings' ? undefined : 'tank-tab-narrow'}
-            aria-selected={tab === item.value}
-            aria-controls="tank-tabpanel"
-            onClick={() => selectTab(item.value)}
-          >
-            {item.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          role="tab"
-          className="tank-tab-wide"
-          aria-selected={tab !== 'settings'}
-          aria-controls="tank-tabpanel"
-          onClick={() => selectTab('dips')}
-        >
-          Dips and movements
-        </button>
-      </div>
+        value={tab}
+        onChange={selectTab}
+        tabs={[
+          ...availableTabs.map((item) => ({
+            value: item.value,
+            label: item.label,
+            controls: 'tank-tabpanel',
+            className: item.value === 'settings' ? undefined : 'tank-tab-narrow',
+          })),
+          // On a wide screen dips and movements sit side by side, so one tab stands for both.
+          {
+            value: 'dips' as TankTab,
+            label: 'Dips and movements',
+            controls: 'tank-tabpanel',
+            className: 'tank-tab-wide',
+            id: null,
+            selected: tab !== 'settings',
+          },
+        ]}
+      />
 
       <div id="tank-tabpanel" role="tabpanel" aria-labelledby={`tank-tab-${tab}`}>
         {tab !== 'settings' ? (
@@ -462,7 +462,7 @@ export function TankDetailView({
                   {dipPage.rows.map((dip) => (
                     <li key={dip.id}>
                       <div>
-                        <strong>{formatLitres(dip.physicalLitres)} measured</strong>
+                        <strong>{formatQuantity(dip.physicalLitres, tank.unit)} measured</strong>
                         <span className="table-secondary">
                           {stationDateTime(dip.measuredAt, stationTimezone)}
                           {dip.rawMeasurement
@@ -470,7 +470,7 @@ export function TankDetailView({
                             : ''}
                         </span>
                         <span className="table-secondary">
-                          {dipSentence(dip.varianceLitres, dip.signal)}
+                          {dipSentence(dip.varianceLitres, dip.signal, tank.unit)}
                         </span>
                       </div>
                       <div className="tank-timeline-side">
@@ -520,10 +520,10 @@ export function TankDetailView({
                         </div>
                         <div className="tank-timeline-side tank-movement-side">
                           <strong data-direction={quantity < 0 ? 'out' : 'in'}>
-                            {signed(movement.quantityLitres)}
+                            {signed(movement.quantityLitres, tank.unit)}
                           </strong>
                           <span className="table-secondary">
-                            Stock after: {formatLitres(balances[index]!)}
+                            Stock after: {formatQuantity(balances[index]!, tank.unit)}
                           </span>
                         </div>
                       </li>
@@ -541,12 +541,18 @@ export function TankDetailView({
             <Card className="form-panel">
               <h2>When a difference matters</h2>
               <InfoTip>
-                A dip is compared with the books. Within the yellow limit it is fine. Above yellow
-                it must be explained. Above red it is urgent. Leave red empty to use twice the
-                yellow limit.
+                Each dip is compared with the stock the books expect. A difference up to the first
+                amount is fine; above it, someone must explain it; above the urgent amount it needs
+                attention at once. Leave the urgent amount empty to use twice the first amount.
+                Leave both empty to use the standard check: a warning past 0.5% and an alert past 1%
+                of the fuel sold since the last dip.
               </InfoTip>
               <form className="form-stack" onSubmit={saveLimits}>
-                <Field id="tank-yellow" label="Yellow: explain above (litres)" optional>
+                <Field
+                  id="tank-yellow"
+                  label={`Ask for an explanation above (${unitWord})`}
+                  optional
+                >
                   <input
                     id="tank-yellow"
                     inputMode="decimal"
@@ -554,7 +560,7 @@ export function TankDetailView({
                     onChange={(event) => setYellow(event.target.value)}
                   />
                 </Field>
-                <Field id="tank-red" label="Red: urgent above (litres)" optional>
+                <Field id="tank-red" label={`Treat as urgent above (${unitWord})`} optional>
                   <input
                     id="tank-red"
                     inputMode="decimal"
@@ -574,9 +580,9 @@ export function TankDetailView({
             <Card className="form-panel">
               <h2>Dipstick chart</h2>
               <InfoTip>
-                The tank maker&apos;s chart turns a dipstick reading into litres. Type or paste the
-                rows, or import a CSV file with the reading and the litres on each line. A new chart
-                is used for new dips; dips already recorded keep their litres.
+                The tank maker&apos;s chart turns a dipstick reading into {unitWord}. Type or paste
+                the rows, or import a CSV file with the reading and the {unitWord} on each line. A
+                new chart is used for new dips; dips already recorded keep their {unitWord}.
               </InfoTip>
               {chart ? (
                 <TableScrollRegion label={`Dipstick chart for tank ${tank.code}`}>
@@ -587,15 +593,15 @@ export function TankDetailView({
                     <thead>
                       <tr>
                         <th scope="col">Reading ({chart.unit})</th>
-                        <th scope="col">Litres</th>
+                        <th scope="col">{UnitWord}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {chart.rows.map((row) => (
                         <tr key={row.measurement}>
                           <th scope="row">{row.measurement}</th>
-                          <td data-label="Litres" className="numeric">
-                            {formatLitres(row.litres)}
+                          <td data-label={UnitWord} className="numeric">
+                            {formatQuantity(row.litres, tank.unit)}
                           </td>
                         </tr>
                       ))}
@@ -604,7 +610,7 @@ export function TankDetailView({
                 </TableScrollRegion>
               ) : (
                 <p className="table-secondary">
-                  No chart yet. Dips are typed in litres until one is saved.
+                  No chart yet. Dips are typed in {unitWord} until one is saved.
                 </p>
               )}
               <form className="form-stack" onSubmit={saveChart}>
@@ -630,7 +636,7 @@ export function TankDetailView({
                 <Field
                   id="chart-rows"
                   label="Chart rows"
-                  hint="One row per line: the reading, then the litres. For example 1125, 18400."
+                  hint={`One row per line: the reading, then the ${unitWord}. For example 1125, 18400.`}
                   required
                 >
                   <textarea
@@ -657,7 +663,7 @@ export function TankDetailView({
         open={dipOpen}
         onClose={() => setDipOpen(false)}
         title="Record a dip"
-        description="Measure the tank and enter the litres. The books' figure is filled in for you; change it to what you measured."
+        description={`Measure the tank and enter the ${unitWord}. The books' figure is filled in for you; change it to what you measured.`}
         dismissible={!dipSaving}
       >
         <form
@@ -667,7 +673,7 @@ export function TankDetailView({
             void recordDip();
           }}
         >
-          <Field id="dip-litres" label="Litres in the tank" required>
+          <Field id="dip-litres" label={`${UnitWord} in the tank`} required>
             <input
               id="dip-litres"
               inputMode="decimal"

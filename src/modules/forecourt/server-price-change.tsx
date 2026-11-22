@@ -13,6 +13,8 @@ export function ServerPriceChange({ search }: { search: PageSearch }) {
     <ServerDataPage
       pathname="/operations/daily/price-change"
       search={search}
+      // This is a page of its own, not Daily Operations: it says so in the heading.
+      shell={{ pageTitle: 'Change a price' }}
       fallback={NEEDS_STATION}
       load={async (request, resolution) => {
         const current = resolution.current;

@@ -106,6 +106,25 @@ describe('Clerk credential login', () => {
     );
   });
 
+  it('continues to the destination when Clerk reports the browser is already signed in', async () => {
+    const assign = vi.fn();
+    vi.stubGlobal('window', { location: { assign } });
+    mocks.create.mockRejectedValue({ errors: [{ code: 'session_exists' }] });
+    await submit('/invite/invitation-token');
+    // A full page load makes the server re-check the session instead of trusting a stale one.
+    expect(assign).toHaveBeenCalledWith('/invite/invitation-token');
+    expect(mocks.setActive).not.toHaveBeenCalled();
+    expect(mocks.setState).not.toHaveBeenCalledWith(expect.stringContaining('Sign-in could not'));
+  });
+
+  it('never follows an external destination when already signed in', async () => {
+    const assign = vi.fn();
+    vi.stubGlobal('window', { location: { assign } });
+    mocks.create.mockRejectedValue({ errors: [{ code: 'session_exists' }] });
+    await submit('https://external.example');
+    expect(assign).toHaveBeenCalledWith('/workplace');
+  });
+
   it('reports rejected credentials without disclosing account existence', async () => {
     mocks.create.mockRejectedValue({ errors: [{ code: 'form_identifier_not_found' }] });
     await submit();

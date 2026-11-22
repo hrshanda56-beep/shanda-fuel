@@ -2,11 +2,13 @@ import { calculateGrossMargin, classifyGrossMargin } from './domain';
 import { formatLitres, formatMoney, subtractExact, sumExact, uniqueIds } from '../reporting/domain';
 import type {
   CanonicalRevenueReport,
+  CanonicalSaleRevenue,
   FuelProfitRow,
   ProfitabilityReport,
   RestatedCogsReport,
   RestatedSaleCogs,
 } from './contracts';
+import { compareProducts } from '../../platform/domain/product-order';
 
 export const PROFITABILITY_DATE_BASIS = {
   revenue: 'REV1 sale_recognition_movements.business_date',
@@ -49,7 +51,23 @@ export function buildFuelProfitRows(
     groups.set(sale.productId, group);
   }
 
+  const fuelInfo = ([, group]: [
+    string,
+    { revenue: readonly CanonicalSaleRevenue[]; costs: readonly RestatedSaleCogs[] },
+  ]) => {
+    const first = group.revenue[0] ?? group.costs[0];
+    return {
+      name: first?.productName ?? 'Unknown fuel',
+      kind: first?.productKind,
+      displayOrder: first?.productDisplayOrder,
+    };
+  };
+
   return [...groups.entries()]
+    .sort(
+      (left, right) =>
+        compareProducts(fuelInfo(left), fuelInfo(right)) || left[0].localeCompare(right[0]),
+    )
     .map(([productId, group]) => {
       const firstRevenue = group.revenue[0];
       const firstCost = group.costs[0];
@@ -64,6 +82,10 @@ export function buildFuelProfitRows(
         productId,
         productCode: firstRevenue?.productCode ?? firstCost?.productCode ?? 'UNKNOWN',
         productName: firstRevenue?.productName ?? firstCost?.productName ?? 'Unknown fuel',
+        unit:
+          (group.revenue[0]?.productUnit ?? 'LITRES') === 'KILOGRAMS'
+            ? ('KILOGRAMS' as const)
+            : ('LITRES' as const),
         litres,
         revenue,
         cost,
@@ -79,12 +101,7 @@ export function buildFuelProfitRows(
         revenueMovementIds: uniqueIds(group.revenue.map((sale) => sale.revenueMovementId)),
         costMovementIds: uniqueIds(group.costs.map((sale) => sale.saleMovementId)),
       } satisfies FuelProfitRow;
-    })
-    .sort((left, right) =>
-      `${left.productName}\u0000${left.productCode}\u0000${left.productId}`.localeCompare(
-        `${right.productName}\u0000${right.productCode}\u0000${right.productId}`,
-      ),
-    );
+    });
 }
 
 /** Pure assembly of the profitability payload from the two canonical reads. */

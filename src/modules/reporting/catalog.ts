@@ -103,6 +103,20 @@ const MANAGEMENT_REPORTS: readonly ReportDefinition[] = [
   },
 ];
 
+/** Reports that are a guided flow of their own, listed after the table reports. */
+const WIZARD_REPORTS: readonly ReportDefinition[] = [
+  {
+    slug: 'zera-return',
+    title: 'ZERA Monthly Return',
+    description:
+      'Litres supplied and sold for the month, worked out from confirmed deliveries and approved days, ready to copy into the ZERA form.',
+    category: 'inventory',
+    // The wizard offers its own copy and CSV; it is not one of the table exports.
+    exportable: false,
+    audience: 'operational',
+  },
+];
+
 /** The management-overview views first, then the plain table reports. */
 export const REPORT_CATALOG: readonly ReportDefinition[] = [
   ...MANAGEMENT_REPORTS,
@@ -114,6 +128,7 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportable: true,
     audience: audience ?? 'finance',
   })),
+  ...WIZARD_REPORTS,
 ];
 
 export function findReport(slug: string): ReportDefinition | undefined {

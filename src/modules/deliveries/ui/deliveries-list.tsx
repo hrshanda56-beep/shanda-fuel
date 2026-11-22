@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Icon } from '@/design-system/icons';
 import { Notice } from '@/design-system/feedback';
 import { useToast } from '@/design-system/feedback-provider';
 import { Checkbox } from '@/design-system/forms';
-import { formatBusinessDate, formatLitres } from '@/design-system/formatters';
+import { formatBusinessDate, formatQuantity } from '@/design-system/formatters';
 import { Modal } from '@/design-system/modal';
 import { Button, Card, StatusBadge } from '@/design-system/primitives';
 import { Pagination, usePagination } from '@/design-system/pagination';
@@ -14,6 +15,13 @@ import type { DeliveryList } from '../queries';
 import { RecordDelivery } from './record-delivery';
 import { InfoTip } from '@/design-system/info-tip';
 import { NotchedCard } from '@/design-system/notched-card';
+
+const LOSS_KIND_LABELS = {
+  SUPPLIER: 'Fuel supplier',
+  TRANSPORTER: 'Transport company',
+  DRIVER: 'Driver',
+  TRUCK: 'Truck',
+} as const;
 
 export function DeliveriesList({
   context,
@@ -63,7 +71,23 @@ export function DeliveriesList({
 
   const { deliveries } = initialData;
   const [recording, setRecording] = useState(false);
-  const page = usePagination(deliveries);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<'ALL' | 'CONFIRMED' | 'DRAFT' | 'CANCELLED'>('ALL');
+  const searched = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return deliveries;
+    return deliveries.filter((delivery) =>
+      [delivery.deliveryNoteNumber, delivery.productName, delivery.supplierName ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [deliveries, search]);
+  const visible = useMemo(
+    () => (status === 'ALL' ? searched : searched.filter((delivery) => delivery.status === status)),
+    [searched, status],
+  );
+  const page = usePagination(visible, { resetKey: `${search}|${status}` });
   const missing = (delivery: (typeof deliveries)[number]) =>
     [
       delivery.compartmentCount === 0 ? 'truck compartments' : null,
@@ -102,6 +126,47 @@ export function DeliveriesList({
           </p>
         ) : (
           <>
+            <div className="deliveries-toolbar">
+              <label className="list-search">
+                <Icon name="search" />
+                <input
+                  type="search"
+                  aria-label="Search deliveries"
+                  placeholder="Search deliveries"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  autoComplete="off"
+                />
+              </label>
+              <div className="list-filters" role="group" aria-label="Filter deliveries">
+                {(
+                  [
+                    ['ALL', 'All'],
+                    ['CONFIRMED', 'Confirmed'],
+                    ['DRAFT', 'Not confirmed yet'],
+                    ['CANCELLED', 'Cancelled'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="list-filter"
+                    aria-pressed={status === value}
+                    onClick={() => setStatus(value)}
+                  >
+                    {label}
+                    <span>
+                      {value === 'ALL'
+                        ? searched.length
+                        : searched.filter((delivery) => delivery.status === value).length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {visible.length === 0 ? (
+              <p className="deliveries-empty table-secondary">No deliveries match.</p>
+            ) : null}
             <TableScrollRegion label="Fuel deliveries">
               <table className="data-table">
                 <caption className="visually-hidden">Fuel deliveries</caption>
@@ -132,9 +197,11 @@ export function DeliveriesList({
                           </span>
                         </th>
                         <td data-label="Fuel">{delivery.productName}</td>
-                        <td data-label="On the note">{formatLitres(delivery.noteLitres)}</td>
+                        <td data-label="On the note">
+                          {formatQuantity(delivery.noteLitres, delivery.unit)}
+                        </td>
                         <td data-label="Received">
-                          {formatLitres(delivery.receivedLitres)}
+                          {formatQuantity(delivery.receivedLitres, delivery.unit)}
                           {delivery.receipt === 'FULL' ? null : (
                             <span className="table-secondary">
                               {delivery.receipt === 'PARTIAL'
@@ -173,6 +240,45 @@ export function DeliveriesList({
           </>
         )}
       </NotchedCard>
+      {initialData.lossReport.length > 0 ? (
+        <Card className="pg-card">
+          <details className="deliveries-rules">
+            <summary>Where fuel keeps arriving short</summary>
+            <InfoTip>
+              Confirmed deliveries that came in under the note, grouped by who sold or brought the
+              fuel. Use it to spot a driver, truck or company that is short again and again.
+            </InfoTip>
+            <TableScrollRegion label="Fuel arriving short">
+              <table className="data-table">
+                <caption className="visually-hidden">Fuel arriving short</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Who</th>
+                    <th scope="col">Short deliveries</th>
+                    <th scope="col">Litres short</th>
+                    <th scope="col">Claims open</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {initialData.lossReport.map((row) => (
+                    <tr key={`${row.kind}:${row.name}`}>
+                      <th scope="row">
+                        {row.name}
+                        <span className="table-secondary">{LOSS_KIND_LABELS[row.kind]}</span>
+                      </th>
+                      <td data-label="Short deliveries">
+                        {row.shortDeliveries} of {row.deliveries}
+                      </td>
+                      <td data-label="Litres short">{formatQuantity(row.shortLitres, 'LITRES')}</td>
+                      <td data-label="Claims open">{row.claimsOpen}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScrollRegion>
+          </details>
+        </Card>
+      ) : null}
       {initialData.canSetWaterTestRule ? (
         <Card className="pg-card">
           <details className="deliveries-rules">
@@ -195,7 +301,8 @@ export function DeliveriesList({
         open={recording}
         onClose={() => setRecording(false)}
         title="Record delivery"
-        presentation="side"
+        presentation="page"
+        backLabel="Deliveries"
         size="lg"
       >
         <RecordDelivery
@@ -203,6 +310,7 @@ export function DeliveriesList({
           tenantId={context.tenantId}
           stationId={context.stationId}
           tanks={initialData.tanks}
+          onCancel={() => setRecording(false)}
         />
       </Modal>
     </div>

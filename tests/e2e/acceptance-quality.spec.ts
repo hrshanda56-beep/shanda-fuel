@@ -155,8 +155,13 @@ test.describe('shared quality (F4-07)', () => {
     await mockDashboard(page);
     await page.goto(TODAY);
     await expect(page.getByRole('heading', { name: 'Key figures' })).toBeVisible();
-    await page.keyboard.press('Control+k');
-    await expect(page.getByRole('combobox', { name: 'Search pages' })).toBeVisible();
+    // The shortcut only works once the page has hydrated; pressing it again is harmless.
+    await expect(async () => {
+      await page.keyboard.press('Control+k');
+      await expect(page.getByRole('combobox', { name: 'Search pages' })).toBeVisible({
+        timeout: 1000,
+      });
+    }).toPass({ timeout: 15000 });
     const search = await fontSizes();
     expect(search.length).toBeGreaterThan(0);
     for (const control of search) expect(control.size, control.name).toBeGreaterThanOrEqual(16);
@@ -168,9 +173,12 @@ test.describe('shared quality (F4-07)', () => {
     await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
     await page.getByRole('button', { name: 'Match', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Match a payment' })).toBeVisible();
-    await expect(page.getByLabel('Amount to match')).toBeVisible();
+    await expect(
+      page.getByRole('dialog', { name: 'Match a payment' }).getByRole('heading').first(),
+    ).toBeVisible();
+    // One question per screen, so only that question's control is on show.
     const form = await fontSizes();
-    expect(form.length).toBeGreaterThanOrEqual(3);
+    expect(form.length).toBeGreaterThanOrEqual(1);
     for (const control of form) expect(control.size, control.name).toBeGreaterThanOrEqual(16);
   });
 

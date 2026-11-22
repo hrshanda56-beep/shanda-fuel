@@ -1,0 +1,99 @@
+/* The one tab style (see src/design-system/tabs.tsx): a light rounded track, the open tab a raised
+   pill, every tab showing its name. It sits at the right end of its row. */
+
+.ds-tabs {
+  display: flex;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  margin-inline-start: auto;
+  padding: var(--space-1);
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  background: var(--bg-muted);
+  scrollbar-width: none;
+}
+
+.ds-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.ds-tabs > button,
+.ds-tabs > a {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 550;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.ds-tabs > button:hover:not(:disabled),
+.ds-tabs > a:hover {
+  color: var(--text-primary);
+}
+
+.ds-tabs > [aria-selected='true'],
+.ds-tabs > [aria-pressed='true'],
+.ds-tabs > [aria-current='page'] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.ds-tabs > button:focus-visible,
+.ds-tabs > a:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: -2px;
+}
+
+.ds-tab-count {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A row that holds only the switcher keeps it at the far right. */
+.ds-tabs-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Phones: the tabs share the full width in even columns, so none is hidden off the side. */
+@media (max-width: 40rem) {
+  .ds-tabs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+    width: 100%;
+    margin-inline-start: 0;
+    overflow: visible;
+  }
+
+  .ds-tabs > button,
+  .ds-tabs > a {
+    min-width: 0;
+    padding: 0 var(--space-2);
+    white-space: normal;
+    text-align: center;
+    line-height: 1.2;
+  }
+}
+
+@media print {
+  .ds-tabs {
+    display: none;
+  }
+}

@@ -1,5 +1,5 @@
 import { formatBusinessDate } from '../../../design-system/formatters';
-import { formatTileLitres, formatTileMoney } from '../format';
+import { formatTileMoney, formatTileQuantity } from '../format';
 import { exact } from '../domain';
 import type { ManagementReport } from '../contracts';
 import type { Statement, StatementLine } from '../statements';
@@ -7,7 +7,9 @@ import type { Statement, StatementLine } from '../statements';
 /** Accounting style: plain digits with thousands separators and brackets for negatives. */
 export function formatStatementAmount(line: StatementLine): string {
   if (line.value === null) return 'Unavailable';
-  if (line.unit === 'litres') return formatTileLitres(line.value);
+  if (line.unit === 'litres') return formatTileQuantity(line.value, 'LITRES');
+  if (line.unit === 'kilograms') return formatTileQuantity(line.value, 'KILOGRAMS');
+  if (line.unit === 'mixed') return 'Mixed units';
   const full = formatTileMoney(line.value);
   if (full === '—') return full;
   const digits = full.replace(/^USD\s/, '');

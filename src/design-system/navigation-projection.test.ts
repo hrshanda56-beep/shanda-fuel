@@ -230,13 +230,16 @@ describe('server navigation projection', () => {
       'settlements',
       'customers',
       'suppliers',
+      'transporters',
       'purchasing',
       'expenses',
+      'sales-documents',
       'profitability',
       'fuel-deliveries',
       'staff-benefit',
       'payments-due',
       'reports',
+      'zera-returns',
       'settings',
     ]);
   });

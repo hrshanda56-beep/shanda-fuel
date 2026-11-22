@@ -1,3 +1,4 @@
+import { asQuantityUnit as asUnit, combineQuantityUnits } from '../../design-system/formatters';
 import { resolveTenantReadAuthority } from '../context/read-authority';
 import 'server-only';
 
@@ -42,6 +43,7 @@ import {
   type ReportDateBasis,
   type SalesPaymentRow,
 } from './contracts';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 type ReportingTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -229,7 +231,10 @@ async function readSales(transaction: ReportingTransaction, filters: ManagementR
       product_id: string;
       product_code: string;
       product_name: string;
+      product_kind: string | null;
+      product_display_order: number | null;
       litres: string;
+      unit: string;
       sales_value: string;
       variance: string;
       reconciliation_ids: string[] | null;
@@ -237,7 +242,9 @@ async function readSales(transaction: ReportingTransaction, filters: ManagementR
       with approved as (${base})
       select bd.business_date, a.station_id, s.code as station_code,
         m.product_id, p.code as product_code, p.name as product_name,
+        p.kind as product_kind, p.display_order as product_display_order,
         coalesce(sum(m.litres_sold), 0)::text as litres,
+        p.unit as unit,
         coalesce(sum(m.sales_value), 0)::text as sales_value,
         coalesce(max(a.variance), 0)::text as variance,
         coalesce(array_agg(distinct a.reconciliation_id), ARRAY[]::uuid[]) as reconciliation_ids
@@ -250,8 +257,9 @@ async function readSales(transaction: ReportingTransaction, filters: ManagementR
        and m.reconciliation_id = a.reconciliation_id
       join app.products p on p.tenant_id = m.tenant_id and p.id = m.product_id
       join app.stations s on s.tenant_id = m.tenant_id and s.id = m.station_id
-      group by bd.business_date, a.station_id, s.code, m.product_id, p.code, p.name
-      order by bd.business_date, s.code, p.code
+      group by bd.business_date, a.station_id, s.code, m.product_id, p.code, p.name, p.unit,
+        p.kind, p.display_order
+      order by bd.business_date, s.code, ${productOrderSql('p')}, p.code
     `),
   ]);
   const total = totals[0] ?? {
@@ -263,6 +271,7 @@ async function readSales(transaction: ReportingTransaction, filters: ManagementR
   };
   return {
     litresSold: formatLitres(total.litres),
+    unit: combineQuantityUnits(rows.map((row) => asUnit(row.unit))),
     salesValue: formatMoney(total.sales_value),
     approvedReconciliationCount: total.reconciliation_count,
     salesVariance: formatMoney(total.variance),
@@ -283,7 +292,10 @@ async function readSales(transaction: ReportingTransaction, filters: ManagementR
       productId: row.product_id,
       productCode: row.product_code,
       productName: row.product_name,
+      productKind: row.product_kind,
+      productDisplayOrder: row.product_display_order,
       litres: formatLitres(row.litres),
+      unit: asUnit(row.unit),
       salesValue: formatMoney(row.sales_value),
       averageRealizedPrice: averageRealizedPrice(row.litres, row.sales_value),
       variance: formatMoney(row.variance),
@@ -652,11 +664,13 @@ async function readCustomerActivity(
     account_type: string;
     drawn_amount: string;
     drawn_litres: string;
+    units: string[];
     authorization_count: string;
   }>(sql`
     select station_id, account_type,
       coalesce(sum(used_amount), 0)::text as drawn_amount,
       coalesce(sum(used_litres), 0)::text as drawn_litres,
+      array_agg(distinct (select p.unit from app.products p where p.tenant_id = customer_fuel_authorizations.tenant_id and p.id = customer_fuel_authorizations.product_id)) as units,
       count(*)::text as authorization_count
     from app.customer_fuel_authorizations
     where tenant_id = ${filters.tenantId}
@@ -672,6 +686,7 @@ async function readCustomerActivity(
     accountType: row.account_type,
     drawnAmount: formatMoney(row.drawn_amount),
     drawnLitres: formatLitres(row.drawn_litres),
+    unit: combineQuantityUnits((row.units ?? []).map(asUnit)),
     authorizationCount: Number(row.authorization_count),
   }));
 }
@@ -703,6 +718,7 @@ async function readCustomers(
     prepaid_value: string;
     reserved_amount: string;
     reserved_litres: string;
+    reserved_units: string[];
   }>(sql`
     with balances as (
       select customer_id,
@@ -716,7 +732,8 @@ async function readCustomers(
     ), reservations as (
       select customer_id,
         coalesce(sum(remaining_amount), 0) as reserved_amount,
-        coalesce(sum(remaining_litres), 0) as reserved_litres
+        coalesce(sum(remaining_litres), 0) as reserved_litres,
+        array_agg(distinct (select p.unit from app.products p where p.tenant_id = customer_fuel_authorizations.tenant_id and p.id = customer_fuel_authorizations.product_id)) as reserved_units
       from app.customer_fuel_authorizations
       where tenant_id = ${filters.tenantId}
         and state in ('AUTHORIZED', 'PARTIALLY_USED')
@@ -728,7 +745,8 @@ async function readCustomers(
       coalesce(b.receivable, 0)::text as receivable,
       coalesce(b.prepaid_value, 0)::text as prepaid_value,
       coalesce(r.reserved_amount, 0)::text as reserved_amount,
-      coalesce(r.reserved_litres, 0)::text as reserved_litres
+      coalesce(r.reserved_litres, 0)::text as reserved_litres,
+      coalesce(r.reserved_units, ARRAY[]::text[]) as reserved_units
     from app.customers c
     left join balances b on b.customer_id = c.id
     left join reservations r on r.customer_id = c.id
@@ -743,6 +761,7 @@ async function readCustomers(
     prepaidValueBalance: formatMoney(row.prepaid_value),
     reservedAmount: formatMoney(row.reserved_amount),
     reservedLitres: formatLitres(row.reserved_litres),
+    reservedUnit: combineQuantityUnits((row.reserved_units ?? []).map(asUnit)),
   }));
   return {
     activity,
@@ -751,6 +770,7 @@ async function readCustomers(
     prepaidValueBalance: formatMoney(sumExact(mapped.map((row) => row.prepaidValueBalance))),
     reservedAmount: formatMoney(sumExact(mapped.map((row) => row.reservedAmount))),
     reservedLitres: formatLitres(sumExact(mapped.map((row) => row.reservedLitres))),
+    reservedUnit: combineQuantityUnits(mapped.map((row) => row.reservedUnit)),
     rows: mapped,
   };
 }
@@ -766,6 +786,7 @@ async function readInventory(
     product_id: string;
     product_code: string;
     product_name: string;
+    unit: string;
     capacity: string;
     reorder_level: string | null;
     acceptable_variance: string | null;
@@ -803,7 +824,7 @@ async function readInventory(
       group by station_id, product_id
     )
     select t.station_id, t.id as tank_id, t.code as tank_code, t.product_id,
-      p.code as product_code, p.name as product_name,
+      p.code as product_code, p.name as product_name, p.unit as unit,
       t.capacity_litres::text as capacity, t.reorder_level_litres::text as reorder_level,
       t.acceptable_variance_litres::text as acceptable_variance,
       t.variance_red_litres::text as variance_red,
@@ -829,6 +850,7 @@ async function readInventory(
     productId: row.product_id,
     productCode: row.product_code,
     productName: row.product_name,
+    unit: asUnit(row.unit),
     capacityLitres: formatLitres(row.capacity),
     reorderLevelLitres: row.reorder_level === null ? null : formatLitres(row.reorder_level),
     acceptableVarianceLitres:
@@ -845,6 +867,7 @@ async function readInventory(
     deliveryIds: uniqueIds(row.delivery_ids ?? []),
   }));
   return {
+    unit: combineQuantityUnits(mapped.map((row) => row.unit)),
     expectedLitres: formatLitres(sumExact(mapped.map((row) => row.expectedLitres))),
     physicalLitres: (() => {
       const total = sumObservedExact(mapped.map((row) => row.physicalLitres));
@@ -1022,11 +1045,12 @@ async function readDaily(
   filters: ManagementReportQuery,
 ): Promise<{ rows: readonly DailyOperationsRow[]; expectedBusinessDays: number }> {
   const base = approvedReconciliations(filters);
-  const rows = await transaction.execute<{
+  const rowsPromise = transaction.execute<{
     report_date: string;
     station_id: string;
     station_code: string;
     litres: string;
+    units: string[] | null;
     sales_value: string;
     cash_declared: string;
     cash_variance: string;
@@ -1049,6 +1073,7 @@ async function readDaily(
     with approved as (${base}),
     sales as (
       select a.business_date as report_date, a.station_id, sum(m.litres_sold)::text as litres,
+        array_agg(distinct (select p.unit from app.products p where p.tenant_id = m.tenant_id and p.id = m.product_id)) filter (where m.id is not null) as units,
         (select sum(a2.accounted_sales) from approved a2
           where a2.business_date = a.business_date and a2.station_id = a.station_id)::text as sales_value,
         array_agg(distinct a.reconciliation_id) as reconciliation_ids
@@ -1147,7 +1172,7 @@ async function readDaily(
       union select report_date, station_id from expenses union select report_date, station_id from inventory_variance
     )
     select k.report_date, k.station_id, st.code as station_code,
-      coalesce(s.litres, '0') as litres, coalesce(s.sales_value, '0') as sales_value,
+      coalesce(s.litres, '0') as litres, s.units as units, coalesce(s.sales_value, '0') as sales_value,
       coalesce(p.cash_declared, '0') as cash_declared, coalesce(cv.cash_variance, '0') as cash_variance,
       coalesce(c.collected, '0') as collected, coalesce(b.banked, '0') as banked,
       coalesce(p.provider_evidence, '0') as provider_evidence,
@@ -1174,7 +1199,7 @@ async function readDaily(
     ${filters.stationIds.length > 0 ? sql`where k.station_id in (${idList(filters.stationIds)})` : sql``}
     order by k.report_date, st.code
   `);
-  const paymentsByDate = await transaction.execute<{
+  const paymentsPromise = transaction.execute<{
     business_date: string;
     station_id: string;
     method: string;
@@ -1189,7 +1214,7 @@ async function readDaily(
     group by a.business_date, a.station_id, p.method
     order by a.business_date, a.station_id, p.method
   `);
-  const expected = await transaction.execute<{ expected_business_days: number }>(sql`
+  const expectedPromise = transaction.execute<{ expected_business_days: number }>(sql`
     with station_start as (
       select s.id,
         greatest(
@@ -1209,6 +1234,11 @@ async function readDaily(
     select coalesce(sum(greatest(0, (to_date - from_date) + 1)), 0)::int as expected_business_days
     from station_start
   `);
+  const [rows, paymentsByDate, expected] = await Promise.all([
+    rowsPromise,
+    paymentsPromise,
+    expectedPromise,
+  ]);
   return {
     expectedBusinessDays: Number(expected[0]?.expected_business_days ?? 0),
     rows: rows.map((row) => ({
@@ -1216,6 +1246,7 @@ async function readDaily(
       stationId: row.station_id,
       stationCode: row.station_code,
       litresSold: formatLitres(row.litres),
+      unit: combineQuantityUnits((row.units ?? []).map(asUnit)),
       salesValue: formatMoney(row.sales_value),
       paymentBreakdown: paymentsByDate
         .filter(
@@ -1501,7 +1532,8 @@ async function readMissingReportDays(
   transaction: ReportingTransaction,
   filters: ManagementReportQuery,
 ): Promise<readonly MissingReportDay[]> {
-  const stationRows = await transaction.execute<{
+  // None of the three reads needs another's answer, so they go out together.
+  const stationRowsPromise = transaction.execute<{
     station_id: string;
     go_live: string;
     today: string;
@@ -1521,8 +1553,7 @@ async function readMissingReportDays(
       and s.status in ('ACTIVE', 'ONBOARDING')
       ${stationClause('s', filters.stationIds, 'id')}
   `);
-  if (stationRows.length === 0) return [];
-  const submitted = await transaction.execute<{
+  const submittedPromise = transaction.execute<{
     station_id: string;
     business_date: string;
     shift_template: string;
@@ -1537,9 +1568,15 @@ async function readMissingReportDays(
       and r.state in ('SUBMITTED', 'APPROVED', 'POSTED', 'LOCKED')
       ${stationClause('r', filters.stationIds)}
   `);
-  const grace = await transaction.execute<{ report_grace_days: number }>(sql`
+  const gracePromise = transaction.execute<{ report_grace_days: number }>(sql`
     select report_grace_days from app.alert_settings where tenant_id = ${filters.tenantId}
   `);
+  const [stationRows, submitted, grace] = await Promise.all([
+    stationRowsPromise,
+    submittedPromise,
+    gracePromise,
+  ]);
+  if (stationRows.length === 0) return [];
   const today = stationRows.map((row) => row.today).sort()[0]!;
   return findMissingReportDays({
     stations: stationRows.map((row) => ({
@@ -1583,6 +1620,11 @@ export async function getDailyOperationsFromRequest(
         await selectedStations(transaction, filters),
         'report.view',
       );
+    // Independent reads on one connection go out together instead of one round trip each.
+    const [daily, missingReportDays] = await Promise.all([
+      readDaily(transaction, filters),
+      readMissingReportDays(transaction, filters),
+    ]);
     return {
       report: 'DAILY_OPERATIONS' as const,
       state: 'POSTED' as const,
@@ -1593,8 +1635,8 @@ export async function getDailyOperationsFromRequest(
         toDate: filters.toDate,
       },
       dateBasis,
-      ...(await readDaily(transaction, filters)),
-      missingReportDays: await readMissingReportDays(transaction, filters),
+      ...daily,
+      missingReportDays,
     };
   });
 }

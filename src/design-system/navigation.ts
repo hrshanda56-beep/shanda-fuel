@@ -23,12 +23,15 @@ export type NavigationKey =
   | 'customers'
   | 'staff-benefit'
   | 'suppliers'
+  | 'transporters'
   | 'purchasing'
   | 'expenses'
+  | 'sales-documents'
   | 'profitability'
   | 'fuel-deliveries'
   | 'payments-due'
   | 'reports'
+  | 'zera-returns'
   | 'settings';
 
 export type NavigationSectionKey =
@@ -121,7 +124,7 @@ export const navigationSections: readonly NavigationSection[] = [
         key: 'reconciliations',
         label: 'Reconciliations',
         searchLabel: 'Reconciliations',
-        icon: 'check-circle',
+        icon: 'scale',
         destination: { kind: 'station-route', segment: 'reconciliations' },
         availability: 'station-context',
         match: [
@@ -133,7 +136,7 @@ export const navigationSections: readonly NavigationSection[] = [
         key: 'inventory',
         label: 'Inventory',
         searchLabel: 'Inventory',
-        icon: 'inbox',
+        icon: 'tank',
         destination: { kind: 'route', path: '/inventory/valuation' },
         availability: 'active',
         match: [/^\/inventory(?!\/deliveries)(\/|$)/],
@@ -167,7 +170,7 @@ export const navigationSections: readonly NavigationSection[] = [
         key: 'cash',
         label: 'Cash & Banking',
         searchLabel: 'Cash & Banking',
-        icon: 'wallet',
+        icon: 'bank',
         destination: { kind: 'station-route', segment: 'cash' },
         availability: 'station-context',
         match: [/^\/cash(\/|$)/, /^\/stations\/[^/]+\/cash(\/|$)/],
@@ -176,7 +179,7 @@ export const navigationSections: readonly NavigationSection[] = [
         key: 'settlements',
         label: 'Provider payouts',
         searchLabel: 'Provider payouts',
-        icon: 'wallet',
+        icon: 'card',
         destination: { kind: 'station-route', segment: 'settlements' },
         availability: 'station-context',
         match: [/^\/settlements(\/|$)/, /^\/stations\/[^/]+\/settlements(\/|$)/],
@@ -185,10 +188,19 @@ export const navigationSections: readonly NavigationSection[] = [
         key: 'expenses',
         label: 'Expenses',
         searchLabel: 'Expenses',
-        icon: 'receipt',
+        icon: 'dollar',
         destination: { kind: 'route', path: '/expenses' },
         availability: 'active',
         match: [/^\/expenses(\/|$)/],
+      },
+      {
+        key: 'sales-documents',
+        label: 'Quotes & invoices',
+        searchLabel: 'Quotes & invoices',
+        icon: 'receipt',
+        destination: { kind: 'route', path: '/sales-documents' },
+        availability: 'active',
+        match: [/^\/sales-documents(\/|$)/],
       },
       {
         key: 'profitability',
@@ -212,7 +224,7 @@ export const navigationSections: readonly NavigationSection[] = [
         key: 'staff-benefit',
         label: 'Staff fuel benefit',
         searchLabel: 'Staff fuel benefit',
-        icon: 'users',
+        icon: 'nozzle',
         destination: { kind: 'route', path: '/customers/staff-benefit' },
         availability: 'active',
         match: [/^\/customers\/staff-benefit(\/|$)/],
@@ -222,22 +234,31 @@ export const navigationSections: readonly NavigationSection[] = [
   {
     key: 'suppliers',
     label: 'Suppliers',
-    icon: 'truck',
+    icon: 'factory',
     items: [
       {
         key: 'suppliers',
         label: 'Suppliers',
         searchLabel: 'Suppliers',
-        icon: 'truck',
+        icon: 'factory',
         destination: { kind: 'route', path: '/suppliers' },
         availability: 'active',
-        match: [/^\/suppliers(?!\/due)(\/|$)/],
+        match: [/^\/suppliers(?!\/(due|transporters)(\/|$))(\/|$)/],
+      },
+      {
+        key: 'transporters',
+        label: 'Transporters',
+        searchLabel: 'Transporters',
+        icon: 'truck',
+        destination: { kind: 'route', path: '/suppliers/transporters' },
+        availability: 'active',
+        match: [/^\/suppliers\/transporters(\/|$)/],
       },
       {
         key: 'payments-due',
         label: 'Payments due',
         searchLabel: 'Payments due',
-        icon: 'wallet',
+        icon: 'calendar',
         destination: { kind: 'route', path: '/suppliers/due' },
         availability: 'active',
         match: [/^\/suppliers\/due(\/|$)/],
@@ -246,7 +267,7 @@ export const navigationSections: readonly NavigationSection[] = [
         key: 'purchasing',
         label: 'Purchase orders',
         searchLabel: 'Purchase orders',
-        icon: 'inbox',
+        icon: 'clipboard-check',
         destination: { kind: 'route', path: '/purchasing' },
         availability: 'active',
         match: [/^\/purchasing(\/|$)/],
@@ -260,12 +281,22 @@ export const navigationSections: readonly NavigationSection[] = [
     items: [
       {
         key: 'reports',
-        label: 'Reports',
-        searchLabel: 'Reports',
+        label: 'All reports',
+        searchLabel: 'All reports',
         icon: 'chart',
         destination: { kind: 'route', path: '/reports' },
         availability: 'active',
-        match: [/^\/reports(\/|$)/],
+        // The ZERA return has its own entry below, so it does not light up this one.
+        match: [/^\/reports(?!\/zera-return)(\/|$)/],
+      },
+      {
+        key: 'zera-returns',
+        label: 'ZERA Returns',
+        searchLabel: 'ZERA Returns',
+        icon: 'clipboard-check',
+        destination: { kind: 'route', path: '/reports/zera-return' },
+        availability: 'active',
+        match: [/^\/reports\/zera-return(\/|$)/],
       },
     ],
   },

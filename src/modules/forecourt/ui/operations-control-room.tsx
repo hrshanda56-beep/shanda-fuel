@@ -3,7 +3,7 @@
 import { useReverification } from '@clerk/nextjs';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConfirm } from '../../../design-system/feedback-provider';
+import { OWN_ERRORS_HEADER, useConfirm } from '../../../design-system/feedback-provider';
 import {
   Button,
   Card,
@@ -52,6 +52,7 @@ type Overview = {
     StartShift: ActionAvailability;
     CloseMeters: ActionAvailability;
     CompleteShift: ActionAvailability;
+    MarkNotOperated?: ActionAvailability;
   };
   businessDays: Array<{
     id: string;
@@ -69,6 +70,7 @@ type Overview = {
     version: number;
     openedAt: string | null;
     closedAt: string | null;
+    enteredLate?: boolean;
   };
   shiftTemplates?: Array<{
     id: string;
@@ -259,6 +261,8 @@ export function OperationsControlRoom({
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  // Someone running the shift sees one question at a time; the full day summary is one tap away.
+  const [showSummary, setShowSummary] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
   const idempotencyKeys = useRef(new Map<string, string>());
   // One id per visit, so retrying the first shift's opening cannot create two shifts.
@@ -332,6 +336,7 @@ export function OperationsControlRoom({
       headers: {
         'content-type': 'application/json',
         'idempotency-key': stableIdempotencyKey(commandType, values, subjectId),
+        [OWN_ERRORS_HEADER]: '1',
       },
       body: JSON.stringify({ commandType, ...values }),
     });
@@ -357,7 +362,7 @@ export function OperationsControlRoom({
   }
 
   function fixLinkFor(message: string) {
-    const fix = dailyOperationsLinkFix(message);
+    const fix = dailyOperationsLinkFix(message, context.stationId);
     return fix ? (
       <Link className="button button-primary" href={fix.href}>
         {fix.label}
@@ -525,6 +530,10 @@ export function OperationsControlRoom({
 
   const day = overview.selectedBusinessDay;
   const usedTemplates = new Set(overview.shifts.map((shift) => shift.shiftTemplateId));
+  // The main card already offers Close Shift; the list only repeats it when several shifts need closing.
+  const closableCount = overview.shifts.filter(
+    (shift) => shift.state === 'OPEN' || shift.state === 'METER_CLOSED',
+  ).length;
   const unusedTemplates = (overview.shiftTemplates ?? []).filter(
     (template) => !usedTemplates.has(template.id),
   );
@@ -540,6 +549,10 @@ export function OperationsControlRoom({
   // there is something for them to do on it: a closed day they may lock.
   const showDayCard =
     canRunShift(overview) || (day?.state === 'CLOSED' && lockBusinessDay.permissionGranted);
+  // Someone who runs the shift gets one "next step" button (it also opens the day and starts the
+  // shift), so the page does not offer the same jobs again as separate buttons.
+  const oneNextStep = canRunShift(overview);
+  const wizardOnly = oneNextStep && !showSummary;
   const shiftsForDay = day ? overview.shifts : [];
   const reviewHref = (reconciliationId: string, shiftId: string) =>
     day
@@ -555,11 +568,12 @@ export function OperationsControlRoom({
   return (
     <div className="operations-control-room" aria-label="Operations control room">
       {focus === 'operations' ? (
-        <div className="ops-top">
-          {showDayCard ? (
+        <div className={wizardOnly ? 'ops-top ops-top--wizard' : 'ops-top'}>
+          {showDayCard && !wizardOnly ? (
             <header className="ops-hero">
               <h2>{formatBusinessDate(day ? day.date : overview.currentBusinessDate)}</h2>
               <div className="ops-hero-side">
+                {day?.enteredLate ? <StatusBadge tone="neutral">Added late</StatusBadge> : null}
                 <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
                   {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
                 </StatusBadge>
@@ -587,17 +601,30 @@ export function OperationsControlRoom({
                     </dl>
                   ) : (
                     <p className="panel-detail">
-                      No business day yet. Open the station’s current business day to begin.
+                      {oneNextStep
+                        ? 'No business day yet. Starting the first shift opens it.'
+                        : 'No business day yet. Open the station’s current business day to begin.'}
                     </p>
                   )}
+                  <p className="panel-detail">
+                    <a
+                      href={`/operations/daily/past-days?${new URLSearchParams({
+                        tenantId: context.tenantId,
+                        stationId: context.stationId,
+                      })}`}
+                    >
+                      Record a past day
+                    </a>
+                  </p>
                   {day && day.state === 'OPEN' && day.date < overview.currentBusinessDate ? (
                     <p className="panel-detail" role="status">
-                      This day is still open. It started on {formatBusinessDate(day.date)} and today
-                      is {formatBusinessDate(overview.currentBusinessDate)}. Close its shifts and
-                      the day so the figures are complete.
+                      ⚠ This day started on {formatBusinessDate(day.date)} and is still open. Close
+                      it below.
                     </p>
                   ) : null}
-                  {(!day || day.state === 'NOT_STARTED') && openBusinessDay.canExecute ? (
+                  {!oneNextStep &&
+                  (!day || day.state === 'NOT_STARTED') &&
+                  openBusinessDay.canExecute ? (
                     <Button
                       variant="primary"
                       disabled={busy}
@@ -641,16 +668,28 @@ export function OperationsControlRoom({
                       Lock business day
                     </Button>
                   ) : null}
-                  {day?.state === 'CLOSED' && overview.lockBlockedReason ? (
-                    <p className="semantic-note" role="status" data-testid="lock-blocked-reason">
-                      <strong>Not ready to lock.</strong> {overview.lockBlockedReason}
-                    </p>
+                  {day?.state === 'CLOSED' && lockBusinessDay.permissionGranted ? (
+                    <div className="ops-hero-lock-note">
+                      {overview.lockBlockedReason ? (
+                        <p role="status" data-testid="lock-blocked-reason">
+                          <strong>Not ready to lock.</strong> {overview.lockBlockedReason}
+                        </p>
+                      ) : (
+                        <p>Locking is permanent.</p>
+                      )}
+                      <InfoTip>
+                        <strong>Locking is permanent.</strong> After it, a change needs a recorded
+                        correction.
+                      </InfoTip>
+                    </div>
                   ) : null}
-                  {day?.state === 'CLOSED' ? (
-                    <InfoTip>
-                      <strong>Locking is permanent.</strong> After it, a change needs a recorded
-                      correction.
-                    </InfoTip>
+                  {oneNextStep ? (
+                    <Link
+                      className="text-link"
+                      href={`/settings?${new URLSearchParams({ tab: 'stations', setup: context.stationId, focus: 'prices' }).toString()}`}
+                    >
+                      Change a price
+                    </Link>
                   ) : null}
                 </div>
               ) : null}
@@ -662,6 +701,26 @@ export function OperationsControlRoom({
             stationId={context.stationId}
             onChanged={() => void load()}
           />
+          {wizardOnly ? (
+            <div className="ops-wizard-links">
+              <Link
+                className="text-link"
+                href={`/settings?${new URLSearchParams({ tab: 'stations', setup: context.stationId, focus: 'prices' }).toString()}`}
+              >
+                Change a price
+              </Link>
+              <button type="button" className="text-link" onClick={() => setShowSummary(true)}>
+                View today’s summary
+              </button>
+            </div>
+          ) : null}
+          {oneNextStep && showSummary ? (
+            <div className="ops-wizard-links">
+              <button type="button" className="text-link" onClick={() => setShowSummary(false)}>
+                Back to the next step
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -734,7 +793,7 @@ export function OperationsControlRoom({
         )
       ) : null}
 
-      {focus === 'operations' ? (
+      {focus === 'operations' && !wizardOnly ? (
         <div className="operations-layout">
           <div className="operations-layout-main">
             {focus === 'operations' ? (
@@ -754,12 +813,14 @@ export function OperationsControlRoom({
                           : 'No shift has been opened yet. Opening the first shift also opens the business day.'
                       }
                     />
-                    <ShiftPrerequisite
-                      dayOpen={canOpenFirstShift}
-                      canOpenDay={openBusinessDay.canExecute}
-                      canStartShift={overview.actions.StartShift.canExecute}
-                    />
-                    {canOpenFirstShift && overview.actions.StartShift.canExecute ? (
+                    {oneNextStep ? null : (
+                      <ShiftPrerequisite
+                        dayOpen={canOpenFirstShift}
+                        canOpenDay={openBusinessDay.canExecute}
+                        canStartShift={overview.actions.StartShift.canExecute}
+                      />
+                    )}
+                    {!oneNextStep && canOpenFirstShift && overview.actions.StartShift.canExecute ? (
                       <OpenFirstShift
                         templates={overview.shiftTemplates ?? []}
                         busy={busy}
@@ -813,7 +874,9 @@ export function OperationsControlRoom({
                             {formatStatusLabel(shift.state)}
                           </StatusBadge>
                           <div className="inline-links">
-                            {shift.state === 'PLANNED' && overview.actions.StartShift.canExecute ? (
+                            {!oneNextStep &&
+                            shift.state === 'PLANNED' &&
+                            overview.actions.StartShift.canExecute ? (
                               <Button
                                 variant="secondary"
                                 disabled={busy}
@@ -834,7 +897,9 @@ export function OperationsControlRoom({
                                 Start shift
                               </Button>
                             ) : null}
-                            {shift.state === 'OPEN' && overview.actions.CloseMeters.canExecute ? (
+                            {shift.state === 'OPEN' &&
+                            overview.actions.CloseMeters.canExecute &&
+                            closableCount > 1 ? (
                               <Button
                                 variant="secondary"
                                 disabled={busy}
@@ -852,7 +917,8 @@ export function OperationsControlRoom({
                               </Button>
                             ) : null}
                             {shift.state === 'METER_CLOSED' &&
-                            overview.actions.CompleteShift.canExecute ? (
+                            overview.actions.CompleteShift.canExecute &&
+                            closableCount > 1 ? (
                               <Button
                                 variant="secondary"
                                 disabled={busy}
@@ -875,7 +941,8 @@ export function OperationsControlRoom({
                     })}
                   </div>
                 )}
-                {day?.state === 'OPEN' &&
+                {!oneNextStep &&
+                day?.state === 'OPEN' &&
                 overview.shifts.length > 0 &&
                 !overview.shifts.some(
                   (item) => item.state === 'OPEN' || item.state === 'METER_CLOSED',

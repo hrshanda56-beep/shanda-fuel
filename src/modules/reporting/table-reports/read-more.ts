@@ -1,3 +1,4 @@
+import { quantityUnitLabel } from '../../../design-system/formatters';
 import 'server-only';
 
 import { sql, type SQL } from 'drizzle-orm';
@@ -8,6 +9,7 @@ import type { TableReportReader } from './read';
 import { equalsClause, reconciliationNarrowing } from './read-extra';
 import { buildStationDailyRows, type DailyReportExpense } from './station-daily-report';
 import { stockVarianceRow, tankWithoutDipRow } from './stock-variance';
+import { productOrderSql } from '../../../platform/domain/product-order-sql';
 
 const limit = sql.raw(String(TABLE_REPORT_ROW_LIMIT + 1));
 
@@ -29,13 +31,14 @@ export const readSalesByPeriod: TableReportReader = async (transaction, filters)
     month: string;
     station: string;
     product: string;
+    unit: string;
     litres: string;
     sales: string;
   }>(sql`
     select bd.business_date::text as date,
       to_char(date_trunc('week', bd.business_date::date), 'YYYY-MM-DD') as week_starting,
       to_char(bd.business_date::date, 'YYYY-MM') as month,
-      st.name as station, p.name as product,
+      st.name as station, p.name as product, p.unit as unit,
       sum(mr.litres_sold)::text as litres, sum(mr.sales_value)::text as sales
     from app.reconciliation_meter_readings mr
     join app.reconciliations r
@@ -53,8 +56,8 @@ export const readSalesByPeriod: TableReportReader = async (transaction, filters)
       ${equalsClause('mr.product_id::text', filters.productId)}
       ${equalsClause('sh.shift_template_id::text', filters.shiftTemplateId)}
       ${reconciliationNarrowing('r', filters)}
-    group by bd.business_date, st.name, p.name
-    order by bd.business_date desc, st.name, p.name
+    group by bd.business_date, st.name, p.name, p.unit, p.display_order, p.kind
+    order by bd.business_date desc, st.name, ${productOrderSql('p')}
     limit ${limit}
   `);
   return rows.map((row) => ({
@@ -63,6 +66,7 @@ export const readSalesByPeriod: TableReportReader = async (transaction, filters)
     month: row.month,
     station: row.station,
     product: row.product,
+    unit: quantityUnitLabel(row.unit),
     litres: row.litres,
     sales: row.sales,
   }));
@@ -74,6 +78,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     station: string;
     tank: string;
     product: string;
+    unit: string;
     physical: string;
     expected: string;
     variance: string;
@@ -81,7 +86,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     red: string | null;
     day_approved: boolean;
   }>(sql`
-    select d.business_date::text as date, s.name as station, t.code as tank, p.name as product,
+    select d.business_date::text as date, s.name as station, t.code as tank, p.name as product, p.unit as unit,
       d.physical_litres::text as physical,
       coalesce(book.expected, 0)::text as expected,
       (d.physical_litres - coalesce(book.expected, 0))::text as variance,
@@ -118,10 +123,11 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     station: string;
     tank: string;
     product: string;
+    unit: string;
     tolerance: string | null;
     red: string | null;
   }>(sql`
-    select s.name as station, t.code as tank, p.name as product,
+    select s.name as station, t.code as tank, p.name as product, p.unit as unit,
       t.acceptable_variance_litres::text as tolerance, t.variance_red_litres::text as red
     from app.tanks t
     join app.stations s on s.tenant_id = t.tenant_id and s.id = t.station_id
@@ -142,6 +148,7 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
         station: row.station,
         tank: row.tank,
         product: row.product,
+        unit: row.unit,
         physical: row.physical,
         expected: row.expected,
         variance: row.variance,

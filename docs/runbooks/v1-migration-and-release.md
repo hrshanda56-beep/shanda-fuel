@@ -1,8 +1,12 @@
 # v1 migration runbook and release checklist (DRAFT, not executed)
 
-**Updated 2026-11-01** for `main` at `6e4bb214`: 88 migrations, 0000 to 0102 (0098 to 0102 added 2026-11-02). Production's own count is not known from the repository: read it first (section 4, step 2).
+**Updated 2026-11-01** for `main` at `6e4bb214`: 95 migrations, 0000 to 0110 (no 0104) (0098 to 0102 added 2026-11-02, 0103 on 2026-11-11, 0105 to 0108 on 2026-11-16/17, 0109 and 0110 on 2026-11-18 with the sales-documents module). Production's own count is not known from the repository: read it first (section 4, step 2).
 
-> **Urgent, 2026-11-01:** the application code for 0087 to 0097 is already live, but those migrations are not recorded as applied to production. **0097 is required**: without it the app's database role cannot approve a reconciliation that has pump readings (the validation triggers fail with "permission denied"). Apply 0084 to 0102 in order after reading production's level (section 4, step 2).
+> **Update 2026-11-19: 0111 is applied, production is at 96 migrations (see the 0111 record in section 7).**
+>
+> **Production state, reported 2026-11-18** by the project owner after running the migrations themselves (this repository has no connection to production, and the row count and hashes below were not read back by the assistant): **0106 to 0110 are applied, so production is at 95 migrations, ending at 0110**. Before that run it was at 90, ending at 0105 (read 2026-11-17, Neon console; ids 85 to 90 carried the hashes of 0099, 0100, 0101, 0102, 0103 and 0105). Release record: section 7 should hold the restore point, the times and the verified count and newest hash (`042ff5b6…`) once the owner fills them in. 0104 does not exist.
+
+> **Sales documents (merged 2026-11-18 as PR #241, commit `ad36e109`).** Vercel deployed that commit to production at 15:58 UTC, before the migrations ran, so the Sales Documents screens had no tables until 0109 and 0110 were applied. This is the reverse of the intended order (migrate, then deploy); a merge to `main` **does** auto-deploy to production, so for any future migration the migration must be applied from the pull-request branch **before** merging.
 
 **Written for:** the person who will run the production release (the owner or the operator they name).
 **Status:** draft for review. Nothing in this file has been run. No production system was contacted.
@@ -81,27 +85,35 @@ that was reviewed.
 | 0081 | expense_payment_method | How an expense was paid (`payment_method`) | Merged to `main` (PR #167); applied to production 2026-10-27 |
 | 0082 | tank_variance_red | Red variance limit per tank (`variance_red_litres`) | Merged to `main` (PR #167); applied to production 2026-10-27 |
 | 0083 | provider_account_fees | Fee percent and fixed fee per payment account; expected fee on settlements | Merged to `main` (PR #167); applied to production 2026-10-27 |
-| 0084 | opening_balance_import | Go-live opening balances: a reviewed, approved, then locked CSV batch (`opening_balance_batches`, `opening_balance_lines`) | Not applied to production. New tables only, with RLS |
-| 0085 | supervisor_permissions | Supervisor role: `report.finance.view`, `expense.approve.any_amount`, station-level staff and activity views, supervisor expense approval limit, `app.station_staff_directory` | Not applied to production. Adds permission rows, one nullable column and one definer function |
-| 0086 | supplier_payment_bank_account | Supplier payment method and optional tenant-scoped bank account for bank payments | Not applied to production. Additive nullable field, validation constraint, foreign key and index |
-| 0087 | reconciliation_approver_notes | Approval note on a reconciliation (needed for a red stock variance); a tank dip can be voided with who, when and why | Not applied to production. Additive nullable columns and a foreign key |
-| 0088 | reconciliation_metric_snapshot | The computed figures are stored with a submitted reconciliation so approval can detect stale source facts | Not applied to production. One nullable column |
-| 0089 | hardening_guards | Database refuses: confirming a deposit without a slip, editing meter boundaries (except linking a price change), moving a shift to another station or day | Not applied to production. No new tables or columns; replaces/adds trigger functions. Existing rows must already satisfy these rules |
-| 0090 | station_attendants | Lists attendants at a station for supervisors, who cannot read membership rows under RLS | Not applied to production. New definer function |
-| 0091 | other_station_attendants | Lists attendants assigned to the organisation's other stations, for cover shifts | Not applied to production. New definer function |
-| 0092 | shift_no_duplicates_or_overlap | Database refuses duplicate or overlapping shifts | Not applied to production. **Check production for existing duplicate or overlapping shifts first**; the migration can fail on them |
-| 0093 | deposit_confirmation_details | Optional bank date and difference reason on deposits | Not applied to production. Nullable columns; existing deposits keep NULL |
-| 0094 | extra_roles | Three new roles, including a read-only AUDITOR, built from existing permission codes | Not applied to production. Adds role and permission-grant rows, no new permission codes |
-| 0095 | delivery_draft_edit | The app role may update a draft delivery's single allocation row (tank, litres) | Not applied to production. Grant change only |
-| 0096 | reconciliation_submitter | Lets Finance and the owner see who submitted a day (name and time only, to people who can view reconciliations) | Not applied to production. New SECURITY DEFINER function owned by `migration_owner` |
+| 0084 | opening_balance_import | Go-live opening balances: a reviewed, approved, then locked CSV batch (`opening_balance_batches`, `opening_balance_lines`) | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). New tables only, with RLS |
+| 0085 | supervisor_permissions | Supervisor role: `report.finance.view`, `expense.approve.any_amount`, station-level staff and activity views, supervisor expense approval limit, `app.station_staff_directory` | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). Adds permission rows, one nullable column and one definer function |
+| 0086 | supplier_payment_bank_account | Supplier payment method and optional tenant-scoped bank account for bank payments | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). Additive nullable field, validation constraint, foreign key and index |
+| 0087 | reconciliation_approver_notes | Approval note on a reconciliation (needed for a red stock variance); a tank dip can be voided with who, when and why | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). Additive nullable columns and a foreign key |
+| 0088 | reconciliation_metric_snapshot | The computed figures are stored with a submitted reconciliation so approval can detect stale source facts | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). One nullable column |
+| 0089 | hardening_guards | Database refuses: confirming a deposit without a slip, editing meter boundaries (except linking a price change), moving a shift to another station or day | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). No new tables or columns; replaces/adds trigger functions. Existing rows must already satisfy these rules |
+| 0090 | station_attendants | Lists attendants at a station for supervisors, who cannot read membership rows under RLS | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). New definer function |
+| 0091 | other_station_attendants | Lists attendants assigned to the organisation's other stations, for cover shifts | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). New definer function |
+| 0092 | shift_no_duplicates_or_overlap | Database refuses duplicate or overlapping shifts | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). **Check production for existing duplicate or overlapping shifts first**; the migration can fail on them |
+| 0093 | deposit_confirmation_details | Optional bank date and difference reason on deposits | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). Nullable columns; existing deposits keep NULL |
+| 0094 | extra_roles | Three new roles, including a read-only AUDITOR, built from existing permission codes | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). Adds role and permission-grant rows, no new permission codes |
+| 0095 | delivery_draft_edit | The app role may update a draft delivery's single allocation row (tank, litres) | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). Grant change only |
+| 0096 | reconciliation_submitter | Lets Finance and the owner see who submitted a day (name and time only, to people who can view reconciliations) | Applied to production (production holds 90 migrations as read 2026-11-17, so these are present; the owner's 2026-11-03 record in PR #214 checked every hash). New SECURITY DEFINER function owned by `migration_owner` |
 | 0097 | approval_trigger_locks | Six validation trigger functions become SECURITY DEFINER (fixed search path, owned by `migration_owner`) | **Required.** Without it no reconciliation with pump readings can be approved as `app_runtime`. Needs the `migration_owner` role (stops with an error if absent). No new table rights for `app_runtime` |
 | 0098 | attendant_eligibility | New yes/no SECURITY DEFINER function `app.is_station_attendant` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only) so a station supervisor can name another attendant | **Required for station supervisors/administrators** to hand over shifts, capture meter boundaries and report meter exceptions naming someone else. Changes no row visibility and no table rights |
 | 0099 | deposit_confirmation_grants | `GRANT UPDATE (bank_date, confirmation_reason) ON app.bank_deposits` to `app_runtime` | **Required.** Without it no bank deposit can be confirmed as `app_runtime` (0093 added the columns without the grant) |
 | 0100 | member_directory | New SECURITY DEFINER function `app.member_directory(tenant)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only): member id, display name, status and "can sign in" for the caller's own organisation, to active members only. No email | **Required for station-level staff** to see people's names, pick an owner/administrator as customer approver, and for a station-level owner not to be treated as sole owner. Changes no row visibility and no table rights |
 | 0101 | staff_access_replace | New SECURITY DEFINER function `app.clear_membership_assignments(tenant, membership)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only); callable only by a tenant-wide owner or administrator of that organisation; removes one member's assignments there. No table DELETE right is granted | **Required.** Without it "Change access" for a staff member fails with "permission denied" for everyone (the command replaces assignments by delete and insert). `db.smoke` still asserts the application role has no other deletes |
 | 0102 | staff_remove | New nullable column `app.memberships.removed_at`; new SECURITY DEFINER function `app.remove_staff_membership(tenant, membership)` (fixed search path, owned by `migration_owner`, EXECUTE for `app_runtime` only); callable only by a tenant-wide owner or administrator, for a deactivated member other than themself; erases a member with no records, otherwise sets `removed_at` to hide them. No table DELETE right is granted | **Required for the Remove button** on deactivated staff. Without it, Remove fails; nothing else is affected |
+| 0103 | staff_invitation_roles | Replaces one check constraint, `staff_invitations_scope_ck`, so invitations accept AUDITOR (company-wide) and AREA_MANAGER / CASH_COLLECTOR (selected stations). No table, policy, grant or data change | **Required for inviting those three roles.** Without it the invite fails with a check violation (500). Applied to the Neon development database on 2026-11-11; not applied to production |
+| 0105 | supervisor_price_request | Grants `price.change.request` to SUPERVISOR and AREA_MANAGER in `platform.role_permissions` (supervisors ask for a price change; owner/administrator still approve and activate). Data only, `ON CONFLICT DO NOTHING` | Applied to production (confirmed 2026-11-17: migration table id 90 has this file's hash, and `price.change.request` is held by SUPERVISOR and AREA_MANAGER). Recorded as DEC-052 (merged in PR #233) |
+| 0106 | product_unit | Adds `unit text NOT NULL DEFAULT 'LITRES'` to `app.products` with check `products_unit_check` (LITRES or KILOGRAMS). Existing rows take the default; RLS/grants/triggers unchanged | Applied to production (reported by the owner, 2026-11-18). Merged in PR #234 |
+| 0107 | finance_no_day_lock | Deletes the FINANCE `business_day.lock` row seeded by 0003 from `platform.role_permissions`, matching `permissions.ts`. Data only | Applied to production (reported by the owner, 2026-11-18). Merged in PR #234 |
+| 0108 | product_kind_order | Adds nullable `kind`, `blend_percent`, `display_order` to `app.products` with three check constraints, so fuels list Diesel, Petrol/Blend, Gas. Existing rows stay NULL; no backfill, RLS/grants/triggers unchanged | Applied to production (reported by the owner, 2026-11-18). Additive nullable columns |
+| 0109 | sales_documents | Quotations, invoices and receipts: new tables `sales_doc_profiles`, `sales_doc_counters`, `sales_documents`, `sales_document_lines`, a state-guard trigger and an append-only trigger on lines, Force RLS with tenant-context policies, grants to `app_runtime`, ownership to `migration_owner`. Inserts five `sales_document.*` permission definitions and grants them to OWNER, ADMINISTRATOR, FINANCE (no void or profile edit) and AUDITOR (view only), with `ON CONFLICT DO NOTHING` | Applied to production (reported by the owner, 2026-11-18). New tables and permission rows only; no existing table is changed |
+| 0110 | sales_doc_branding | Adds nullable `logo_jpeg_base64` and `brand_colour` to `app.sales_doc_profiles` with two check constraints (`sales_doc_profiles_logo_ck`, `sales_doc_profiles_colour_ck`). Existing rows stay NULL | Applied to production (reported by the owner, 2026-11-18). Additive nullable columns on a table created by 0109 |
+| 0111 | expense_payment_other | Lets an expense be paid with Other: replaces `expenses_payment_method_ck` to also allow `OTHER`, adds nullable `payment_method_other` (text, max 60) with `expenses_payment_method_other_ck` (required when OTHER, null otherwise). Existing rows unchanged | **Applied to production 2026-11-19** by the owner from a clean checkout of `38f971c6`; count 96, hash verified, RLS forced, owner `migration_owner`. Additive, so the previous release keeps working until the merge |
 
-The journal in `src/platform/db/migrations/meta/_journal.json` lists 88 entries, 0000 to 0102 (the
+The journal in `src/platform/db/migrations/meta/_journal.json` lists 95 entries, 0000 to 0110 (no 0104) (the
 numbers 0050 to 0054, 0056 to 0059, 0062 to 0064 and 0067 to 0069 were reserved and not used; that is
 expected). Migration `0047` to `0049` were renumbered during consolidation; none had been
 applied anywhere, so no environment holds the old numbers. If a staging database was ever migrated
@@ -272,6 +284,14 @@ e1f7397c5cbdad9dd403ffe9f3559d73f41dbd1a575cb05cc4716d60efd562d3  0090_station_a
 d050f34732c8c791ecee6dc29011f6cb7a4aa0826bd7476322690f74fd2a0797  0100_member_directory.sql
 e05eca7376ca738a1c246ec9b42daadfdd7e85d12b85780a822bc96e7bb02dc8  0101_staff_access_replace.sql
 f789ca29da899a2037ae6175554a5305ddb9e250d3e9fd6f4de0827980916081  0102_staff_remove.sql
+4408eba79cbd0cd7e85fe92cdc2fb8da8c79f4cc9c25b5adde743f899cf0b1fc  0103_staff_invitation_roles.sql
+42231b17d16b5414f5f4bcd4de8d507a449be3cafd0a978bef39ca74c3008972  0105_supervisor_price_request.sql
+1bc24c23449ec2422f137e6fe217d40ae518b91e7b8a4d1504c1f3d929ee692b  0106_product_unit.sql
+9cd5e961060d24a604af90405de3907a2cac45e9c531ecfa36a3d983b0c51e41  0107_finance_no_day_lock.sql
+7fb5098b54d2e5bf78886bcc99f78b5ebbee289d4a84778d00e0d340232dcad4  0108_product_kind_order.sql
+b1f651a7403372aabe7adf85a0f41a49bf0137a97edff3681fb121e5e0b2be6a  0109_sales_documents.sql
+042ff5b6b38d26cc6ca5600b480c2693f338a778c3bf53f443aff96688777dd2  0110_sales_doc_branding.sql
+9a864fd3e428b0f0e9f28cfcfcdc54d9cb7753e1bd89b764ac7ec9de09c65b7a  0111_expense_payment_other.sql
 ```
 
 ## 7. Release record (copy this and fill it in)
@@ -312,4 +332,45 @@ Vercel deployment ID:          (to fill in; Vercel deployments were rate limited
 Smoke test passed (time, who): (to fill in)
 Reopened to staff (time):      (to fill in)
 Problems found:                none during the migration
+```
+
+### Record: migration 0111 expense_payment_other (2026-11-19)
+
+Migration only. The merge of PR #245, the smoke test and reopening are still to be recorded.
+
+```
+Migration date:                2026-11-19
+Migrations commit (full SHA):  38f971c6827c3a864b0a435254170b311cb32320 (fresh clone of branch wizzard; 0111 hash checked against section 6)
+Operator:                      Project owner (hidden-prompt DATABASE_DIRECT_URL, cleared afterwards)
+Production migration count before: 95 (newest 0110, hash 042ff5b6...)   after: 96 (newest id 96, hash 9a864fd3...c65b7a)
+Last migration tag after:      0111_expense_payment_other
+Restore point identifier:      restore-point-2026-11-19 (Neon branch, set to never auto-delete)
+Verified after: payment_method_other column present; both expense payment checks present; RLS enabled and
+  forced on app.expenses; table owner migration_owner, not app_runtime.
+Merged to main:                (to fill in)
+Smoke test passed (time, who): (to fill in: create an expense paid with Other)
+Reopened to staff (time):      (to fill in)
+Problems found:                none during the migration
+```
+
+### Record: migrations 0117 to 0119 app_logo, station_zera_licence, zera_returns (2026-11-21)
+
+Migrations only. The live smoke test of the new features is still to be recorded.
+
+```
+Migration date:                2026-11-21
+Migrations commit (full SHA):  30b3f319 (clean detached checkout of main; file hashes checked against the repo)
+  0117 sha256 bc052dd8...961676, 0118 sha256 a28f9a21...799fe42d, 0119 sha256 69b1b72b...396908
+Operator:                      Project owner (hidden-prompt DATABASE_DIRECT_URL, cleared afterwards)
+Production migration count before: 101   after: 104 (newest id 104)
+Last migration tag after:      0119_zera_returns
+Restore point identifier:      br-divine-glitter-b2u9j2qx (Neon branch from production main, never auto-delete;
+  the owner may delete it once the release has settled)
+Verified after (read-only check, 10 rows, all OK): sales_doc_profiles.app_logo_png_base64 and its check; seven
+  zera_* columns and seven stations_zera_* checks on app.stations; app.zera_returns exists with RLS enabled and
+  forced, owner migration_owner, one policy; app_runtime owns no objects in the app schema.
+Merged to main:                #272 (the code for these migrations was already live before they were applied)
+Smoke test passed (time, who): (to fill in: logo upload, station Zera details save and reopen, Zera return report)
+Reopened to staff (time):      (to fill in)
+Problems found:                none during the migration (two harmless Drizzle NOTICEs: schema and table already exist)
 ```

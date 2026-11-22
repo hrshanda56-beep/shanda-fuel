@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  dayReadyToLock,
   dailyOperationsStatusLabel,
   dailyOperationsStatusTone,
   isEditableDailyOperationsState,
@@ -8,8 +9,40 @@ import {
   mapDailyOperationsError,
   liveLitresSold,
   liveCashFigures,
+  liveSalesValue,
+  liveSalesFigures,
   stepTitle,
 } from './daily-operations-state';
+
+describe('a shift in the way of starting a new one', () => {
+  it('keeps the reason and links to the shift that is in the way', () => {
+    const problem = dailyOperationsProblem(
+      409,
+      'CONFLICT',
+      'The shift of 2026-11-20 is still open.',
+      {
+        tenantId: 't1',
+        stationId: 's1',
+        details: {
+          reason: 'SHIFT_OVERLAP',
+          blockingShiftId: 'sh1',
+          blockingBusinessDayId: 'd1',
+          blockingState: 'OPEN',
+        },
+      },
+    );
+    expect(problem.message).toBe('The shift of 2026-11-20 is still open.');
+    expect(problem.fix).toEqual({
+      kind: 'link',
+      label: 'Open that shift',
+      href: '/operations/daily?tenantId=t1&stationId=s1&businessDayId=d1&shiftId=sh1',
+    });
+  });
+
+  it('still says "changed elsewhere" for an ordinary conflict', () => {
+    expect(dailyOperationsProblem(409, 'CONFLICT', 'x').message).toMatch(/changed elsewhere/);
+  });
+});
 
 describe('liveLitresSold', () => {
   it('is closing minus opening, exactly', () => {
@@ -219,6 +252,53 @@ describe('daily operations problems', () => {
     expect(result.message).not.toMatch(/segment|nozzle|boundary|changed elsewhere/i);
   });
 
+  const NO_READINGS =
+    'Every operated shift requires sealed meter segments and an authoritative terminal meter-close boundary for each participating nozzle';
+
+  it('offers to mark a not-yet-started shift with no attendants as not operated when permitted', () => {
+    const result = dailyOperationsProblem(409, 'CONFLICT', NO_READINGS, {
+      attendantCount: 0,
+      shiftState: 'PLANNED',
+      canMarkNotOperated: true,
+    });
+    expect(result.fix).toEqual({ kind: 'mark-not-operated', label: 'Mark as not operated' });
+    expect(result.message).not.toMatch(/segment|nozzle|boundary|changed elsewhere/i);
+  });
+
+  it('offers no not-operated button when the person is not permitted', () => {
+    const result = dailyOperationsProblem(409, 'CONFLICT', NO_READINGS, {
+      attendantCount: 0,
+      shiftState: 'PLANNED',
+      canMarkNotOperated: false,
+    });
+    expect(result.fix?.kind).not.toBe('mark-not-operated');
+  });
+
+  it('sends an open shift with no attendants to the pump readings, honestly', () => {
+    const result = dailyOperationsProblem(409, 'CONFLICT', NO_READINGS, {
+      attendantCount: 0,
+      shiftState: 'OPEN',
+      canMarkNotOperated: true,
+    });
+    expect(result.fix).toEqual({ kind: 'step', label: 'Go to pump readings', step: 1 });
+    expect(result.message).toContain('submit');
+    expect(result.message).not.toMatch(/not operated/i);
+  });
+
+  it('sends a shift that had attendants to its pump readings', () => {
+    const result = dailyOperationsProblem(409, 'CONFLICT', NO_READINGS, { attendantCount: 2 });
+    expect(result.fix).toEqual({ kind: 'step', label: 'Go to pump readings', step: 1 });
+    expect(result.message).toContain('Close Shift again');
+  });
+
+  it('points to the pump readings when the attendant count is not known', () => {
+    expect(problem(409, 'CONFLICT', NO_READINGS).fix).toEqual({
+      kind: 'step',
+      label: 'Go to pump readings',
+      step: 1,
+    });
+  });
+
   it('keeps the reason the server gives for a shift that cannot be closed', () => {
     const reason =
       'This shift cannot be closed yet: the opening reading for pump 1 nozzle 1 (900) is not where that meter last closed (1000). Correct the opening reading on the Pump readings step, then press Close Shift again.';
@@ -276,5 +356,87 @@ describe('daily operations link fix from message text', () => {
     );
     expect(dailyOperationsLinkFix('Closing meter reading cannot be below opening')).toBeUndefined();
     expect(dailyOperationsLinkFix(undefined)).toBeUndefined();
+  });
+});
+
+describe('liveSalesValue', () => {
+  it('multiplies litres by price exactly', () => {
+    expect(liveSalesValue('11000', '2.02')).toBe('22220.00');
+    expect(liveSalesValue('0.375', '2.0200')).toBe('0.7575000');
+    expect(liveSalesValue('0', '2.02')).toBe('0.00');
+  });
+  it('waits for numbers and rejects negative litres', () => {
+    expect(liveSalesValue(null, '2.02')).toBeNull();
+    expect(liveSalesValue('10', undefined)).toBeNull();
+    expect(liveSalesValue('-5', '2.02')).toBeNull();
+  });
+});
+
+describe('liveSalesFigures', () => {
+  it('moves expected sales with the typed closings and sums typed payments', () => {
+    const figures = liveSalesFigures(
+      '0.00',
+      [
+        { openingReading: '79000', closingReading: '90000', unitPrice: '2.02', salesValue: '0' },
+        { openingReading: '70000', closingReading: '70000', unitPrice: '2.02' },
+      ],
+      [{ amount: '100.00' }, { amount: '' }],
+    );
+    expect(figures).toEqual({ expected: '22220.00', accounted: '100.00', difference: '-22120.00' });
+  });
+});
+
+describe('a pump that is not set up for the shift', () => {
+  it('leads the person to the pump setup, whatever the wording', () => {
+    const problem = dailyOperationsProblem(
+      409,
+      'CONFLICT',
+      'This shift cannot be closed yet: the meter for pump A is not set up.',
+      { details: { reason: 'METER_NOT_SET_UP' } },
+    );
+    expect(problem.fix).toEqual({
+      kind: 'link',
+      label: 'Set the meter start date',
+      href: '/settings?tab=stations',
+    });
+  });
+
+  it("opens that station's setup when the station is known, from the reason or the wording alone", () => {
+    const fromReason = dailyOperationsProblem(409, 'CONFLICT', 'x', {
+      details: { reason: 'METER_NOT_SET_UP', stationId: 'st 1' },
+    });
+    expect(fromReason.fix).toMatchObject({
+      href: '/settings?tab=stations&setup=st%201&focus=meter-start',
+    });
+    const wording =
+      'This shift cannot be closed yet: the meter for pump A nozzle 1 is not set up as working for this shift.';
+    expect(dailyOperationsLinkFix(wording, 'st-1')?.href).toBe(
+      '/settings?tab=stations&setup=st-1&focus=meter-start',
+    );
+    expect(dailyOperationsLinkFix('Something else went wrong', 'st-1')).toBeUndefined();
+  });
+});
+
+describe('dayReadyToLock', () => {
+  const ok = {
+    lockBlockedReason: null,
+    actions: { LockBusinessDay: { permissionGranted: true } },
+    selectedBusinessDay: { id: 'd1', state: 'CLOSED', version: 7 },
+  };
+  it('returns the day when it is closed, unblocked and the person may lock', () => {
+    expect(dayReadyToLock(ok)).toEqual({ id: 'd1', version: 7 });
+  });
+  it('returns null when the day is not closed, is blocked, or the person may not lock', () => {
+    expect(
+      dayReadyToLock({ ...ok, selectedBusinessDay: { id: 'd1', state: 'OPEN', version: 7 } }),
+    ).toBeNull();
+    expect(
+      dayReadyToLock({ ...ok, selectedBusinessDay: { id: 'd1', state: 'LOCKED', version: 7 } }),
+    ).toBeNull();
+    expect(dayReadyToLock({ ...ok, selectedBusinessDay: undefined })).toBeNull();
+    expect(dayReadyToLock({ ...ok, lockBlockedReason: 'A shift is still open.' })).toBeNull();
+    expect(
+      dayReadyToLock({ ...ok, actions: { LockBusinessDay: { permissionGranted: false } } }),
+    ).toBeNull();
   });
 });

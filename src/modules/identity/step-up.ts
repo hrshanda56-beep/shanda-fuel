@@ -23,6 +23,7 @@ import {
   readClerkStepUpChallenge,
   stepUpTtlMs,
 } from '../../platform/auth/clerk-step-up';
+import { isLocalDevBypassEnabled } from '../../platform/auth/dev-bypass';
 import { appendSecurityEvent } from '../audit/contracts';
 import type { TenantExecutionContext } from '../tenancy/authority';
 
@@ -136,6 +137,28 @@ export async function establishStepUp(input: {
       assignment.scopeType === 'TENANT' &&
       assignment.tenantId === input.context.membership.tenantId,
   );
+  // Local development only (DEC-050): the dev sign-in never contacts Clerk, so there is no Clerk
+  // identity check to pass. The same guards as the dev sign-in apply (local database, not CI, not
+  // deployed), so this branch cannot run in any deployed build.
+  if (isLocalDevBypassEnabled()) {
+    const expiresAt = new Date(
+      Math.min(session.expiresAt.getTime(), now.getTime() + stepUpTtlMs()),
+    );
+    const setCookie = issueClerkStepUpAssertion({
+      providerSessionId: session.providerSessionId,
+      internalUserId: session.internalUserId,
+      tenantId: input.context.membership.tenantId,
+      action: input.action,
+      level: 'strict',
+      now,
+    });
+    return {
+      level: STEP_UP_LEVEL,
+      tenantId: input.context.membership.tenantId,
+      expiresAt: expiresAt.toISOString(),
+      ...(setCookie ? { setCookie } : {}),
+    };
+  }
   const mfaEnrolled = await clerkUserHasMfa(session.providerUserId);
   const allowNoMfaPath =
     !getServerEnv().REQUIRE_LOGIN_MFA &&

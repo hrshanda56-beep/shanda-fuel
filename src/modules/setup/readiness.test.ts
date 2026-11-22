@@ -151,3 +151,43 @@ describe('going live', () => {
     );
   });
 });
+
+describe('what the complete-station loop also asks about', () => {
+  it('wants nothing extra from a finished station', () => {
+    expect(computeStationReadiness(complete).wants).toEqual({
+      providerAccount: false,
+      bankAccount: false,
+      openingStock: false,
+      invitationPending: false,
+    });
+  });
+
+  it('wants payment accounts and opening stock without holding the station back', () => {
+    const facts = {
+      ...complete,
+      providerAccounts: 0,
+      bankAccounts: 0,
+      tanksMissingOpeningStock: 1,
+    };
+    const result = computeStationReadiness(facts);
+    expect(result.wants).toEqual({
+      providerAccount: true,
+      bankAccount: true,
+      openingStock: true,
+      invitationPending: false,
+    });
+    expect(result.missing).toEqual([]);
+  });
+
+  it('knows someone was invited and has not joined yet, but the station still needs them', () => {
+    const result = computeStationReadiness({
+      ...complete,
+      stationStatus: 'ONBOARDING',
+      assignedStaff: 0,
+      pendingInvitations: 1,
+    });
+    expect(result.wants?.invitationPending).toBe(true);
+    expect(result.canActivate).toBe(false);
+    expect(result.missing.map((m) => m.code)).toContain('STAFF');
+  });
+});

@@ -83,13 +83,17 @@ const NAVIGATION_PERMISSION_CANDIDATES: Readonly<Record<NavigationKey, readonly 
     // Customer accounts are read across the organisation, so a station supervisor does not get them.
     customers: ['customer.payment.record'],
     suppliers: ['supplier.view'],
+    transporters: ['supplier.view'],
     purchasing: ['purchase_order.view'],
     expenses: ['expense.view'],
+    'sales-documents': ['sales_document.view'],
     profitability: ['report.finance.view'],
     'fuel-deliveries': ['inventory.view'],
     'staff-benefit': ['customer.payment.record'],
     'payments-due': ['supplier.view'],
     reports: ['report.view'],
+    // The ZERA return is read with the same permission as the other reports.
+    'zera-returns': ['report.view'],
     // A supervisor reaches Settings only for their station's staff list and activity log.
     settings: ['tenant.view', 'membership.view.station', 'audit.view.station'],
   };

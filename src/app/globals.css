@@ -2494,6 +2494,11 @@ h3,
   margin-left: auto;
 }
 
+/* Type/status chips sit on the right of the search row in every list. */
+.list-toolbar .list-filters {
+  margin-left: auto;
+}
+
 @media (max-width: 48rem) {
   .list-search {
     flex-basis: 100%;
@@ -3130,50 +3135,6 @@ h3,
   align-items: center;
 }
 
-.recon-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border-radius: var(--radius-lg);
-  background: var(--bg-subtle);
-}
-
-.recon-tab {
-  display: inline-flex;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: 2.5rem;
-  padding: 0 var(--space-4);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-md);
-  transition: var(--transition-colors);
-}
-
-.recon-tab:hover {
-  color: var(--text-primary);
-}
-
-.recon-tab[aria-pressed='true'] {
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-xs);
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
-}
-
-.recon-tab-count {
-  color: var(--text-tertiary);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
-}
-
 /* Plain status: a coloured dot and the word, not a pill. */
 .recon-status {
   display: inline-flex;
@@ -3274,10 +3235,6 @@ h3,
   .ops-attention {
     padding: var(--space-4);
   }
-
-  .recon-tab {
-    padding: 0 var(--space-3);
-  }
 }
 
 /* Shift board: time, state and actions line up in the same columns on every row. */
@@ -3309,9 +3266,25 @@ h3,
   min-width: 0;
 }
 
+.ops-hero-lock-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--tone-warning-fg);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--tone-warning-fg) 8%, var(--bg-surface));
+  font-size: var(--font-size-sm);
+}
+
+.ops-hero-lock-note p {
+  flex: 1;
+  margin: 0;
+}
+
 .ops-hero-times {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
   gap: var(--space-3);
   margin: 0;
 }
@@ -3778,11 +3751,6 @@ h3,
 }
 
 @media (min-width: 48rem) {
-  .recon-tab {
-    flex: 0 0 auto;
-    padding: 0 var(--space-5);
-  }
-
   .recon-expand .recon-facts {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -4125,7 +4093,26 @@ h3,
 
 /* The first and last steps have one button, so the gap is cut for one and leaves no empty place. */
 .entry-card-wrap[data-actions='1'] {
-  --notch-w: 8.5rem;
+  --notch-w: calc(var(--notch-btn-w) + var(--notch-pad));
+}
+
+/* The Reconciliations link is a longer word than Back or Next, so its gap is cut wider and the button never touches the card. */
+.entry-card-wrap[data-link] {
+  --notch-w: 11.5rem;
+}
+
+.entry-card-wrap[data-link] .entry-footer .button {
+  min-width: 0;
+  padding-inline: var(--space-5);
+}
+
+/* The figures wizard has its own buttons inside the card, so the card keeps its whole corner. */
+.entry-card-wrap[data-wizard] {
+  --notch-h: 0px;
+}
+
+.entry-card-wrap[data-wizard] .entry-body {
+  clip-path: none;
 }
 
 .entry-body {
@@ -4214,7 +4201,7 @@ h3,
     bottom: 0;
     width: var(--notch-w);
     height: var(--notch-h);
-    align-items: center;
+    align-items: flex-end;
     padding: 0;
     border: 0;
     background: none;
@@ -4577,7 +4564,7 @@ h3,
 
 .next-step-trail {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
   margin: var(--space-3) 0 0;
   padding: var(--space-3) 0 0;
@@ -5498,12 +5485,15 @@ h3,
   margin: 0;
 }
 
+.supplier-portfolio-table .list-head,
+.supplier-portfolio-table .list-row {
+  grid-template-columns: minmax(0, 2fr) minmax(8rem, 1fr);
+}
+
 /* Customers list: the essentials on the row, everything else under it. */
 .customer-table .list-head,
 .customer-row {
-  grid-template-columns:
-    minmax(12rem, 1.4fr) minmax(7rem, 0.8fr) minmax(6rem, 0.6fr) minmax(0, 1.8fr)
-    2rem;
+  grid-template-columns: minmax(0, 1.4fr) 7rem 6.5rem minmax(0, 1fr) 2rem;
 }
 
 .customer-row::after {
@@ -6259,41 +6249,7 @@ h3,
   transition: width var(--duration-slow) var(--ease-out);
 }
 
-.tank-tabs,
-.profit-tabs {
-  display: flex;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  overflow-x: auto;
-  border-radius: var(--radius-lg);
-  background: var(--bg-muted);
-  width: fit-content;
-  max-width: 100%;
-}
-
-.tank-tabs button,
-.profit-tabs button {
-  min-height: 2.5rem;
-  padding: 0 var(--space-4);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-weight: 550;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: var(--transition-colors);
-}
-
-.tank-tabs button[aria-selected='true'],
-.profit-tabs button[aria-selected='true'] {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.tank-tab-wide {
+.tank-tabs > .tank-tab-wide {
   display: none;
 }
 
@@ -6365,12 +6321,12 @@ h3,
     gap: var(--space-4);
   }
 
-  .tank-tab-narrow {
+  .tank-tabs > .tank-tab-narrow {
     display: none;
   }
 
-  .tank-tab-wide {
-    display: block;
+  .tank-tabs > .tank-tab-wide {
+    display: inline-flex;
     order: -1;
   }
 
@@ -6516,15 +6472,6 @@ h3,
   }
 }
 
-/* Filter tabs wrap into even rows on narrow screens. */
-@media (max-width: 47.99rem) {
-  .recon-tabs {
-    width: 100%;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
-  }
-}
-
 /* Fuel Deliveries: one card with the title, count and main action together. */
 .deliveries-head {
   display: flex;
@@ -6546,6 +6493,18 @@ h3,
 .deliveries-card .table-scroll-region,
 .deliveries-card .deliveries-empty {
   margin-top: var(--space-4);
+}
+.deliveries-card .deliveries-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.deliveries-card .list-filters {
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
 }
 .deliveries-empty {
   margin: 0;
@@ -6601,6 +6560,10 @@ h3,
   display: grid;
   gap: var(--space-3);
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+.rd-po {
+  display: grid;
+  gap: var(--space-3);
 }
 .rd-difference {
   margin: 0;
@@ -6863,7 +6826,7 @@ h3,
 .dd-hint {
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-regular, 400);
+  font-weight: 400;
 }
 .dd-empty {
   color: var(--text-tertiary);
@@ -7006,7 +6969,7 @@ h3,
   .dd-table tbody th::before {
     content: attr(data-label);
     color: var(--text-secondary);
-    font-weight: var(--font-weight-regular, 400);
+    font-weight: 400;
   }
   .dd-table tfoot th {
     grid-template-columns: 1fr;
@@ -7213,7 +7176,7 @@ h3,
 
 .shell-header .shell-header-controls .global-search > span {
   color: var(--text-secondary);
-  font-weight: var(--font-weight-regular, 400);
+  font-weight: 400;
 }
 
 .shell-header .shell-header-controls .global-search kbd {
@@ -7937,34 +7900,9 @@ h3,
   }
 }
 
-/* A tab switcher in a card heading never pushes past the card; it scrolls inside instead. */
-.panel-heading > .profit-tabs {
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* The Purchasing switcher has no period text beside it, so it sits at the far right. */
-.purchasing-tabs {
-  margin-left: auto;
-  min-width: 0;
-}
 .profit-top.content-span {
   min-width: 0;
 }
-/* On a phone the four sections sit two by two, so none is hidden off the side. */
-@media (max-width: 40rem) {
-  .purchasing-tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-    margin-left: 0;
-    overflow: visible;
-  }
-  .purchasing-tabs button {
-    padding: 0 var(--space-2);
-  }
-}
-
 /* A one-series column chart: wider columns, labels that wrap, an amber column for what is late. */
 .column-chart {
   --recon-label-h: 2.75rem;
@@ -8307,13 +8245,115 @@ h3,
  */
 .tank-list {
   display: grid;
-  gap: var(--space-8);
+  gap: var(--space-4);
 }
 
+/* Each tank is one quiet tile: a hairline edge and a barely-there tint lift it off the page. */
 .tank-row {
   container-type: inline-size;
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.tank-row:focus-within {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-sm);
+}
+
+.tank-row .pump-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+}
+
+.tank-row .pump-row-head h3 {
+  letter-spacing: -0.01em;
+}
+
+.tank-row .pump-row-meta {
+  margin: 0;
+}
+
+/* The pump rule that starts a new line at the third figure is for pumps; a tank keeps its figures on one. */
+.tank-row-readings .pump-readout:nth-child(3) {
+  grid-column: auto;
+}
+
+/* The result is coloured words, not a badge: the colour says how the dip compares. */
+.tank-result {
+  font-weight: var(--font-weight-medium);
+}
+
+.tank-result[data-tone='positive'] {
+  color: var(--tone-positive-text);
+}
+
+.tank-result[data-tone='warning'] {
+  color: var(--tone-warning-text);
+}
+
+.tank-result[data-tone='critical'] {
+  color: var(--tone-critical-text);
+}
+
+/* A saved dip is confirmed in the tile it belongs to, in words, with a brief highlight. */
+.tank-row-confirm {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--tone-neutral-text);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+
+.tank-row-confirm[data-tone='positive'] {
+  color: var(--tone-positive-text);
+}
+
+.tank-row-confirm[data-tone='warning'] {
+  color: var(--tone-warning-text);
+}
+
+.tank-row-confirm[data-tone='critical'] {
+  color: var(--tone-critical-text);
+}
+
+.tank-row[data-saved] {
+  animation: tank-saved 1.6s ease-out;
+}
+
+@keyframes tank-saved {
+  0% {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-muted);
+  }
+
+  100% {
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-xs);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tank-row[data-saved] {
+    animation: none;
+  }
+}
+
+/* What the books expect is the figure to compare a dip against, so it reads as one. */
+.tank-row-readings .pump-readout:first-child .pump-readout-value {
+  font-weight: var(--font-weight-semibold);
 }
 
 .tank-row-readings {
@@ -8328,10 +8368,14 @@ h3,
   white-space: normal;
 }
 
+/* The field for a new dip has a row to itself, under the figures it will replace. */
 .tank-row-entry {
-  max-width: 26rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 32rem;
 }
 
+/* Expected, dip, difference and result read left to right as one comparison. */
 @container (min-width: 30rem) {
   .tank-row-readings {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8340,12 +8384,10 @@ h3,
   }
 }
 
-@container (min-width: 44rem) {
+@container (min-width: 34rem) {
   .tank-row-readings {
-    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(6rem, 0.8fr) minmax(
-        12rem,
-        1.6fr
-      );
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.7fr);
+    gap: var(--space-4);
   }
 }
 
@@ -8647,4 +8689,190 @@ h3,
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* The full breakdown inside an opened reconciliation: every figure and every written explanation. */
+.recon-breakdown {
+  display: grid;
+  gap: var(--space-5) var(--space-6);
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+@media (min-width: 64rem) {
+  .recon-breakdown {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recon-breakdown .recon-break-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.recon-breakdown h4 {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.recon-break-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.recon-break-row[data-strong] {
+  font-weight: var(--font-weight-semibold);
+}
+
+.recon-break-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.recon-break-label small {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+
+.recon-break-value {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.recon-break-value[data-tone='critical'] {
+  color: var(--tone-critical-text);
+}
+
+.recon-break-none {
+  margin: 0;
+  padding: var(--space-2) 0;
+  color: var(--text-secondary);
+}
+
+.recon-break-note {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  overflow-wrap: anywhere;
+}
+
+/* The missing-cost notice stacks its text above the buttons that fix it. */
+.state.state-warning:has(> .button-row) {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.state.state-warning > .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/*
+ * A card whose bottom-right corner is cut away for its buttons (BottomNotchCard). The cut is the
+ * same one the shift screens make. --notch-w is the buttons plus a little air; narrow screens keep
+ * a whole card and the buttons follow below it.
+ */
+.notch-wrap {
+  /* Every gap between the card's edge and the buttons is --notch-pad; the cut is sized from the
+     buttons themselves so the spacing is the same whatever the label. */
+  --notch-pad: var(--space-3);
+  --notch-btn-w: 5.5rem;
+  --notch-btn-h: 2.5rem;
+  --notch-r: 1.25rem;
+  --notch-w: calc(2 * var(--notch-btn-w) + var(--notch-pad) * 2);
+  --notch-h: calc(var(--notch-btn-h) + var(--notch-pad));
+  position: relative;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.notch-wrap[data-actions='1'] {
+  --notch-w: calc(var(--notch-btn-w) + var(--notch-pad));
+}
+
+.notch-surface {
+  min-width: 0;
+}
+
+.notch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--notch-pad);
+}
+
+.notch-actions > * {
+  min-width: var(--notch-btn-w);
+  min-height: var(--notch-btn-h);
+}
+
+@media (min-width: 48rem) {
+  .notch-wrap[data-notched] > .notch-surface {
+    padding-bottom: var(--notch-h);
+    clip-path: shape(
+      from var(--radius-lg) 0,
+      hline to calc(100% - var(--radius-lg)),
+      arc to 100% var(--radius-lg) of var(--radius-lg) cw,
+      vline to calc(100% - var(--notch-h) - var(--notch-r)),
+      arc to calc(100% - var(--notch-r)) calc(100% - var(--notch-h)) of var(--notch-r) cw,
+      hline to calc(100% - var(--notch-w) + var(--notch-r)),
+      arc to calc(100% - var(--notch-w)) calc(100% - var(--notch-h) + var(--notch-r)) of
+        var(--notch-r) ccw,
+      vline to calc(100% - var(--notch-r)),
+      arc to calc(100% - var(--notch-w) - var(--notch-r)) 100% of var(--notch-r) cw,
+      hline to var(--radius-lg),
+      arc to 0 calc(100% - var(--radius-lg)) of var(--radius-lg) cw,
+      vline to var(--radius-lg),
+      arc to var(--radius-lg) 0 of var(--radius-lg) cw,
+      close
+    );
+  }
+
+  .notch-wrap[data-notched] > .notch-actions {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: var(--notch-w);
+    height: var(--notch-h);
+    align-items: flex-end;
+  }
+}
+
+/* Daily Operations for the person running the shift: one question, one button, nothing else. */
+.ops-top.ops-top--wizard,
+.ops-top.ops-top--wizard:has(.next-step) {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 44rem;
+  margin-inline: auto;
+}
+
+.ops-wizard-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+}
+
+.ops-wizard-links button.text-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
 }

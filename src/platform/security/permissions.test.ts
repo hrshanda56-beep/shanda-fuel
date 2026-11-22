@@ -220,9 +220,56 @@ describe('permission authorization', () => {
     ).toBe(true);
   });
 
+  it('gives quotations, invoices and receipts to the office roles only (DEC-045)', () => {
+    for (const role of ['OWNER', 'ADMINISTRATOR', 'FINANCE'] as const) {
+      expect(DEFAULT_ROLE_PERMISSIONS[role]).toContain('sales_document.view');
+      expect(DEFAULT_ROLE_PERMISSIONS[role]).toContain('sales_document.create');
+      expect(DEFAULT_ROLE_PERMISSIONS[role]).toContain('sales_document.issue');
+    }
+    // Voiding and the company letterhead stay with the owner and the administrator.
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('sales_document.void');
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('sales_document.profile.manage');
+    expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('sales_document.void');
+    expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('sales_document.profile.manage');
+    // The auditor can read them but not make or change any.
+    expect(DEFAULT_ROLE_PERMISSIONS.AUDITOR).toContain('sales_document.view');
+    expect(DEFAULT_ROLE_PERMISSIONS.AUDITOR).not.toContain('sales_document.issue');
+    for (const role of ['SUPERVISOR', 'ATTENDANT', 'CASH_COLLECTOR', 'AREA_MANAGER'] as const) {
+      expect(
+        DEFAULT_ROLE_PERMISSIONS[role].some((code) => code.startsWith('sales_document.')),
+      ).toBe(false);
+    }
+  });
+
+  it('needs a fresh identity check to void a document', () => {
+    const owner: AuthorizationActor = {
+      ...actor,
+      strongAuthenticationVerified: false,
+      roleAssignments: [{ roleCode: 'OWNER', tenantId, scopeType: 'TENANT' }],
+    };
+    expect(() =>
+      authorize({
+        actor: owner,
+        permissionCode: 'sales_document.void',
+        requestedScope: { tenantId, scopeType: 'LEGAL_ENTITY', legalEntityId },
+      }),
+    ).toThrow();
+    expect(
+      isPermissionGranted({
+        actor: owner,
+        permissionCode: 'sales_document.void',
+        requestedScope: { tenantId, scopeType: 'LEGAL_ENTITY', legalEntityId },
+      }),
+    ).toBe(true);
+  });
+
   it('keeps customer lifecycle management with OWNER and ADMINISTRATOR', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.OWNER).toContain('customer.manage');
     expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('customer.manage');
+    // Only the owner and the administrator lock a business day (a permanent step).
+    expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('business_day.lock');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('business_day.lock');
+    expect(DEFAULT_ROLE_PERMISSIONS.ADMINISTRATOR).toContain('business_day.lock');
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.manage');
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.account.manage');
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).not.toContain('customer.account.adjust');
@@ -234,6 +281,10 @@ describe('permission authorization', () => {
   it('lets Finance send a reconciliation back but not a supervisor or attendant', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.FINANCE).toContain('reconciliation.return');
     expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('reconciliation.return');
+    // DEC-052: a supervisor starts a price change; approving and activating stay with others.
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).toContain('price.change.request');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('price.change.approve');
+    expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain('price.change.activate');
     expect(DEFAULT_ROLE_PERMISSIONS.ATTENDANT).not.toContain('reconciliation.return');
   });
 
@@ -337,5 +388,53 @@ describe('permission authorization', () => {
         requestedScope,
       }),
     ).toBe(true);
+  });
+
+  describe('supervisor price requests', () => {
+    const requestedScope = { tenantId, scopeType: 'STATION' as const, legalEntityId, stationId };
+    const as = (roleCode: 'SUPERVISOR'): AuthorizationActor => ({
+      ...actor,
+      roleAssignments: [{ ...actor.roleAssignments[0]!, roleCode }],
+    });
+
+    it('lets a supervisor request a price change', () => {
+      expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).toContain('price.change.request');
+      expect(
+        isAuthorized({
+          actor: as('SUPERVISOR'),
+          permissionCode: 'price.change.request',
+          requestedScope,
+        }),
+      ).toBe(true);
+    });
+
+    it('does not let a supervisor approve or switch on a price', () => {
+      for (const permissionCode of ['price.change.approve', 'price.change.activate'] as const) {
+        expect(DEFAULT_ROLE_PERMISSIONS.SUPERVISOR).not.toContain(permissionCode);
+        expect(() =>
+          authorize({ actor: as('SUPERVISOR'), permissionCode, requestedScope }),
+        ).toThrow('not authorized');
+      }
+    });
+
+    it('gives the area manager the same, through the supervisor set', () => {
+      expect(DEFAULT_ROLE_PERMISSIONS.AREA_MANAGER).toContain('price.change.request');
+      expect(DEFAULT_ROLE_PERMISSIONS.AREA_MANAGER).not.toContain('price.change.approve');
+      expect(DEFAULT_ROLE_PERMISSIONS.AREA_MANAGER).not.toContain('price.change.activate');
+    });
+
+    it('keeps approval with the owner, and an attendant without any price right', () => {
+      expect(
+        isPermissionGranted({
+          actor: {
+            ...actor,
+            roleAssignments: [{ roleCode: 'OWNER', tenantId, scopeType: 'TENANT' }],
+          },
+          permissionCode: 'price.change.approve',
+          requestedScope,
+        }),
+      ).toBe(true);
+      expect(DEFAULT_ROLE_PERMISSIONS.ATTENDANT).not.toContain('price.change.request');
+    });
   });
 });

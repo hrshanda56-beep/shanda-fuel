@@ -54,6 +54,30 @@
 }
 
 /* Optional fields stay out of the way until they are wanted. */
+.wizardForm {
+  display: block;
+  min-width: 0;
+}
+
+.guideInvite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.guideInviteText {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .more {
   display: grid;
   gap: var(--space-4);
@@ -159,7 +183,8 @@
   background: var(--bg-surface);
 }
 
-.step:has(> .stepHeader[aria-expanded='true']) {
+.step:has(> .stepHeader[aria-expanded='true']),
+.step[data-expanded] {
   border-color: var(--border-default);
 }
 
@@ -170,7 +195,7 @@
   gap: var(--space-3) var(--space-4);
   width: 100%;
   min-height: 3.5rem;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) calc(var(--space-3) + 2rem + var(--space-1)) var(--space-3) var(--space-4);
   border: 0;
   border-radius: inherit;
   background: transparent;
@@ -178,6 +203,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  position: relative;
 }
 
 .stepHeader:hover:not(:disabled) {
@@ -208,6 +234,12 @@
 
 .stepHeader[data-status='done'] .stepNumber {
   background: var(--accent-muted);
+  color: var(--accent-text);
+}
+
+.stepHeader[data-status='todo'] .stepNumber {
+  border: 2px solid var(--accent);
+  background: transparent;
   color: var(--accent-text);
 }
 
@@ -243,6 +275,296 @@
   font-weight: var(--font-weight-semibold);
 }
 
+.smallHeading {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.sectionBreak {
+  margin-top: var(--space-5);
+}
+
+.headingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sectionHeading {
+  margin-top: var(--space-3);
+  list-style: none;
+}
+
+.fuelGrid,
+.wholeGrid {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+/* Every fuel card shows its summary on one line, so all the cards in a row are the same height. */
+.fuelGrid .rowDetail {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 48rem) {
+  .fuelGrid,
+  .wholeGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fuelGrid > .step:has(> .stepHeader[aria-expanded='true']),
+  .fuelGrid > .step[data-expanded],
+  .wholeGrid > .step:has(> .stepHeader[aria-expanded='true']),
+  .wholeGrid > .step[data-expanded] {
+    grid-column: 1 / -1;
+  }
+}
+
+/* A fuel card: the Delete button and the actions menu sit at its top right, over the header. */
+.step[data-has-actions] {
+  position: relative;
+}
+
+.step[data-has-actions] .stepHeader {
+  padding-right: 7rem;
+}
+
+.cardActions {
+  position: absolute;
+  top: var(--space-3);
+  right: calc(var(--space-3) + 2rem + var(--space-1));
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.iconButton {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+.iconButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.iconButtonDanger,
+.iconButtonDanger:hover {
+  color: var(--tone-critical-text);
+}
+
+.menuRoot {
+  position: relative;
+}
+
+.menuList {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 5;
+  display: grid;
+  min-width: 10rem;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md, 0 4px 16px rgb(0 0 0 / 0.12));
+}
+
+.menuItem {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm, 0.375rem);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover,
+.menuItem:focus-visible {
+  background: var(--bg-subtle);
+}
+
+.hiddenFuel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.partList {
+  display: flex;
+  justify-self: end;
+  gap: var(--space-1);
+  max-width: 100%;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  overflow-x: auto;
+}
+
+.partTab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm, 0.375rem);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.partTab:hover {
+  color: var(--text-primary);
+}
+
+.partTab[data-current] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+}
+
+.partTab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.partNumber {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs, 0.75rem);
+}
+
+.partTab[data-current] .partNumber {
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+}
+
+.partTab[data-done] .partNumber {
+  background: transparent;
+  color: var(--accent-text);
+}
+
+.priceCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.priceText {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.priceAmount {
+  color: var(--text-primary);
+  font-size: var(--font-size-xl, 1.5rem);
+  font-weight: var(--font-weight-semibold);
+}
+
+.priceUnit {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular, 400);
+}
+
+.priceState {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.priceState[data-state='ACTIVE'] {
+  color: var(--accent-text);
+}
+
+.fuelSurface {
+  border-radius: var(--radius-lg);
+}
+
+/* Where the card gives up its corner to Back and Next, it is one grey surface with no outline. */
+@media (min-width: 48rem) {
+  .step[data-expanded] {
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .fuelSurface {
+    background: var(--bg-subtle);
+  }
+
+  .fuelSurface .stepHeader:hover:not(:disabled) {
+    background: transparent;
+  }
+}
+
+/* The card being worked on is lifted off the page and the other fuel cards step back until pointed at.
+   The shadow is a filter so it follows the curved corner instead of the card's rectangle. */
+.fuelGrid > .step[data-expanded] {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 10px 24px rgb(0 0 0 / 0.14)) drop-shadow(0 2px 4px rgb(0 0 0 / 0.08));
+}
+
+.fuelGrid:has(> .step[data-expanded]) > .step:not([data-expanded]) {
+  opacity: 0.55;
+  transition: opacity 150ms ease;
+}
+
+.fuelGrid:has(> .step[data-expanded]) > .step:not([data-expanded]):hover,
+.fuelGrid:has(> .step[data-expanded]) > .step:not([data-expanded]):focus-within {
+  opacity: 1;
+}
+
+@media (min-width: 48rem) {
+  .fuelGrid > .step[data-expanded] .fuelSurface {
+    background: var(--bg-surface);
+  }
+}
+
 .choices {
   display: grid;
   gap: var(--space-3);
@@ -256,7 +578,7 @@
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .stepHeader > :last-child {
+  .stepHeader > .stepBadge {
     grid-column: 2;
     justify-self: start;
   }
@@ -265,7 +587,227 @@
     padding-left: var(--space-4);
   }
 
+  .step[data-has-actions] .stepHeader {
+    padding-right: calc(var(--space-3) + 2rem + var(--space-1));
+    padding-bottom: 3.5rem;
+  }
+
+  .step[data-expanded] .stepHeader,
+  .step[data-open] .stepHeader {
+    padding-right: 7rem;
+    padding-bottom: var(--space-3);
+  }
+
+  .step[data-expanded] .cardActions,
+  .step[data-open] .cardActions {
+    top: var(--space-3);
+    right: calc(var(--space-3) + 2rem + var(--space-1));
+    bottom: auto;
+    left: auto;
+  }
+
+  .cardActions {
+    top: auto;
+    bottom: var(--space-3);
+    left: var(--space-4);
+    right: auto;
+  }
+
   .todoItem {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Each shift is its own small card with a three-dots menu, like the fuel cards. */
+.shiftList {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shiftCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 4rem;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.shiftText {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.shiftBadge {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--accent-muted);
+  color: var(--accent-text);
+}
+
+/* Starts at and Ends at sit side by side. */
+.timeRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+/* An in-place edit form sits in the middle of its card. */
+.centeredForm {
+  width: 100%;
+  margin-inline: auto;
+}
+
+/* The whole shift card opens its edit form: the text button stretches over the card and the
+   three-dots menu sits above it. */
+.shiftCard {
+  position: relative;
+}
+
+.shiftOpen {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shiftOpen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.shiftOpen:focus-visible {
+  outline: none;
+}
+
+.shiftOpen:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.shiftCard:hover {
+  border-color: var(--border-default);
+}
+
+.shiftCard .menuRoot {
+  position: relative;
+  z-index: 1;
+}
+
+/* The shift being edited stands apart from the cards around it. */
+.shiftList > li[data-editing] {
+  margin-block: var(--space-3);
+}
+
+/* The arrow at the right of a card's header: it points down when closed and up when open. */
+.chevron {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--text-secondary);
+  transition: transform 150ms ease;
+}
+
+.stepHeader[aria-expanded='true'] .chevron {
+  transform: rotate(180deg);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.supervisorRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* Keep the people list full width, and leave room below it for its open menu inside the card's cut. */
+.choices {
+  width: 100%;
+  min-width: 0;
+}
+
+.choices:has([aria-expanded='true']) {
+  min-height: 7.5rem;
+}
+
+.menuItem {
+  white-space: nowrap;
+}
+
+.wideForm {
+  max-width: none;
+}
+
+/* Changes waiting to be saved: a bar that stays in reach while the person keeps filling things in. */
+.reviewBar {
+  position: sticky;
+  bottom: var(--space-3);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.14);
+}
+
+.reviewBarText {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.reviewList {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reviewItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
 }

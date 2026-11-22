@@ -3,7 +3,7 @@ import { useContextFetch } from '@/modules/context/client-context';
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildContextHref,
   contextRoutePolicy,
@@ -23,7 +23,9 @@ import {
   SuccessState,
 } from '@/design-system/primitives';
 import { useToast } from '@/design-system/feedback-provider';
+import { FloatingMenuList } from '@/design-system/floating-menu-list';
 import { Modal } from '@/design-system/modal';
+import { AddSupplierWizard, roleFlags, type NewSupplierValue } from './add-supplier-wizard';
 import { NotchedCard } from '@/design-system/notched-card';
 import { Icon } from '@/design-system/icons';
 import { formatTileMoney } from '@/modules/reporting/format';
@@ -38,28 +40,7 @@ type SupplierSummary = {
   total: string;
   asOf?: string;
   creditLimit?: { status: string; limit: string | null; available: string | null };
-};
-
-type CreateSupplierForm = {
-  code: string;
-  legalName: string;
-  registrationReference: string;
-  contactName: string;
-  contactPhone: string;
-  contactEmail: string;
-  creditDays: string;
-  creditLimit: string;
-};
-
-const EMPTY_CREATE_FORM: CreateSupplierForm = {
-  code: '',
-  legalName: '',
-  registrationReference: '',
-  contactName: '',
-  contactPhone: '',
-  contactEmail: '',
-  creditDays: '',
-  creditLimit: '',
+  providesTransport?: boolean;
 };
 
 type SupplierFilter = 'all' | 'overdue' | 'current';
@@ -117,11 +98,14 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
   const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLElement | null>(null);
+  const dismiss = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!open) return;
     function onPointer(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !listRef.current?.contains(target)) setOpen(false);
     }
     function onKey(event: KeyboardEvent) {
       if (event.key !== 'Escape') return;
@@ -166,7 +150,15 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
         <Icon name="more" />
       </button>
       {open ? (
-        <div className="row-menu-list" role="menu">
+        <FloatingMenuList
+          anchorRef={triggerRef}
+          onElement={(node) => {
+            listRef.current = node;
+          }}
+          onDismiss={dismiss}
+          className="row-menu-list"
+          role="menu"
+        >
           <Link
             role="menuitem"
             className="row-menu-item"
@@ -190,7 +182,7 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
             <Icon name={copied ? 'check' : 'tag'} />
             {copied ? 'Copied' : 'Copy supplier code'}
           </button>
-        </div>
+        </FloatingMenuList>
       ) : null}
     </div>
   );
@@ -198,8 +190,11 @@ function SupplierRowMenu({ row, href }: { row: SupplierSummary; href: string }) 
 
 export function SupplierWorkspace({
   initial,
+  transportersOnly = false,
 }: {
   initial?: { resolution: ContextResolution; rows: SupplierSummary[] };
+  /** Show only companies that bring fuel to the station. */
+  transportersOnly?: boolean;
 }) {
   const contextFetch = useContextFetch();
   const searchParams = useSearchParams();
@@ -207,11 +202,14 @@ export function SupplierWorkspace({
   const [context, setContext] = useState<ContextResolution | null>(initial?.resolution ?? null);
   const [contextLoading, setContextLoading] = useState(!initial);
   const [contextError, setContextError] = useState<string | null>(null);
-  const [rows, setRows] = useState<SupplierSummary[]>(initial?.rows ?? []);
+  const [allRows, setRows] = useState<SupplierSummary[]>(initial?.rows ?? []);
+  const rows = useMemo(
+    () => (transportersOnly ? allRows.filter((row) => row.providesTransport) : allRows),
+    [allRows, transportersOnly],
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState<CreateSupplierForm>(EMPTY_CREATE_FORM);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -305,32 +303,19 @@ export function SupplierWorkspace({
   }, [current?.organisationId, current?.legalEntityId, current?.stationId, current?.allStations]);
 
   function resetCreateForm() {
-    setCreateForm(EMPTY_CREATE_FORM);
     setCreateError(null);
     setCreateSuccess(null);
   }
 
-  async function submitCreate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submitCreate(value: NewSupplierValue) {
     if (!current?.legalEntityId) return;
 
-    const code = createForm.code.trim();
-    const legalName = createForm.legalName.trim();
-    const registrationReference = createForm.registrationReference.trim();
-    if (!code || !legalName) {
-      setCreateError('Supplier code and legal name are required.');
-      return;
-    }
-    const creditDays = createForm.creditDays.trim();
-    if (creditDays && !/^\d{1,3}$/.test(creditDays)) {
-      setCreateError('Enter the usual credit period as a whole number of days, for example 30.');
-      return;
-    }
-    const creditLimit = createForm.creditLimit.trim().replace(/,/g, '');
-    if (creditLimit && !/^\d+(?:\.\d{1,4})?$/.test(creditLimit)) {
-      setCreateError('Enter the credit limit as an amount, for example 5000.');
-      return;
-    }
+    const code = value.code.trim();
+    const legalName = value.legalName.trim();
+    const registrationReference = value.registrationReference.trim();
+    const creditDays = value.creditDays.trim();
+    const creditLimit = value.creditLimit.trim().replace(/,/g, '');
+    const createForm = value;
 
     setCreating(true);
     setCreateError(null);
@@ -349,6 +334,7 @@ export function SupplierWorkspace({
           legalEntityId: current.legalEntityId,
           code,
           legalName,
+          ...roleFlags(value.role),
           ...(registrationReference ? { registrationReference } : {}),
           ...(createForm.contactName.trim() ? { contactName: createForm.contactName.trim() } : {}),
           ...(createForm.contactPhone.trim()
@@ -365,7 +351,6 @@ export function SupplierWorkspace({
       if (!response.ok) throw new Error(getErrorMessage(result, 'Supplier could not be created'));
 
       setCreateSuccess(`Supplier ${code} was created.`);
-      setCreateForm(EMPTY_CREATE_FORM);
       setCreateOpen(false);
       await loadSummary(current);
     } catch (cause) {
@@ -408,7 +393,7 @@ export function SupplierWorkspace({
 
       {hasRequiredContext && supplierSelection ? (
         <NotchedCard
-          title="Supplier balances"
+          title={transportersOnly ? 'Transporters' : 'Supplier balances'}
           titleId="supplier-creditors-title"
           wrapperClassName="content-span"
           notchWidth={9}
@@ -559,128 +544,18 @@ export function SupplierWorkspace({
           if (!creating) setCreateOpen(false);
         }}
         title="Add supplier"
-        description={`The supplier is added to ${currentLegalEntityName ?? 'the selected company'}.`}
+        presentation="page"
+        backLabel="Suppliers"
         dismissible={!creating}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>
-              Cancel
-            </Button>
-            <Button type="submit" form="create-supplier-form" loading={creating}>
-              Create supplier
-            </Button>
-          </>
-        }
       >
-        {createError ? <ErrorState message={createError} /> : null}
-        <form
-          id="create-supplier-form"
-          className="stack"
-          onSubmit={(event) => void submitCreate(event)}
-        >
-          <Field id="supplier-code" label="Supplier code" required>
-            <input
-              id="supplier-code"
-              value={createForm.code}
-              maxLength={80}
-              onChange={(event) => setCreateForm((form) => ({ ...form, code: event.target.value }))}
-              autoComplete="off"
-            />
-          </Field>
-          <Field id="supplier-legal-name" label="Legal name" required>
-            <input
-              id="supplier-legal-name"
-              value={createForm.legalName}
-              maxLength={240}
-              onChange={(event) =>
-                setCreateForm((form) => ({ ...form, legalName: event.target.value }))
-              }
-              autoComplete="organization"
-            />
-          </Field>
-          <Field id="supplier-registration-reference" label="Registration reference" optional>
-            <input
-              id="supplier-registration-reference"
-              value={createForm.registrationReference}
-              maxLength={120}
-              onChange={(event) =>
-                setCreateForm((form) => ({
-                  ...form,
-                  registrationReference: event.target.value,
-                }))
-              }
-              autoComplete="off"
-            />
-          </Field>
-          <Field id="supplier-contact-name" label="Contact person" optional>
-            <input
-              id="supplier-contact-name"
-              value={createForm.contactName}
-              maxLength={200}
-              onChange={(event) =>
-                setCreateForm((form) => ({ ...form, contactName: event.target.value }))
-              }
-              autoComplete="off"
-            />
-          </Field>
-          <Field id="supplier-contact-phone" label="Phone number" optional>
-            <input
-              id="supplier-contact-phone"
-              type="tel"
-              value={createForm.contactPhone}
-              maxLength={60}
-              onChange={(event) =>
-                setCreateForm((form) => ({ ...form, contactPhone: event.target.value }))
-              }
-              autoComplete="off"
-            />
-          </Field>
-          <Field id="supplier-contact-email" label="Email" optional>
-            <input
-              id="supplier-contact-email"
-              type="email"
-              value={createForm.contactEmail}
-              maxLength={200}
-              onChange={(event) =>
-                setCreateForm((form) => ({ ...form, contactEmail: event.target.value }))
-              }
-              autoComplete="off"
-            />
-          </Field>
-          <Field
-            id="supplier-credit-days"
-            label="Usual credit period (days)"
-            hint="How long this supplier normally gives you to pay. Pre-fills the due date on credit invoices."
-            optional
-          >
-            <input
-              id="supplier-credit-days"
-              inputMode="numeric"
-              value={createForm.creditDays}
-              maxLength={3}
-              onChange={(event) =>
-                setCreateForm((form) => ({ ...form, creditDays: event.target.value }))
-              }
-              autoComplete="off"
-            />
-          </Field>
-          <Field
-            id="supplier-create-credit-limit"
-            label="Credit limit (USD)"
-            hint="The most you are willing to owe this supplier. It warns you; it never stops a purchase."
-            optional
-          >
-            <input
-              id="supplier-create-credit-limit"
-              inputMode="decimal"
-              value={createForm.creditLimit}
-              onChange={(event) =>
-                setCreateForm((form) => ({ ...form, creditLimit: event.target.value }))
-              }
-              autoComplete="off"
-            />
-          </Field>
-        </form>
+        <AddSupplierWizard
+          initialRole={transportersOnly ? 'TRANSPORT' : 'FUEL'}
+          companyName={currentLegalEntityName ?? 'the selected company'}
+          busy={creating}
+          error={createError}
+          onCancel={() => setCreateOpen(false)}
+          onSubmit={(value) => void submitCreate(value)}
+        />
       </Modal>
     </div>
   );

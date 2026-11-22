@@ -1,5 +1,537 @@
 # Shanda Fuel — Current Status
 
+## Daily operations wizard, part 1: one next step, opening readings, change a price (#253) — 2026-11-21 (branch `feat/daily-ops-wizard-253`, from `main` ff83c5ba, uncommitted)
+
+First slice of Phase 6. (1) **One next step on the home screen.** For anyone who runs the shift
+(`canRunShift`), the page no longer offers the same jobs twice: the day card's "Open business day"
+button, the empty Shifts card's shift picker with "Open shift", the "open the next shift" picker and
+the per-row "Start shift" button are gone. The "Quick actions" card (`next-step.ts`, unchanged) is the
+one button: "Open Day Shift" also opens the business day, then the card moves through the figures,
+closing the shift and closing the day as before. People who cannot run a shift (finance) keep the
+controls they had. The per-row "Close Shift" for several open shifts stays. (2) **Opening readings are
+a wizard** (`opening-readings-entry.tsx`, rules in `opening-readings-wizard.ts`, tested): one pump
+meter per screen, starting from the last closing reading on record, a check screen with a Change
+button on each reading, then the same save as before (`SaveMeterReadings`, same idempotency and
+messages). Answers survive a reload and are offered back ("Continue where I was"). A fuel with no
+selling price is flagged on the check screen and still blocks saving. (3) **"Change a price" on the
+home screen** opens Settings > Stations > this station straight in the price wizard (a choice of fuel
+first when there is more than one): `/settings?tab=stations&setup=<station>&focus=prices`. The change
+joins that page's waiting list and is reviewed and saved once with the identity check, as everywhere
+else. Checks: typecheck, lint, prettier, the full unit suite (328 files, 2,547 tests; new: 9 for the
+readings rules); live on a scratch copy of the local database (nothing written to the demo
+database): one "Open Day Shift" button and no "Open business day" button, the day and shift opening
+together, the readings wizard at 390 and 1280 px (empty, negative and non-numeric readings refused,
+Back keeps answers, Change from the check screen returns to it, no sideways scroll, light and dark),
+and the price link into the price wizard; "Save opening readings" was pressed for real and the
+rows were saved, after which the card read "Continue entering the figures". Not run: the Playwright
+specs (need Clerk secrets).
+
+**Part 2: the figures, one question per screen (#253, branch `feat/daily-ops-figures-253`, on top of
+part 1).** The supervisor entering a shift's figures (role `SUPERVISOR`, record still editable) now
+gets a wizard in place of the seven stepped cards; managers reviewing or approving, and any
+submitted or locked record, keep the stepped overview exactly as it was (every figure still visible,
+Return and Approve untouched). Order, as the form: who worked (and, when there are any, who covered
+from another station); one pump meter per screen with litres, price and sales value live under the
+box; payments one line per screen (pick the way, then amount, customer or recipient where the
+method needs one) followed by "Did customers pay another way?"; expenses the same way; the cash
+count with expected cash, payouts and difference beside it; one tank per screen (the dip must be
+saved before moving on, because the server refuses a submit without a dip for every tank, and
+"A dip recorded for every tank" is now on the checklist); one question per difference that needs
+explaining; then a last screen with the checklist, photos and papers, Save now and Submit for review.
+The "This shift" totals stay on every screen. Rules (order, resume, checks) are plain functions in
+`figures-wizard.ts` (19 tests); screens in `figures-screens.tsx`; the page logic in
+`daily-operations-workspace.tsx`. Every question saves the draft when something changed, with the same
+versioned, idempotent commands as before; the address keeps `?screen=` so a refresh stays put;
+without it the page lands on the first unanswered question (who worked, a pump with no closing
+reading, a payment with no amount, cash not counted, a tank with no dip, an unexplained
+difference). Closing readings are checked exactly (no floating point) against the opening reading;
+cash of 0 is a valid answer. The "Saved" pop-up no longer appears for each automatic save (the
+`x-own-confirmation` header the tank dips already sent is now honoured). Checks: typecheck, lint,
+prettier, full unit suite (329 files, 2,568 tests); live on a scratch copy of the local database at
+390 px: team, both pumps (empty, too-low and valid readings), payment line (empty then valid), "no
+more", no expenses, cash (empty then valid), two tank dips (skipping refused), both explanations, the
+checklist, reload on the last screen staying put, resume landing on the first undipped tank, and
+Submit for review accepted by the server (then the stepped overview shows the submitted record). Not
+run: the Playwright specs (need Clerk secrets). At 1280 px in dark mode only the cash, payments and
+last screens were looked at (no sideways scroll; the card keeps its whole corner there, since its own
+buttons sit inside it); light mode at 1280 px and the other screens at that size were not. Not done: editing a payment or expense line after leaving its screen
+other than by going Back to it; the opening-reading correction was kept on the pump screens but not
+exercised live.
+
+**Phase 7 close-out (21 Nov 2026): Phase 6 is merged** (#269, #270, #271), and a verification pass was
+done on a throwaway local copy of the database (no production contact). Passed live: manager overview for
+submitted, approved and locked records; Return (record goes to RETURNED) and re-submit (reason cleared);
+Approve reaches the server and stops at the by-design identity check (not passed here, the dev login cannot
+do it); the opening-reading correction end to end (audit shows from, to and reason); all 14 wizard screens at
+phone and desktop, light and dark (no sideways scroll, no tiny text, no error pages); owner, supervisor,
+attendant and finance landing pages at phone and desktop; unit suite 2,568 of 2,568. One defect found and
+fixed in #271: the manager's return reason was stored but never shown to the supervisor.
+Seen and left alone: the "Save dip" button is under 36 px tall (existing design); the My Shift page has two
+h1 headings for owner and finance (before Phase 6); the home card showed a "Pending Approval" pill on a draft
+(not investigated). **Still unproven:** the Playwright specs (need Clerk secrets), Approve past the identity
+check, the deployed site, and the owner's review. Open: #259 further slices (turning on
+`CONSOLIDATED_CONTEXT_READS` is the owner's call) and the dark-lettering logo (#257). Production migrations
+0117, 0118 and 0119 were applied by the owner on 2026-11-21 and verified (104 migrations; see the release
+record in `docs/runbooks/v1-migration-and-release.md`). The live smoke test is still to be done.
+
+**Phase 7 hardening pass (21 Nov 2026, local scratch database, no production contact).** Production
+migrations 0117 to 0119 have since been applied and verified (see the runbook record, PR #273).
+Accessibility: an axe crawl of 22 owner pages plus the supervisor, attendant and finance landing pages, at
+phone and desktop, light and dark, found three real defects (Profit Month tab had no panel; two Expenses
+buttons and the Settings "Edit details" button had spoken names that did not start with their visible
+text); all fixed in #275, re-crawl shows no serious or critical finding and no sideways scroll anywhere.
+Left open (minor): a few empty/error cards put a level-3 title directly under the page title. CI runs the
+Playwright specs with real sign-in, so #274 caught three sidebar specs that treated Reports as one link;
+they were updated. #273, #274 and #275 are merged (21 Nov 2026).
+
+**Phase 7 close-out checks (21 Nov 2026, local scratch database, no production contact).** Full unit suite:
+329 files, 2,568 tests passed. Weak network, in a browser against the dev server: a reload while offline
+shows the browser's own error and the page recovers cleanly when the connection returns; with 1.5 s added
+to every request My Shift and Daily Operations still load fully with no page errors; with every browser API
+call answered 503 the server-drawn pages still show their data. Saving while offline and replaying the save
+is now also proven in a browser: on Daily Operations an edit made offline is kept on the device ("saved on
+this device, waiting to be sent", with Send Now and Throw Away), replays to the server when the connection
+returns, and the queue empties; on My Shift an offline reading says "Nothing was recorded", keeps the confirm
+button, saves on retry and is still there after a reload. A final axe crawl of 58 page and screen-size
+combinations on the merged code found only the known moderate heading-order item. The attendant My Shift screen has no axe
+violations and no sideways scroll for an attendant who has a station assignment (the local attendant1 login
+has none, so it shows "Access restricted", which is scratch data, not a defect).
+**Not measured:** page timings. A local production build deliberately refuses the dev sign-in, so
+authenticated pages cannot be timed that way; the staging performance runbook is the way to get real
+figures. **Not proven here:** tenant-isolation and database integration tests (run by CI, which passed on
+all three PRs), Neon backup and point-in-time restore, the observability and rate-limit evidence exceptions
+(section 12 and 13, vendor plan), the deployed site, the operator's smoke test of the production features, and
+the owner's review.
+
+## ZERA monthly return (#258) — 2026-11-21 (branch `feat/zera-return-258`, on top of `feat/side-panels-to-wizards-252`, uncommitted)
+
+Phase 5 of the owner feedback round. **Reports > Inventory > ZERA Monthly Return** works out the
+regulator's monthly return for one station and asks only what it cannot know, one question per screen
+(`/reports/zera-return`; the wizard is `reporting/zera/ui/zera-return-wizard.tsx`, its rules are pure and
+tested in `zera-return.ts` and `zera-wizard-checks.ts`).
+
+- **Figures.** Supplied = confirmed deliveries by station business date; sold = meter litres on approved,
+  posted or locked reconciliations. D50 goes to Diesel 50ppm; petrol and blends to Petrol; plain diesel,
+  gas and other products are listed in the notes only; a product with no fuel type blocks saving; kilograms
+  are never added to litres. `0` when nothing moved; `m` for both sold boxes when any past day of the
+  month has no approved report (the days are listed in the notes). One blend percentage in use is taken as
+  it is; none or several is asked, and `0` is written when no petrol moved.
+- **Rounding is ZERA's own rule** (printed on the form): whole litres, rounded to the nearest litre
+  (203 401.56 becomes 203 402). Quantities are summed exactly (integers scaled by 10^6) and rounded once, on
+  the total, never per delivery. **An exact half litre rounds up** (0.5 becomes 1): the owner found that
+  ZERA does not accept a figure ending in .5, so every figure is a whole litre (2026-11-21). Stored
+  quantities with more than six decimal places are refused rather than cut.
+- **Answers** are the form's fourteen questions in its own order, including the representative's email.
+  Licence details (name on the licence, number, ownership COCO/CODO/DODO, province, representative name,
+  phone, email) live on the station (migration 0118, six plus one nullable columns with checks) and are
+  asked once, then kept.
+- **Saved returns** (migration 0119, `app.zera_returns`): each save is a new version holding the answers as
+  they were; the application role can read and add rows but never change or delete them (row-level
+  security forced). A later correction to a delivery or report does not change a saved return.
+- **Who can see it.** Reading, saving, listing and downloading all need `report.view`, checked at the
+  station. Nobody without it can see a return or its downloads, and another organisation cannot reach it.
+  Saving runs through the audited, idempotent inventory command path (`REPORT.ZERA_RETURN_SAVED`); the
+  server works the figures out again from the database and ignores any figures from the browser.
+- **Downloads** (`/api/reports/zera/download`): CSV or a PDF made by the existing PDF writer, from a saved
+  version only. They need a fresh identity check and are written to the signed audit log
+  (`REPORT.EXPORTED`) in the same transaction as the read. CSV cells that would run as spreadsheet
+  formulas are defused; phone numbers keep their leading +.
+- **Also enforced on the server:** a month that has not finished cannot be saved; two saves of one month at
+  the same moment take turns (an advisory lock) so each gets its own version number.
+- **No fuel type.** The blocker screen links to the station's page under Settings, and says the path: open
+  the fuel, Yes Change It, The fuel itself, Change the type of fuel (walked on the live dev server).
+- **Checks run:** 31 unit tests for the figures and wizard rules (including exact halves rounding up);
+  17 integration tests on a freshly migrated database (`tests/integration/zera-return.test.ts`: nearest-litre
+  rounding of 1000.4 + 500.4 = 1501, no fuel type, ethanol, validation, versions, idempotent retry,
+  simultaneous saves, unfinished month refused, saved return unchanged after later books change, PDF and
+  audit event, role matrix, other organisation, supervisor's other station, application-role privileges,
+  **sold litres from reconciliations in every state** (pending and draft days are not counted, so the
+  figure is `m` until every day is approved, then 1299.5 becomes 1300), and **row-level security as the
+  real `app_runtime` role** (own organisation sees its returns, another sees none, no context sees none,
+  update and delete refused)); 5 browser tests (`tests/e2e/zera-return-wizard.spec.ts`, phone width, axe
+  clean); a live walk against the seeded local database as the application role, which matched
+  hand-computed litres. The reconciliation fixture writes end states with database triggers off for that
+  one connection (the real commands are guarded and need lineage); the ZERA code under test runs normally.
+- **Licence details** are asked, and can be changed at any time, inside the ZERA wizard (every answer has a
+  Change button on the check screen) and are kept on the station. The edit-station wizard does not ask them
+  too, on purpose: one place to change them.
+- **Due date.** The check screen shows ZERA's own sentence from the form, word for word ("Complete the
+  return as at the end of each month and send it to ZERA by the 3rd (section 43 of the Petroleum Act and
+  the licence conditions)."), and works out no date of its own. The form also says "on or before the 3rd of
+  every second month" in another place; the screen uses only the section-43 sentence above.
+- **Still open.** Migrations 0118 and 0119
+  are applied only to local throwaway databases (production migrations are the owner's, done at the very
+  end); the numbers and the UI-lock manifest may shift once #266 and #267 merge. Nothing was run against
+  production.
+
+
+## Side panels retired (#252) — 2026-11-21 (branch `feat/side-panels-to-wizards-252`, on top of `feat/fuel-change-wizard-249`, uncommitted)
+
+Phase 4 of the owner feedback round. **No screen opens a side panel any more.** Every job that used
+one is now a page guide (`Modal presentation="page"`: one question per screen, pick-lists first, a
+check screen with Change buttons, then the save), or a page view. A new unit test
+(`design-system/no-side-panels.test.ts`) fails if a `presentation="side"` is added again; the `side`
+presentation stays in the design system only so its styles do not disappear.
+
+- **Settings > Payments.** Bank balance: station (skipped with one station) → balance → date → check
+  (`setup/ui/bank-balance-wizard.tsx`, checks in `payment-checks.ts`). The page-wide station box is gone.
+- **Settings > Reminders.** The four settings are listed; "Change reminders" asks about one at a time
+  with the usual choices (3 / 7 / 14 / 30 days and so on, or "Another number")
+  (`setup/ui/alert-settings-wizard.tsx`, `alert-settings-checks.ts`).
+- **Finance > Staff Fuel Benefit.** "Add a staff member" is a guide: which staff member → the usual
+  US$60 a month or their own → check; the identity check still comes first on save
+  (`customers/ui/staff-benefit-wizard.tsx`, `staff-benefit-checks.ts`).
+- **Finance > Customers > Account Controls.** "Change credit limit" (limit → approver → reason → check)
+  and "Add details to this transaction" (station if not known → vehicle → driver → voucher → approver,
+  each skippable, → check) are guides (`customers/ui/account-controls-wizards.tsx`,
+  `account-controls-checks.ts`).
+- **Suppliers > Purchase Orders > Settings.** Company and per-supplier rules are one rule per screen
+  with "No difference allowed / Up to 0.5% / Up to 1% / Another amount"; a supplier can pick "Same as
+  the company" on any rule. Someone who may look but not change sees the same screens as a read-only
+  summary (`purchasing/ui/policy-wizard.tsx`, `policy-wizard-checks.ts`).
+- **Settings > Organisation.** Edit company and Edit station are guides. "Edit details" under
+  "Quotations and invoices" opens the company-details guide in place for that company (reads
+  `GET /api/sales-documents/profile`, new, same permission as the quotations page) instead of
+  jumping to `/sales-documents?company=1`; one row per company when there are several.
+- **Settings > Staff.** "Edit access" (role → where they work → check) is a guide, and a staff member's
+  own screen is a page view. Leaving the person's page before the access guide opens keeps it to one
+  page at a time (`settings/ui/staff-access-wizard.tsx`).
+- **Finance > Cash & Banking.** Collect cash, Receive cash, Bank cash and Confirm deposits are guides;
+  Bank cash's cash lines repeat ("Add more cash to this deposit?"), and "Bank it" on a row starts
+  with the cash and its amount chosen. The history drill-in is a page view. The "Discard what you have
+  entered?" box is gone with the sheet (Back and Cancel do that now) (`cash/ui/cash-sheet-wizards.tsx`,
+  `cash/cash-sheet-checks.ts`; amounts are compared as exact decimals).
+- **Finance > Provider Payouts.** "Match a payment": payout → payment → amount → check; a single payout
+  or payment is not asked about (`settlements/ui/match-wizard.tsx`, `settlements/match-checks.ts`).
+- **Finance > Expenses.** Manage categories: the list, then add a kind (name → fixed monthly cost?
+  → check), back on the updated list. Approval limits: the card is gone and an "Approval limits"
+  button sits beside "Manage categories"; each limit is a screen with usual choices
+  (`expenses/ui/expense-setup-wizards.tsx`, `expense-setup-checks.ts`). The "Enter an expense / Add
+  a regular cost" choice was already the first screen of the guide.
+- **Not changed.** Nothing about what is saved, who may do it, the identity checks or the commands
+  and their idempotency keys. No schema or migration. The read-only purchasing tabs (Not Invoiced Yet,
+  Invoice Checks) keep their lists; they only follow the shared tab style (#254). Categories can still
+  only be added, not renamed or hidden, because there is no command for that.
+- **One behaviour change found while testing.** In Cash & Banking, when the server refuses a save with
+  a reason (a 400, for example "Attach the deposit slip before confirming this deposit with the
+  bank."), that reason is now shown on the check screen instead of "Some of the details are not
+  right", which a guide with no single field to point at made unhelpful. The save is still refused and
+  the person stays on the check screen with their answers.
+- **Checks (local).** Typecheck, lint (0 errors, 1 existing warning), format, production build, 319 unit
+  files (2,478 tests), UI-lock manifest regenerated (DEC-056).
+  - Browser: new `side-panel-wizards.spec.ts` (16 tests, development page
+    `/dev-preview/panel-wizards`) drives bank balance, staff benefit, credit limit, transaction
+    details, expense categories and limits, purchase-order settings (company, supplier, view-only),
+    Edit company, Edit station and staff access: question order, a wrong or empty answer stays on its
+    screen with a plain message, Change returns to the check screen, the exact payload saved, and
+    phone/tablet/desktop width and accessibility on the first screens. Updated: `cash-workspace` (13),
+    `provider-settlements`, `v1-panels`, `acceptance-quality`. These five files: 51 pass.
+  - Real round trips (nothing mocked; a seeded throwaway TEI Oils copy, row-level security on, dev
+    identity check granted): reminders, bank balance, Edit company, Edit station, staff access, staff
+    benefit, credit limit, approval limits, expense category, purchase-order settings, receive cash and
+    bank cash all saved through the real commands. Not exercisable with that data: Collect cash (no
+    approved shift cash left), Match a payment (no provider statement), transaction details (no
+    account-sale entries); those are covered by the browser specs above.
+  - Not run here: `settings.spec` and `staff-management.spec` need real Clerk test users
+    (`E2E_CLERK_USERS`), which only CI has. `accessibility.spec` (design-system reference page, four
+    tests) fails here; nothing under `src/design-system` or its pages changed in this work, so it is not
+    caused by it, but it was not re-run on a clean checkout.
+
+
+
+## Station page, opening balances and Readiness (rest of #250, #251) — 2026-11-20 (branch `feat/fuel-change-wizard-249`, on top of the fuel wizard work, uncommitted)
+
+Finishes Phase 3 of the owner feedback round. **The editing screen is gone.** The station page
+(`setup/ui/station-detail.tsx`) is now the only station screen: the "Fuels" cards, then "The whole
+station", with no "Change setup / Done changing / Continue setup" button. Every job the old screen
+did now has a wizard (one question per screen, pick-lists first, a check screen, then "Do you want to
+change something else?"), and every change still joins the one waiting-changes list that is reviewed
+and saved once with one identity check (`StationStaging`).
+
+- **Where each old job went.** Add a fuel (`AddFuelWizard`), and for one fuel the new "The fuel
+  itself" option under "What do you want to change?": rename, change the type (incl. blend), change
+  how it is measured, hide, show again (also "Show again" on the Fuels card for hidden fuels), delete
+  an unused fuel (`FuelEditWizard`). Shifts: add, change or remove (`ShiftsWizard`). Who is in charge
+  (`InChargeWizard`, with "Go to Staff" when nobody can be chosen). The new-station guide
+  (`NewStationGuide`) still shows for a station with no fuel. The blocked-shift-close arrival
+  (`focus=meter-start`) opens the pumps wizard on the meter day. Rules are in `setup/station-wizards.ts`
+  (tested); screens in `setup/ui/station-wizards.tsx`; the page that hosts them is `StationWizardPage`
+  in `guided-setup-panel.tsx` (that file went from about 2,800 to about 700 lines: the stacked forms,
+  `GuideSteps`, the supervisor card with its move/remove actions, and the standalone setup page are
+  deleted; moving or removing a person from a station is done under Staff).
+- **Opening balances wizard** (`opening-balances/wizard.ts` rules, `ui/opening-wizard.tsx`): "Do you
+  want to add the opening balances now?" Yes / No; then the day, the fuel in each tank (litres, and
+  an optional value), cash at each cash location, each bank account, customers who owe, unpaid
+  supplier invoices; each skippable with "None" or No; a check screen in plain words; then it saves
+  **the same draft batch the spreadsheet import makes** (preview, create, approve, lock, each with
+  the same identity check), the answers being turned into the same CSV the import reads (a test parses
+  it with the real parser). The spreadsheet import page stays for bulk use. New read-only lookup
+  `GET /api/opening-balances?tenantId=…&optionsFor=<stationId>` (`getOpeningBalanceOptionsFromRequest`,
+  same permission as the import; no schema change, no migration). Items that already have an opening
+  figure are not asked again; bank, customer and supplier figures are company-wide and are asked once
+  (a bank account or customer that already has one is skipped). It needs the station's own waiting
+  changes saved first, so a new tank is included.
+- **Readiness redesign** (#251, `setup/ui/readiness-panel.tsx`, `complete-station.tsx`, rules in
+  `setup/complete-station.ts`, tested): the tab uses the same station cards as the Stations page
+  (`StationCards`), says "N stations have things left to do" and asks "Do you want to complete them
+  now?"; Yes asks which station to start with, then goes through only what that station still needs
+  (a fuel, a price, a tank, a pump and nozzle, a shift) in the matching wizard, asks to review and save,
+  offers "Make it live" for a station being set up, then "This station is now complete. Do you want
+  to complete the next station?". Clicking an unfinished station's card starts the same loop for it.
+  The long per-area list, the "Fix this" links and the "Readiness checklist" link in the station menu
+  are removed.
+- **Owner decisions applied to the loop (2026-11-20).** The loop also asks about payment accounts
+  and opening stock, and invites people from inside it. In order: the station's own setup, then who
+  works there (`StaffInviteJob`: the Staff page's invite wizard with the station fixed and only
+  station roles offered; one-time activation code shown before the loop moves on; an invitation is
+  not an assigned person until accepted, so the station then "can go live once X has joined"), then
+  a payment provider (if none exists) and its account for the station and the company's bank account
+  (`PaymentJob`: the Payments page's wizards, commands and identity check), then, after the waiting
+  changes are saved, the opening stock (the opening-balances wizard). `StationReadiness.wants`
+  (`providerAccount`, `bankAccount`, `openingStock`) carries what the readiness facts already
+  counted; none of the three holds a station back from going live (`activationMissing` is
+  unchanged). A person without payment or staff rights is not asked those jobs.
+- **Checks (latest, after the gaps above):** typecheck, lint (one old warning), format, the full unit
+  suite (310 files, 2,432 tests) and a production build pass; `opening-balances-wizard.spec.ts` (6
+  tests) passes in the browser. Earlier count: typecheck, lint, format and the unit suite (2,416 tests; new:
+  station wizards 26, opening balances 16, complete-station 9). Browser specs rewritten/added and run
+  against the local dev server: `setup-guide.spec.ts` (station page, fuel/shift/in-charge wizards,
+  8 tests incl. axe at 320–1280 px) and `opening-balances-wizard.spec.ts` (full flow with sample
+  answers, saves the same file, approve and lock needing the tick; 4 tests). `setup-readiness.spec.ts`
+  was rewritten for the new page but **not run** here (it needs CI PostgreSQL and the Clerk
+  development instance). Verified live on the local demo database at 390 and 1280 px, light and dark,
+  no sideways scroll: station page, add fuel, rename, shifts, in-charge, the opening-balances flow
+  (real preview call; create, approve and lock answered with sample replies so nothing was written)
+  and the Readiness loop (the second station was made to look unfinished by changing only what the
+  page was shown).
+- **Real round trips on a scratch copy of the demo database (2026-11-20, nothing mocked, copy
+  dropped afterwards; the demo database was not written).** Opening balances: create, approve and
+  lock with a tank, two cash locations, a bank balance, a customer and a supplier invoice; every row
+  posted. Readiness loop on a new bare station: staff invitation, payment provider and station
+  account, tanks, pump and nozzles, a shift, both prices through the full request,
+  approve and activate steps (the bank-account job was skipped because the company already had one), one save of the waiting changes, a partly saved station resumed, and
+  opening stock locked. **This found and fixed three real faults:** (1) locking any batch with a cash
+  or customer line failed with a server error (a `Date` passed into hand-written SQL; same code is
+  on `main`; fixed in `opening-balances/commands.ts`, guarded by `commands.guard.test.ts`);
+  (2) the wizard stopped at "These exact figures were already saved" if the same figures had been
+  saved as a draft; it now carries on to approve or lock; (3) the station cards had an accessible
+  name that left out their visible text (axe failure at 320 px); `setup-readiness.spec.ts` also had
+  an ambiguous selector. The identity check (a Clerk component) cannot run under the local sign-in
+  bypass, so for these runs it was set through `/api/auth/step-up` and, in the loop run, a
+  temporary auto-approve in the dialog that was reverted. Not covered: the Clerk dialog itself, and
+  `setup-readiness.spec.ts` against Clerk (its assertions were run through the bypass in a
+  temporary copy and pass). **Gap found, now fixed in the loop:** a save cut off halfway (page
+  closed) could leave a price prepared but not activated; the loop treated it as set, so nothing
+  finished it and "Make it live" stayed blocked by "No active selling price". The loop now asks
+  again for any waiting price this person can still take further (the price wizard then offers
+  "Start using this price"), and leaves alone a price only someone else can move (unit tests).
+  **Re-run for real on a fresh scratch copy (2026-11-20):** one price was left prepared but not
+  started through the real commands, then the real Readiness loop asked about it again ("A new
+  price is already waiting"), "Start using this price" ran `ActivatePriceChange`, and both prices
+  were ACTIVE. The gap itself also exists on `main`.
+- **Loop checks:** unit tests for the job order, `wants` and the invitation command; run live with
+  the station made to look unfinished and the staff, settlement and identity-check calls answered
+  with sample replies (nothing written): invite to code to next job, provider, account, bank,
+  opening-balances question, closing screens, 390 and 1280 px, light and dark, no sideways scroll.
+  No browser spec covers the new loop jobs (the Readiness spec needs CI PostgreSQL and Clerk).
+  Opening stock that is entered without a value still blocks "Make it live" (the existing rule, in
+  the activation command). The check screen of the opening-balances wizard now says so up front
+  ("Tank 1 has fuel but no value ... cannot go live until the value is added"); saving without a
+  value is still allowed.
+- **Gaps closed after the round trips (2026-11-20).** (1) The cut-off price above. (2) The opening-
+  balances wizard keeps its answers on this device (`useWizardDraft`, key per company and station)
+  and offers "Continue where I was" after a reload; a screen in the middle of one item resumes at
+  the start of its group with the answers kept; nothing is kept once saved to the server (browser
+  test). (3) Someone invited to a station and not yet joined is a readiness fact
+  (`StationSetupFacts.pendingInvitations`, `StationWants.invitationPending`): the loop no longer asks
+  to invite again, and says "can go live once the person you invited has joined" (verified live;
+  readiness unit and integration tests). (4) `tests/integration/opening-balances-wizard.test.ts`
+  (PostgreSQL, fresh ids every run): the options lookup (this station and company only, nothing from
+  another tenant), then create, approve and lock with tank, cash, bank, customer and supplier lines
+  and the rows posted, an unlocked draft not counting as an opening figure, the duplicate-batch
+  answer, the unvalued-tank readiness detail and the pending-invitation fact. Run on a scratch
+  copy of the demo database, with `setup-readiness`, `opening-balances` and
+  `opening-cost-per-litre` (14 tests pass). The "Tank 1" label (from code "T1") is the app-wide tank
+  naming, not a defect.
+- **Still not covered:** the Clerk identity-check dialog itself, and `setup-readiness.spec.ts` against
+  Clerk and CI PostgreSQL (needs their credentials). **Not done:** Phases 4–7 of the round (the side
+  panels #252, the Zera return #258, daily operations #253, close-out).
+
+## Fuel change wizard, first part (#249, #256, start of #250) — 2026-11-20 (branch `feat/fuel-change-wizard-249`, stacked on the #248 foundations, uncommitted)
+
+Built on the wizard foundations. Done: (1) **"What do you want to change?" stands alone**
+(`WizardMenu` in `wizard-kit.tsx`, `ChangePart` in `guided-setup-panel.tsx`): "Yes, change it" on a
+fuel page opens only the question, the three options (price, tanks, pumps and nozzles) and Cancel;
+picking one goes straight to that flow. (2) **Tank wizard** (`setup/tank-wizard.ts` rules, tested;
+`setup/ui/tank-wizard.tsx` screens): pick a tank or add one, then one question per screen — name,
+size, "remind me to order more fuel" (yes/no, then 25 / 20 / 10 % of the tank or an own amount),
+how big a difference is acceptable (the standard check, 0.5 % warning and 1 % alert, or own
+amounts), a check screen, then "Do you want to change something else?" which returns to the first
+question. Whole numbers with units beside them, no "yellow"/"red" wording (also changed on the
+Inventory tank settings, the add-fuel wizard and the old forms); the old checks stay (reminder not
+above the tank size, urgent not below the explain amount, explain set first, no repeated tank name).
+A tank with only an explain amount is shown with the urgent amount it already has (twice the first).
+(3) **Prices read as money** on the price-change page (`US$1.50/L`, not `1.500000`; decimals the
+price really has are kept, `formatUnitPriceText`) and that page has its own heading, "Change a
+price". (4) The station page card is called "Fuels" and no longer shows the shift note.
+(5) **The waiting-changes list now belongs to the station page** (`StationStaging` in
+`guided-setup-panel.tsx`): the review bar, the review list and the one identity check wrap the whole
+page, so a wizard opens on its own (`FuelPartWizard`, no stacked cards behind it) and the list
+survives while wizards open and close. The old editing screen reads the same list. Everything still
+saves once, from the review bar. (6) **Price wizard** (`setup/price-wizard.ts` rules and
+`setup/ui/price-wizard.tsx`): one question (the new price per litre or kilogram, with the price in use
+shown), a check screen that says what happens for this person's rights (sent for approval, approved,
+or used straight away), then "Do you want to change something else?". A price already waiting can be
+taken one step further from the first screen instead. The old price form and the link out to the
+price-change page are gone from the setup screen. (7) **Pumps and nozzles wizard**
+(`setup/pump-wizard.ts`, `setup/ui/pump-wizard.tsx`): add a nozzle on a pump you have or a new one
+(pump, number, meter serial number, when the meter was fitted, check), change a pump's number or name
+and its nozzles' numbers (a swap is sent in an order the database accepts), or correct when a meter
+started working (also the arrival from a blocked shift close). The old pump forms are gone; adding a
+pump on its own, with no nozzle, is no longer offered. The review list now reads "New price for
+Unleaded: US$1.755/L" and shows a pump's new name. (The rest of #250 and #251, built after this part, is in the entry above.) Checks: see the PR notes; verified live on the
+demo database at 390 and 1280 wide (tank, price and pump wizards, review list, no horizontal
+overflow); changes were only staged, nothing was written to the demo data. Not verified live: the
+"price already waiting" screen (the demo owner can take a price all the way) and the meter-day
+correction (no nozzle on the demo qualifies); both are covered by unit tests of their rules.
+
+
+
+## Loading truck with each company's own logo — 2026-11-20 (branch `feat/truck-loader-257`, issue #257, uncommitted)
+
+While a page loads, a small tanker drives left to right (`design-system/loading-truck.tsx`, drawn in
+code, one change in `RouteLoading` for all 62 `loading.tsx` files). It appears only after 0.45 s so
+short loads never flash it, stays hidden from screen readers (the "Loading page…" text is kept),
+and stands still for reduced motion. A company with a logo sees it on the tank and its colour on the
+swoosh; a white-lettered logo gets a dark tank (`chooseTank` reads the logo's pixels in the browser).
+The first load, and a company with no logo, show the plain truck in the app's colours.
+Migration `0117_app_logo` adds `sales_doc_profiles.app_logo_png_base64` (PNG only, <= 300 000
+characters, signature checked) — additive, local databases only until approved. The company-details
+screen now accepts PNG, JPG or SVG and keeps two small copies: the JPEG on white for documents and a
+transparent PNG for the loading screen (an SVG is drawn onto a canvas, so only pixels are kept).
+`GET /api/brand?tenantId=` returns the logo and colour to any signed-in member of that company (no
+document permission needed; company membership and row-level security still apply; `private,
+no-store`); the browser asks once per company after the first page. Not done: T.E.I Oils' real logo
+is not loaded for them (they set it in Company details; white lettering is handled by the dark
+tank); the integration suite and browser specs were not run (they need Clerk secrets / are not
+written for this screen).
+
+## Transparent icons and one icon per report — 2026-11-20 (branch `feat/icons-transparent-255`, issue #255, uncommitted)
+
+The tiles and circles behind icons are gone: report rows, the Today figure cards and hero ring, My
+Shift figure icons, timeline and audit marks, the confirm, state and work-in-progress icons (the
+station and fuel icons were already plain). Boxes keep their size so nothing moves; colours stay
+tone-based and were checked in light and dark. Each report now has its own icon
+(`reporting/ui/report-icons.ts`, `REPORT_ICONS`), with ten new drawings in `design-system/icons.tsx`
+(arrows, layers, dipstick, factory, person, user-check, safe, bank, clipboard-check, pie); a unit
+test fails if a listed report has no icon of its own or shares one. Sidebar icons were audited:
+Inventory is now the tank, Cash & Banking the bank, Provider payouts the card, Expenses the dollar,
+Staff fuel benefit the nozzle, Suppliers the factory, Payments due the calendar, Purchase orders the
+clipboard, Reconciliations the scale (Transporters and Fuel deliveries keep the truck). Not done:
+the ~19 files that draw their own `<svg>` (charts, provider logos, tank drum) were left alone, as the
+issue says; a full per-screen icon relevance review beyond navigation and reports was not done;
+browser specs were not run (they need Clerk secrets).
+
+## Wizard foundations (#248) — 2026-11-20 (branch `feat/wizard-foundations-248`, from `main` 7d49ba30, uncommitted)
+
+First step of the owner feedback round (tracking #260). Nothing user-visible changes except one screen.
+
+- **New shared parts** (`src/design-system/`): `wizard-kit.tsx` (pick-list answers `WizardOptions` / `WizardYesNo` / `WizardUsualOrOwn`, the "Change something else?" loop `WizardAnother`, saving progress with `useWizardDraft` + `WizardResumeNotice`, and `WizardConfirm`, the one confirm screen) and the pure, unit-tested rules in `wizard-nav.ts` (Back trail, "Step x of y", repeating steps) and `wizard-draft.ts` (per-wizard draft: kept on this device, offered back, never applied silently, dropped after 24 hours, on a changed record, or for a screen that no longer exists; secrets never kept). `useWizard` now uses `wizard-nav.ts`; behaviour is unchanged. `WizardCard` takes `ownDraft` so the page-wide draft keeper stays out of a wizard that saves its own progress. The written pattern for new wizards is in `src/design-system/README.md`.
+- **The shared confirm is now the page card:** `ConfirmDialog` (used by purchase orders and by `confirm()` from the feedback provider) renders through `WizardConfirm` in `Modal presentation="page"` instead of a small pop-up. Same props; `WizardConfirm` gained the tick-box acknowledgement and a warning tone. Cancel and Escape still close it, and the tick resets on each opening.
+- **One screen converted:** "Add an expense" no longer opens a small pop-up first. "What would you like to add?" is the wizard's first screen (`ExpenseKindStep`).
+- **Not done here (later PRs in the round):** retiring the ten side panels and the one-off dialogs that do not use `ConfirmDialog` is #252, one area at a time; the new pieces are used by #249, #250, #251, #253, #256 and #258.
+- **UI lock:** re-baselined with the owner's approval (DEC-056).
+- **Checks:** typecheck, lint (one old warning), format, unit tests and the production build pass. Checked live on the local demo database (the confirm on the design-system reference page, since the demo has no purchase orders) at phone and desktop widths, light and dark, with no sideways scroll. No browser spec was added: the existing specs mock Clerk and the expenses APIs, and none covers this page.
+
+
+
+
+## Loading speed, code-only slice — 2026-11-20 (branch `perf/loading-speed-259`, issue #259, uncommitted)
+
+Done (code only; no schema, auth rule or caching change): (1) My Shift and Settings no longer do a
+second full station and permission lookup. The page now takes the shell's already-loaded list of what
+the person may use and chooses its station from it (`modules/context/page-context.ts`,
+`contextFromShellAccess`, the same pattern as `ServerDataPage` and the Finance page), and hands the
+shell the same result; the choice uses the same route, policy and saved-choice rules, and only picks
+from what the shell verified. (2) My Shift reads the database clock in the station query instead of a
+separate `select now()`. (3) A root `loading.tsx` gives the dashboard an instant skeleton when
+someone moves to Today; sign-in, join, invite, owner-demo and dev-login get an empty `loading.tsx` so
+they do not show the app skeleton. (4) The daily alert email now logs a warning once its recipients
+reach 80 % of the 200 cap (it silently stopped at 200). Not done, on purpose: the dashboard
+per-station "needs attention" batching (it already runs the stations in parallel, and batching means
+rewriting the action-centre reads under per-station permission checks — needs production timings
+first); `next/dynamic` splitting (the biggest candidate, `guided-setup-panel.tsx`, is rewritten in
+the wizard work, so splitting it now would only conflict); the `proxy.ts` slug lookup (it is the
+fail-closed auth boundary and only affects `?org=` addresses); dropping `force-dynamic` (a safety
+net that costs nothing at run time); pool timeouts (the pooler setup is not confirmed); moving
+screen CSS out of the global files (UI-locked, needs a visual pass); turning on
+`CONSOLIDATED_CONTEXT_READS` / adding the slug to migration 0034's snapshot (a production decision).
+Timings are in the PR notes; production timings were not available.
+
+## One tab style — 2026-11-20 (branch `feat/one-tab-style-254`, issue #254, uncommitted)
+
+`src/design-system/tabs.tsx` is now the only tab look: a light rounded track with the open tab as a
+raised pill, every tab always showing its name (an optional icon is supported), at the right end of
+its row, CSS in `design-system/styles/tabs.css`. `TabSwitcher` is a real `role="tablist"` with
+arrow-key, Home and End navigation (`tabs-keys.ts`, hidden tabs are skipped); `TabLinks` gives the
+same look to related-report links; `FilterPills` gives it to list filters. Moved over: `TabbedCard`
+(Finance, valuation, settlements, cash, supplier-due), Profit, Expenses (All Expenses / Regular
+Costs), Purchasing, Tank detail (its desktop "Dips and movements" merge kept), the Related-reports
+links and the reconciliation filters. The old `.profit-tabs`, `.tank-tabs` look, `.purchasing-tabs`,
+`.recon-tab*` and the underline `.income-tabs` rules are gone. Decision per case: the reconciliation
+list filter stays a filter (`aria-pressed`) but looks the same; other `aria-pressed` groups (today
+overview, customers, staff panel, settings, sales documents, orders, creditors, deliveries,
+inventory) were left as they are — they narrow a list rather than switch views. The Daily Operations
+step bar keeps its own behaviour until its wizard (#253). Phones: tabs share the width in even
+columns (no sideways scroll; checked at 390 px on Profit, Expenses, Purchasing, Cash, Settlements,
+Tank, Reconciliations, Valuation, Finance, Suppliers due, Reports). Not done: the Playwright specs
+were not run (they need Clerk secrets); `role=tab` is unchanged so their selectors still match.
+
+## Quotations, invoices and receipts — 2026-11-18 (branch `feat/sales-documents`, from NOV17)
+
+DEC-045. Built: migration `0108_sales_documents` (letterhead and numbering settings, gap-free
+counters, documents, append-only lines; five permissions), the Drizzle schema, the
+`sales-documents` module (contracts, commands, queries, totals logic), `POST
+/api/sales-documents/commands`, a portrait A4 PDF (`pdf.ts`, reusing the report writer's text
+helpers) served by `GET /api/sales-documents/pdf` (authorised read, signed audit event, no-store),
+and the screen at `/sales-documents` (list, new or edit draft with live totals and a fuel picker
+that suggests the station price, detail with issue, accept, make invoice, record payment, cancel,
+and a "Company details" panel for the letterhead and numbering). Documents are standalone:
+nothing posts to the customer ledger, cash, profit or any report. Checked: unit tests (full
+suite 2113 pass once the UI-lock manifest was updated), `tsc`, `pnpm lint`, `pnpm format:check`,
+`pnpm build`, `tests/integration/sales-documents.test.ts` (14 tests) on a scratch database, and a
+Playwright walk-through on a cloned demo database at 1440 and 390 wide (company details, quotation,
+issue, PDF download, invoice, payment, list; no horizontal overflow, no console errors); the
+generated PDFs were opened and read. A "Quotes & invoices" entry now sits in the Finance menu
+(permission `sales_document.view`), and Settings > Organisation has a "Quotations and invoices"
+card that opens the Company details panel (`/sales-documents?company=1`); the UI-lock manifest was
+re-baselined for the three locked files edited (`navigation.ts`, `navigation-projection.ts`,
+`settings-workspace.tsx`) and 10 new entries were added. Full unit suite 2115 pass, lint and format
+clean. Not done: the repository e2e and accessibility suites (need Clerk test secrets). The
+integration suite runs as a superuser, so the runtime role's grants were checked by hand and by
+`runtime-role-row-locks`.
+
+Review round 1 (2026-11-18): line amounts show gross with the discount once below the subtotal;
+draft PDFs carry the company letterhead; per-field form errors; fuel list scoped to the station;
+payment method is a fixed list; Cancel moved under "More".
+
+Review round 2 (2026-11-18): list search, status filter and an "owed / overdue" strip; an Overdue
+status for issued invoices past their due date (worked out from the server's date, exact decimals,
+no stored state); "Make invoice" shortcut on quotation rows; Send dialog on issued documents (email
+with the PDF attached through the existing Resend sender, needs `RESEND_API_KEY` and
+`RESEND_FROM_EMAIL`, permission `sales_document.issue`, audit event `SALES_DOCUMENT.EMAILED`; or a
+WhatsApp click-to-chat message the person finishes by hand); company logo (JPEG, shrunk in the
+browser, embedded in the PDF) and brand colour, kept in the letterhead snapshot so issued documents
+never change. New migration `0109_sales_doc_branding` (two nullable columns plus checks). Checked:
+full unit suite 2120 pass, `tsc`, eslint, prettier, UI-lock manifest re-baselined for the
+sales-documents screens only, browser run on the cloned demo database. Not checked: a real email
+send (no provider configured locally; the "not set up" message was checked) and the integration
+suite for 0109.
+
+Migrations 0107 (Finance day-lock revoke, from NOV17), 0108 (sales documents) and 0109 (document
+logo and colour) exist but are NOT applied to production; the owner will apply all migrations
+together at the end (after 0106).
+
 ## Manual QA issue list — 2026-11-02 (branch `codex/qa-issue-list-20261102`, PR #213)
 
 Fixed from the owner's manual QA report: real PDF and styled Excel report downloads (DEC-052),
@@ -53,7 +585,7 @@ real application code, station-level actors) and a change-access case in
 `staff-invitation-runtime.test.ts`. Still reading memberships directly, by design (owner or
 administrator screens): the staff list/management commands in `src/modules/staff`.
 
-## Settings screens polish — 2026-11-01 (branch `ui/profits-page`, uncommitted)
+## Settings screens polish — 2026-11-01 (branch `ui/profits-page`)
 
 Owner asked for the Settings screens to match the rest of the site and feel less overwhelming. UI
 only: no schema, auth, permission or API change, and no new commands.
@@ -72,7 +604,7 @@ only: no schema, auth, permission or API change, and no new commands.
   e2e specs were updated by reading and were not run here (no Clerk test keys). The setup-guide and
   v1-panels specs and an axe scan of every section (light/dark, phone/desktop) did run locally.
 
-## Hardening pass — 2026-10-29 (branch `fixtures`, from `main` 81168380, uncommitted)
+## Hardening pass — 2026-10-29 (branch `fixtures`, from `main` 81168380)
 
 Code-verified audit of the existing features, with no new builds: see `docs/STATE_OF_PLAY.md` for
 the evidence table, candidate defects and the "not built, needs a decision" list. One defect fixed
@@ -102,7 +634,7 @@ Browser Clerk/E2E replay remains unavailable in this worktree because no dedicat
 configuration is present. Vercel preview checks for two auxiliary projects remain account-gated by
 `build-rate-limit`; this is external CI capacity, not a local application result.
 
-## Pilot-blocker audit work — 2026-10-26 (branch `halfway`, brought level with `main` f4acdf4, uncommitted)
+## Pilot-blocker audit work — 2026-10-26 (branch `halfway`, brought level with `main` f4acdf4)
 
 Checked against the 2026-10-25 platform audit. Production was not contacted; nothing was committed,
 pushed, merged or deployed. Migrations 0078 and 0079 are applied only to local test databases.
@@ -147,7 +679,7 @@ The audit-fixes and selling-unblock work was merged with `main` after main moved
 - **Migrations renumbered.** Main already held `0071_alert_email` and `0072_bank_balance_statements`, so this work's migrations are now `0073_supplier_contact_and_terms`, `0074_customer_credit_days`, `0075_supplier_document_returned`, `0076_supplier_invoice_station_and_line_type` and `0077_expense_payment_mobile_money`. Older sections below use the numbers from before the merge (0071 supplier contact, 0073 credit days, 0074 return, 0075 station and line type, 0076 mobile money). None of these has been applied to production.
 - **One bank balance feature, not two.** Audit-fixes had its own `bank_account_balances` table; main's `bank_balance_statements` (Settings > Payments) is kept and the duplicate was removed. The financial position keeps main's behaviour (bank statement balance when every account has one, otherwise recorded deposits) and still adds the "Fuel received, not yet invoiced" line.
 
-## Getting to the first sale — 2026-10-26 (branch `codex/v1-selling-unblock-20261026`, from `codex/v1-audit-fixes-20261025`, uncommitted)
+## Getting to the first sale — 2026-10-26 (branch `codex/v1-selling-unblock-20261026`, from `codex/v1-audit-fixes-20261025`)
 
 Response to the audit retest blockers that stopped any station from selling. Production was not contacted. Nothing was committed, pushed, merged or deployed. Decisions: DECISIONS.md, "Getting a station to its first sale" (PROPOSED).
 
@@ -187,7 +719,7 @@ Still open from the retest (not done here): approvals inbox does not yet count p
 - **Could not reproduce:** the "Open supplier" and "Open full account" links (code is correct; probably a symptom of the exhaustion). Not seen in a browser.
 - Open items for a decision are in `docs/v1-audit-followups-proposed.md`.
 
-## Audit fixes — 2026-10-25 (branch `codex/v1-audit-fixes-20261025`, from `main` 2a110f5, uncommitted)
+## Audit fixes — 2026-10-25 (branch `codex/v1-audit-fixes-20261025`, from `main` 2a110f5)
 
 Response to the external audit of the live site. Production was not contacted. Nothing was committed, pushed, merged or deployed. Decisions are in DECISIONS.md ("Business structure, bank balance and audit fixes", PROPOSED). The audit was run on the live site, not this branch, so several of its claims did not hold here; each was checked in code first.
 
@@ -371,6 +903,13 @@ format, `db:check`, typecheck green):
   (24 hours, tied to the saved record version, cleared once the server save succeeds) and offers
   them back after a crash. The copy is kept per person (membership), station and shift. Not
   browser-tested; the storage rules are unit-tested.
+- Offline drafts, every screen (2026-11-03, uncommitted): `PageDraftKeeper` (`src/platform/drafts/page-draft-keeper.tsx`,
+  mounted in `WorkContextProvider`, `src/modules/context/client-context.tsx`) keeps unsaved typing on any page, per signed-in person (Clerk user id), station
+  and page. It is offered back with Restore/Discard, never applied silently; it expires after 24 hours; it is cleared
+  when a save succeeds (the form that was saved is dropped, other half-typed fields stay). Passwords, one-time
+  codes, card and file fields are never kept. The deliveries and reconciliation screens keep their own drafts and are
+  skipped. The storage rules are unit-tested; the restore into live React forms is NOT browser-tested yet. No UI-locked
+  file was touched by this work.
 - Offline drafts, stage 2 (narrow): if a daily-report save fails because there is no connection, the
   exact commands, idempotency keys and running record version are queued on the device
   (`src/platform/drafts/outbox.ts`, per person, 7 days, 20 entries) and sent again when the browser

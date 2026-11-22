@@ -69,6 +69,8 @@ type ProfitLossRow = Readonly<{
   productCode: string | null;
   productName: string | null;
   litres: string | null;
+  /** LITRES or KILOGRAMS: what the quantity in the litres column is measured in. */
+  unit?: string | null;
   revenue: string | null;
   cost: string | null;
   profit: string | null;
@@ -86,6 +88,8 @@ type CommercialRow = {
   reference: string;
   name: string;
   stationCode: string;
+  /** LITRES, KILOGRAMS or MIXED, for the litre measures on the row. */
+  unit?: string;
   values: Partial<Record<(typeof COMMERCIAL_MEASURES)[number], string | number | null>>;
 };
 
@@ -122,6 +126,7 @@ function commercialRows(report: ManagementReport, code: (id: string) => string):
       reference: row.accountReference,
       name: row.displayName,
       stationCode: '',
+      unit: row.reservedUnit ?? 'LITRES',
       values: {
         receivable_balance: row.receivableBalance,
         prepaid_value_balance: row.prepaidValueBalance,
@@ -134,6 +139,7 @@ function commercialRows(report: ManagementReport, code: (id: string) => string):
       reference: row.accountType,
       name: '',
       stationCode: code(row.stationId),
+      unit: row.unit ?? 'LITRES',
       values: {
         drawn_amount: row.drawnAmount,
         drawn_litres: row.drawnLitres,
@@ -266,6 +272,7 @@ function profitLossRows(report: ManagementReport, code: (id: string) => string):
       productCode: fuel.productCode,
       productName: fuel.productName,
       litres: fuel.litres,
+      unit: fuel.unit ?? 'LITRES',
       revenue: fuel.revenue,
       cost: fuel.cost,
       profit: fuel.profit,
@@ -320,6 +327,7 @@ export function buildReportCsv(slug: ReportDefinition['slug'], report: Managemen
           text('product_code', (row) => row.productCode),
           text('product_name', (row) => row.productName),
           number('litres', (row) => row.litres),
+          text('unit', (row) => row.unit ?? null),
           number('revenue', (row) => row.revenue),
           number('cost', (row) => row.cost),
           number('profit', (row) => row.profit),
@@ -341,6 +349,7 @@ export function buildReportCsv(slug: ReportDefinition['slug'], report: Managemen
           text('product_code', (row) => row.productCode),
           text('product_name', (row) => row.productName),
           number('litres_sold', (row) => row.litres),
+          text('unit', (row) => row.unit ?? 'LITRES'),
           number('sales_value', (row) => row.salesValue),
           number('average_realized_price', (row) => row.averageRealizedPrice),
           number('variance', (row) => row.variance),
@@ -420,6 +429,7 @@ export function buildReportCsv(slug: ReportDefinition['slug'], report: Managemen
           text('reference', (row) => row.reference),
           text('name', (row) => row.name),
           text('station_code', (row) => row.stationCode),
+          text('unit', (row) => row.unit ?? null),
           ...COMMERCIAL_MEASURES.map((measure) =>
             number<CommercialRow>(measure, (row) => row.values[measure]),
           ),
@@ -433,6 +443,7 @@ export function buildReportCsv(slug: ReportDefinition['slug'], report: Managemen
           text('tank_code', (row) => row.tankCode),
           text('product_code', (row) => row.productCode),
           text('product_name', (row) => row.productName),
+          text('unit', (row) => row.unit ?? 'LITRES'),
           number('expected_litres', (row) => row.expectedLitres),
           number('physical_litres', (row) => row.physicalLitres),
           number('variance_litres', (row) => row.varianceLitres),

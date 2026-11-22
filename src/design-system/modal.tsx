@@ -23,7 +23,12 @@ export type ModalProps = {
    * `side` is a full-height task sheet at the inline end edge on wider
    * screens and a full-screen sheet on phones (record/receive forms).
    */
-  presentation?: 'dialog' | 'sheet' | 'drawer' | 'side';
+  presentation?: 'dialog' | 'sheet' | 'drawer' | 'side' | 'page';
+  /**
+   * With `presentation="page"` the content replaces the page body, in one centred card under a
+   * "← All ..." link, exactly like the quotation and invoice guide. This is the text after the arrow.
+   */
+  backLabel?: string;
   /** `alertdialog` for confirmations that interrupt a workflow. */
   role?: 'dialog' | 'alertdialog';
   /** When false, Escape and backdrop clicks do nothing (e.g. while a command is pending). */
@@ -60,6 +65,7 @@ export function Modal({
   returnFocus,
   leading,
   hideCloseButton = false,
+  backLabel,
   className = '',
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -91,7 +97,9 @@ export function Modal({
 
     // One shared lock: overlapping modals can close in any order without
     // leaving the page unscrollable or inert.
-    const releaseLock = acquireModalLock(overlay, document.body);
+    // A page-style flow sits inside the page itself, so nothing is locked behind it.
+    const releaseLock =
+      presentation === 'page' ? () => {} : acquireModalLock(overlay, document.body);
 
     const frame = window.requestAnimationFrame(() => {
       const panel = panelRef.current;
@@ -136,7 +144,45 @@ export function Modal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  const pageMode = presentation === 'page' && open;
+  // A guided flow replaces the page body while it is open; the page behind it stays mounted.
+  useEffect(() => {
+    if (!pageMode) return;
+    const main = document.getElementById('main-content');
+    main?.setAttribute('data-wizard-page', 'true');
+    return () => main?.removeAttribute('data-wizard-page');
+  }, [pageMode]);
+
   if (!open || typeof document === 'undefined') return null;
+
+  if (presentation === 'page') {
+    const host = document.getElementById('main-content') ?? document.body;
+    return createPortal(
+      <div ref={overlayRef} className="wizard-page" data-modal-overlay="true">
+        <div className="wizard-page-back">
+          <button
+            type="button"
+            className="button button-quiet button-sm"
+            onClick={() => onCloseRef.current()}
+            disabled={!dismissible}
+          >
+            ← {backLabel ? `All ${backLabel}` : 'Back'}
+          </button>
+        </div>
+        <section
+          ref={panelRef}
+          className={`card wizard-page-card ${className}`.trim()}
+          role={role}
+          aria-label={title}
+          tabIndex={-1}
+        >
+          {children}
+          {footer ? <div className="dialog-footer">{footer}</div> : null}
+        </section>
+      </div>,
+      host,
+    );
+  }
 
   const sheet = presentation === 'sheet';
   const drawer = presentation === 'drawer';

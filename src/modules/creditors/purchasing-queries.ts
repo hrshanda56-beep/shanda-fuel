@@ -1,3 +1,8 @@
+import {
+  asQuantityUnit,
+  combineQuantityUnits,
+  type QuantityUnit,
+} from '../../design-system/formatters';
 import 'server-only';
 
 import Decimal from 'decimal.js';
@@ -45,6 +50,7 @@ type DeliveryRow = {
   supplier_code: string | null;
   supplier_name: string | null;
   product_id: string;
+  unit?: string;
   delivery_note_number: string;
   business_date: string;
   note_quantity_litres: string;
@@ -53,6 +59,8 @@ type DeliveryRow = {
   total_landed_cost: string | null;
   po_unit_price: string | null;
   po_number: string | null;
+  transporter_supplier_id: string | null;
+  transporter_name: string | null;
 };
 
 type CoverageRow = {
@@ -90,9 +98,13 @@ async function loadScope(
         : sql`and d.supplier_id = ${input.supplierId}`;
   const deliveries = await transaction.execute<DeliveryRow>(sql`
     select d.id, d.station_id, st.code as station_code, d.supplier_id, s.code as supplier_code,
-           s.legal_name as supplier_name, d.product_id, d.delivery_note_number, d.business_date,
+           s.legal_name as supplier_name, d.product_id,
+           (select pu.unit from app.products pu where pu.tenant_id = d.tenant_id and pu.id = d.product_id) as unit,
+           d.delivery_note_number, d.business_date,
            d.note_quantity_litres::text, d.actual_quantity_litres::text,
            d.unit_landed_cost::text, d.total_landed_cost::text,
+           d.transporter_supplier_id,
+           (select t.legal_name from app.suppliers t where t.tenant_id = d.tenant_id and t.id = d.transporter_supplier_id) as transporter_name,
            ${purchaseOrderPriceColumns}
     from app.fuel_deliveries d
     join app.stations st on st.tenant_id = d.tenant_id and st.id = d.station_id
@@ -102,7 +114,9 @@ async function loadScope(
       ${supplierFilter}
     order by d.business_date, d.delivery_note_number, d.id
   `);
-  if (deliveries.length === 0) return { deliveries, coverage: [] as CoverageRow[] };
+  if (deliveries.length === 0) {
+    return { deliveries, coverage: [] as CoverageRow[], transportBilled: new Set<string>() };
+  }
   // An invoice covers a delivery as of a date when it is dated on or before it and had not
   // yet been reversed (UTC date of the reversal). Reversal therefore reopens exposure from
   // the day it happens; earlier as-of dates still show the delivery as billed.
@@ -117,6 +131,7 @@ async function loadScope(
     join app.fuel_deliveries d on d.tenant_id = r.tenant_id and d.id = r.delivery_id
     join app.stations st on st.tenant_id = d.tenant_id and st.id = d.station_id
     where r.tenant_id = ${input.tenantId} and st.legal_entity_id = ${input.legalEntityId}
+      and r.kind = 'FUEL'
       and doc.posted_at is not null
       and doc.document_date <= ${input.asOf}
       and (doc.state <> 'REVERSED' or doc.reversed_at::date > ${input.asOf}::date)
@@ -126,7 +141,25 @@ async function loadScope(
       )})
     order by doc.document_date, doc.reference_number, r.id
   `);
-  return { deliveries, coverage };
+  // A carrier's own bill covers a delivery on the same terms as a fuel invoice does.
+  const transportRows = await transaction.execute<{ delivery_id: string }>(sql`
+    select distinct r.delivery_id
+    from app.supplier_document_delivery_refs r
+    join app.supplier_documents doc on doc.tenant_id = r.tenant_id and doc.id = r.supplier_document_id
+    where r.tenant_id = ${input.tenantId} and r.kind = 'TRANSPORT' and r.document_type = 'INVOICE'
+      and r.active and doc.posted_at is not null
+      and doc.document_date <= ${input.asOf}
+      and (doc.state <> 'REVERSED' or doc.reversed_at::date > ${input.asOf}::date)
+      and r.delivery_id in (${sql.join(
+        deliveries.map((delivery) => sql`${delivery.id}`),
+        sql`, `,
+      )})
+  `);
+  return {
+    deliveries,
+    coverage,
+    transportBilled: new Set(transportRows.map((row) => row.delivery_id)),
+  };
 }
 
 function coveredQuantity(ref: CoverageRow, accepted: string): Decimal {
@@ -189,6 +222,7 @@ export async function readSupplierExposure(
         legalName: string | null;
         supplierUnassigned: boolean;
         deliveries: Record<string, unknown>[];
+        units: QuantityUnit[];
         unbilledLitres: Decimal;
         unbilledValue: Decimal;
         unpricedUnbilledLitres: Decimal;
@@ -238,6 +272,7 @@ export async function readSupplierExposure(
             legalName: delivery.supplier_name,
             supplierUnassigned: delivery.supplier_id === null,
             deliveries: [] as Record<string, unknown>[],
+            units: [] as QuantityUnit[],
             unbilledLitres: new Decimal(0),
             unbilledValue: new Decimal(0),
             unpricedUnbilledLitres: new Decimal(0),
@@ -249,6 +284,9 @@ export async function readSupplierExposure(
           groups.set(key, created);
           return created;
         })();
+      const unit = asQuantityUnit(delivery.unit);
+      const word = unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
+      group.units.push(unit);
       group.counts[state] += 1;
       group.unbilledLitres = group.unbilledLitres.add(unbilled);
       if (unbilledValue !== null) group.unbilledValue = group.unbilledValue.add(unbilledValue);
@@ -260,6 +298,7 @@ export async function readSupplierExposure(
         deliveryNoteNumber: delivery.delivery_note_number,
         businessDate: delivery.business_date,
         state,
+        unit,
         acceptedLitres: new Decimal(accepted).toFixed(3),
         invoicedLitres: covered.toFixed(3),
         creditedLitres: credited.toFixed(3),
@@ -284,9 +323,9 @@ export async function readSupplierExposure(
           invoicedAmount: ref.invoiced_amount,
         })),
         note: net.creditExceedsInvoiced
-          ? `Credit notes cover ${net.unappliedCreditLitres} more litres than the invoices bill. The billed figure is held at zero; review the credit note with the supplier.`
+          ? `Credit notes cover ${net.unappliedCreditLitres} more ${word} than the invoices bill. The billed figure is held at zero; review the credit note with the supplier.`
           : state === 'OVER_BILLED'
-            ? 'Invoices bill more litres than were received. Review this with the supplier; the delivery quantity is never changed by an invoice.'
+            ? `Invoices bill more ${word} than were received. Review this with the supplier; the delivery quantity is never changed by an invoice.`
             : state === 'UNBILLED' && !priced
               ? 'Received but not yet invoiced, and no receipt cost is recorded, so the value is unpriced (not zero).'
               : null,
@@ -299,6 +338,7 @@ export async function readSupplierExposure(
         code: group.code,
         legalName: group.supplierUnassigned ? 'Supplier unassigned' : group.legalName,
         supplierUnassigned: group.supplierUnassigned,
+        unit: combineQuantityUnits(group.units),
         unbilledLitres: group.unbilledLitres.toFixed(3),
         unbilledValue: group.unbilledValue.toFixed(4),
         unpricedUnbilledLitres: group.unpricedUnbilledLitres.toFixed(3),
@@ -312,6 +352,7 @@ export async function readSupplierExposure(
       currency: 'USD' as const,
       suppliers,
       totals: {
+        unit: combineQuantityUnits(suppliers.map((group) => group.unit)),
         unbilledLitres: sum((group) => group.unbilledLitres, 3),
         unbilledValue: sum((group) => group.unbilledValue, 4),
         unpricedUnbilledLitres: sum((group) => group.unpricedUnbilledLitres, 3),
@@ -338,7 +379,11 @@ export async function getSupplierVarianceFromRequest(
   });
   const asOf = assertDate(input.asOf ?? today());
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
-    const { deliveries: scope, coverage } = await loadScope(transaction, {
+    const {
+      deliveries: scope,
+      coverage,
+      transportBilled,
+    } = await loadScope(transaction, {
       tenantId: context.tenantId,
       legalEntityId: context.legalEntityId,
       supplierId: input.supplierId,
@@ -400,6 +445,7 @@ export async function getSupplierVarianceFromRequest(
         legal_entity_id: context.legalEntityId,
         po_unit_price: delivery.po_unit_price,
         po_number: delivery.po_number,
+        unit: delivery.unit,
       };
       const refs: PostedRef[] = invoiceRefs.map((ref) => ({
         id: ref.ref_id,
@@ -454,6 +500,24 @@ export async function getSupplierVarianceFromRequest(
         policy,
       });
       const findings = [...evaluated.result.findings];
+      // The carrier's own bill is judged by the carrier's rules, falling back to the company's.
+      const transportPolicy =
+        (delivery.transporter_supplier_id
+          ? supplierPolicies.get(delivery.transporter_supplier_id)
+          : undefined) ?? defaultPolicy;
+      if (
+        transportPolicy.requireTransportBill &&
+        delivery.transporter_supplier_id !== null &&
+        !transportBilled.has(delivery.id)
+      ) {
+        findings.push({
+          code: 'TRANSPORT_BILL_MISSING',
+          severity: 'EXCEPTION',
+          message: `${delivery.transporter_name ?? 'The transporter'} carried delivery ${delivery.delivery_note_number} and has not billed for it yet.`,
+          difference: '0',
+          allowed: '0',
+        });
+      }
       if (overReceipt.flagged && !findings.some((finding) => finding.code === 'OVER_RECEIPT')) {
         // Allocation-only invoice links compare the allocation, not the note; the delivery-level
         // over-receipt is still reported here.
@@ -466,6 +530,7 @@ export async function getSupplierVarianceFromRequest(
             invoicedNetAmount: null,
             referenceUnitCost: null,
             deliveryLabel: delivery.delivery_note_number,
+            unit: asQuantityUnit(delivery.unit),
             policy,
           }).findings.filter((finding) => finding.code === 'OVER_RECEIPT'),
         );
@@ -482,6 +547,7 @@ export async function getSupplierVarianceFromRequest(
         businessDate: delivery.business_date,
         supplierId: delivery.supplier_id,
         supplierUnassigned: delivery.supplier_id === null,
+        unit: asQuantityUnit(delivery.unit),
         noteLitres: new Decimal(delivery.note_quantity_litres).toFixed(3),
         acceptedLitres: new Decimal(delivery.actual_quantity_litres).toFixed(3),
         receivedVsNoteLitres: new Decimal(delivery.actual_quantity_litres)
@@ -511,6 +577,9 @@ export async function getSupplierVarianceFromRequest(
         creditedLitres: creditedLitres.toFixed(3),
         overReceipt: overReceipt.flagged ? overReceipt : null,
         overReceiptReviewRequired: overReceipt.reviewRequired,
+        transporterSupplierId: delivery.transporter_supplier_id,
+        transporterName: delivery.transporter_name,
+        transportBilled: transportBilled.has(delivery.id),
         policySource: policy.source,
         toleranceAction: policy.toleranceAction,
         exceeded: findings.some((finding) => finding.severity === 'EXCEPTION'),

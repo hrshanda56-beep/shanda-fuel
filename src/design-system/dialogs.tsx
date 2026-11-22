@@ -2,7 +2,6 @@
 
 import {
   cloneElement,
-  useId,
   useRef,
   useState,
   type MouseEvent,
@@ -10,12 +9,13 @@ import {
   type ReactNode,
 } from 'react';
 
-import { Checkbox } from './forms';
 import { Icon } from './icons';
 import { FOCUSABLE_SELECTOR, Modal } from './modal';
 import { Button } from './primitives';
+import { WizardConfirm } from './wizard-kit';
 
 /* Confirmation ------------------------------------------------------------
+ * Shown as the standard page card (WizardConfirm), not a small pop-up.
  * Use only for financial, destructive, irreversible, or otherwise high-risk
  * commands. Ordinary low-risk actions must not get confirmation friction.
  *
@@ -59,88 +59,35 @@ export function ConfirmDialog({
   /** Optional explicit acknowledgement for irreversible actions. */
   acknowledgement?: string;
 }) {
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  const [acknowledged, setAcknowledged] = useState(false);
-  const [wasOpen, setWasOpen] = useState(open);
-  const ackId = useId();
-
-  // Every opening starts unacknowledged, however the previous one closed
-  // (cancel, Escape, or the caller closing it after a successful command).
-  if (open !== wasOpen) {
-    setWasOpen(open);
-    if (open) setAcknowledged(false);
-  }
-
   const close = () => {
     if (pending) return;
     onClose();
   };
 
+  // The same page card as every guided flow (see `WizardConfirm`). It is remounted on each opening,
+  // so an acknowledgement tick never carries over from a previous one.
   return (
     <Modal
       open={open}
       onClose={close}
       title={title}
       role="alertdialog"
-      size="sm"
+      presentation="page"
       dismissible={!pending}
-      // Destructive and warning confirmations start on the safe choice.
-      initialFocusRef={tone === 'default' ? undefined : cancelRef}
-      leading={
-        tone === 'default' ? null : (
-          <span
-            className={`confirm-icon confirm-icon-${tone === 'danger' ? 'critical' : 'warning'}`}
-            aria-hidden="true"
-          >
-            <Icon name="warning" size="md" />
-          </span>
-        )
-      }
-      footer={
-        <>
-          <Button variant="secondary" ref={cancelRef} onClick={close} disabled={pending}>
-            {cancelLabel}
-          </Button>
-          <Button
-            variant={tone === 'danger' ? 'danger' : 'primary'}
-            onClick={onConfirm}
-            loading={pending}
-            disabled={Boolean(acknowledgement) && !acknowledged}
-            data-autofocus={tone === 'default' ? true : undefined}
-          >
-            {confirmLabel}
-          </Button>
-        </>
-      }
     >
-      <div className="stack">
-        <div className="confirm-consequence">{consequence}</div>
-        {details && details.length > 0 ? (
-          <dl className="confirm-details">
-            {details.map((detail) => (
-              <div key={detail.label}>
-                <dt>{detail.label}</dt>
-                <dd>{detail.value}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
-        {acknowledgement ? (
-          <Checkbox
-            id={ackId}
-            label={acknowledgement}
-            checked={acknowledged}
-            disabled={pending}
-            onChange={(event) => setAcknowledged(event.target.checked)}
-          />
-        ) : null}
-        {error ? (
-          <p className="field-error" role="alert">
-            <Icon name="error" />
-            <span>{error}</span>
-          </p>
-        ) : null}
-      </div>
+      <WizardConfirm
+        title={title}
+        consequence={consequence}
+        details={details}
+        confirmLabel={confirmLabel}
+        cancelLabel={cancelLabel}
+        tone={tone}
+        acknowledgement={acknowledgement}
+        busy={pending}
+        error={error}
+        onConfirm={onConfirm}
+        onCancel={close}
+      />
     </Modal>
   );
 }

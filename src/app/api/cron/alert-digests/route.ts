@@ -48,6 +48,14 @@ export const GET = withRequestObservability(async (request: Request): Promise<Re
       }),
     );
     logger.info('Alert digest run finished', { signal: 'digest_run', ...result });
+    // Past the cap some people would silently get no digest, so say so before it happens.
+    if (recipients.length >= Math.floor(DIGEST_RECIPIENT_CAP * 0.8)) {
+      logger.warn('Alert digest recipients are near the daily limit', {
+        signal: 'digest_cap_near',
+        recipients: recipients.length,
+        cap: DIGEST_RECIPIENT_CAP,
+      });
+    }
     return NextResponse.json(
       { ...result, capped: recipients.length >= DIGEST_RECIPIENT_CAP },
       { headers: { 'Cache-Control': 'no-store' } },

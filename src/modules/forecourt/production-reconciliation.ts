@@ -29,6 +29,7 @@ import { postCanonicalSaleRevenueInTransaction } from '../revenue';
 import { expectedClosingStock } from '../inventory/expected-closing-stock';
 import { postShiftExpensesInTransaction } from './shift-expense-posting';
 import { describeMissingDips, tanksMissingClosingDip } from './closing-shift-dips';
+import { productOrderSql } from '../../platform/domain/product-order-sql';
 
 const uuid = z.string().uuid();
 export const productionReconciliationPaymentMethods = [
@@ -59,6 +60,7 @@ type HeaderRow = {
   business_date: string;
   supervisor_id: string | null;
   approval_note: string | null;
+  return_reason?: string | null;
   state: string;
   version: number | string;
 };
@@ -107,7 +109,7 @@ async function loadHeader(
 ): Promise<HeaderRow> {
   const rows = await transaction.execute<HeaderRow>(sql`
     select c.id, c.tenant_id, c.station_id, c.business_day_id, c.shift_id,
-           d.business_date, c.supervisor_id, c.approval_note, c.state, c.version
+           d.business_date, c.supervisor_id, c.approval_note, c.return_reason, c.state, c.version
     from app.reconciliations c
     join app.station_business_days d
       on d.tenant_id = c.tenant_id and d.station_id = c.station_id and d.id = c.business_day_id
@@ -1679,7 +1681,7 @@ export async function getProductionReconciliationFromRequest(
         ),
       ]);
     const tanks = await transaction.execute<RecordData['tanks'][number]>(sql`
-      select t.id as "tankId", t.code, t.product_id as "productId", p.name as "productName",
+      select t.id as "tankId", t.code, t.product_id as "productId", p.name as "productName", p.unit as "unit",
         t.capacity_litres::text as "capacityLitres",
         t.acceptable_variance_litres::text as "toleranceLitres",
         t.variance_red_litres::text as "redLitres",
@@ -1712,7 +1714,7 @@ export async function getProductionReconciliationFromRequest(
       join app.reconciliations cur on cur.tenant_id=t.tenant_id and cur.station_id=t.station_id and cur.id=${input.reconciliationId}
       join app.station_business_days bd on bd.tenant_id=cur.tenant_id and bd.station_id=cur.station_id and bd.id=cur.business_day_id
       where t.tenant_id=${context.tenantId} and t.station_id=${context.stationId} and t.status='ACTIVE'
-      order by p.name, t.code
+      order by ${productOrderSql('p')}, t.code
     `);
     const metrics = await loadMetrics(transaction, context, input.reconciliationId);
     // Tells the review page to hide Approve from the person who submitted the day, using the same
@@ -1775,25 +1777,41 @@ export async function getProductionReconciliationFromRequest(
     `);
     // Approval is not stopped for a missing fuel cost, but the approver is told, because profit
     // for the day cannot be worked out until the cost is entered.
-    const unvaluedFuels = await transaction.execute<{ name: string }>(sql`
-      select distinct product.name
-      from app.reconciliation_meter_readings reading
-      join app.products product
-        on product.tenant_id = reading.tenant_id and product.id = reading.product_id
-      join app.inventory_cost_stream_state stream
-        on stream.tenant_id = reading.tenant_id and stream.station_id = reading.station_id
-       and stream.product_id = reading.product_id
-      where reading.tenant_id = ${context.tenantId}
-        and reading.station_id = ${context.stationId}
-        and reading.reconciliation_id = ${input.reconciliationId}
-        and stream.valuation_status <> 'VALUED' and stream.quantity_litres > 0
-      order by product.name
+    const unvaluedFuels = await transaction.execute<{
+      name: string;
+      tankId: string;
+      productId: string;
+    }>(sql`
+      -- SELECT DISTINCT cannot be ordered by an expression outside its select list, so the
+      -- distinct rows are taken first and the shared fuel order is applied outside.
+      select product.name, product."tankId", product."productId"
+      from (
+        select distinct p.name, p.display_order, p.kind,
+          stream.tank_id as "tankId", stream.product_id as "productId"
+        from app.reconciliation_meter_readings reading
+        join app.products p
+          on p.tenant_id = reading.tenant_id and p.id = reading.product_id
+        join app.inventory_cost_stream_state stream
+          on stream.tenant_id = reading.tenant_id and stream.station_id = reading.station_id
+         and stream.product_id = reading.product_id
+        where reading.tenant_id = ${context.tenantId}
+          and reading.station_id = ${context.stationId}
+          and reading.reconciliation_id = ${input.reconciliationId}
+          and stream.valuation_status <> 'VALUED' and stream.quantity_litres > 0
+      ) product
+      order by ${productOrderSql('product')}
     `);
     return {
       ...header,
       version: Number(header.version),
       approvalBlocked,
-      unvaluedFuels: unvaluedFuels.map((row) => row.name),
+      unvaluedFuels: [...new Set(unvaluedFuels.map((row) => row.name))],
+      // Where each missing cost can be entered, so the screen can take the person straight there.
+      unvaluedStreams: unvaluedFuels.map((row) => ({
+        name: row.name,
+        tankId: row.tankId,
+        productId: row.productId,
+      })),
       submitter: submitterRow?.name
         ? {
             name: submitterRow.name,
@@ -1820,6 +1838,7 @@ export async function getProductionReconciliationFromRequest(
       cash: cash[0] ?? null,
       explanations,
       approvalNote: header.approval_note,
+      returnReason: header.state === 'RETURNED' ? (header.return_reason ?? null) : null,
       totals: {
         expectedSales: metrics.sales.toString(),
         accountedSales: metrics.payments.toString(),

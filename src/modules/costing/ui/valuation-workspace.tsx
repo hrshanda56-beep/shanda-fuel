@@ -15,7 +15,12 @@ import {
   SuccessState,
 } from '@/design-system/primitives';
 import { TableScrollRegion } from '@/design-system/table';
-import { formatLitres, formatMoney } from '@/design-system/formatters';
+import {
+  formatMoney,
+  formatQuantity,
+  quantityUnitShort,
+  type QuantityUnit,
+} from '@/design-system/formatters';
 import { TankOverview, type InventoryReport } from '@/modules/inventory/ui/tank-overview';
 import {
   InventoryOperationalActions,
@@ -37,7 +42,7 @@ type SourceMovement = MissingCostSource & { id: string };
 type Stream = {
   station: { id: string; code: string; name: string };
   tank: { id: string; code: string };
-  product: { id: string; code: string; name: string };
+  product: { id: string; code: string; name: string; unit?: QuantityUnit };
   quantityLitres: string;
   valuationStatus: 'VALUED' | 'UNVALUED';
   inventoryValue: string | null;
@@ -57,7 +62,7 @@ type Revaluation = {
   reason: string;
   station: { id: string; code: string; name: string };
   tank: { id: string; code: string };
-  product: { id: string; code: string; name: string };
+  product: { id: string; code: string; name: string; unit?: QuantityUnit };
   source: { type: string; id: string } | null;
   amount: string | null;
   currency: string | null;
@@ -288,7 +293,9 @@ export function ValuationOverview({
           {
             id: 'tanks',
             label: 'By Tank',
-            aside: <InfoTip>Average cost per litre is worked out from deliveries.</InfoTip>,
+            aside: (
+              <InfoTip>Average cost per litre (or kilogram) is worked out from deliveries.</InfoTip>
+            ),
             content:
               data.streams.length === 0 ? (
                 <EmptyState
@@ -325,7 +332,9 @@ export function ValuationOverview({
                             </Link>
                             <span className="table-secondary">{stream.product.code}</span>
                           </th>
-                          <td data-label="Quantity">{formatLitres(stream.quantityLitres)}</td>
+                          <td data-label="Quantity">
+                            {formatQuantity(stream.quantityLitres, stream.product.unit)}
+                          </td>
                           <td data-label="Status">
                             <Status status={stream.valuationStatus} />
                             {stream.hasActiveRevaluation ? (
@@ -342,7 +351,7 @@ export function ValuationOverview({
                           <td data-label="Average cost">
                             {stream.weightedAverageCost === null
                               ? '—'
-                              : `${formatMoney(stream.weightedAverageCost, stream.currency ?? 'USD')}/L`}
+                              : `${formatMoney(stream.weightedAverageCost, stream.currency ?? 'USD')}/${quantityUnitShort(stream.product.unit)}`}
                           </td>
                           <td className="cell-action">
                             <Link
@@ -515,7 +524,8 @@ function RequestRevaluationDialog({
           <strong>Source requiring cost</strong>
           <p>
             {source.movementType === 'OPENING_BALANCE' ? 'Opening stock' : 'Delivery'} ·{' '}
-            {formatLitres(source.quantityLitres)} · {date(source.effectiveAt)}
+            {formatQuantity(source.quantityLitres, stream.product.unit)} ·{' '}
+            {date(source.effectiveAt)}
           </p>
         </div>
         <InfoTip>
@@ -579,12 +589,15 @@ export function ValuationStreamDetail({
   initialData,
   tankId,
   productId,
+  returnHref,
 }: {
   context: InventoryContext;
   contextHref: string;
   initialData?: ValuationResponse;
   tankId: string;
   productId: string;
+  /** Where the person came from, when they were sent here to finish something. */
+  returnHref?: string;
 }) {
   const [data, setData] = useState<ValuationResponse | null>(initialData ?? null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
@@ -650,6 +663,11 @@ export function ValuationStreamDetail({
         description={`Last cost update ${date(stream.lastValuationOrCostEventAt)}`}
         actions={
           <>
+            {returnHref ? (
+              <Link className="button button-quiet" href={returnHref}>
+                Back to the reconciliation
+              </Link>
+            ) : null}
             <Link className="button button-quiet" href={contextHref}>
               Back to stock value
             </Link>
@@ -666,19 +684,31 @@ export function ValuationStreamDetail({
         className={`metric-grid content-span valuation-summary${unvalued ? ' has-warning' : ''}`}
         aria-label="Stock and cost"
       >
-        <MetricCard label="Fuel in tank" value={formatLitres(stream.quantityLitres)} />
+        <MetricCard
+          label="Fuel in tank"
+          value={formatQuantity(stream.quantityLitres, stream.product.unit)}
+        />
         <MetricCard label="Stock value" value={money(stream.inventoryValue)} />
         <MetricCard
           label="Average cost"
-          value={money(stream.weightedAverageCost, '/L')}
+          value={money(stream.weightedAverageCost, `/${quantityUnitShort(stream.product.unit)}`)}
           meta={<Status status={stream.valuationStatus} />}
         />
+        {returnHref && !unvalued ? (
+          <div className="callout callout-success" role="status">
+            <strong>The cost is saved</strong>
+            <p>This fuel now has a cost. You can go back and carry on where you left off.</p>
+            <Link className="button button-primary" href={returnHref}>
+              Back to the reconciliation
+            </Link>
+          </div>
+        ) : null}
         {unvalued ? (
           <div className="callout callout-warning" role="status">
             <strong>This stock has no cost yet</strong>
             <p>
               {source
-                ? `Add the cost of the ${source.movementType.toLowerCase()} of ${formatLitres(source.quantityLitres)} on ${date(source.effectiveAt)}.`
+                ? `Add the cost of the ${source.movementType.toLowerCase().replace(/_/g, ' ')} of ${formatQuantity(source.quantityLitres, stream.product.unit)} on ${date(source.effectiveAt)}.`
                 : 'Add the missing cost so sale costs can be worked out.'}
             </p>
           </div>
@@ -689,6 +719,7 @@ export function ValuationStreamDetail({
         context={context}
         tankId={stream.tank.id}
         productId={stream.product.id}
+        unit={stream.product.unit}
         sourceMovementRequiringCost={stream.sourceMovementRequiringCost}
         canRecordReceiptCost={data.capabilities.recordReceiptCost === true}
         onRefresh={load}
@@ -957,7 +988,10 @@ export function RevaluationDetail({
               {data.revaluation.currentStreamProjection.quantityLitres === null ||
               data.revaluation.currentStreamProjection.quantityLitres === undefined
                 ? 'Not available'
-                : formatLitres(data.revaluation.currentStreamProjection.quantityLitres)}
+                : formatQuantity(
+                    data.revaluation.currentStreamProjection.quantityLitres,
+                    item.product.unit,
+                  )}
             </dd>
             <dt>Inventory value</dt>
             <dd>
@@ -969,7 +1003,7 @@ export function RevaluationDetail({
             <dd>
               {data.revaluation.currentStreamProjection.weightedAverageCost === null
                 ? 'Not available'
-                : `${data.revaluation.currentStreamProjection.currency} ${data.revaluation.currentStreamProjection.weightedAverageCost}/L`}
+                : `${data.revaluation.currentStreamProjection.currency} ${data.revaluation.currentStreamProjection.weightedAverageCost}/${quantityUnitShort(item.product.unit)}`}
             </dd>
           </dl>
         </Card>
@@ -1045,7 +1079,7 @@ export function RevaluationDetail({
                     <th scope="row">
                       {date(line.saleEffectiveAt)}
                       <span className="table-secondary">
-                        {formatLitres(line.saleQuantityLitres)} · meter{' '}
+                        {formatQuantity(line.saleQuantityLitres, item.product.unit)} · meter{' '}
                         {line.meterSegmentId.slice(0, 8)}…
                       </span>
                     </th>

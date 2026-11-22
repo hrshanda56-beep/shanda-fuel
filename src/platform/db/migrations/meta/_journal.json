@@ -617,6 +617,132 @@
       "when": 1793200102000,
       "tag": "0102_staff_remove",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1793200103000,
+      "tag": "0103_staff_invitation_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1793200105000,
+      "tag": "0105_supervisor_price_request",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1793200106000,
+      "tag": "0106_product_unit",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1793200107000,
+      "tag": "0107_finance_no_day_lock",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1793200108000,
+      "tag": "0108_product_kind_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1793200109000,
+      "tag": "0109_sales_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1793200110000,
+      "tag": "0110_sales_doc_branding",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1793200120000,
+      "tag": "0111_expense_payment_other",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1793200130000,
+      "tag": "0112_supplier_transport",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1793200140000,
+      "tag": "0113_supplier_document_ref_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1793200200000,
+      "tag": "0114_purchasing_policy_transport_bill",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1793200260000,
+      "tag": "0115_delivery_variance",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1793200320000,
+      "tag": "0116_delivery_loss_approval",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1793200380000,
+      "tag": "0117_app_logo",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1793286720000,
+      "tag": "0118_station_zera_licence",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1793373120000,
+      "tag": "0119_zera_returns",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1793459520000,
+      "tag": "0120_past_day_entry",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1793545920000,
+      "tag": "0121_owner_self_approval",
+      "breakpoints": true
     }
   ]
 }

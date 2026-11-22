@@ -37,6 +37,16 @@ export function formatTileLitres(value: string | null | undefined): string {
   return `${negative ? '−' : ''}${whole} L`;
 }
 
+/** Whole figures in the fuel's own unit: "1,284 L" or "480 kg". */
+export function formatTileQuantity(
+  value: string | null | undefined,
+  unit?: 'LITRES' | 'KILOGRAMS' | 'MIXED',
+): string {
+  if (unit === 'MIXED') return 'Mixed units';
+  const litres = formatTileLitres(value);
+  return unit === 'KILOGRAMS' && litres.endsWith(' L') ? `${litres.slice(0, -2)} kg` : litres;
+}
+
 export function formatReportLitres(value: string | null): string {
   return value === null ? 'Unavailable' : formatLitres(value);
 }

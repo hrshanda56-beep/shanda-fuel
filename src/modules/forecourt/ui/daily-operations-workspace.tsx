@@ -2,7 +2,12 @@
 import type { RecordData } from '../daily-operations-read-model';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConfirm, useToast } from '../../../design-system/feedback-provider';
+import {
+  OWN_CONFIRMATION_HEADER,
+  OWN_ERRORS_HEADER,
+  useConfirm,
+  useToast,
+} from '../../../design-system/feedback-provider';
 import {
   Button,
   Card,
@@ -35,17 +40,45 @@ import {
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { InfoTip } from '../../../design-system/info-tip';
 import { DailyTankDips } from './daily-tank-dips';
 import { PumpReadout } from './pump-readout';
 import { OpeningReadingsEntry } from './opening-readings-entry';
+import { useWizard } from '../../../design-system/wizard';
+import {
+  EXPLAIN_QUESTION,
+  buildScreens,
+  checkCashCounted,
+  checkClosing,
+  checkExpenseLine,
+  checkPaymentLine,
+  indexOfScreen,
+  neighbourScreen,
+  resumeScreen,
+  screenPosition,
+  type Difference,
+} from './figures-wizard';
+import {
+  AddMoreScreen,
+  CashScreen,
+  ExpenseLineScreen,
+  ExplainScreen,
+  NoPumpsScreen,
+  PaymentLineScreen,
+  PumpScreen,
+  SubmitScreen,
+  TankScreen,
+  TeamScreen,
+} from './figures-screens';
 import { TRANSITION_SUCCESS } from './transition-messages';
 import { sumDecimals } from '../../cash/ui/cash-visuals';
 import {
   formatBusinessDate,
   formatDateTimeInTimeZone,
   formatDecimal,
-  formatLitres,
+  formatQuantity,
+  quantityUnitShort,
   formatMoney,
   formatStatusLabel,
   formatTimeInTimeZone,
@@ -55,11 +88,15 @@ import {
   dailyOperationsProblem,
   dailyOperationsStatusLabel,
   dailyOperationsStatusTone,
+  dayReadyToLock,
   isEditableDailyOperationsState,
   liveCashFigures,
   liveLitresSold,
+  liveSalesValue,
+  liveSalesFigures,
   stepTitle,
   type DailyOperationsFix,
+  type LockCheckOverview,
 } from './daily-operations-state';
 import {
   createDraftSaveAttemptId,
@@ -274,7 +311,9 @@ function errorFixFor(message: string, cause: unknown): ErrorFix | undefined {
 
 function errorFromResponse(status: number, body: unknown): OperationsFailure {
   const result = body as { error?: string; message?: string; details?: Record<string, unknown> };
-  const problem = dailyOperationsProblem(status, result.error, result.message);
+  const problem = dailyOperationsProblem(status, result.error, result.message, {
+    details: result.details,
+  });
   const failure = new Error(problem.message) as OperationsFailure;
   failure.fix = problem.fix;
   failure.status = status;
@@ -292,7 +331,10 @@ function SectionHeading({
   detail,
   headingId,
   asTip = false,
+  action,
 }: {
+  /** A button shown at the right end of the heading row. */
+  action?: React.ReactNode;
   title: string;
   detail?: string;
   headingId: string;
@@ -301,12 +343,23 @@ function SectionHeading({
 }) {
   return (
     <>
-      <span className="heading-with-tip">
-        <h2 id={headingId} className="profit-title">
-          {title}
-        </h2>
-        {detail && asTip ? <InfoTip>{detail}</InfoTip> : null}
-      </span>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span className="heading-with-tip">
+          <h2 id={headingId} className="profit-title">
+            {title}
+          </h2>
+          {detail && asTip ? <InfoTip>{detail}</InfoTip> : null}
+        </span>
+        {action}
+      </div>
       {detail && !asTip ? <p className="panel-detail">{detail}</p> : null}
     </>
   );
@@ -382,6 +435,8 @@ export function DailyOperationsWorkspace({
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [correctingOpening, setCorrectingOpening] = useState(false);
+  /** Pumps whose closing the person has typed into; the rest only show the opening as a hint. */
+  const [closingTouched, setClosingTouched] = useState<Set<string>>(() => new Set());
   const [correctionReason, setCorrectionReason] = useState('');
   const [dirty, setDirty] = useState(
     () =>
@@ -390,6 +445,11 @@ export function DailyOperationsWorkspace({
       startingAttendants(initialData?.record ?? null, initialData!.operation).length > 0,
   );
   const [step, setStep] = useState(0);
+  // The supervisor entering a shift's figures goes through them one question per screen (#253);
+  // `wizard.step` is the id of the screen showing. Everyone else keeps the stepped overview.
+  const wizard = useWizard<string>({ start: 'team', sequence: [], onCancel: () => undefined });
+  const wizardResumed = useRef(false);
+  const router = useRouter();
   // A refresh keeps the person on the step they were on: it is kept in the address, not just in memory.
   const stepRestored = useRef(false);
   useEffect(() => {
@@ -411,6 +471,7 @@ export function DailyOperationsWorkspace({
       window.history.replaceState(window.history.state, '', url);
   }, [step]);
   const [returnReason, setReturnReason] = useState('');
+  const [returning, setReturning] = useState(false);
   const [stepUpRetry, setStepUpRetry] = useState<{
     values: Record<string, unknown>;
     savedVersion?: number;
@@ -466,51 +527,56 @@ export function DailyOperationsWorkspace({
     [context.shiftId],
   );
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(undefined);
-    setConflict(false);
-    try {
-      const operationResponse = await fetch(
-        `/api/forecourt/operations/daily?${contextQuery.toString()}`,
-        {
-          cache: 'no-store',
-        },
-      );
-      const operationBody = await operationResponse.json();
-      if (!operationResponse.ok) throw errorFromResponse(operationResponse.status, operationBody);
-      const nextOperation = operationBody as OperationsContext;
-      setOperation(nextOperation);
+  const load = useCallback(
+    async (options?: { quiet?: boolean }) => {
+      // A quiet reload refreshes the figures in place, so the step and the scroll position stay put.
+      if (!options?.quiet) setLoading(true);
+      setError(undefined);
+      setConflict(false);
+      try {
+        const operationResponse = await fetch(
+          `/api/forecourt/operations/daily?${contextQuery.toString()}`,
+          {
+            cache: 'no-store',
+          },
+        );
+        const operationBody = await operationResponse.json();
+        if (!operationResponse.ok) throw errorFromResponse(operationResponse.status, operationBody);
+        const nextOperation = operationBody as OperationsContext;
+        setOperation(nextOperation);
 
-      if (!activeReconciliationId) {
-        setRecord(null);
-        syncDraft(null, nextOperation);
-        return;
-      }
+        if (!activeReconciliationId) {
+          setRecord(null);
+          syncDraft(null, nextOperation);
+          return;
+        }
 
-      const recordResponse = await fetch(
-        `/api/forecourt/reconciliations/${activeReconciliationId}?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
-        { cache: 'no-store' },
-      );
-      if (recordResponse.status === 404) {
-        setRecord(null);
-        syncDraft(null, nextOperation);
-        return;
+        const recordResponse = await fetch(
+          `/api/forecourt/reconciliations/${activeReconciliationId}?tenantId=${encodeURIComponent(context.tenantId)}&stationId=${encodeURIComponent(context.stationId)}`,
+          { cache: 'no-store' },
+        );
+        if (recordResponse.status === 404) {
+          setRecord(null);
+          syncDraft(null, nextOperation);
+          return;
+        }
+        const recordBody = await recordResponse.json();
+        if (!recordResponse.ok) throw errorFromResponse(recordResponse.status, recordBody);
+        const nextRecord = recordBody as RecordData;
+        setRecord(nextRecord);
+        syncDraft(nextRecord, nextOperation);
+      } catch (cause) {
+        const message =
+          cause instanceof Error ? cause.message : 'The operations workspace could not be loaded.';
+        setError(message);
+        setErrorFix(errorFixFor(message, cause));
+      } finally {
+        setLoading(false);
       }
-      const recordBody = await recordResponse.json();
-      if (!recordResponse.ok) throw errorFromResponse(recordResponse.status, recordBody);
-      const nextRecord = recordBody as RecordData;
-      setRecord(nextRecord);
-      syncDraft(nextRecord, nextOperation);
-    } catch (cause) {
-      const message =
-        cause instanceof Error ? cause.message : 'The operations workspace could not be loaded.';
-      setError(message);
-      setErrorFix(errorFixFor(message, cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [activeReconciliationId, context.stationId, context.tenantId, contextQuery, syncDraft]);
+    },
+    [activeReconciliationId, context.stationId, context.tenantId, contextQuery, syncDraft],
+  );
+  const reloadQuietly = useCallback(() => load({ quiet: true }), [load]);
 
   useEffect(() => {
     if (initialData && activeReconciliationId === context.reconciliationId) return;
@@ -540,6 +606,11 @@ export function DailyOperationsWorkspace({
         headers: {
           'content-type': 'application/json',
           'idempotency-key': idempotencyKey,
+          [OWN_ERRORS_HEADER]: '1',
+          // The supervisor's figures save at every question; the page says "Saved" once, not each time.
+          ...(role === 'SUPERVISOR' && /^(Save|Set)/.test(commandType)
+            ? { [OWN_CONFIRMATION_HEADER]: '1' }
+            : {}),
         },
         body: JSON.stringify({ commandType, ...values }),
       });
@@ -614,7 +685,7 @@ export function DailyOperationsWorkspace({
     }
     if (readings.some((reading) => !reading.sellingPriceId)) {
       const message =
-        'A current active selling price is required for every meter row before saving.';
+        'Every pump needs a selling price that was in force on this day before saving. If this day is before the first price was recorded, ask the owner.';
       setError(message);
       setErrorFix({
         message,
@@ -787,6 +858,36 @@ export function DailyOperationsWorkspace({
     }
   }
 
+  /**
+   * The owner's approval also locks the day when the day is closed and nothing blocks it. The
+   * identity check done for the approval covers the lock. Any refusal leaves the day closed, with
+   * the Lock button on Daily Operations as before; the approval itself is never undone.
+   */
+  async function lockDayIfReady(): Promise<boolean> {
+    try {
+      const params = new URLSearchParams({
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: context.businessDayId,
+      });
+      const response = await fetch(`/api/forecourt/operations/overview?${params}`, {
+        cache: 'no-store',
+      });
+      if (!response.ok) return false;
+      const day = dayReadyToLock((await response.json()) as LockCheckOverview);
+      if (!day) return false;
+      await sendCommand('LockBusinessDay', {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: day.id,
+        expectedVersion: day.version,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function transition(
     commandType: string,
     values: Record<string, unknown> = {},
@@ -803,7 +904,7 @@ export function DailyOperationsWorkspace({
       !(await confirm({
         title: 'Approve this reconciliation?',
         consequence:
-          'The sales will be recorded and this report will be locked. Mistakes can only be fixed by a reversal.',
+          'The sales will be recorded and this report will be locked. If this is the last report of a closed day and nothing blocks it, the business day is locked too; otherwise the day stays closed and can be locked separately. Mistakes can only be fixed by a reversal.',
         confirmLabel: 'Approve reconciliation',
         tone: 'warning',
       }))
@@ -821,7 +922,10 @@ export function DailyOperationsWorkspace({
         ...values,
       });
       await load();
-      const done = TRANSITION_SUCCESS[commandType] ?? 'Workflow state updated.';
+      let done = TRANSITION_SUCCESS[commandType] ?? 'Workflow state updated.';
+      if (commandType === 'ApproveProductionReconciliation' && (await lockDayIfReady())) {
+        done = 'Approved, and the business day is locked.';
+      }
       setNotice(done);
       toast.success(done);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -986,6 +1090,7 @@ export function DailyOperationsWorkspace({
     return () => window.removeEventListener('online', onOnline);
   }, [loading, outboxKey, refreshQueued, sendQueued]);
   const savedForLater = useRef(false);
+  const [unsavedDips, setUnsavedDips] = useState<string[]>([]);
 
   async function goToStep(next: number) {
     if (
@@ -995,6 +1100,12 @@ export function DailyOperationsWorkspace({
       readings.some((reading) => !reading.closingReading.trim())
     ) {
       setError('Enter the closing reading for every pump before you continue.');
+      return;
+    }
+    if (step === STEPS.indexOf('Tank dips') && next > step && editable && unsavedDips.length > 0) {
+      setError(
+        `Save the ${unsavedDips.join(' and ')} dip before you continue. Press Save dip beside it.`,
+      );
       return;
     }
     if (dirty && editable) {
@@ -1008,8 +1119,147 @@ export function DailyOperationsWorkspace({
   // The way to put the shown problem right: a link to the page that fixes it, or a jump to the
   // step of this workspace where it can be corrected.
   const errorAction = errorFix && errorFix.message === error ? errorFix.fix : undefined;
+  async function closeShiftNow() {
+    const agreed = await confirm({
+      title: 'Close this shift?',
+      consequence:
+        'The pump readings become the official meter records for the shift, and the shift is finished. This cannot be undone from here.',
+      confirmLabel: 'Close Shift',
+      tone: 'warning',
+    });
+    if (!agreed) return;
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: context.businessDayId,
+        shiftId: context.shiftId,
+      });
+      const overviewResponse = await fetch(`/api/forecourt/operations/overview?${params}`, {
+        cache: 'no-store',
+      });
+      if (!overviewResponse.ok)
+        throw new Error('The shift could not be found. Refresh and try again.');
+      const overview = (await overviewResponse.json()) as {
+        shifts: Array<{ id: string; state: string; version: number; attendantCount?: number }>;
+        actions?: { MarkNotOperated?: { canExecute?: boolean } };
+      };
+      const shift = overview.shifts.find((candidate) => candidate.id === context.shiftId);
+      if (!shift) throw new Error('The shift could not be found. Refresh and try again.');
+      const base = {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: context.businessDayId,
+        shiftId: context.shiftId,
+      };
+      const send = async (commandType: string, expectedVersion: number) => {
+        const response = await fetch('/api/forecourt/commands', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'idempotency-key': `close-shift-${commandType}-${context.shiftId}-${crypto.randomUUID()}`,
+            [OWN_ERRORS_HEADER]: '1',
+          },
+          body: JSON.stringify({ commandType, ...base, expectedVersion }),
+        });
+        if (!response.ok) {
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: string;
+            message?: string;
+            details?: Record<string, unknown>;
+          };
+          const problem = dailyOperationsProblem(response.status, body.error, body.message, {
+            details: body.details,
+            attendantCount: shift.attendantCount,
+            shiftState: shift.state,
+            canMarkNotOperated: overview.actions?.MarkNotOperated?.canExecute === true,
+          });
+          throw Object.assign(new Error(problem.message), { fix: problem.fix });
+        }
+      };
+      if (shift.state === 'OPEN') {
+        await send('CloseMeters', shift.version);
+        await send('CompleteShift', shift.version + 1);
+      } else if (shift.state === 'METER_CLOSED') {
+        await send('CompleteShift', shift.version);
+      }
+      setError(undefined);
+      setErrorFix(undefined);
+      toast.success('Shift closed. You can approve now.');
+      await load();
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'The shift could not be closed.';
+      setError(message);
+      setErrorFix(errorFixFor(message, cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markNotOperatedNow() {
+    const agreed = await confirm({
+      title: 'Mark this shift as not operated?',
+      consequence:
+        'Use this only if nobody worked this shift. It will not count towards the day. This cannot be undone from here.',
+      confirmLabel: 'Mark as not operated',
+      tone: 'warning',
+    });
+    if (!agreed) return;
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        businessDayId: context.businessDayId,
+        shiftId: context.shiftId,
+      });
+      const overviewResponse = await fetch(`/api/forecourt/operations/overview?${params}`, {
+        cache: 'no-store',
+      });
+      if (!overviewResponse.ok)
+        throw new Error('The shift could not be found. Refresh and try again.');
+      const overview = (await overviewResponse.json()) as {
+        shifts: Array<{ id: string; version: number }>;
+      };
+      const shift = overview.shifts.find((candidate) => candidate.id === context.shiftId);
+      if (!shift) throw new Error('The shift could not be found. Refresh and try again.');
+      await sendCommand(
+        'MarkNotOperated',
+        {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          businessDayId: context.businessDayId,
+          shiftId: context.shiftId,
+          expectedVersion: shift.version,
+          reason: 'No attendants worked this shift.',
+        },
+        `mark-not-operated-${context.shiftId}-${crypto.randomUUID()}`,
+      );
+      setError(undefined);
+      setErrorFix(undefined);
+      toast.success('Shift marked as not operated.');
+      await load();
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : 'The shift could not be marked as not operated.';
+      setError(message);
+      setErrorFix(errorFixFor(message, cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const errorFixButton = errorAction ? (
-    errorAction.kind === 'link' ? (
+    errorAction.kind === 'close-shift' ? (
+      <Button onClick={() => void closeShiftNow()} loading={busy}>
+        {errorAction.label}
+      </Button>
+    ) : errorAction.kind === 'mark-not-operated' ? (
+      <Button onClick={() => void markNotOperatedNow()} loading={busy}>
+        {errorAction.label}
+      </Button>
+    ) : errorAction.kind === 'link' ? (
       <Link className="button button-primary" href={errorAction.href}>
         {errorAction.label}
       </Link>
@@ -1030,6 +1280,7 @@ export function DailyOperationsWorkspace({
     if (attendantIds.length === 0) {
       setError('Select at least one attendant before submitting this reconciliation.');
       setStep(0);
+      wizard.show('team');
       return;
     }
     if (!dirty) {
@@ -1043,6 +1294,9 @@ export function DailyOperationsWorkspace({
   const editable = isEditableDailyOperationsState(record?.state);
   const visitingAttendants = operation?.otherAttendants ?? [];
   const liveCash = liveCashFigures(payments, expenses, cashCounted);
+  const liveSales = record
+    ? liveSalesFigures(record.totals.expectedSales, readings, payments)
+    : null;
   const state = record?.state ?? 'NOT_STARTED';
   const requiresSalesExplanation = record ? !isZero(record.totals.salesVariance) : false;
   const requiresCashExplanation = record ? !isZero(record.totals.cashVariance) : false;
@@ -1067,6 +1321,10 @@ export function DailyOperationsWorkspace({
         { label: 'Payments added', ok: payments.length > 0 },
         { label: 'Cash counted', ok: cashCounted.trim() !== '' },
         {
+          label: 'A dip recorded for every tank',
+          ok: record.tanks.every((tank) => record.dips.some((dip) => dip.tankId === tank.tankId)),
+        },
+        {
           label: 'Differences explained',
           ok:
             (!requiresSalesExplanation || (explanations.SALES ?? '').trim() !== '') &&
@@ -1075,6 +1333,183 @@ export function DailyOperationsWorkspace({
         },
       ]
     : [];
+
+  /* ---- One question per screen: the supervisor entering a shift's figures (#253) ---- */
+  const wizardMode = role === 'SUPERVISOR' && editable && Boolean(record);
+  // Pumps in the order they stand on the forecourt, as on the old screen.
+  const orderedReadings = useMemo(() => {
+    const place = (nozzleId: string) => {
+      const item = operation?.availableReadings.find(
+        (candidate) => candidate.nozzleId === nozzleId,
+      );
+      return item ? `${item.pumpNumber}.${item.nozzleNumber}` : '';
+    };
+    return [...readings].sort((a, b) =>
+      place(a.nozzleId).localeCompare(place(b.nozzleId), undefined, { numeric: true }),
+    );
+  }, [readings, operation]);
+  // A difference is asked about when it needs explaining, or when something was already written.
+  const explainKey = (['SALES', 'CASH', 'STOCK'] as const)
+    .filter((category) => {
+      const required =
+        category === 'SALES'
+          ? requiresSalesExplanation
+          : category === 'CASH'
+            ? requiresCashExplanation
+            : requiresStockExplanation;
+      return required || (explanations[category] ?? '').trim() !== '';
+    })
+    .join(',');
+  const tankIds = (record?.tanks ?? []).map((tank) => tank.tankId);
+  const tankKey = tankIds.join(',');
+  const readingKey = orderedReadings.map((reading) => reading.rowKey).join(',');
+  const paymentRowKey = payments.map((payment) => payment.rowKey).join(',');
+  const expenseRowKey = expenses.map((expense) => expense.rowKey).join(',');
+  const hasVisiting = visitingAttendants.length > 0;
+  const screens = useMemo(
+    () =>
+      buildScreens({
+        hasVisiting,
+        pumpIds: readingKey ? readingKey.split(',') : [],
+        paymentKeys: paymentRowKey ? paymentRowKey.split(',') : [],
+        expenseKeys: expenseRowKey ? expenseRowKey.split(',') : [],
+        tankIds: tankKey ? tankKey.split(',') : [],
+        explain: (explainKey ? explainKey.split(',') : []) as Difference[],
+      }),
+    [hasVisiting, readingKey, paymentRowKey, expenseRowKey, tankKey, explainKey],
+  );
+  /** What shows in the closing box: nothing until the person types, even though it starts level with the opening. */
+  const shownClosing = (reading: {
+    rowKey: string;
+    openingReading: string;
+    closingReading: string;
+  }) =>
+    !closingTouched.has(reading.rowKey) &&
+    reading.closingReading.trim() !== '' &&
+    Number(reading.closingReading) === Number(reading.openingReading)
+      ? ''
+      : reading.closingReading;
+
+  // Landing: the screen in the address if there is one, otherwise the first unanswered question.
+  useEffect(() => {
+    if (!wizardMode || wizardResumed.current || loading || !record) return;
+    wizardResumed.current = true;
+    const fromAddress = new URL(window.location.href).searchParams.get('screen');
+    const target =
+      fromAddress && screens.some((screen) => screen.id === fromAddress)
+        ? fromAddress
+        : resumeScreen(screens, {
+            team: record.attendants.length > 0,
+            pumps: new Set(
+              orderedReadings
+                .filter((reading) => shownClosing(reading) !== '')
+                .map((reading) => reading.rowKey),
+            ),
+            payments: new Set(
+              payments.filter((payment) => payment.amount.trim() !== '').map((p) => p.rowKey),
+            ),
+            paymentsDone: payments.length > 0 || isZero(record.totals.expectedSales),
+            cash: cashCounted.trim() !== '',
+            tanks: new Set(record.dips.map((dip) => dip.tankId)),
+            explained: new Set(
+              (['SALES', 'CASH', 'STOCK'] as const).filter(
+                (category) => (explanations[category] ?? '').trim() !== '',
+              ),
+            ),
+          });
+    if (target !== wizard.step) wizard.show(target);
+  });
+  // The screen is kept in the address, so a refresh stays where it was.
+  useEffect(() => {
+    if (!wizardMode || !wizardResumed.current) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('screen', wizard.step);
+    url.searchParams.delete('step');
+    if (url.href !== window.location.href)
+      window.history.replaceState(window.history.state, '', url);
+  }, [wizardMode, wizard.step]);
+
+  /** Saves what has been typed, then shows the screen. Stays put if the save fails. */
+  async function goScreen(id: string) {
+    if (dirty && editable) {
+      const saved = await saveDraft();
+      if (saved === null && !savedForLater.current) return;
+    }
+    wizard.setErrors({});
+    wizard.setProblem(null);
+    wizard.show(id);
+  }
+
+  /** Leaving from the first screen: the figures so far are saved, then back to Daily Operations. */
+  async function leaveFigures() {
+    if (dirty && editable) {
+      const saved = await saveDraft();
+      if (saved === null && !savedForLater.current) return;
+    }
+    router.push(
+      `/operations/daily?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`,
+    );
+  }
+
+  /** Checks the answer on the screen showing, then moves on to the next one. */
+  async function continueFromScreen(id: string) {
+    const [kind, key] = id.split(':') as [string, string | undefined];
+    const stop = (errors: Record<string, string>, problem: string | null = null) => {
+      wizard.setErrors(errors);
+      wizard.setProblem(problem);
+    };
+    stop({});
+    if (kind === 'team') {
+      if (attendantIds.length === 0 && ((operation?.attendants.length ?? 0) > 0 || hasVisiting)) {
+        return stop({}, 'Tick at least one person who worked this shift.');
+      }
+    } else if (kind === 'pump') {
+      const reading = readings.find((item) => item.rowKey === key);
+      if (reading) {
+        const checked = checkClosing(shownClosing(reading), reading.openingReading);
+        if (!checked.ok) return stop({ closing: checked.message });
+        if (!reading.sellingPriceId) {
+          return stop(
+            {},
+            'No selling price was in force for this fuel on this day. Ask your manager before continuing.',
+          );
+        }
+      }
+    } else if (kind === 'payment') {
+      const line = payments.find((item) => item.rowKey === key);
+      if (line) {
+        const problems = checkPaymentLine(line);
+        if (Object.keys(problems).length > 0) return stop(problems);
+      }
+    } else if (kind === 'expense') {
+      const line = expenses.find((item) => item.rowKey === key);
+      if (line) {
+        const problems = checkExpenseLine(line);
+        if (Object.keys(problems).length > 0) return stop(problems);
+      }
+    } else if (kind === 'cash') {
+      const checked = checkCashCounted(cashCounted);
+      if (!checked.ok) return stop({ cash: checked.message });
+    } else if (kind === 'tank') {
+      if (unsavedDips.length > 0) {
+        return stop(
+          {},
+          `Save the ${unsavedDips.join(' and ')} dip before you continue. Press Save dip beside it.`,
+        );
+      }
+      // Every tank needs a dip before the shift can be submitted, so none can be skipped here.
+      const tank = record?.tanks.find((item) => item.tankId === key);
+      if (tank && !record?.dips.some((dip) => dip.tankId === tank.tankId)) {
+        return stop({}, `Record a dip for ${tank.productName} before you continue.`);
+      }
+    } else if (kind === 'explain') {
+      if ((explanations[key ?? ''] ?? '').trim() === '') {
+        return stop({ explain: 'Write a few words to explain the difference.' });
+      }
+    }
+    const target = neighbourScreen(screens, id, 1);
+    if (target) await goScreen(target.id);
+  }
 
   if (loading)
     return (
@@ -1202,6 +1637,469 @@ export function DailyOperationsWorkspace({
     );
   }
 
+  /** The one question of the figures that is showing (#253). */
+  const figureScreen = () => {
+    const here = screens[indexOfScreen(screens, wizard.step)]!;
+    const [kind, key] = here.id.split(':') as [string, string | undefined];
+    const previous = neighbourScreen(screens, here.id, -1);
+    const frame = {
+      ...screenPosition(screens, here.id),
+      captureHeading: wizard.captureHeading,
+    };
+    const nav = {
+      frame,
+      busy,
+      // These only run when a button is pressed; saving reads a ref, never during render.
+      /* eslint-disable react-hooks/refs */
+      onBack: () => (previous ? void goScreen(previous.id) : void leaveFigures()),
+      onContinue: () => void continueFromScreen(here.id),
+      /* eslint-enable react-hooks/refs */
+    };
+    const errors = wizard.errors;
+    const patchPayment = (rowKey: string, patch: Partial<Payment>) => {
+      setDirty(true);
+      setPayments((rows) =>
+        rows.map((item) => (item.rowKey === rowKey ? { ...item, ...patch } : item)),
+      );
+    };
+    const patchExpense = (rowKey: string, patch: Partial<Expense>) => {
+      setDirty(true);
+      setExpenses((rows) =>
+        rows.map((item) => (item.rowKey === rowKey ? { ...item, ...patch } : item)),
+      );
+    };
+    const methodChoices = (methods: readonly PaymentMethod[]) =>
+      methods.map((method) => ({ value: method, label: methodLabels[method] }));
+    const toggle = (id: string, checked: boolean) => {
+      setDirty(true);
+      setAttendantIds((ids) => (checked ? [...ids, id] : ids.filter((item) => item !== id)));
+    };
+
+    if (kind === 'team') {
+      return (
+        <TeamScreen
+          nav={nav}
+          title="Who worked this shift?"
+          hint="Tick everyone who worked this shift."
+          people={operation.attendants}
+          selected={attendantIds}
+          onToggle={toggle}
+          emptyText={
+            operation.attendants.length === 0
+              ? 'No attendants are set up for this station yet. Ask your manager to add them.'
+              : undefined
+          }
+          problem={wizard.problem}
+        />
+      );
+    }
+    if (kind === 'visiting') {
+      return (
+        <TeamScreen
+          nav={nav}
+          title="Did anyone cover from another station?"
+          hint="Tick anyone who came to work here from another station. Leave it empty if nobody did."
+          people={visitingAttendants}
+          selected={attendantIds}
+          onToggle={toggle}
+        />
+      );
+    }
+    if (kind === 'no-pumps') return <NoPumpsScreen nav={nav} />;
+    if (kind === 'pump') {
+      const reading = readings.find((item) => item.rowKey === key);
+      if (!reading) return null;
+      const index = orderedReadings.findIndex((item) => item.rowKey === reading.rowKey);
+      const contextReading = operation.availableReadings.find(
+        (item) => item.nozzleId === reading.nozzleId,
+      );
+      const typed = shownClosing(reading);
+      const liveLitres =
+        typed === '' ? null : liveLitresSold(reading.openingReading, reading.closingReading);
+      const belowOpening = liveLitres?.startsWith('-') ?? false;
+      const litresShown = belowOpening || typed === '' ? null : (liveLitres ?? reading.litresSold);
+      const liveValue = belowOpening ? null : liveSalesValue(litresShown, reading.unitPrice);
+      const valueShown = typed === '' ? undefined : (liveValue ?? reading.salesValue);
+      const fuelUnit = record.tanks.find((tank) => tank.productId === reading.productId)?.unit;
+      return (
+        <PumpScreen
+          nav={nav}
+          pumpLabel={
+            contextReading
+              ? `Pump ${contextReading.pumpNumber}, nozzle ${contextReading.nozzleNumber}`
+              : `Nozzle ${index + 1}`
+          }
+          fuelName={contextReading?.productName ?? reading.label ?? reading.nozzleId}
+          opening={
+            correctingOpening ? reading.openingReading : formatDecimal(reading.openingReading)
+          }
+          closing={typed}
+          error={errors.closing}
+          unit={quantityUnitShort(fuelUnit)}
+          litresLabel={fuelUnit === 'KILOGRAMS' ? 'Kilograms sold' : 'Litres sold'}
+          litresSold={litresShown ? formatQuantity(litresShown, fuelUnit) : '—'}
+          priceText={reading.unitPrice ? formatMoney(reading.unitPrice) : '—'}
+          salesValue={valueShown ? formatMoney(valueShown) : '—'}
+          belowOpening={belowOpening}
+          noPrice={!reading.sellingPriceId}
+          onChange={(value) => {
+            setDirty(true);
+            setClosingTouched((touched) => new Set(touched).add(reading.rowKey));
+            setReadings((rows) =>
+              rows.map((item) =>
+                item.rowKey === reading.rowKey ? { ...item, closingReading: value } : item,
+              ),
+            );
+          }}
+          correcting={correctingOpening}
+          onChangeOpening={(value) => {
+            setDirty(true);
+            setReadings((rows) =>
+              rows.map((item) =>
+                item.rowKey === reading.rowKey
+                  ? {
+                      ...item,
+                      openingReading: value,
+                      // A pump that sold nothing keeps closing level with its opening.
+                      closingReading:
+                        Number(item.closingReading) === Number(item.openingReading)
+                          ? value
+                          : item.closingReading,
+                    }
+                  : item,
+              ),
+            );
+          }}
+          correctionButton={
+            record.canCorrectOpening ? (
+              correctingOpening ? (
+                <div className="form-grid">
+                  <Field
+                    id="opening-correction-reason"
+                    label="Why is the opening being corrected?"
+                    hint="Kept in the audit trail with your name and the old reading."
+                    required
+                  >
+                    <input
+                      id="opening-correction-reason"
+                      value={correctionReason}
+                      onChange={(event) => setCorrectionReason(event.target.value)}
+                    />
+                  </Field>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setCorrectingOpening(false);
+                      setCorrectionReason('');
+                      setReadings(record.readings.map(readingFromRecord));
+                    }}
+                  >
+                    Cancel correction
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="quiet" onClick={() => setCorrectingOpening(true)}>
+                  Correct the opening reading
+                </Button>
+              )
+            ) : null
+          }
+        />
+      );
+    }
+    if (kind === 'payments-more') {
+      return (
+        <AddMoreScreen
+          nav={nav}
+          title={payments.length > 0 ? 'Did customers pay another way?' : 'How did customers pay?'}
+          hint="Pick a way customers paid this shift. The total should match the expected sales."
+          name="payment-way"
+          choices={methodChoices(paymentMethods)}
+          doneLabel={payments.length > 0 ? 'No, that is all' : 'Skip for now'}
+          onPick={(method) => {
+            const rowKey = newRowKey();
+            setDirty(true);
+            setPayments((rows) => [
+              ...rows,
+              {
+                rowKey,
+                method: method as PaymentMethod,
+                amount: '',
+                reference: '',
+                note: '',
+                customerAccountId: '',
+                beneficiaryName: '',
+              },
+            ]);
+            wizard.setErrors({});
+            wizard.show(`payment:${rowKey}`);
+          }}
+          onDone={() => void continueFromScreen(here.id)}
+        />
+      );
+    }
+    if (kind === 'payment') {
+      const index = payments.findIndex((item) => item.rowKey === key);
+      const line = payments[index];
+      if (!line) return null;
+      return (
+        <PaymentLineScreen
+          nav={nav}
+          number={index + 1}
+          method={line.method}
+          methods={methodChoices(paymentMethods)}
+          amount={line.amount}
+          reference={line.reference}
+          customerAccountId={line.customerAccountId}
+          beneficiaryName={line.beneficiaryName}
+          customers={(record.customerAccounts ?? [])
+            .filter((account) => account.accountType === ACCOUNT_TYPE_FOR_METHOD[line.method])
+            .map((account) => ({
+              value: account.id,
+              label: `${account.name} · ${formatMoney(account.available)} available`,
+            }))}
+          errors={errors}
+          onMethod={(method) =>
+            patchPayment(line.rowKey, { method: method as PaymentMethod, customerAccountId: '' })
+          }
+          onAmount={(amount) => patchPayment(line.rowKey, { amount })}
+          onReference={(reference) => patchPayment(line.rowKey, { reference })}
+          onCustomer={(customerAccountId) => patchPayment(line.rowKey, { customerAccountId })}
+          onBeneficiary={(beneficiaryName) => patchPayment(line.rowKey, { beneficiaryName })}
+          onRemove={() => {
+            setDirty(true);
+            setPayments((rows) => rows.filter((item) => item.rowKey !== line.rowKey));
+            wizard.setErrors({});
+            wizard.show('payments-more');
+          }}
+          runningTotal={formatMoney(sumDecimals(payments.map((item) => item.amount || '0')))}
+        />
+      );
+    }
+    if (kind === 'expenses-more') {
+      return (
+        <AddMoreScreen
+          nav={nav}
+          title={
+            expenses.length > 0
+              ? 'Was anything else paid out?'
+              : 'Was anything paid out during the shift?'
+          }
+          hint="Money paid out of the till or by the station, for example repairs or supplies."
+          name="expense-more"
+          choices={[
+            {
+              value: 'add',
+              label: expenses.length > 0 ? 'Yes, add another expense' : 'Yes, add an expense',
+            },
+          ]}
+          doneLabel={expenses.length > 0 ? 'No, that is all' : 'No'}
+          onPick={() => {
+            const rowKey = newRowKey();
+            setDirty(true);
+            setExpenses((rows) => [
+              ...rows,
+              {
+                rowKey,
+                category: '',
+                description: '',
+                amount: '',
+                paymentMethod: 'CASH',
+                personPaid: '',
+                reference: '',
+              },
+            ]);
+            wizard.setErrors({});
+            wizard.show(`expense:${rowKey}`);
+          }}
+          onDone={() => void continueFromScreen(here.id)}
+        />
+      );
+    }
+    if (kind === 'expense') {
+      const index = expenses.findIndex((item) => item.rowKey === key);
+      const line = expenses[index];
+      if (!line) return null;
+      return (
+        <ExpenseLineScreen
+          nav={nav}
+          number={index + 1}
+          category={line.category}
+          description={line.description}
+          amount={line.amount}
+          paymentMethod={line.paymentMethod}
+          methods={methodChoices(expensePaymentMethods)}
+          errors={errors}
+          onCategory={(category) => patchExpense(line.rowKey, { category })}
+          onDescription={(description) => patchExpense(line.rowKey, { description })}
+          onAmount={(amount) => patchExpense(line.rowKey, { amount })}
+          onMethod={(paymentMethod) =>
+            patchExpense(line.rowKey, { paymentMethod: paymentMethod as PaymentMethod })
+          }
+          onRemove={() => {
+            setDirty(true);
+            setExpenses((rows) => rows.filter((item) => item.rowKey !== line.rowKey));
+            wizard.setErrors({});
+            wizard.show('expenses-more');
+          }}
+          runningTotal={formatMoney(sumDecimals(expenses.map((item) => item.amount || '0')))}
+        />
+      );
+    }
+    if (kind === 'cash') {
+      return (
+        <CashScreen
+          nav={nav}
+          value={cashCounted}
+          error={errors.cash}
+          onChange={(value) => {
+            setDirty(true);
+            setCashCounted(value);
+          }}
+          rows={[
+            { label: 'Cash we expected', value: formatMoney(liveCash.expected) },
+            { label: 'Paid out in cash', value: formatMoney(liveCash.paidOut) },
+            { label: 'Expected after payouts', value: formatMoney(liveCash.net) },
+            {
+              label: 'Cash difference',
+              value:
+                liveCash.difference === null
+                  ? 'Enter the cash counted'
+                  : formatMoney(liveCash.difference),
+            },
+          ]}
+        />
+      );
+    }
+    if (kind === 'no-tanks') {
+      return (
+        <TankScreen
+          nav={nav}
+          title="No tanks are set up yet"
+          hint="Your manager needs to set up the tanks for this station before dips can be recorded."
+        >
+          {null}
+        </TankScreen>
+      );
+    }
+    if (kind === 'tank') {
+      const tank = record.tanks.find((item) => item.tankId === key);
+      if (!tank) return null;
+      const deliveries = record.deliveries.filter(
+        (delivery) => delivery.productId === tank.productId,
+      );
+      return (
+        <TankScreen
+          nav={nav}
+          title={`What does the dipstick show for ${tank.productName}?`}
+          hint="Dip the tank, type the reading and press Save dip. Every tank needs a dip before the shift can be submitted."
+          problem={wizard.problem}
+        >
+          <DailyTankDips
+            key={tank.tankId}
+            tenantId={context.tenantId}
+            stationId={context.stationId}
+            timezone={operation.station.timezone}
+            reconciliationId={activeReconciliationId ?? ''}
+            record={record}
+            editable={editable}
+            onChanged={reloadQuietly}
+            onUnsavedChange={setUnsavedDips}
+            onlyTankId={tank.tankId}
+          />
+          {deliveries.length ? (
+            <section className="tank-deliveries" aria-label="Deliveries this shift">
+              <h3>Deliveries this shift</h3>
+              {deliveries.map((delivery) => (
+                <PumpReadout
+                  key={delivery.deliveryId}
+                  label={`Delivery note ${delivery.deliveryNoteNumber}`}
+                  value={formatQuantity(delivery.actualQuantityLitres, tank.unit)}
+                />
+              ))}
+            </section>
+          ) : null}
+          <Link
+            className="button button-secondary"
+            href={`/inventory/deliveries?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+          >
+            Record a delivery
+          </Link>
+        </TankScreen>
+      );
+    }
+    if (kind === 'explain') {
+      const category = (key ?? 'SALES') as Difference;
+      const required =
+        category === 'SALES'
+          ? requiresSalesExplanation
+          : category === 'CASH'
+            ? requiresCashExplanation
+            : requiresStockExplanation;
+      const figure =
+        category === 'SALES'
+          ? `The sales difference is ${formatMoney(liveSales?.difference ?? record.totals.salesVariance)}. `
+          : category === 'CASH' && record.totals.cashVariance !== null
+            ? `The cash difference is ${formatMoney(record.totals.cashVariance)}. `
+            : '';
+      return (
+        <ExplainScreen
+          nav={nav}
+          question={EXPLAIN_QUESTION[category]}
+          detail={`${figure}${required ? 'Please explain this difference before submitting.' : 'Only needed if there is a difference.'}`}
+          id={`explanation-${category.toLowerCase()}`}
+          value={explanations[category] ?? ''}
+          error={errors.explain}
+          onChange={(value) => {
+            setDirty(true);
+            setExplanations((current) => ({ ...current, [category]: value }));
+          }}
+        />
+      );
+    }
+    // The last screen.
+    return (
+      <SubmitScreen
+        frame={frame}
+        onBack={nav.onBack}
+        checklist={checklist}
+        banners={
+          state === 'RETURNED' ? (
+            <p className="state state-warning" role="status">
+              <strong>Returned:</strong> {record?.returnReason ? `“${record.returnReason}” ` : null}
+              Fix the figures and save before you submit again.
+            </p>
+          ) : null
+        }
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => void saveDraft(true)}
+              disabled={!dirty}
+              loading={busy}
+            >
+              Save now
+            </Button>
+            <Button variant="primary" onClick={() => void submitForReview()} disabled={busy}>
+              Submit for review
+            </Button>
+          </>
+        }
+      >
+        {activeReconciliationId ? (
+          <DocumentAttachments
+            tenantId={context.tenantId}
+            stationId={context.stationId}
+            subjectType="RECONCILIATION"
+            subjectId={activeReconciliationId}
+            title="Photos and papers for this day"
+          />
+        ) : null}
+      </SubmitScreen>
+    );
+  };
+
   return (
     <div className="daily-operations-workspace" aria-label="Daily station operations workspace">
       <div className="entry-head profit-top">
@@ -1224,20 +2122,22 @@ export function DailyOperationsWorkspace({
             <span className="saved-indicator">Saved</span>
           )}
         </div>
-        <nav className="entry-steps profit-tabs" aria-label="Steps">
-          {STEPS.map((label, index) => (
-            <button
-              key={label}
-              type="button"
-              aria-current={index === step ? 'step' : undefined}
-              data-done={index < step || undefined}
-              disabled={busy}
-              onClick={() => void goToStep(index)}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
+        {wizardMode ? null : (
+          <nav className="entry-steps ds-tabs" aria-label="Steps">
+            {STEPS.map((label, index) => (
+              <button
+                key={label}
+                type="button"
+                aria-current={index === step ? 'step' : undefined}
+                data-done={index < step || undefined}
+                disabled={busy}
+                onClick={() => void goToStep(index)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        )}
       </div>
 
       {error || notice ? (
@@ -1304,7 +2204,11 @@ export function DailyOperationsWorkspace({
 
       <div
         className="entry-card-wrap"
-        data-actions={(step > 0 ? 1 : 0) + (step < STEPS.length - 1 ? 1 : 0)}
+        data-wizard={wizardMode || undefined}
+        data-actions={wizardMode ? 0 : (step > 0 ? 1 : 0) + (step < STEPS.length - 1 ? 1 : 0)}
+        data-link={
+          state === 'SUBMITTED' && step === STEPS.length - 1 && !mayApprove ? '' : undefined
+        }
       >
         <div className="entry-body card panel profit-panel">
           <div className="entry-rail">
@@ -1313,24 +2217,28 @@ export function DailyOperationsWorkspace({
                 <h2 id="entry-side-title" className="profit-title">
                   This shift
                 </h2>
-                <InfoTip>Totals so far. They refresh each time you press Next.</InfoTip>
+                <InfoTip>Totals so far. They update as you type.</InfoTip>
               </span>
               <dl className="profit-rows" aria-label="Totals so far">
                 <div className="profit-row">
                   <dt>Expected sales</dt>
-                  <dd>{formatMoney(record.totals.expectedSales)}</dd>
+                  <dd>{formatMoney(liveSales?.expected ?? record.totals.expectedSales)}</dd>
                 </div>
                 <div className="profit-row">
                   <dt>Accounted for</dt>
-                  <dd>{formatMoney(record.totals.accountedSales)}</dd>
+                  <dd>{formatMoney(liveSales?.accounted ?? record.totals.accountedSales)}</dd>
                 </div>
                 <div
                   className="profit-row"
                   data-strong
-                  data-tone={isZero(record.totals.salesVariance) ? undefined : 'warning'}
+                  data-tone={
+                    isZero(liveSales?.difference ?? record.totals.salesVariance)
+                      ? undefined
+                      : 'warning'
+                  }
                 >
                   <dt>Sales difference</dt>
-                  <dd>{formatMoney(record.totals.salesVariance)}</dd>
+                  <dd>{formatMoney(liveSales?.difference ?? record.totals.salesVariance)}</dd>
                 </div>
                 {record.totals.cashVariance !== null ? (
                   <div
@@ -1347,966 +2255,1044 @@ export function DailyOperationsWorkspace({
           </div>
 
           <div className="entry-flow">
-            {step === 0 && record.submitter ? (
-              <div className="submitted-by">
-                <span className="submitted-by-avatar" aria-hidden="true">
-                  {initialsOf(record.submitter.name)}
-                </span>
-                <p className="submitted-by-name">
-                  <span>Submitted by</span> <strong>{record.submitter.name}</strong>
-                </p>
-                {record.submitter.submittedAt ? (
-                  <p className="submitted-by-when">
-                    {formatDateTimeInTimeZone(
-                      new Date(record.submitter.submittedAt),
-                      operation.station.timezone,
-                    )}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-            {step === 0 ? (
-              <Card
-                as="section"
-                className="panel profit-panel cash-panel"
-                id="operations-shift"
-                aria-labelledby="operations-shift-title"
-              >
-                <SectionHeading
-                  asTip={role === 'MANAGEMENT'}
-                  title="Attendants"
-                  headingId="operations-shift-title"
-                  detail={
-                    role === 'MANAGEMENT'
-                      ? 'The people recorded on this shift.'
-                      : 'Tick everyone who worked this shift.'
-                  }
-                />
-                <fieldset className="attendant-fieldset" disabled={!editable}>
-                  <legend className="sr-only">Attendants</legend>
-                  {operation.attendants.length === 0 ? (
-                    <p className="panel-detail">
-                      No attendants are set up for this station yet. Ask your manager to add them.
+            {wizardMode ? figureScreen() : null}
+            {!wizardMode ? (
+              <>
+                {step === 0 && record.submitter ? (
+                  <div className="submitted-by">
+                    <span className="submitted-by-avatar" aria-hidden="true">
+                      {initialsOf(record.submitter.name)}
+                    </span>
+                    <p className="submitted-by-name">
+                      <span>Submitted by</span> <strong>{record.submitter.name}</strong>
                     </p>
-                  ) : (
-                    <div className="attendant-group">
-                      {visitingAttendants.length > 0 ? (
-                        <p className="attendant-group-label">This station</p>
-                      ) : null}
-                      <div className="choice-grid">
-                        {operation.attendants.map((attendant) => (
-                          <label className="choice-card" key={attendant.id}>
-                            <input
-                              type="checkbox"
-                              checked={attendantIds.includes(attendant.id)}
-                              onChange={(event) => {
-                                setDirty(true);
-                                setAttendantIds((current) =>
-                                  event.target.checked
-                                    ? [...current, attendant.id]
-                                    : current.filter((id) => id !== attendant.id),
-                                );
-                              }}
-                            />
-                            <span>
-                              <strong>{attendant.name}</strong>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {visitingAttendants.length > 0 ? (
-                    <div className="attendant-group">
-                      <p className="attendant-group-label">Covering from another station</p>
-                      <div className="choice-grid">
-                        {visitingAttendants.map((attendant) => (
-                          <label className="choice-card" key={attendant.id}>
-                            <input
-                              type="checkbox"
-                              checked={attendantIds.includes(attendant.id)}
-                              onChange={(event) => {
-                                setDirty(true);
-                                setAttendantIds((current) =>
-                                  event.target.checked
-                                    ? [...current, attendant.id]
-                                    : current.filter((id) => id !== attendant.id),
-                                );
-                              }}
-                            />
-                            <span>
-                              <strong>{attendant.name}</strong>
-                              <span className="metric-meta">
-                                {' '}
-                                Usually at {attendant.stationName}
-                              </span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </fieldset>
-              </Card>
-            ) : null}
-
-            {step === 1 ? (
-              <Card
-                as="section"
-                className="panel profit-panel cash-panel"
-                id="operations-meters"
-                aria-labelledby="operations-meters-title"
-              >
-                <SectionHeading
-                  asTip={role === 'MANAGEMENT'}
-                  title="Pump readings"
-                  headingId="operations-meters-title"
-                  detail="Enter the closing reading for every pump. The opening readings were recorded when the shift opened."
-                />
-                {readings.length === 0 ? (
-                  <EmptyState
-                    title="No pumps set up yet"
-                    message="Your manager needs to set up the pumps for this station before readings can be entered."
-                  />
-                ) : (
-                  <div className="meter-list">
-                    {editable && record?.canCorrectOpening ? (
-                      correctingOpening ? (
-                        <div className="form-grid">
-                          <Field
-                            id="opening-correction-reason"
-                            label="Why is the opening being corrected?"
-                            hint="Kept in the audit trail with your name and the old reading."
-                            required
-                          >
-                            <input
-                              id="opening-correction-reason"
-                              value={correctionReason}
-                              onChange={(event) => setCorrectionReason(event.target.value)}
-                            />
-                          </Field>
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              setCorrectingOpening(false);
-                              setCorrectionReason('');
-                              setReadings(record.readings.map(readingFromRecord));
-                            }}
-                          >
-                            Cancel correction
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button variant="secondary" onClick={() => setCorrectingOpening(true)}>
-                          Correct an opening reading
-                        </Button>
-                      )
+                    {record.submitter.submittedAt ? (
+                      <p className="submitted-by-when">
+                        {formatDateTimeInTimeZone(
+                          new Date(record.submitter.submittedAt),
+                          operation.station.timezone,
+                        )}
+                      </p>
                     ) : null}
-                    {[...readings]
-                      .sort((a, b) => {
-                        const key = (id: string) => {
-                          const item = operation.availableReadings.find((r) => r.nozzleId === id);
-                          return item ? `${item.pumpNumber}.${item.nozzleNumber}` : '';
-                        };
-                        return key(a.nozzleId).localeCompare(key(b.nozzleId), undefined, {
-                          numeric: true,
-                        });
-                      })
-                      .map((reading, index) => {
-                        const contextReading = operation.availableReadings.find(
-                          (item) => item.nozzleId === reading.nozzleId,
-                        );
-                        const liveLitres = liveLitresSold(
-                          reading.openingReading,
-                          reading.closingReading,
-                        );
-                        const belowOpening = liveLitres?.startsWith('-') ?? false;
-                        const litresShown = belowOpening
-                          ? null
-                          : (liveLitres ?? reading.litresSold);
-                        const soldText = litresShown ? formatLitres(litresShown) : null;
-                        const sold = soldText?.endsWith(' L')
-                          ? { value: soldText.slice(0, -2), unit: 'L' }
-                          : { value: soldText ?? '—', unit: undefined };
-                        return (
-                          <article className="pump-row" key={reading.rowKey}>
-                            <div className="pump-row-head">
-                              <div>
-                                <h3>
-                                  {contextReading?.productName ?? reading.label ?? reading.nozzleId}
-                                </h3>
-                                <p className="pump-row-meta">
-                                  {contextReading
-                                    ? `Pump ${contextReading.pumpNumber} · Nozzle ${contextReading.nozzleNumber}`
-                                    : `Nozzle ${index + 1}`}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="pump-row-readings">
-                              {correctingOpening ? (
-                                <NumericInput
-                                  id={`opening-${reading.rowKey}`}
-                                  label="Opening"
-                                  value={reading.openingReading}
-                                  onChange={(event) => {
-                                    setDirty(true);
-                                    setReadings((current) =>
-                                      current.map((item) =>
-                                        item.rowKey === reading.rowKey
-                                          ? {
-                                              ...item,
-                                              openingReading: event.target.value,
-                                              // A pump that sold nothing keeps closing level with its opening.
-                                              closingReading:
-                                                Number(item.closingReading) ===
-                                                Number(item.openingReading)
-                                                  ? event.target.value
-                                                  : item.closingReading,
-                                            }
-                                          : item,
-                                      ),
-                                    );
-                                  }}
-                                  unit="L"
-                                />
-                              ) : (
-                                <PumpReadout
-                                  label="Opening"
-                                  value={formatDecimal(reading.openingReading)}
-                                  unit="L"
-                                />
-                              )}
-                              {editable ? (
-                                <NumericInput
-                                  id={`closing-${reading.rowKey}`}
-                                  label="Closing"
-                                  value={reading.closingReading}
-                                  onChange={(event) => {
-                                    setDirty(true);
-                                    setReadings((current) =>
-                                      current.map((item) =>
-                                        item.rowKey === reading.rowKey
-                                          ? { ...item, closingReading: event.target.value }
-                                          : item,
-                                      ),
-                                    );
-                                  }}
-                                  unit="L"
-                                />
-                              ) : (
-                                <PumpReadout
-                                  label="Closing"
-                                  value={formatDecimal(reading.closingReading)}
-                                  unit="L"
-                                />
-                              )}
-                              <PumpReadout
-                                label="Litres sold"
-                                value={sold.value}
-                                unit={sold.unit}
-                                result
-                              />
-                              <PumpReadout
-                                label="Price / litre"
-                                value={reading.unitPrice ? formatMoney(reading.unitPrice) : '—'}
-                              />
-                              <PumpReadout
-                                label="Sales value"
-                                value={reading.salesValue ? formatMoney(reading.salesValue) : '—'}
-                                result
-                              />
-                            </div>
-                            {belowOpening ? (
-                              <p className="field-error" role="alert">
-                                The closing reading is lower than the opening reading. Check both
-                                numbers.
-                              </p>
-                            ) : null}
-                            {!reading.sellingPriceId ? (
-                              <p className="field-error" role="alert">
-                                No selling price is set for this fuel. Ask your manager before
-                                continuing.
-                              </p>
-                            ) : null}
-                          </article>
-                        );
-                      })}
                   </div>
-                )}
-              </Card>
-            ) : null}
+                ) : null}
+                {step === 0 ? (
+                  <Card
+                    as="section"
+                    className="panel profit-panel cash-panel"
+                    id="operations-shift"
+                    aria-labelledby="operations-shift-title"
+                  >
+                    <SectionHeading
+                      asTip={role === 'MANAGEMENT'}
+                      title="Attendants"
+                      headingId="operations-shift-title"
+                      detail={
+                        role === 'MANAGEMENT'
+                          ? 'The people recorded on this shift.'
+                          : 'Tick everyone who worked this shift.'
+                      }
+                    />
+                    <fieldset className="attendant-fieldset" disabled={!editable}>
+                      <legend className="sr-only">Attendants</legend>
+                      {operation.attendants.length === 0 ? (
+                        <p className="panel-detail">
+                          No attendants are set up for this station yet. Ask your manager to add
+                          them.
+                        </p>
+                      ) : (
+                        <div className="attendant-group">
+                          {visitingAttendants.length > 0 ? (
+                            <p className="attendant-group-label">This station</p>
+                          ) : null}
+                          <div className="choice-grid">
+                            {operation.attendants.map((attendant) => (
+                              <label className="choice-card" key={attendant.id}>
+                                <input
+                                  type="checkbox"
+                                  checked={attendantIds.includes(attendant.id)}
+                                  onChange={(event) => {
+                                    setDirty(true);
+                                    setAttendantIds((current) =>
+                                      event.target.checked
+                                        ? [...current, attendant.id]
+                                        : current.filter((id) => id !== attendant.id),
+                                    );
+                                  }}
+                                />
+                                <span>
+                                  <strong>{attendant.name}</strong>
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {visitingAttendants.length > 0 ? (
+                        <div className="attendant-group">
+                          <p className="attendant-group-label">Covering from another station</p>
+                          <div className="choice-grid">
+                            {visitingAttendants.map((attendant) => (
+                              <label className="choice-card" key={attendant.id}>
+                                <input
+                                  type="checkbox"
+                                  checked={attendantIds.includes(attendant.id)}
+                                  onChange={(event) => {
+                                    setDirty(true);
+                                    setAttendantIds((current) =>
+                                      event.target.checked
+                                        ? [...current, attendant.id]
+                                        : current.filter((id) => id !== attendant.id),
+                                    );
+                                  }}
+                                />
+                                <span>
+                                  <strong>{attendant.name}</strong>
+                                  <span className="metric-meta">
+                                    {' '}
+                                    Usually at {attendant.stationName}
+                                  </span>
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </fieldset>
+                  </Card>
+                ) : null}
 
-            {step === 2 ? (
-              <Card
-                as="section"
-                className="panel profit-panel cash-panel"
-                id="operations-evidence"
-                aria-labelledby="operations-evidence-title"
-              >
-                <SectionHeading
-                  asTip={role === 'MANAGEMENT'}
-                  title="How customers paid"
-                  headingId="operations-evidence-title"
-                  detail="Add a line for each way customers paid this shift. The total should match the expected sales."
-                />
-                <div className="entry-list">
-                  {payments.map((payment, index) => (
-                    <div className="entry-row" key={payment.rowKey}>
-                      <Field
-                        id={`payment-method-${payment.rowKey}`}
-                        label={`Paid by (line ${index + 1})`}
-                      >
-                        <select
-                          id={`payment-method-${payment.rowKey}`}
-                          value={payment.method}
-                          disabled={!editable}
-                          onChange={(event) => {
-                            setDirty(true);
-                            setPayments((current) =>
-                              current.map((item) =>
-                                item.rowKey === payment.rowKey
-                                  ? {
-                                      ...item,
-                                      method: event.target.value as PaymentMethod,
-                                      customerAccountId: '',
-                                    }
-                                  : item,
-                              ),
+                {step === 1 ? (
+                  <Card
+                    as="section"
+                    className="panel profit-panel cash-panel"
+                    id="operations-meters"
+                    aria-labelledby="operations-meters-title"
+                  >
+                    <SectionHeading
+                      asTip={role === 'MANAGEMENT'}
+                      title="Pump readings"
+                      headingId="operations-meters-title"
+                      detail="Enter the closing reading for every pump. The opening readings were recorded when the shift opened."
+                      action={
+                        editable && record?.canCorrectOpening && !correctingOpening ? (
+                          <Button variant="secondary" onClick={() => setCorrectingOpening(true)}>
+                            Correction
+                          </Button>
+                        ) : null
+                      }
+                    />
+                    {readings.length === 0 ? (
+                      <EmptyState
+                        title="No pumps set up yet"
+                        message="Your manager needs to set up the pumps for this station before readings can be entered."
+                      />
+                    ) : (
+                      <div className="meter-list">
+                        {editable && record?.canCorrectOpening ? (
+                          correctingOpening ? (
+                            <div className="form-grid">
+                              <Field
+                                id="opening-correction-reason"
+                                label="Why is the opening being corrected?"
+                                hint="Kept in the audit trail with your name and the old reading."
+                                required
+                              >
+                                <input
+                                  id="opening-correction-reason"
+                                  value={correctionReason}
+                                  onChange={(event) => setCorrectionReason(event.target.value)}
+                                />
+                              </Field>
+                              <Button
+                                variant="secondary"
+                                onClick={() => {
+                                  setCorrectingOpening(false);
+                                  setCorrectionReason('');
+                                  setReadings(record.readings.map(readingFromRecord));
+                                }}
+                              >
+                                Cancel correction
+                              </Button>
+                            </div>
+                          ) : null
+                        ) : null}
+                        {[...readings]
+                          .sort((a, b) => {
+                            const key = (id: string) => {
+                              const item = operation.availableReadings.find(
+                                (r) => r.nozzleId === id,
+                              );
+                              return item ? `${item.pumpNumber}.${item.nozzleNumber}` : '';
+                            };
+                            return key(a.nozzleId).localeCompare(key(b.nozzleId), undefined, {
+                              numeric: true,
+                            });
+                          })
+                          .map((reading, index) => {
+                            const contextReading = operation.availableReadings.find(
+                              (item) => item.nozzleId === reading.nozzleId,
                             );
-                          }}
-                        >
-                          {paymentMethods.map((method) => (
-                            <option key={method} value={method}>
-                              {methodLabels[method]}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      {ACCOUNT_TYPE_FOR_METHOD[payment.method] ? (
-                        <Field
-                          id={`payment-customer-${payment.rowKey}`}
-                          label="Customer"
-                          hint={
-                            payment.method === 'CUSTOMER_CREDIT'
-                              ? 'Who is buying on credit.'
-                              : 'Whose prepaid balance pays for this.'
-                          }
-                          required
-                        >
-                          <select
-                            id={`payment-customer-${payment.rowKey}`}
-                            value={payment.customerAccountId}
-                            disabled={!editable}
+                            const liveLitres = liveLitresSold(
+                              reading.openingReading,
+                              reading.closingReading,
+                            );
+                            const belowOpening = liveLitres?.startsWith('-') ?? false;
+                            const litresShown = belowOpening
+                              ? null
+                              : (liveLitres ?? reading.litresSold);
+                            const liveValue = belowOpening
+                              ? null
+                              : liveSalesValue(litresShown, reading.unitPrice);
+                            const valueShown = liveValue ?? reading.salesValue;
+                            const fuelUnit = record.tanks.find(
+                              (tank) => tank.productId === reading.productId,
+                            )?.unit;
+                            const unitText = quantityUnitShort(fuelUnit);
+                            const soldText = litresShown
+                              ? formatQuantity(litresShown, fuelUnit)
+                              : null;
+                            const sold = soldText?.endsWith(` ${unitText}`)
+                              ? { value: soldText.slice(0, -(unitText.length + 1)), unit: unitText }
+                              : { value: soldText ?? '—', unit: undefined };
+                            return (
+                              <article className="pump-row" key={reading.rowKey}>
+                                <div className="pump-row-head">
+                                  <div>
+                                    <h3>
+                                      {contextReading?.productName ??
+                                        reading.label ??
+                                        reading.nozzleId}
+                                    </h3>
+                                    <p className="pump-row-meta">
+                                      {contextReading
+                                        ? `Pump ${contextReading.pumpNumber} · Nozzle ${contextReading.nozzleNumber}`
+                                        : `Nozzle ${index + 1}`}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="pump-row-readings">
+                                  {correctingOpening ? (
+                                    <NumericInput
+                                      id={`opening-${reading.rowKey}`}
+                                      label="Opening"
+                                      value={reading.openingReading}
+                                      onChange={(event) => {
+                                        setDirty(true);
+                                        setReadings((current) =>
+                                          current.map((item) =>
+                                            item.rowKey === reading.rowKey
+                                              ? {
+                                                  ...item,
+                                                  openingReading: event.target.value,
+                                                  // A pump that sold nothing keeps closing level with its opening.
+                                                  closingReading:
+                                                    Number(item.closingReading) ===
+                                                    Number(item.openingReading)
+                                                      ? event.target.value
+                                                      : item.closingReading,
+                                                }
+                                              : item,
+                                          ),
+                                        );
+                                      }}
+                                      unit={unitText}
+                                    />
+                                  ) : (
+                                    <PumpReadout
+                                      label="Opening"
+                                      value={formatDecimal(reading.openingReading)}
+                                      unit={unitText}
+                                    />
+                                  )}
+                                  {editable ? (
+                                    <NumericInput
+                                      id={`closing-${reading.rowKey}`}
+                                      label="Closing"
+                                      value={
+                                        !closingTouched.has(reading.rowKey) &&
+                                        reading.closingReading.trim() !== '' &&
+                                        Number(reading.closingReading) ===
+                                          Number(reading.openingReading)
+                                          ? ''
+                                          : reading.closingReading
+                                      }
+                                      onChange={(event) => {
+                                        setDirty(true);
+                                        setClosingTouched((current) =>
+                                          new Set(current).add(reading.rowKey),
+                                        );
+                                        setReadings((current) =>
+                                          current.map((item) =>
+                                            item.rowKey === reading.rowKey
+                                              ? { ...item, closingReading: event.target.value }
+                                              : item,
+                                          ),
+                                        );
+                                      }}
+                                      unit={unitText}
+                                    />
+                                  ) : (
+                                    <PumpReadout
+                                      label="Closing"
+                                      value={formatDecimal(reading.closingReading)}
+                                      unit={unitText}
+                                    />
+                                  )}
+                                  <PumpReadout
+                                    label={
+                                      fuelUnit === 'KILOGRAMS' ? 'Kilograms sold' : 'Litres sold'
+                                    }
+                                    value={sold.value}
+                                    unit={sold.unit}
+                                    result
+                                  />
+                                  <PumpReadout
+                                    label="Price / litre"
+                                    value={reading.unitPrice ? formatMoney(reading.unitPrice) : '—'}
+                                  />
+                                  <PumpReadout
+                                    label="Sales value"
+                                    value={valueShown ? formatMoney(valueShown) : '—'}
+                                    result
+                                  />
+                                </div>
+                                {belowOpening ? (
+                                  <p className="field-error" role="alert">
+                                    The closing reading is lower than the opening reading. Check
+                                    both numbers.
+                                  </p>
+                                ) : null}
+                                {!reading.sellingPriceId ? (
+                                  <p className="field-error" role="alert">
+                                    No selling price was in force for this fuel on this day. Ask
+                                    your manager before continuing.
+                                  </p>
+                                ) : null}
+                              </article>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </Card>
+                ) : null}
+
+                {step === 2 ? (
+                  <Card
+                    as="section"
+                    className="panel profit-panel cash-panel"
+                    id="operations-evidence"
+                    aria-labelledby="operations-evidence-title"
+                  >
+                    <SectionHeading
+                      asTip={role === 'MANAGEMENT'}
+                      title="How customers paid"
+                      headingId="operations-evidence-title"
+                      detail="Add a line for each way customers paid this shift. The total should match the expected sales."
+                    />
+                    <div className="entry-list">
+                      {payments.map((payment, index) => (
+                        <div className="entry-row" key={payment.rowKey}>
+                          <Field
+                            id={`payment-method-${payment.rowKey}`}
+                            label={`Paid by (line ${index + 1})`}
+                          >
+                            <select
+                              id={`payment-method-${payment.rowKey}`}
+                              value={payment.method}
+                              disabled={!editable}
+                              onChange={(event) => {
+                                setDirty(true);
+                                setPayments((current) =>
+                                  current.map((item) =>
+                                    item.rowKey === payment.rowKey
+                                      ? {
+                                          ...item,
+                                          method: event.target.value as PaymentMethod,
+                                          customerAccountId: '',
+                                        }
+                                      : item,
+                                  ),
+                                );
+                              }}
+                            >
+                              {paymentMethods.map((method) => (
+                                <option key={method} value={method}>
+                                  {methodLabels[method]}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          {ACCOUNT_TYPE_FOR_METHOD[payment.method] ? (
+                            <Field
+                              id={`payment-customer-${payment.rowKey}`}
+                              label="Customer"
+                              hint={
+                                payment.method === 'CUSTOMER_CREDIT'
+                                  ? 'Who is buying on credit.'
+                                  : 'Whose prepaid balance pays for this.'
+                              }
+                              required
+                            >
+                              <select
+                                id={`payment-customer-${payment.rowKey}`}
+                                value={payment.customerAccountId}
+                                disabled={!editable}
+                                onChange={(event) => {
+                                  setDirty(true);
+                                  setPayments((current) =>
+                                    current.map((item) =>
+                                      item.rowKey === payment.rowKey
+                                        ? { ...item, customerAccountId: event.target.value }
+                                        : item,
+                                    ),
+                                  );
+                                }}
+                              >
+                                <option value="">Choose the customer</option>
+                                {(record?.customerAccounts ?? [])
+                                  .filter(
+                                    (account) =>
+                                      account.accountType ===
+                                      ACCOUNT_TYPE_FOR_METHOD[payment.method],
+                                  )
+                                  .map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                      {account.name} · {formatMoney(account.available)} available
+                                    </option>
+                                  ))}
+                              </select>
+                            </Field>
+                          ) : null}
+                          {payment.method === 'STAFF_OR_MANAGEMENT_FUEL' ? (
+                            <Field
+                              id={`payment-beneficiary-${payment.rowKey}`}
+                              label="Who received the fuel"
+                              hint="Name of the staff member or manager."
+                              required
+                            >
+                              <input
+                                id={`payment-beneficiary-${payment.rowKey}`}
+                                value={payment.beneficiaryName}
+                                maxLength={160}
+                                disabled={!editable}
+                                onChange={(event) => {
+                                  setDirty(true);
+                                  setPayments((current) =>
+                                    current.map((item) =>
+                                      item.rowKey === payment.rowKey
+                                        ? { ...item, beneficiaryName: event.target.value }
+                                        : item,
+                                    ),
+                                  );
+                                }}
+                              />
+                            </Field>
+                          ) : null}
+                          <NumericInput
+                            id={`payment-amount-${payment.rowKey}`}
+                            label="Amount"
+                            value={payment.amount}
                             onChange={(event) => {
                               setDirty(true);
                               setPayments((current) =>
                                 current.map((item) =>
                                   item.rowKey === payment.rowKey
-                                    ? { ...item, customerAccountId: event.target.value }
+                                    ? { ...item, amount: event.target.value }
                                     : item,
                                 ),
                               );
                             }}
+                            unit="USD"
+                            disabled={!editable}
+                          />
+                          <Field
+                            id={`payment-reference-${payment.rowKey}`}
+                            label="Reference or note"
+                            optional
                           >
-                            <option value="">Choose the customer</option>
-                            {(record?.customerAccounts ?? [])
-                              .filter(
-                                (account) =>
-                                  account.accountType === ACCOUNT_TYPE_FOR_METHOD[payment.method],
-                              )
-                              .map((account) => (
-                                <option key={account.id} value={account.id}>
-                                  {account.name} · {formatMoney(account.available)} available
-                                </option>
-                              ))}
-                          </select>
-                        </Field>
-                      ) : null}
-                      {payment.method === 'STAFF_OR_MANAGEMENT_FUEL' ? (
+                            <input
+                              id={`payment-reference-${payment.rowKey}`}
+                              value={payment.reference}
+                              disabled={!editable}
+                              onChange={(event) => {
+                                setDirty(true);
+                                setPayments((current) =>
+                                  current.map((item) =>
+                                    item.rowKey === payment.rowKey
+                                      ? { ...item, reference: event.target.value }
+                                      : item,
+                                  ),
+                                );
+                              }}
+                            />
+                          </Field>
+                          {editable ? (
+                            <Button
+                              variant="quiet"
+                              aria-label={`Remove payment line ${index + 1}`}
+                              onClick={() => {
+                                setDirty(true);
+                                setPayments((current) =>
+                                  current.filter((item) => item.rowKey !== payment.rowKey),
+                                );
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                    {editable ? (
+                      <div className="quick-add" role="group" aria-label="Add a payment line">
+                        {quickPayments.map((method) => (
+                          <Button
+                            key={method}
+                            variant="secondary"
+                            onClick={() => {
+                              setDirty(true);
+                              setPayments((current) => [
+                                ...current,
+                                {
+                                  rowKey: newRowKey(),
+                                  method,
+                                  amount: '',
+                                  reference: '',
+                                  note: '',
+                                  customerAccountId: '',
+                                  beneficiaryName: '',
+                                },
+                              ]);
+                            }}
+                          >
+                            + {methodLabels[method]}
+                          </Button>
+                        ))}
+                        <Button
+                          variant="quiet"
+                          onClick={() => {
+                            setDirty(true);
+                            setPayments((current) => [
+                              ...current,
+                              {
+                                rowKey: newRowKey(),
+                                method: 'OTHER_APPROVED',
+                                amount: '',
+                                reference: '',
+                                note: '',
+                                customerAccountId: '',
+                                beneficiaryName: '',
+                              },
+                            ]);
+                          }}
+                        >
+                          + Other
+                        </Button>
+                      </div>
+                    ) : null}
+                    {payments.length > 0 ? (
+                      <p className="entry-sum">
+                        Entered so far
+                        <strong>
+                          {formatMoney(sumDecimals(payments.map((item) => item.amount || '0')))}
+                        </strong>
+                      </p>
+                    ) : null}
+                  </Card>
+                ) : null}
+
+                {step === 3 ? (
+                  <Card
+                    as="section"
+                    className="panel profit-panel cash-panel"
+                    id="operations-expenses"
+                    aria-labelledby="operations-expenses-title"
+                  >
+                    <SectionHeading
+                      asTip={role === 'MANAGEMENT'}
+                      title="Expenses"
+                      headingId="operations-expenses-title"
+                      detail="Add anything paid out during the shift. Skip this step if there were none."
+                    />
+                    {expenses.map((expense, index) => (
+                      <div className="entry-row expense-row" key={expense.rowKey}>
                         <Field
-                          id={`payment-beneficiary-${payment.rowKey}`}
-                          label="Who received the fuel"
-                          hint="Name of the staff member or manager."
+                          id={`expense-category-${expense.rowKey}`}
+                          label={`What for (expense ${index + 1})`}
                           required
                         >
                           <input
-                            id={`payment-beneficiary-${payment.rowKey}`}
-                            value={payment.beneficiaryName}
-                            maxLength={160}
+                            id={`expense-category-${expense.rowKey}`}
+                            value={expense.category}
                             disabled={!editable}
                             onChange={(event) => {
                               setDirty(true);
-                              setPayments((current) =>
+                              setExpenses((current) =>
                                 current.map((item) =>
-                                  item.rowKey === payment.rowKey
-                                    ? { ...item, beneficiaryName: event.target.value }
+                                  item.rowKey === expense.rowKey
+                                    ? { ...item, category: event.target.value }
                                     : item,
                                 ),
                               );
                             }}
                           />
                         </Field>
-                      ) : null}
-                      <NumericInput
-                        id={`payment-amount-${payment.rowKey}`}
-                        label="Amount"
-                        value={payment.amount}
-                        onChange={(event) => {
-                          setDirty(true);
-                          setPayments((current) =>
-                            current.map((item) =>
-                              item.rowKey === payment.rowKey
-                                ? { ...item, amount: event.target.value }
-                                : item,
-                            ),
-                          );
-                        }}
-                        unit="USD"
-                        disabled={!editable}
-                      />
-                      <Field
-                        id={`payment-reference-${payment.rowKey}`}
-                        label="Reference or note"
-                        optional
-                      >
-                        <input
-                          id={`payment-reference-${payment.rowKey}`}
-                          value={payment.reference}
-                          disabled={!editable}
+                        <Field
+                          id={`expense-description-${expense.rowKey}`}
+                          label="Details"
+                          required
+                        >
+                          <input
+                            id={`expense-description-${expense.rowKey}`}
+                            value={expense.description}
+                            disabled={!editable}
+                            onChange={(event) => {
+                              setDirty(true);
+                              setExpenses((current) =>
+                                current.map((item) =>
+                                  item.rowKey === expense.rowKey
+                                    ? { ...item, description: event.target.value }
+                                    : item,
+                                ),
+                              );
+                            }}
+                          />
+                        </Field>
+                        <NumericInput
+                          id={`expense-amount-${expense.rowKey}`}
+                          label="Amount"
+                          value={expense.amount}
                           onChange={(event) => {
                             setDirty(true);
-                            setPayments((current) =>
+                            setExpenses((current) =>
                               current.map((item) =>
-                                item.rowKey === payment.rowKey
-                                  ? { ...item, reference: event.target.value }
+                                item.rowKey === expense.rowKey
+                                  ? { ...item, amount: event.target.value }
                                   : item,
                               ),
                             );
                           }}
+                          unit="USD"
+                          disabled={!editable}
                         />
-                      </Field>
-                      {editable ? (
-                        <Button
-                          variant="quiet"
-                          aria-label={`Remove payment line ${index + 1}`}
-                          onClick={() => {
-                            setDirty(true);
-                            setPayments((current) =>
-                              current.filter((item) => item.rowKey !== payment.rowKey),
-                            );
-                          }}
-                        >
-                          Remove
-                        </Button>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-                {editable ? (
-                  <div className="quick-add" role="group" aria-label="Add a payment line">
-                    {quickPayments.map((method) => (
+                        <Field id={`expense-payment-${expense.rowKey}`} label="Paid with">
+                          <select
+                            id={`expense-payment-${expense.rowKey}`}
+                            value={expense.paymentMethod}
+                            disabled={!editable}
+                            onChange={(event) => {
+                              setDirty(true);
+                              setExpenses((current) =>
+                                current.map((item) =>
+                                  item.rowKey === expense.rowKey
+                                    ? {
+                                        ...item,
+                                        paymentMethod: event.target.value as PaymentMethod,
+                                      }
+                                    : item,
+                                ),
+                              );
+                            }}
+                          >
+                            {expensePaymentMethods.map((method) => (
+                              <option key={method} value={method}>
+                                {methodLabels[method]}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        {editable ? (
+                          <Button
+                            variant="quiet"
+                            aria-label={`Remove expense ${index + 1}`}
+                            onClick={() => {
+                              setDirty(true);
+                              setExpenses((current) =>
+                                current.filter((item) => item.rowKey !== expense.rowKey),
+                              );
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        ) : null}
+                      </div>
+                    ))}
+                    {role === 'MANAGEMENT' ? null : (
                       <Button
-                        key={method}
                         variant="secondary"
+                        disabled={!editable}
                         onClick={() => {
                           setDirty(true);
-                          setPayments((current) => [
+                          setExpenses((current) => [
                             ...current,
                             {
                               rowKey: newRowKey(),
-                              method,
+                              category: '',
+                              description: '',
                               amount: '',
+                              paymentMethod: 'CASH',
+                              personPaid: '',
                               reference: '',
-                              note: '',
-                              customerAccountId: '',
-                              beneficiaryName: '',
                             },
                           ]);
                         }}
                       >
-                        + {methodLabels[method]}
+                        Add an expense
                       </Button>
-                    ))}
-                    <Button
-                      variant="quiet"
-                      onClick={() => {
-                        setDirty(true);
-                        setPayments((current) => [
-                          ...current,
-                          {
-                            rowKey: newRowKey(),
-                            method: 'OTHER_APPROVED',
-                            amount: '',
-                            reference: '',
-                            note: '',
-                            customerAccountId: '',
-                            beneficiaryName: '',
-                          },
-                        ]);
-                      }}
-                    >
-                      + Other
-                    </Button>
-                  </div>
-                ) : null}
-                {payments.length > 0 ? (
-                  <p className="entry-sum">
-                    Entered so far
-                    <strong>
-                      {formatMoney(sumDecimals(payments.map((item) => item.amount || '0')))}
-                    </strong>
-                  </p>
-                ) : null}
-              </Card>
-            ) : null}
-
-            {step === 3 ? (
-              <Card
-                as="section"
-                className="panel profit-panel cash-panel"
-                id="operations-expenses"
-                aria-labelledby="operations-expenses-title"
-              >
-                <SectionHeading
-                  asTip={role === 'MANAGEMENT'}
-                  title="Expenses"
-                  headingId="operations-expenses-title"
-                  detail="Add anything paid out during the shift. Skip this step if there were none."
-                />
-                {expenses.map((expense, index) => (
-                  <div className="entry-row expense-row" key={expense.rowKey}>
-                    <Field
-                      id={`expense-category-${expense.rowKey}`}
-                      label={`What for (expense ${index + 1})`}
-                      required
-                    >
-                      <input
-                        id={`expense-category-${expense.rowKey}`}
-                        value={expense.category}
-                        disabled={!editable}
-                        onChange={(event) => {
-                          setDirty(true);
-                          setExpenses((current) =>
-                            current.map((item) =>
-                              item.rowKey === expense.rowKey
-                                ? { ...item, category: event.target.value }
-                                : item,
-                            ),
-                          );
-                        }}
-                      />
-                    </Field>
-                    <Field id={`expense-description-${expense.rowKey}`} label="Details" required>
-                      <input
-                        id={`expense-description-${expense.rowKey}`}
-                        value={expense.description}
-                        disabled={!editable}
-                        onChange={(event) => {
-                          setDirty(true);
-                          setExpenses((current) =>
-                            current.map((item) =>
-                              item.rowKey === expense.rowKey
-                                ? { ...item, description: event.target.value }
-                                : item,
-                            ),
-                          );
-                        }}
-                      />
-                    </Field>
-                    <NumericInput
-                      id={`expense-amount-${expense.rowKey}`}
-                      label="Amount"
-                      value={expense.amount}
-                      onChange={(event) => {
-                        setDirty(true);
-                        setExpenses((current) =>
-                          current.map((item) =>
-                            item.rowKey === expense.rowKey
-                              ? { ...item, amount: event.target.value }
-                              : item,
-                          ),
-                        );
-                      }}
-                      unit="USD"
-                      disabled={!editable}
-                    />
-                    <Field id={`expense-payment-${expense.rowKey}`} label="Paid with">
-                      <select
-                        id={`expense-payment-${expense.rowKey}`}
-                        value={expense.paymentMethod}
-                        disabled={!editable}
-                        onChange={(event) => {
-                          setDirty(true);
-                          setExpenses((current) =>
-                            current.map((item) =>
-                              item.rowKey === expense.rowKey
-                                ? { ...item, paymentMethod: event.target.value as PaymentMethod }
-                                : item,
-                            ),
-                          );
-                        }}
-                      >
-                        {expensePaymentMethods.map((method) => (
-                          <option key={method} value={method}>
-                            {methodLabels[method]}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    {editable ? (
-                      <Button
-                        variant="quiet"
-                        aria-label={`Remove expense ${index + 1}`}
-                        onClick={() => {
-                          setDirty(true);
-                          setExpenses((current) =>
-                            current.filter((item) => item.rowKey !== expense.rowKey),
-                          );
-                        }}
-                      >
-                        Remove
-                      </Button>
+                    )}
+                    {expenses.length > 0 ? (
+                      <p className="entry-sum">
+                        Entered so far
+                        <strong>
+                          {formatMoney(sumDecimals(expenses.map((item) => item.amount || '0')))}
+                        </strong>
+                      </p>
                     ) : null}
-                  </div>
-                ))}
-                {role === 'MANAGEMENT' ? null : (
-                  <Button
-                    variant="secondary"
-                    disabled={!editable}
-                    onClick={() => {
-                      setDirty(true);
-                      setExpenses((current) => [
-                        ...current,
-                        {
-                          rowKey: newRowKey(),
-                          category: '',
-                          description: '',
-                          amount: '',
-                          paymentMethod: 'CASH',
-                          personPaid: '',
-                          reference: '',
-                        },
-                      ]);
-                    }}
-                  >
-                    Add an expense
-                  </Button>
-                )}
-                {expenses.length > 0 ? (
-                  <p className="entry-sum">
-                    Entered so far
-                    <strong>
-                      {formatMoney(sumDecimals(expenses.map((item) => item.amount || '0')))}
-                    </strong>
-                  </p>
+                  </Card>
                 ) : null}
-              </Card>
-            ) : null}
 
-            {step === 4 ? (
-              <Card
-                as="section"
-                className="panel profit-panel cash-panel"
-                id="operations-cash"
-                aria-labelledby="operations-cash-title"
-              >
-                <SectionHeading
-                  asTip={role === 'MANAGEMENT'}
-                  title="Count the cash"
-                  headingId="operations-cash-title"
-                  detail="Count the cash you are holding and enter the total."
-                />
-                <div className="cash-declaration-grid">
-                  <NumericInput
-                    id="cash-counted"
-                    label="Cash counted"
-                    hint="The figures beside it update as you type."
-                    value={cashCounted}
-                    onChange={(event) => {
-                      setDirty(true);
-                      setCashCounted(event.target.value);
-                    }}
-                    unit="USD"
-                    disabled={!editable}
-                  />
-                  <dl className="operational-summary compact-summary">
-                    <div>
-                      <dt>Cash we expected</dt>
-                      <dd className="numeric">{formatMoney(liveCash.expected)}</dd>
-                    </div>
-                    <div>
-                      <dt>Paid out in cash</dt>
-                      <dd className="numeric">{formatMoney(liveCash.paidOut)}</dd>
-                    </div>
-                    <div>
-                      <dt>Expected after payouts</dt>
-                      <dd className="numeric">{formatMoney(liveCash.net)}</dd>
-                    </div>
-                    <div>
-                      <dt>Cash difference</dt>
-                      <dd className="numeric">
-                        {liveCash.difference === null
-                          ? 'Enter the cash counted'
-                          : formatMoney(liveCash.difference)}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-                <p className="semantic-note">
-                  Counting the cash here does not bank it. Collection and banking are recorded under
-                  Cash.
-                </p>
-              </Card>
-            ) : null}
-
-            {step === 5 ? (
-              <Card
-                as="section"
-                className="panel profit-panel cash-panel"
-                id="operations-inventory"
-                aria-labelledby="operations-inventory-title"
-              >
-                <SectionHeading
-                  asTip={role === 'MANAGEMENT'}
-                  title="Tank dips and deliveries"
-                  headingId="operations-inventory-title"
-                  detail="Dip every tank. The last shift of the day cannot be submitted until each tank has a reading. A green result matches the books, yellow needs an explanation, red is urgent."
-                />
-                <p className="muted-small">
-                  Fuel delivered during this shift?{' '}
-                  <Link
-                    href={`/inventory/deliveries?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+                {step === 4 ? (
+                  <Card
+                    as="section"
+                    className="panel profit-panel cash-panel"
+                    id="operations-cash"
+                    aria-labelledby="operations-cash-title"
                   >
-                    Record a delivery
-                  </Link>
-                  .
-                </p>
-                <div className="context-grid">
-                  <div>
-                    <span className="metric-label">Deliveries</span>
-                    <strong>{record.deliveries.length}</strong>
-                  </div>
-                  <div>
-                    <span className="metric-label">Tank dips</span>
-                    <strong>{record.dips.length}</strong>
-                  </div>
-                  <div>
-                    <span className="metric-label">Stock differences</span>
-                    <strong>{Object.keys(record.totals.stockVariance).length}</strong>
-                  </div>
-                </div>
-                <DailyTankDips
-                  tenantId={context.tenantId}
-                  stationId={context.stationId}
-                  timezone={operation.station.timezone}
-                  reconciliationId={activeReconciliationId ?? ''}
-                  record={record}
-                  editable={editable}
-                  onChanged={load}
-                />
-                {record.deliveries.length ? (
-                  <section className="tank-deliveries" aria-label="Deliveries this shift">
-                    <h3>Deliveries this shift</h3>
-                    {record.deliveries.map((delivery) => (
-                      <PumpReadout
-                        key={delivery.deliveryId}
-                        label={`Delivery note ${delivery.deliveryNoteNumber}`}
-                        value={formatLitres(delivery.actualQuantityLitres)}
+                    <SectionHeading
+                      asTip={role === 'MANAGEMENT'}
+                      title="Count the cash"
+                      headingId="operations-cash-title"
+                      detail="Count the cash you are holding and enter the total."
+                    />
+                    <div className="cash-declaration-grid">
+                      <NumericInput
+                        id="cash-counted"
+                        label="Cash counted"
+                        hint="The figures beside it update as you type."
+                        value={cashCounted}
+                        onChange={(event) => {
+                          setDirty(true);
+                          setCashCounted(event.target.value);
+                        }}
+                        unit="USD"
+                        disabled={!editable}
                       />
-                    ))}
-                  </section>
+                      <dl className="operational-summary compact-summary">
+                        <div>
+                          <dt>Cash we expected</dt>
+                          <dd className="numeric">{formatMoney(liveCash.expected)}</dd>
+                        </div>
+                        <div>
+                          <dt>Paid out in cash</dt>
+                          <dd className="numeric">{formatMoney(liveCash.paidOut)}</dd>
+                        </div>
+                        <div>
+                          <dt>Expected after payouts</dt>
+                          <dd className="numeric">{formatMoney(liveCash.net)}</dd>
+                        </div>
+                        <div>
+                          <dt>Cash difference</dt>
+                          <dd className="numeric">
+                            {liveCash.difference === null
+                              ? 'Enter the cash counted'
+                              : formatMoney(liveCash.difference)}
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <p className="semantic-note">
+                      Counting the cash here does not bank it. Collection and banking are recorded
+                      under Cash.
+                    </p>
+                  </Card>
                 ) : null}
-              </Card>
-            ) : null}
 
-            {step === 6 ? (
-              <Card
-                as="section"
-                className="panel profit-panel cash-panel"
-                id="operations-review"
-                aria-labelledby="operations-review-title"
-              >
-                <SectionHeading
-                  asTip={role === 'MANAGEMENT'}
-                  title="Explain any differences, then submit"
-                  headingId="operations-review-title"
-                />
-                <ul className="entry-checklist" aria-label="Before you submit">
-                  {checklist.map((item) => (
-                    <li key={item.label} data-ok={item.ok || undefined}>
-                      <span aria-hidden="true">{item.ok ? '✓' : '!'}</span>
-                      {item.label}
-                    </li>
-                  ))}
-                </ul>
-                <div className="explanation-grid">
-                  {(['SALES', 'CASH', 'STOCK'] as const).map((category) => {
-                    const required =
-                      category === 'SALES'
-                        ? requiresSalesExplanation
-                        : category === 'CASH'
-                          ? requiresCashExplanation
-                          : requiresStockExplanation;
-                    if (!required && !(explanations[category] ?? '').trim()) return null;
-                    return (
-                      <Field
-                        key={category}
-                        id={`explanation-${category.toLowerCase()}`}
-                        label={`Why is ${category === 'SALES' ? 'the sales' : category === 'CASH' ? 'the cash' : 'the stock'} different?`}
-                        hint={
+                {step === 5 ? (
+                  <Card
+                    as="section"
+                    className="panel profit-panel cash-panel"
+                    id="operations-inventory"
+                    aria-labelledby="operations-inventory-title"
+                  >
+                    <SectionHeading
+                      asTip={role === 'MANAGEMENT'}
+                      title="Tank dips and deliveries"
+                      headingId="operations-inventory-title"
+                      action={
+                        <Link
+                          className="button button-secondary"
+                          href={`/inventory/deliveries?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+                        >
+                          Record a delivery
+                        </Link>
+                      }
+                    />
+                    <DailyTankDips
+                      tenantId={context.tenantId}
+                      stationId={context.stationId}
+                      timezone={operation.station.timezone}
+                      reconciliationId={activeReconciliationId ?? ''}
+                      record={record}
+                      editable={editable}
+                      onChanged={reloadQuietly}
+                      onUnsavedChange={setUnsavedDips}
+                    />
+                    {record.deliveries.length ? (
+                      <section className="tank-deliveries" aria-label="Deliveries this shift">
+                        <h3>Deliveries this shift</h3>
+                        {record.deliveries.map((delivery) => (
+                          <PumpReadout
+                            key={delivery.deliveryId}
+                            label={`Delivery note ${delivery.deliveryNoteNumber}`}
+                            value={formatQuantity(
+                              delivery.actualQuantityLitres,
+                              record.tanks.find((tank) => tank.productId === delivery.productId)
+                                ?.unit,
+                            )}
+                          />
+                        ))}
+                      </section>
+                    ) : null}
+                  </Card>
+                ) : null}
+
+                {step === 6 ? (
+                  <Card
+                    as="section"
+                    className="panel profit-panel cash-panel"
+                    id="operations-review"
+                    aria-labelledby="operations-review-title"
+                  >
+                    <SectionHeading
+                      asTip={role === 'MANAGEMENT'}
+                      title="Explain any differences, then submit"
+                      headingId="operations-review-title"
+                    />
+                    <ul className="entry-checklist" aria-label="Before you submit">
+                      {checklist.map((item) => (
+                        <li key={item.label} data-ok={item.ok || undefined}>
+                          <span aria-hidden="true">{item.ok ? '✓' : '!'}</span>
+                          {item.label}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="explanation-grid">
+                      {(['SALES', 'CASH', 'STOCK'] as const).map((category) => {
+                        const required =
+                          category === 'SALES'
+                            ? requiresSalesExplanation
+                            : category === 'CASH'
+                              ? requiresCashExplanation
+                              : requiresStockExplanation;
+                        if (!required && !(explanations[category] ?? '').trim()) return null;
+                        return (
+                          <Field
+                            key={category}
+                            id={`explanation-${category.toLowerCase()}`}
+                            label={`Why is ${category === 'SALES' ? 'the sales' : category === 'CASH' ? 'the cash' : 'the stock'} different?`}
+                            hint={
+                              required
+                                ? 'Please explain this difference before submitting.'
+                                : 'Only needed if there is a difference.'
+                            }
+                          >
+                            <textarea
+                              id={`explanation-${category.toLowerCase()}`}
+                              rows={3}
+                              value={explanations[category] ?? ''}
+                              disabled={!editable}
+                              onChange={(event) => {
+                                setDirty(true);
+                                setExplanations((current) => ({
+                                  ...current,
+                                  [category]: event.target.value,
+                                }));
+                              }}
+                            />
+                          </Field>
+                        );
+                      })}
+                    </div>
+                    {record && activeReconciliationId ? (
+                      <DocumentAttachments
+                        tenantId={context.tenantId}
+                        stationId={context.stationId}
+                        subjectType="RECONCILIATION"
+                        subjectId={activeReconciliationId}
+                        title="Photos and papers for this day"
+                      />
+                    ) : null}
+                    {state === 'APPROVED' ? (
+                      <p className="state state-success" role="status">
+                        <strong>Approved:</strong> Canonical sale evidence has been posted by the
+                        production approval command. Corrections use a named new revision workflow.
+                      </p>
+                    ) : null}
+                    {state === 'LOCKED' ? (
+                      <p className="state state-success" role="status">
+                        <strong>Locked:</strong> This record is locked. Corrections use a named new
+                        revision workflow.
+                      </p>
+                    ) : null}
+                    {state === 'RETURNED' ? (
+                      <p className="state state-warning" role="status">
+                        <strong>Returned:</strong>{' '}
+                        {record?.returnReason ? `“${record.returnReason}” ` : null}
+                        Fix the figures and save before you submit again.
+                      </p>
+                    ) : null}
+                    {inReview && record?.unvaluedFuels?.length ? (
+                      <div className="state state-warning" role="status">
+                        <p>
+                          <strong>Fuel cost missing:</strong> We do not know what the{' '}
+                          {record.unvaluedFuels.join(' and ')} cost. Enter it, save, and you will
+                          come straight back here to approve this day.
+                        </p>
+                        <div className="button-row">
+                          {(record.unvaluedStreams ?? []).map((stream) => (
+                            <Button
+                              key={`${stream.tankId}-${stream.productId}`}
+                              variant="secondary"
+                              onClick={() => {
+                                const params = new URLSearchParams({
+                                  tenantId: context.tenantId,
+                                  stationId: context.stationId,
+                                  returnTo: `${window.location.pathname}${window.location.search}`,
+                                });
+                                const target = new URL(
+                                  `/inventory/valuation/streams/${stream.tankId}/${stream.productId}?${params}`,
+                                  window.location.origin,
+                                );
+                                window.location.assign(target.toString());
+                              }}
+                            >
+                              Enter {stream.name} cost
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {approvalWaitsForSomeoneElse ? (
+                      <p className="state state-warning" role="status">
+                        <strong>Waiting for someone else:</strong> You submitted these figures, so
+                        another person who can approve must approve them.
+                      </p>
+                    ) : null}
+                    {inReview && !mayApprove && !mayReturn && !approvalWaitsForSomeoneElse ? (
+                      <p className="state" role="status">
+                        These figures are waiting for the owner or an administrator to review.
+                      </p>
+                    ) : null}
+                    {inReview ? (
+                      requiresApproverNote ? (
+                        <Field
+                          id="management-approval-note"
+                          label="Approver note for red variance"
+                          hint="Record why this red variance is accepted or what follow-up is required."
                           required
-                            ? 'Please explain this difference before submitting.'
-                            : 'Only needed if there is a difference.'
-                        }
+                        >
+                          <textarea
+                            id="management-approval-note"
+                            rows={3}
+                            value={approvalNote}
+                            onChange={(event) => setApprovalNote(event.target.value)}
+                          />
+                        </Field>
+                      ) : null
+                    ) : null}
+                    {mayReturn && returning ? (
+                      <Field
+                        id="management-return-reason"
+                        label="Return reason"
+                        hint="Required when sending this reconciliation back for correction."
+                        required
                       >
                         <textarea
-                          id={`explanation-${category.toLowerCase()}`}
+                          id="management-return-reason"
                           rows={3}
-                          value={explanations[category] ?? ''}
-                          disabled={!editable}
-                          onChange={(event) => {
-                            setDirty(true);
-                            setExplanations((current) => ({
-                              ...current,
-                              [category]: event.target.value,
-                            }));
-                          }}
+                          autoFocus
+                          value={returnReason}
+                          onChange={(event) => setReturnReason(event.target.value)}
                         />
                       </Field>
-                    );
-                  })}
-                </div>
-                {record && activeReconciliationId ? (
-                  <DocumentAttachments
-                    tenantId={context.tenantId}
-                    stationId={context.stationId}
-                    subjectType="RECONCILIATION"
-                    subjectId={activeReconciliationId}
-                    title="Photos and papers for this day"
-                  />
-                ) : null}
-                {state === 'APPROVED' ? (
-                  <p className="state state-success" role="status">
-                    <strong>Approved:</strong> Canonical sale evidence has been posted by the
-                    production approval command. Corrections use a named new revision workflow.
-                  </p>
-                ) : null}
-                {state === 'LOCKED' ? (
-                  <p className="state state-success" role="status">
-                    <strong>Locked:</strong> This record is locked. Corrections use a named new
-                    revision workflow.
-                  </p>
-                ) : null}
-                {state === 'RETURNED' ? (
-                  <p className="state state-warning" role="status">
-                    <strong>Returned:</strong> Fix the figures and save before you submit again.
-                  </p>
-                ) : null}
-                {inReview && record?.unvaluedFuels?.length ? (
-                  <p className="state state-warning" role="status">
-                    <strong>Fuel cost missing:</strong> We do not know what the{' '}
-                    {record.unvaluedFuels.join(' and ')} cost. This day cannot be approved until the
-                    cost is entered under Inventory, then Valuation.
-                  </p>
-                ) : null}
-                {approvalWaitsForSomeoneElse ? (
-                  <p className="state state-warning" role="status">
-                    <strong>Waiting for someone else:</strong> You submitted these figures, so
-                    another person who can approve must approve them.
-                  </p>
-                ) : null}
-                {inReview && !mayApprove && !mayReturn && !approvalWaitsForSomeoneElse ? (
-                  <p className="state" role="status">
-                    These figures are waiting for the owner or an administrator to review.
-                  </p>
-                ) : null}
-                {inReview ? (
-                  requiresApproverNote ? (
-                    <Field
-                      id="management-approval-note"
-                      label="Approver note for red variance"
-                      hint="Record why this red variance is accepted or what follow-up is required."
-                      required
-                    >
-                      <textarea
-                        id="management-approval-note"
-                        rows={3}
-                        value={approvalNote}
-                        onChange={(event) => setApprovalNote(event.target.value)}
-                      />
-                    </Field>
-                  ) : null
-                ) : null}
-                {mayReturn ? (
-                  <Field
-                    id="management-return-reason"
-                    label="Return reason"
-                    hint="Required when sending this reconciliation back for correction."
-                    required
-                  >
-                    <textarea
-                      id="management-return-reason"
-                      rows={3}
-                      value={returnReason}
-                      onChange={(event) => setReturnReason(event.target.value)}
-                    />
-                  </Field>
-                ) : null}
-                <div className="form-actions">
-                  <Button
-                    variant="secondary"
-                    onClick={() => void saveDraft(true)}
-                    disabled={!editable || !dirty}
-                    loading={busy}
-                  >
-                    Save now
-                  </Button>
-                  {role === 'SUPERVISOR' && editable ? (
-                    <Button
-                      variant="primary"
-                      onClick={() => void submitForReview()}
-                      disabled={busy}
-                    >
-                      Submit for review
-                    </Button>
-                  ) : null}
-                  {mayReturn || mayApprove ? (
-                    <>
-                      {mayReturn ? (
-                        <Button
-                          variant="danger"
-                          onClick={() => {
-                            const reason = returnReason.trim();
-                            if (!reason) {
-                              setError(
-                                'Enter a return reason before sending this reconciliation back.',
-                              );
-                              return;
-                            }
-                            void transition('ReturnProductionReconciliation', { reason });
-                          }}
-                          disabled={busy || !returnReason.trim()}
-                        >
-                          Return for correction
-                        </Button>
-                      ) : null}
-                      {mayApprove ? (
+                    ) : null}
+                    <div className="form-actions">
+                      <Button
+                        variant="secondary"
+                        onClick={() => void saveDraft(true)}
+                        disabled={!editable || !dirty}
+                        loading={busy}
+                      >
+                        Save now
+                      </Button>
+                      {role === 'SUPERVISOR' && editable ? (
                         <Button
                           variant="primary"
-                          onClick={() =>
-                            void transition('ApproveProductionReconciliation', {
-                              approvalNote: approvalNote.trim() || undefined,
-                            })
-                          }
-                          disabled={busy || (requiresApproverNote && !approvalNote.trim())}
+                          onClick={() => void submitForReview()}
+                          disabled={busy}
                         >
-                          Approve reconciliation
+                          Submit for review
                         </Button>
                       ) : null}
-                    </>
-                  ) : null}
-                </div>
-              </Card>
+                      {mayReturn || mayApprove ? (
+                        <>
+                          {mayReturn && !returning ? (
+                            <Button
+                              variant="danger"
+                              onClick={() => setReturning(true)}
+                              disabled={busy}
+                            >
+                              Return for correction
+                            </Button>
+                          ) : null}
+                          {mayReturn && returning ? (
+                            <>
+                              <Button
+                                variant="danger"
+                                onClick={() => {
+                                  const reason = returnReason.trim();
+                                  if (!reason) {
+                                    setError('Enter a return reason before sending this back.');
+                                    return;
+                                  }
+                                  void transition('ReturnProductionReconciliation', { reason });
+                                }}
+                                disabled={busy || !returnReason.trim()}
+                              >
+                                Send back for correction
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                onClick={() => {
+                                  setReturning(false);
+                                  setReturnReason('');
+                                }}
+                                disabled={busy}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : null}
+                          {mayApprove && !returning ? (
+                            <Button
+                              variant="primary"
+                              onClick={() =>
+                                void transition('ApproveProductionReconciliation', {
+                                  approvalNote: approvalNote.trim() || undefined,
+                                })
+                              }
+                              disabled={busy || (requiresApproverNote && !approvalNote.trim())}
+                            >
+                              Approve reconciliation
+                            </Button>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  </Card>
+                ) : null}
+              </>
             ) : null}
             <StepUpDialog
               open={stepUpRetry !== null}
@@ -2330,18 +3316,28 @@ export function DailyOperationsWorkspace({
           </div>
         </div>
         {/* Back and Next sit outside the card, in the gap cut from its bottom-right corner. */}
-        <footer className="entry-footer">
-          {step > 0 ? (
-            <Button variant="secondary" onClick={() => void goToStep(step - 1)} disabled={busy}>
-              Back
-            </Button>
-          ) : null}
-          {step < STEPS.length - 1 ? (
-            <Button variant="primary" onClick={() => void goToStep(step + 1)} loading={busy}>
-              Next
-            </Button>
-          ) : null}
-        </footer>
+        {wizardMode ? null : (
+          <footer className="entry-footer">
+            {step > 0 && !(state === 'SUBMITTED' && step === STEPS.length - 1 && !mayApprove) ? (
+              <Button variant="secondary" onClick={() => void goToStep(step - 1)} disabled={busy}>
+                Back
+              </Button>
+            ) : null}
+            {step < STEPS.length - 1 ? (
+              <Button variant="primary" onClick={() => void goToStep(step + 1)} loading={busy}>
+                Next
+              </Button>
+            ) : null}
+            {state === 'SUBMITTED' && step === STEPS.length - 1 && !mayApprove ? (
+              <Link
+                className="button button-primary"
+                href={`/operations/reconciliations?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
+              >
+                Reconciliations
+              </Link>
+            ) : null}
+          </footer>
+        )}
       </div>
     </div>
   );

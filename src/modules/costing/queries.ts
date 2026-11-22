@@ -1,4 +1,5 @@
 import type { TankRow } from '../inventory/tank-read-model';
+import { asQuantityUnit } from '../../design-system/formatters';
 import { profileDatabaseRead } from '../../platform/observability/read-timing';
 import type { AuthenticatedActorContext } from '../identity';
 import 'server-only';
@@ -58,6 +59,7 @@ function streamFromRow(row: DbRow) {
       id: String(row.product_id),
       code: String(row.product_code),
       name: String(row.product_name),
+      unit: asQuantityUnit(row.product_unit as string | undefined),
     },
     quantityLitres: String(row.quantity_litres),
     valuationStatus: status,
@@ -101,6 +103,7 @@ function revaluationFromRow(row: DbRow) {
       id: String(row.product_id),
       code: String(row.product_code),
       name: String(row.product_name),
+      unit: asQuantityUnit(row.product_unit as string | undefined),
     },
     source: row.source_id ? { type: String(row.source_type), id: String(row.source_id) } : null,
     amount: row.amount === null ? null : String(row.amount),
@@ -248,7 +251,7 @@ export async function getInventoryValuationReadModel(
     async (transaction, context) => {
       const streamQuery = sql`
       select s.station_id, station.code as station_code, station.name as station_name,
-             s.tank_id, tank.code as tank_code, s.product_id, product.code as product_code, product.name as product_name,
+             s.tank_id, tank.code as tank_code, s.product_id, product.code as product_code, product.name as product_name, product.unit as product_unit,
              s.quantity_litres::text, s.valuation_status, s.inventory_value::text, s.weighted_average_cost::text, s.currency,
              s.last_cost_event_effective_at, s.last_cost_event_id, s.projection_version,
              missing_source.*, active_revaluation.*
@@ -260,7 +263,7 @@ export async function getInventoryValuationReadModel(
       const revaluationQuery = sql`
       select r.id as revaluation_id, r.status as revaluation_status, r.reason,
              r.station_id, station.code as station_code, station.name as station_name,
-             r.tank_id, tank.code as tank_code, r.product_id, product.code as product_code, product.name as product_name,
+             r.tank_id, tank.code as tank_code, r.product_id, product.code as product_code, product.name as product_name, product.unit as product_unit,
              r.source_type, r.source_id, r.amount::text, r.currency, r.effective_at, r.business_date,
              r.requested_by, r.requested_at, r.approved_by, r.approved_at, r.posted_by, r.posted_at, r.replay_fingerprint,
              ${actorSelect}, ${revaluationProjection}
