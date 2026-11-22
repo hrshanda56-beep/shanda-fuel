@@ -4,7 +4,10 @@ import postgres, { type Sql, type TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { assertApproverAllowed } from '../../src/modules/customers/approver';
-import { ownerMayApproveOwn } from '../../src/platform/security/separation-of-duties';
+import {
+  hasAlternateApprover,
+  ownerMayApproveOwn,
+} from '../../src/platform/security/separation-of-duties';
 
 /**
  * Row-level security lets a person read only their own membership unless they hold a tenant-wide
@@ -212,6 +215,29 @@ describe('station-level staff can see who people are, as the application role', 
       return { removed, left: (await remaining(transaction))[0]?.n };
     });
     expect(otherTenant).toEqual({ removed: 0, left: 1 });
+  });
+
+  it('says someone else must approve for a non-owner, never for an owner (DEC-057)', async () => {
+    // This is the rule every "someone else needs to approve it" screen and command reads.
+    await asMember(ids.otherTenant, 'otherOwnerA', async (transaction) => {
+      // A second owner exists here, and the owner still waits on nobody.
+      expect(
+        await hasAlternateApprover(executor(transaction) as never, {
+          tenantId: ids.otherTenant,
+          stationId: ids.otherStation,
+          excludeMembershipId: membership('otherOwnerA'),
+        }),
+      ).toBe(false);
+    });
+    await asMember(ids.tenant, 'supervisor', async (transaction) => {
+      expect(
+        await hasAlternateApprover(executor(transaction) as never, {
+          tenantId: ids.tenant,
+          stationId: ids.s1,
+          excludeMembershipId: membership('supervisor'),
+        }),
+      ).toBe(true);
+    });
   });
 
   it('treats the only owner as an owner, and a non-owner as not one', async () => {

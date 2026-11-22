@@ -953,6 +953,39 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
       variance_status: 'APPROVED',
       variance_approved_by: ids.finance2Membership,
     });
+
+    // An owner never waits on anyone (DEC-057): the same person, holding an owner role, may
+    // approve and post the invoice they submitted themselves.
+    const d3 = await confirmedDelivery(s1, {
+      unitLandedCost: '1.20000000',
+      totalLandedCost: '1200.0000',
+      currency: 'USD',
+    });
+    const ownInvoice = await supplierCmd(
+      tokens.finance,
+      invoice(s1, {
+        amount: '1200.3600',
+        lines: [fuelLine(d3.deliveryId, '1000.300')],
+        deliveryReferences: [{ stationId: ids.station, deliveryId: d3.deliveryId }],
+      }),
+    );
+    await client.unsafe(`
+      insert into app.membership_role_assignments
+        (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+      values ('${ids.tenant}', '${ids.financeMembership}', 'OWNER', 'LEGAL_ENTITY', '${ids.legal}', null)
+    `);
+    try {
+      const ownerPosted = await post(ownInvoice.json.documentId, tokens.finance, {
+        varianceApprovalReason: 'Owner checked the delivery note',
+      });
+      expect(ownerPosted.status, JSON.stringify(ownerPosted.json)).toBe(200);
+      expect(ownerPosted.json.varianceStatus).toBe('APPROVED');
+    } finally {
+      await client.unsafe(`
+        delete from app.membership_role_assignments
+        where membership_id = '${ids.financeMembership}' and role_code = 'OWNER'
+      `);
+    }
     await setPolicy({ ...fields, toleranceAction: 'FLAG' });
   });
 
