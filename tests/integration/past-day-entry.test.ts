@@ -21,6 +21,8 @@ const ids = {
   owner: 'a3d00000-0000-4000-8000-000000000032',
   ownerMembership: 'a3d00000-0000-4000-8000-000000000042',
   ownerSession: 'a3d00000-0000-4000-8000-000000000112',
+  morning: 'a3d00000-0000-4000-8000-000000000201',
+  afternoon: 'a3d00000-0000-4000-8000-000000000202',
 };
 const supervisorToken = 'a3d-supervisor-token';
 const ownerToken = 'a3d-owner-token';
@@ -90,6 +92,11 @@ describe('past-day entry: OpenPastBusinessDay', () => {
         ('${ids.tenant}', '${ids.supervisorMembership}', 'SUPERVISOR', 'STATION', '${ids.legal}', '${ids.station}'),
         ('${ids.tenant}', '${ids.ownerMembership}', 'ADMINISTRATOR', 'STATION', '${ids.legal}', '${ids.station}')
         on conflict do nothing;
+      insert into app.shift_templates (id, tenant_id, station_id, code, name, duration_minutes, start_time, created_by) values
+        ('${ids.morning}', '${ids.tenant}', '${ids.station}', 'AM', 'Morning', 480, '06:00', '${ids.supervisorMembership}'),
+        ('${ids.afternoon}', '${ids.tenant}', '${ids.station}', 'PM', 'Afternoon', 480, '14:00', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      delete from app.shifts where station_id = '${ids.station}';
       delete from app.station_business_days where station_id = '${ids.station}';
       update app.stations set go_live_date = null where id = '${ids.station}';
     `);
@@ -153,5 +160,48 @@ describe('past-day entry: OpenPastBusinessDay', () => {
       where station_id = ${ids.station} and entered_late = false
     `;
     expect(rows[0]!.n).toBe(0);
+  });
+
+  it('stamps a late day’s shifts from the schedule, so they line up and never overlap', async () => {
+    const date = addDays(await stationToday(), -2);
+    const dayId = randomUUID();
+    const open = await post(
+      {
+        commandType: 'OpenPastBusinessDay',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        businessDayId: dayId,
+        businessDate: date,
+      },
+      supervisorToken,
+    );
+    expect(open.status).toBe(200);
+    for (const templateId of [ids.morning, ids.afternoon]) {
+      const shiftId = randomUUID();
+      const start = await post(
+        {
+          commandType: 'StartShift',
+          tenantId: ids.tenant,
+          stationId: ids.station,
+          businessDayId: dayId,
+          shiftId,
+          expectedVersion: 0,
+          shiftTemplateId: templateId,
+        },
+        supervisorToken,
+      );
+      expect(start.status).toBe(200);
+    }
+    const shifts = await client<{ code: string; start: string; opened: string }[]>`
+      select t.code,
+        to_char(s.planned_start_at at time zone 'Africa/Harare', 'HH24:MI') as start,
+        to_char(s.opened_at at time zone 'Africa/Harare', 'HH24:MI') as opened
+      from app.shifts s join app.shift_templates t on t.id = s.shift_template_id
+      where s.business_day_id = ${dayId} order by s.planned_start_at
+    `;
+    expect(shifts).toEqual([
+      { code: 'AM', start: '06:00', opened: '06:00' },
+      { code: 'PM', start: '14:00', opened: '14:00' },
+    ]);
   });
 });

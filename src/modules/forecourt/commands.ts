@@ -193,6 +193,8 @@ async function sealMetersFromSavedReadings(
   context: ForecourtCommandContext,
   businessDayId: string,
   shiftId: string,
+  /** A day recorded after the fact: times come from the shift schedule, not the clock. */
+  lateDay = false,
 ): Promise<void> {
   const existing = await transaction.execute<{ count: number }>(sql`
     select (
@@ -228,14 +230,19 @@ async function sealMetersFromSavedReadings(
   `);
   if (readings.length === 0) return;
 
-  const shiftRows = await transaction.execute<{ opened_at: Date | string | null }>(sql`
-    select opened_at from app.shifts
+  const shiftRows = await transaction.execute<{
+    opened_at: Date | string | null;
+    planned_end_at: Date | string;
+  }>(sql`
+    select opened_at, planned_end_at from app.shifts
     where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${shiftId}
   `);
   const openedAt = shiftRows[0]?.opened_at;
   if (!openedAt) return;
   const startAt = new Date(openedAt).toISOString();
-  const now = await serverNow(transaction);
+  const now = lateDay
+    ? new Date(shiftRows[0]!.planned_end_at).toISOString()
+    : await serverNow(transaction);
 
   const pumpLabel = async (nozzleId: string): Promise<string> => {
     const rows = await transaction.execute<{ pump_number: string; nozzle_number: string }>(sql`
@@ -260,7 +267,7 @@ async function sealMetersFromSavedReadings(
       join app.meters m on m.tenant_id = i.tenant_id and m.id = i.meter_id
       where i.tenant_id = ${context.tenantId} and i.station_id = ${context.stationId}
         and i.nozzle_id = ${reading.nozzle_id} and i.effective_to is null
-        and i.effective_from <= ${startAt}::timestamptz
+        and (${lateDay} or i.effective_from <= ${startAt}::timestamptz)
         and n.status = 'ACTIVE' and m.status = 'ACTIVE' and n.product_id = ${reading.product_id}
       limit 1
       ${lock ? sql`for update of i` : sql``}
@@ -331,6 +338,7 @@ async function sealMetersFromSavedReadings(
       where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
         and nozzle_id = ${reading.nozzle_id} and meter_installation_id = ${installation.installation_id}
         and reading_status = 'AVAILABLE'
+        and (${!lateDay} or effective_at <= ${startAt}::timestamptz)
       order by effective_at desc, id desc limit 1
       for update
     `);
@@ -1384,14 +1392,16 @@ async function runShiftLifecycleCommand(
       const dayRows = await transaction.execute<{
         business_date: string;
         state: string;
+        entered_late: boolean;
       }>(sql`
-        select business_date, state from app.station_business_days
+        select business_date, state, entered_late from app.station_business_days
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
           and id = ${payload.businessDayId}
         for update
       `);
       const dayRow = dayRows[0];
       if (!dayRow) throw new AppError('NOT_FOUND', 'Business day was not found');
+      const lateDay = dayRow.entered_late === true;
       const day = {
         id: payload.businessDayId,
         tenantId: context.tenantId,
@@ -1595,6 +1605,7 @@ async function runShiftLifecycleCommand(
           context,
           payload.businessDayId,
           payload.shiftId,
+          lateDay,
         );
       }
       if (commandType === 'CloseMeters' || commandType === 'CompleteShift') {
@@ -1613,7 +1624,13 @@ async function runShiftLifecycleCommand(
             : commandType === 'CompleteShift'
               ? completeShift(shift)
               : markNotOperated(shift, payload.reason!);
-      const now = await serverNow(transaction);
+      // A day recorded late is stamped from the shift schedule (start when opened, end when closed),
+      // so shifts line up and cannot overlap; a live day uses the database clock.
+      const now = lateDay
+        ? commandType === 'StartShift'
+          ? shift.plannedStartAt
+          : shift.plannedEndAt
+        : await serverNow(transaction);
       const state = updated.state;
       const timestampColumn =
         commandType === 'StartShift'
