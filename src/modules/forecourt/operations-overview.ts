@@ -509,6 +509,7 @@ async function loadOperationsOverview(
       version: Number(selectedDay.version),
       openedAt: iso(selectedDay.openedAt),
       closedAt: iso(selectedDay.closedAt),
+      enteredLate: Boolean(selectedDay.enteredLate),
     },
     shifts: shifts.map((shift) => ({
       id: shift.id,

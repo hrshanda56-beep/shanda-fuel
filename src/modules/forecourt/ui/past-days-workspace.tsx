@@ -83,6 +83,70 @@ export function PastDaysWorkspace({
     }
   }
 
+  const [goLive, setGoLive] = useState(data.goLiveDate ?? '');
+  const [goLiveBusy, setGoLiveBusy] = useState(false);
+  const [goLiveNote, setGoLiveNote] = useState<string | null>(null);
+
+  async function saveGoLive() {
+    setGoLiveBusy(true);
+    setGoLiveNote(null);
+    try {
+      const response = await fetch('/api/forecourt/commands', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': `go-live-${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({
+          commandType: 'SetStationGoLiveDate',
+          tenantId,
+          stationId,
+          goLiveDate: goLive || null,
+        }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        setGoLiveNote(body.message ?? 'The start date could not be saved. Try again.');
+        return;
+      }
+      setGoLiveNote('Saved.');
+      router.refresh();
+    } catch {
+      setGoLiveNote('The start date could not be saved. Check the connection, then try again.');
+    } finally {
+      setGoLiveBusy(false);
+    }
+  }
+
+  const startDate = data.canGoBack && (
+    <section aria-labelledby="past-days-start">
+      <h2 id="past-days-start">Station start date</h2>
+      <p className="panel-detail">
+        The first day this station is run in the app. Days before it cannot be recorded. Leave it
+        empty to allow up to 90 days back.
+      </p>
+      <label>
+        Start date
+        <input
+          type="date"
+          value={goLive}
+          max={data.today}
+          onChange={(event) => setGoLive(event.target.value)}
+        />
+      </label>
+      <div>
+        <Button type="button" onClick={() => void saveGoLive()} disabled={goLiveBusy}>
+          Save start date
+        </Button>
+      </div>
+      {goLiveNote ? (
+        <p className="panel-detail" role="status">
+          {goLiveNote}
+        </p>
+      ) : null}
+    </section>
+  );
+
   const recorded = data.recorded.length > 0 && (
     <section aria-labelledby="past-days-recorded">
       <h2 id="past-days-recorded">Days already added</h2>
@@ -103,6 +167,7 @@ export function PastDaysWorkspace({
           Only a supervisor or the owner can record a past day. Ask one of them to do it.
         </WizardNotice>
         {recorded}
+        {startDate}
       </WizardCard>
     );
   }
@@ -121,6 +186,7 @@ export function PastDaysWorkspace({
           </Button>
         </div>
         {recorded}
+        {startDate}
       </WizardCard>
     );
   }
@@ -194,6 +260,7 @@ export function PastDaysWorkspace({
         </WizardStep>
       )}
       {recorded}
+      {startDate}
     </WizardCard>
   );
 }

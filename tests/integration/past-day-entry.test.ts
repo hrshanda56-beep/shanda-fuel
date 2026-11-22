@@ -154,6 +154,30 @@ describe('past-day entry: OpenPastBusinessDay', () => {
     }
   });
 
+  it('lets the owner set and clear the start date, refuses a supervisor and a date that is not past', async () => {
+    const today = await stationToday();
+    const body = (goLiveDate: string | null) => ({
+      commandType: 'SetStationGoLiveDate',
+      tenantId: ids.tenant,
+      stationId: ids.station,
+      goLiveDate,
+    });
+    try {
+      expect((await post(body(addDays(today, -10)), supervisorToken)).status).toBe(403);
+      expect((await post(body(today), ownerToken)).status).toBe(400);
+      expect((await post(body(addDays(today, -10)), ownerToken)).status).toBe(200);
+      const set = await client<{ go_live_date: string | null }[]>`
+        select go_live_date from app.stations where id = ${ids.station}`;
+      expect(set[0]!.go_live_date).toBe(addDays(today, -10));
+      expect((await post(body(null), ownerToken)).status).toBe(200);
+      const cleared = await client<{ go_live_date: string | null }[]>`
+        select go_live_date from app.stations where id = ${ids.station}`;
+      expect(cleared[0]!.go_live_date).toBeNull();
+    } finally {
+      await client`update app.stations set go_live_date = null where id = ${ids.station}`;
+    }
+  });
+
   it('does not leave a live day behind: ordinary days stay not entered late', async () => {
     const rows = await client<{ n: number }[]>`
       select count(*)::int as n from app.station_business_days

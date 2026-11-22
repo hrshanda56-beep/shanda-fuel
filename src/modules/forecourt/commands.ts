@@ -63,7 +63,7 @@ import {
 } from './domain';
 import { resolveForecourtCommandContext } from './application';
 import { shiftOpensAt } from './shift-schedule';
-import { refusePastDay } from './past-day-rules';
+import { daysBetween, refusePastDay } from './past-day-rules';
 import { isPermissionGranted } from '../../platform/security/permissions';
 import { meterNotWorkingForShiftMessage } from './shift-close-messages';
 import { readLockBlockers } from './lock-blockers';
@@ -1042,6 +1042,72 @@ export async function openPastBusinessDayFromRequest(request: Request, input: un
           businessDate: payload.businessDate as never,
           openedAt: now,
         }),
+      };
+    },
+  });
+}
+
+const setGoLivePayload = z
+  .object({
+    commandType: z.literal('SetStationGoLiveDate').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    /** The first station-local day the station is run in the app, YYYY-MM-DD; null clears it. */
+    goLiveDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable(),
+  })
+  .strict();
+
+/** Owner-level: set the date before which past days cannot be recorded (the station's start in the app). */
+export async function setStationGoLiveDateFromRequest(request: Request, input: unknown) {
+  const payload = setGoLivePayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  // Opening days is not enough: only owner level may change how far back recording reaches.
+  const ownerLevel = isPermissionGranted({
+    actor: context.authority.authorization,
+    permissionCode: 'business_day.lock',
+    requestedScope: context.scope,
+  });
+  if (!ownerLevel) {
+    throw new AppError('FORBIDDEN', 'Only the owner can change the station start date.');
+  }
+  return executeForecourtCommand({
+    context,
+    commandType: 'SetStationGoLiveDate',
+    idempotencyKey: key,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'Station',
+    subjectId: context.stationId,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const now = await serverNow(transaction);
+      const station = await loadStationTimezone(transaction, context.tenantId, context.stationId);
+      if (
+        payload.goLiveDate &&
+        (daysBetween(payload.goLiveDate, deriveBusinessDate(now, station.timezone)) ?? 0) < 1
+      ) {
+        throw new AppError('VALIDATION_FAILED', 'The start date must be before today.', {
+          reason: 'NOT_IN_THE_PAST',
+        });
+      }
+      const before = (
+        await transaction.execute<{ go_live_date: string | null }>(sql`
+          select go_live_date from app.stations
+          where tenant_id = ${context.tenantId} and id = ${context.stationId}
+        `)
+      )[0];
+      await transaction.execute(sql`
+        update app.stations set go_live_date = ${payload.goLiveDate}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${context.stationId}
+      `);
+      return {
+        result: { goLiveDate: payload.goLiveDate },
+        before: { goLiveDate: before?.go_live_date ?? null },
+        after: { goLiveDate: payload.goLiveDate },
       };
     },
   });
