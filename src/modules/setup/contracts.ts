@@ -1,4 +1,15 @@
-export type SetupProduct = Readonly<{ id: string; code: string; name: string; status: string }>;
+export type FuelUnit = 'LITRES' | 'KILOGRAMS';
+export type SetupProduct = Readonly<{
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  /** Null for fuel types added before kinds existed. */
+  kind?: string | null;
+  blendPercent?: number | null;
+  displayOrder?: number | null;
+  unit: FuelUnit;
+}>;
 export type SetupTank = Readonly<{
   id: string;
   code: string;
@@ -6,6 +17,7 @@ export type SetupTank = Readonly<{
   capacityLitres: string;
   reorderLevelLitres: string | null;
   acceptableVarianceLitres: string | null;
+  varianceRedLitres: string | null;
   status: string;
 }>;
 export type SetupPump = Readonly<{
@@ -21,6 +33,10 @@ export type SetupNozzle = Readonly<{
   productId: string;
   status: string;
   meterSerialNumber: string | null;
+  /** The station date the meter started working, or null when there is no meter. */
+  meterWorkingSince: string | null;
+  /** True while the date can still be corrected (one meter, nothing recorded against it). */
+  meterWorkingSinceEditable: boolean;
 }>;
 export type SetupShiftTemplate = Readonly<{
   id: string;
@@ -78,6 +94,8 @@ export type StationSetupFacts = Readonly<{
   providerAccounts: number;
   bankAccounts: number;
   assignedStaff: number;
+  /** People invited to this station who have not accepted yet (absent in old payloads). */
+  pendingInvitations?: number;
 }>;
 export type ReadinessArea = Readonly<{
   code: ReadinessAreaCode;
@@ -106,6 +124,21 @@ export type StationReadiness = Readonly<{
   areas: readonly ReadinessArea[];
   ready: boolean;
   blockedSummary: string | null;
+  /**
+   * Things a station can go live without but should still have (payment accounts, opening
+   * stock). The "complete this station" loop (#251) asks about them too. Absent in old payloads.
+   */
+  wants?: StationWants;
+}>;
+export type StationWants = Readonly<{
+  /** No payment provider account serves this station. */
+  providerAccount: boolean;
+  /** The station's company has no bank account. */
+  bankAccount: boolean;
+  /** At least one active tank has no opening quantity recorded. */
+  openingStock: boolean;
+  /** Someone was invited to this station and has not accepted yet, so it need not be asked again. */
+  invitationPending?: boolean;
 }>;
 export type PaymentProviderRow = Readonly<{
   id: string;

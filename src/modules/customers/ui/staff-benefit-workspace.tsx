@@ -2,14 +2,15 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useRef, useState, type FormEvent } from 'react';
-import { Button, Card, ErrorState, Field, StatusBadge } from '@/design-system/primitives';
+import { useRef, useState } from 'react';
+import { Modal } from '@/design-system/modal';
+import { Button, Card, StatusBadge } from '@/design-system/primitives';
 import { ExactDecimal } from '@/platform/domain/primitives';
 import { formatTileMoney } from '@/modules/reporting/format';
 import { StepUpDialog } from '@/modules/setup/ui/step-up-dialog';
 import type { StaffBenefitRow } from '../staff-benefit-rows';
 import type { StaffPickerOption } from '../staff-picker-options';
-import { StaffPicker } from './staff-picker';
+import { StaffBenefitWizard, type StaffBenefitValue } from './staff-benefit-wizard';
 import { makeReference, STAFF_CUSTOMER_KIND } from './customer-reference';
 import styles from './staff-benefit.module.css';
 
@@ -19,8 +20,6 @@ function usedPercent(spent: string, limit: string): number {
   const cap = Number(limit);
   return cap > 0 ? (Number(spent) / cap) * 100 : 0;
 }
-
-const POSITIVE_MONEY = /^(?!0+(?:\.0+)?$)\d{1,16}(?:\.\d{1,2})?$/;
 
 export function StaffBenefitWorkspace({
   tenantId,
@@ -49,8 +48,8 @@ export function StaffBenefitWorkspace({
     (sum, row) => sum.add(new ExactDecimal(row.balance)),
     new ExactDecimal('0'),
   );
-  const [membershipId, setMembershipId] = useState('');
-  const [limit, setLimit] = useState('');
+  const [open, setOpen] = useState(false);
+  const pending = useRef<StaffBenefitValue | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -60,7 +59,7 @@ export function StaffBenefitWorkspace({
   // One reference per attempt, so a retry after a dropped connection cannot make a second record.
   const reference = useRef<string | null>(null);
 
-  async function save(alreadyConfirmed = false) {
+  async function save({ membershipId, limit }: StaffBenefitValue, alreadyConfirmed = false) {
     // Staff are chosen from the staff list, never typed. A staff member who is already kept as a
     // customer record (same name, marked Staff) gets the benefit account on that record; otherwise
     // the record and the benefit account are created together, so a cancelled identity check saves
@@ -79,7 +78,7 @@ export function StaffBenefitWorkspace({
           customerId: existing.customerId,
           accountType: 'CREDIT',
           currency: 'USD',
-          creditLimit: limit.trim(),
+          creditLimit: limit,
           staffBenefit,
         }
       : {
@@ -91,7 +90,7 @@ export function StaffBenefitWorkspace({
           contactMetadata: { kind: STAFF_CUSTOMER_KIND },
           accountType: 'CREDIT',
           currency: 'USD',
-          creditLimit: limit.trim(),
+          creditLimit: limit,
           staffBenefit,
         };
     const fingerprint = JSON.stringify(body);
@@ -114,6 +113,7 @@ export function StaffBenefitWorkspace({
             ? String((result as { message: unknown }).message)
             : 'This could not be saved.';
         if (!alreadyConfirmed && /step-up/i.test(message)) {
+          pending.current = { membershipId, limit };
           setStepUp(true);
           return;
         }
@@ -122,24 +122,14 @@ export function StaffBenefitWorkspace({
       attempt.current = null;
       reference.current = null;
       setDone(`${person.name} added.`);
-      setMembershipId('');
-      setLimit('');
+      pending.current = null;
+      setOpen(false);
       router.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'This could not be saved.');
     } finally {
       setBusy(false);
     }
-  }
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    setDone(null);
-    if (!membershipId) return setError('Choose a staff member.');
-    if (!POSITIVE_MONEY.test(limit.trim())) {
-      return setError('Enter the monthly limit in US dollars, for example 60 or 60.50.');
-    }
-    void save();
   }
 
   return (
@@ -251,45 +241,43 @@ export function StaffBenefitWorkspace({
             <div className="section-heading">
               <h2>Add a staff member</h2>
             </div>
-            <form className="form-stack" onSubmit={submit} noValidate>
-              <div className={styles.formGrid}>
-                <Field
-                  id="staff-member"
-                  label="Staff member"
-                  hint="Choose from your staff. New people are added in Settings > Staff."
-                  required
-                >
-                  <StaffPicker
-                    id="staff-member"
-                    options={staff}
-                    value={membershipId}
-                    onChange={setMembershipId}
-                  />
-                </Field>
-                <Field id="staff-limit" label="Monthly limit" required>
-                  <div className={styles.money}>
-                    <span aria-hidden="true">$</span>
-                    <input
-                      id="staff-limit"
-                      inputMode="decimal"
-                      autoComplete="off"
-                      placeholder="60.00"
-                      value={limit}
-                      onChange={(event) => setLimit(event.target.value)}
-                    />
-                  </div>
-                </Field>
-              </div>
-              {error ? <ErrorState title="Not saved" message={error} /> : null}
-              {done ? <p role="status">{done}</p> : null}
-              <div className="form-actions form-actions-end">
-                <Button type="submit" loading={busy}>
-                  Add staff member
-                </Button>
-              </div>
-            </form>
+            <p className="muted">
+              Pick a staff member and set how much fuel they can take each month.
+            </p>
+            {done ? <p role="status">{done}</p> : null}
+            <div className="form-actions">
+              <Button
+                aria-haspopup="dialog"
+                onClick={() => {
+                  setDone(null);
+                  setError(null);
+                  setOpen(true);
+                }}
+              >
+                Add a staff member
+              </Button>
+            </div>
           </Card>
         ) : null}
+        <Modal
+          open={open}
+          onClose={() => !busy && !stepUp && setOpen(false)}
+          title="Add a staff member"
+          presentation="page"
+          backLabel="Staff fuel benefit"
+          size="sm"
+          dismissible={!busy && !stepUp}
+        >
+          {open ? (
+            <StaffBenefitWizard
+              staff={staff}
+              busy={busy}
+              error={error}
+              onCancel={() => setOpen(false)}
+              onSubmit={(value) => void save(value)}
+            />
+          ) : null}
+        </Modal>
       </div>
       <StepUpDialog
         open={stepUp}
@@ -299,7 +287,7 @@ export function StaffBenefitWorkspace({
         cancelledMessage="The check was cancelled or did not pass. Nothing was saved."
         onVerified={() => {
           setStepUp(false);
-          void save(true);
+          if (pending.current) void save(pending.current, true);
         }}
         onCancel={() => {
           setStepUp(false);

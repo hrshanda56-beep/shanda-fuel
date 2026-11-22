@@ -22,7 +22,7 @@ tester finished it without help.**
 4. Try to attach a photo. You should be told you may not (attendants cannot upload).
 
 ### Supervisor
-5. Open **Daily Operations** for your station. Review an attendant's entries.
+5. Open **Daily Operations** for your station and follow it step by step with the one open button. Review an attendant's entries.
 6. Take a tank dip. Check the colour (green matches, yellow close, red far, "not checked" if none).
 7. Receive a fuel delivery. Enter the amount on the delivery note and the amount received. Attach a photo of the note.
 8. Hand over cash: record who handed, who received, expected and counted amounts. Use a counted amount that is a little short and read the message.
@@ -32,12 +32,12 @@ tester finished it without help.**
 10. Record a supplier invoice and a payment. Try to use the same document number twice: it should be refused.
 11. Add an expense with a receipt. Correct it afterwards and check the history shows both.
 12. Record a bank deposit and confirm it.
-13. Open **Reports**. Run each of the 18 reports for a one-week range with the practice data. Download the CSV of three of them and open the file in Excel. Check that figures are not cut off or turned into dates.
+13. Open **Reports**. Run each report in the list, and the **ZERA Returns** page under Reports, for a one-week range with the practice data. Download the CSV of three of them and open the file in Excel. Check that figures are not cut off or turned into dates.
 14. Open the **Action Center** and read the alerts.
 
 ### Owner / administrator
-15. Open **Settings > Station setup**: add a fuel type, price, tank and pump without help.
-16. Open **Settings > Reminders** and change a threshold. Check an alert changes accordingly.
+15. Open **Settings > Stations**, then the station's **Fuels** page: add a fuel type, price, tank and pump without help.
+16. Open **Settings > Reminders** (a tab with its name shown) and change a threshold. Check an alert changes accordingly.
 17. Invite a new employee. They activate their account using the code. A wrong code five times locks it; a new code is issued.
 18. Open the **Activity log** and find the change you just made.
 19. Check a customer's credit limit by making an account sale above it. It should warn or refuse as agreed.

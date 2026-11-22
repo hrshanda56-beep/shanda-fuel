@@ -109,6 +109,34 @@ function isTrackedRequest(input: RequestInfo | URL, init?: RequestInit): boolean
   }
 }
 
+/**
+ * A screen that explains its own failures in plain words (a banner with a button) sets this
+ * header on its request, so the corner pop-up does not repeat the server's raw wording.
+ */
+export const OWN_ERRORS_HEADER = 'x-handles-own-errors';
+
+export function wantsOwnErrors(input: RequestInfo | URL, init?: RequestInit): boolean {
+  const headers = new Headers(
+    init?.headers ??
+      (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined),
+  );
+  return headers.has(OWN_ERRORS_HEADER);
+}
+
+/**
+ * A screen that saves in the background as the person goes (the shift figures save at every
+ * question) sets this header so each save does not pop up its own "Saved". Failures still show.
+ */
+export const OWN_CONFIRMATION_HEADER = 'x-own-confirmation';
+
+export function wantsOwnConfirmation(input: RequestInfo | URL, init?: RequestInit): boolean {
+  const headers = new Headers(
+    init?.headers ??
+      (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined),
+  );
+  return headers.has(OWN_CONFIRMATION_HEADER);
+}
+
 type SaveOutcome = 'saved' | 'rejected' | 'failed';
 
 /** Only requests that change data are announced; reads stay quiet. */
@@ -193,6 +221,8 @@ function useBusyTracking(
       requests.current += 1;
       sync();
       const savePath = saveRequestPath(input, init);
+      const ownErrors = wantsOwnErrors(input, init);
+      const quietSave = wantsOwnConfirmation(input, init);
       try {
         // A command first makes sure the sign-in is fresh, so a tab left idle does not meet a 401.
         const response = savePath
@@ -203,7 +233,7 @@ function useBusyTracking(
               (window as unknown as { Clerk?: ClerkLike }).Clerk,
             )
           : await originalFetch(input, init);
-        if (savePath) {
+        if (savePath && !(!response.ok && ownErrors) && !(response.ok && quietSave)) {
           onSaveRef.current(
             response.ok ? 'saved' : response.status >= 500 ? 'failed' : 'rejected',
             savePath,
@@ -212,7 +242,7 @@ function useBusyTracking(
         }
         return response;
       } catch (error) {
-        if (savePath) onSaveRef.current('failed', savePath);
+        if (savePath && !ownErrors) onSaveRef.current('failed', savePath);
         throw error;
       } finally {
         requests.current = Math.max(0, requests.current - 1);
@@ -249,6 +279,10 @@ function useBusyTracking(
   return { busy, slow, endNavigation };
 }
 
+/** Wording meant for engineers; shown raw it means nothing to station staff. */
+const TECHNICAL_WORDING =
+  /sealed meter|meter-close boundary|meter-segment|NOT_OPERATED|nozzle|idempotency|\bRLS\b|violates|constraint|stack trace/i;
+
 /**
  * The words to show for a refused or conflicting command, or null when the screen already
  * handles it: a sign-in or step-up check has its own dialog, and other failures (such as a
@@ -263,7 +297,9 @@ export async function refusalMessage(response: Response): Promise<string | null>
       clerk_error?: unknown;
     };
     if (body.clerk_error || body.error === 'STEP_UP_REQUIRED') return null;
-    return typeof body.message === 'string' && body.message.trim() ? body.message.trim() : null;
+    const message = typeof body.message === 'string' ? body.message.trim() : '';
+    // Safety net: screens map technical wording themselves; never pop it up unmapped.
+    return message && !TECHNICAL_WORDING.test(message) ? message : null;
   } catch {
     return null;
   }

@@ -74,7 +74,7 @@ export function validateInvitationScope(
   const legalEntityId = scope.legalEntityId?.trim() || undefined;
   const stationIds = [...new Set(scope.stationIds.map((id) => id.trim()).filter(Boolean))];
 
-  if (role === 'OWNER' || role === 'ADMINISTRATOR') {
+  if (role === 'OWNER' || role === 'ADMINISTRATOR' || role === 'AUDITOR') {
     if (scopeType !== 'TENANT' || legalEntityId || stationIds.length > 0) {
       throw new AppError('VALIDATION_FAILED', 'This role requires tenant scope');
     }

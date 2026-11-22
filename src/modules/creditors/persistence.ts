@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
 import { ExactDecimal, money } from '../../platform/domain/primitives';
+import { ownerMayApproveOwnAtLegalEntity } from '../../platform/security/separation-of-duties';
 import {
   assertSupplierDocumentTransition,
   assertSupplierPaymentTransition,
@@ -101,6 +102,15 @@ async function assertSupplierAndEntity(
   if (!rows[0]) throw new AppError('NOT_FOUND', 'That supplier is no longer available');
 }
 
+function assertSupplierDoesSomething(providesFuel: boolean, providesTransport: boolean) {
+  if (!providesFuel && !providesTransport) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Choose what this company does for you: supplies fuel, carries it, or both.',
+    );
+  }
+}
+
 export async function createSupplierInTransaction(
   transaction: SupplierTransaction,
   context: SupplierCommandContext,
@@ -113,23 +123,28 @@ export async function createSupplierInTransaction(
     contactEmail?: string | null | undefined;
     defaultCreditDays?: number | null | undefined;
     creditLimit?: string | null | undefined;
+    providesFuel?: boolean | undefined;
+    providesTransport?: boolean | undefined;
   },
 ) {
   if (!input.code.trim() || !input.legalName.trim()) {
     throw new AppError('VALIDATION_FAILED', 'Supplier code and legal name are required');
   }
+  const providesFuel = input.providesFuel ?? true;
+  const providesTransport = input.providesTransport ?? false;
+  assertSupplierDoesSomething(providesFuel, providesTransport);
   const id = randomUUID();
   await transaction.execute(sql`
     insert into app.suppliers (
       id, tenant_id, code, legal_name, registration_reference, status,
       contact_name, contact_phone, contact_email, default_credit_days, credit_limit,
-      created_by, updated_by
+      provides_fuel, provides_transport, created_by, updated_by
     ) values (
       ${id}, ${context.tenantId}, ${input.code.trim()}, ${input.legalName.trim()},
       ${input.registrationReference?.trim() || null}, 'ACTIVE',
       ${input.contactName?.trim() || null}, ${input.contactPhone?.trim() || null},
       ${input.contactEmail?.trim() || null}, ${input.defaultCreditDays ?? null},
-      ${input.creditLimit ?? null},
+      ${input.creditLimit ?? null}, ${providesFuel}, ${providesTransport},
       ${context.authority.membership.membershipId}, ${context.authority.membership.membershipId}
     )
   `);
@@ -147,8 +162,25 @@ export async function updateSupplierDetailsInTransaction(
     contactPhone?: string | null | undefined;
     contactEmail?: string | null | undefined;
     defaultCreditDays?: number | null | undefined;
+    providesFuel?: boolean | undefined;
+    providesTransport?: boolean | undefined;
   },
 ) {
+  if (input.providesFuel !== undefined || input.providesTransport !== undefined) {
+    const current = await transaction.execute<{
+      provides_fuel: boolean;
+      provides_transport: boolean;
+    }>(sql`
+      select provides_fuel, provides_transport from app.suppliers
+      where tenant_id = ${context.tenantId} and id = ${input.supplierId}
+    `);
+    if (current[0]) {
+      assertSupplierDoesSomething(
+        input.providesFuel ?? current[0].provides_fuel,
+        input.providesTransport ?? current[0].provides_transport,
+      );
+    }
+  }
   const pick = <T>(value: T | undefined, column: ReturnType<typeof sql.raw>) =>
     value === undefined ? sql`${column}` : sql`${value}`;
   const text = (value: string | null | undefined) =>
@@ -159,6 +191,8 @@ export async function updateSupplierDetailsInTransaction(
         contact_phone = ${pick(text(input.contactPhone), sql.raw('contact_phone'))},
         contact_email = ${pick(text(input.contactEmail), sql.raw('contact_email'))},
         default_credit_days = ${pick(input.defaultCreditDays, sql.raw('default_credit_days'))},
+        provides_fuel = ${pick(input.providesFuel, sql.raw('provides_fuel'))},
+        provides_transport = ${pick(input.providesTransport, sql.raw('provides_transport'))},
         version = version + 1,
         updated_by = ${context.authority.membership.membershipId},
         updated_at = now()
@@ -311,12 +345,12 @@ export async function submitSupplierDocumentInTransaction(
     await transaction.execute(sql`
       insert into app.supplier_document_delivery_refs (
         id, tenant_id, legal_entity_id, station_id, supplier_document_id,
-        delivery_id, allocation_id, linked_by, document_type,
+        delivery_id, allocation_id, linked_by, document_type, kind,
         invoiced_quantity_litres, invoiced_amount
       ) values (
         ${reference.id}, ${context.tenantId}, ${context.legalEntityId}, ${reference.stationId},
         ${id}, ${reference.deliveryId}, ${reference.allocationId}, ${actor},
-        ${validated.documentType}, ${reference.invoicedQuantityLitres}, ${reference.invoicedAmount}
+        ${validated.documentType}, ${reference.kind}, ${reference.invoicedQuantityLitres}, ${reference.invoicedAmount}
       )
     `);
   }
@@ -358,7 +392,7 @@ export async function postSupplierDocumentInTransaction(
 ) {
   // Fixed lock order (ADR-018 D6): referenced deliveries by id, then the document.
   const refs = await transaction.execute<PostedRef & { allocation_quantity: string | null }>(sql`
-    select r.id, r.station_id, r.delivery_id, r.allocation_id, r.document_type,
+    select r.id, r.station_id, r.delivery_id, r.allocation_id, r.document_type, r.kind,
            r.invoiced_quantity_litres::text, r.invoiced_amount::text,
            a.quantity_litres::text as allocation_quantity
     from app.supplier_document_delivery_refs r
@@ -401,6 +435,7 @@ export async function postSupplierDocumentInTransaction(
       supplierId: document.supplier_id,
       legalEntityId: document.legal_entity_id,
       stationId: ref.station_id,
+      kind: ref.kind === 'TRANSPORT' ? 'TRANSPORT' : 'FUEL',
     });
     labels.set(delivery.id, delivery.delivery_note_number);
   }
@@ -408,7 +443,11 @@ export async function postSupplierDocumentInTransaction(
     const conflict = await findCoverageConflict(transaction, {
       tenantId: context.tenantId,
       excludeDocumentId: document.id,
-      links: refs.map((ref) => ({ deliveryId: ref.delivery_id, allocationId: ref.allocation_id })),
+      links: refs.map((ref) => ({
+        deliveryId: ref.delivery_id,
+        allocationId: ref.allocation_id,
+        kind: ref.kind === 'TRANSPORT' ? ('TRANSPORT' as const) : ('FUEL' as const),
+      })),
       deliveryLabels: labels,
     });
     if (conflict) throw conflict;
@@ -443,7 +482,7 @@ export async function postSupplierDocumentInTransaction(
     'NOT_EVALUATED';
   let varianceSnapshot: unknown = null;
   let approvalReason: string | null = null;
-  if (document.document_type === 'INVOICE' && refs.length > 0) {
+  if (document.document_type === 'INVOICE' && refs.some((ref) => ref.kind !== 'TRANSPORT')) {
     const policy = await loadPurchasingPolicy(transaction, context.tenantId, document.supplier_id);
     const evaluated = evaluateDocumentVariance({ policy, refs, deliveries, lines });
     const exceeded = evaluated.some((item) => item.result.invoiceExceeded);
@@ -474,7 +513,14 @@ export async function postSupplierDocumentInTransaction(
           { varianceApprovalRequired: true, findings: messages },
         );
       }
-      if (document.submitted_by === context.authority.membership.membershipId) {
+      if (
+        document.submitted_by === context.authority.membership.membershipId &&
+        !(await ownerMayApproveOwnAtLegalEntity(transaction, {
+          tenantId: context.tenantId,
+          legalEntityId: context.legalEntityId,
+          membershipId: context.authority.membership.membershipId,
+        }))
+      ) {
         throw new AppError(
           'FORBIDDEN',
           'This invoice is outside your purchasing tolerances. Someone other than the person who submitted it must approve and post it.',

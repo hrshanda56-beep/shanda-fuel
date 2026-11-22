@@ -12,7 +12,11 @@ export type RecordData = {
   requiresApproverNote?: boolean;
   /** Fuels sold in this report whose stock has no known cost, so profit for the day is incomplete. */
   unvaluedFuels?: string[];
+  /** The tank and fuel behind each missing cost, so the cost can be entered from the screen. */
+  unvaluedStreams?: Array<{ name: string; tankId: string; productId: string }>;
   approvalNote: string | null;
+  /** Why a manager sent the day back; only set while the record is returned. */
+  returnReason?: string | null;
   business_date: string;
   /** Customer accounts that may be charged at this station, with what they may still spend. */
   customerAccounts: Array<{
@@ -55,6 +59,7 @@ export type RecordData = {
   deliveries: Array<{
     deliveryId: string;
     deliveryNoteNumber: string;
+    productId?: string;
     actualQuantityLitres: string;
   }>;
   dips: Array<{
@@ -70,6 +75,8 @@ export type RecordData = {
     code: string;
     productId: string;
     productName: string;
+    /** How this fuel is measured, so figures read "kg" for gas and "L" for petrol. */
+    unit?: 'LITRES' | 'KILOGRAMS';
     capacityLitres: string;
     toleranceLitres: string | null;
     /** The red limit; empty means twice the yellow one. */

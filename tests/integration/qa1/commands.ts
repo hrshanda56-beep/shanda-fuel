@@ -4,6 +4,7 @@ import type { Sql } from 'postgres';
 import { POST as cashCommandPost } from '../../../src/app/api/cash/commands/route';
 import { POST as customerCommandPost } from '../../../src/app/api/customers/commands/route';
 import { POST as forecourtCommandPost } from '../../../src/app/api/forecourt/commands/route';
+import { POST as deliveryCommandPost } from '../../../src/app/api/deliveries/commands/route';
 import { POST as inventoryCommandPost } from '../../../src/app/api/inventory/commands/route';
 import { POST as settlementCommandPost } from '../../../src/app/api/settlements/commands/route';
 import { POST as supplierCommandPost } from '../../../src/app/api/suppliers/commands/route';
@@ -63,6 +64,15 @@ export async function inventory(
   name: Qa1ActorName = 'admin',
 ): Promise<Qa1CommandResult> {
   return post(inventoryCommandPost, body, key, actor(ctx, name));
+}
+
+export async function deliveryDetail(
+  ctx: Qa1ScenarioContext,
+  body: JsonRecord,
+  key: string,
+  name: Qa1ActorName = 'admin',
+): Promise<Qa1CommandResult> {
+  return post(deliveryCommandPost, body, key, actor(ctx, name));
 }
 
 export async function cash(
@@ -352,6 +362,8 @@ export async function createDelivery(
     noteQuantityLitres?: string;
     /** Every delivery names its supplier (ADR-018 D1). */
     supplierId: string;
+    /** Needed when the litres received differ from the note by more than the allowance. */
+    varianceCause?: string;
   },
 ): Promise<{ deliveryId: string; allocationId: string }> {
   const result = await inventory(
@@ -368,6 +380,7 @@ export async function createDelivery(
       noteQuantityLitres: input.noteQuantityLitres ?? input.quantityLitres,
       actualQuantityLitres: input.quantityLitres,
       allocations: [{ tankId: ctx.tankId, quantityLitres: input.quantityLitres }],
+      ...(input.varianceCause ? { varianceCause: input.varianceCause } : {}),
     },
     `${keyPrefix}-create-delivery`,
   );

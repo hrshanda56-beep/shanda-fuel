@@ -1,5 +1,86 @@
 # Shanda Fuel — Decision Log
 
+## DEC-057 — Owners never wait on anyone to approve (ACCEPTED, 2026-11-22)
+
+The project lead asked that owners need no approval from anyone, including another owner. Before this, one owner could approve their own work only while they were the only active owner; with two owners each needed the other.
+
+1. **An active owner at the station may approve their own request, however many owners there are.** This covers prices (DEC-049), expenses, purchase orders, cost revaluations, reconciliations, delivery loss claims and settlements (DEC-055) and receiving cash they recorded. One shared rule (`src/platform/security/separation-of-duties.ts`) decides it.
+2. **Everyone else is unchanged.** Finance and administrators still need another approver or an owner; supervisors and attendants never approve their own and are never counted as the second approver.
+3. **The "confirm it's you" password re-check stays.** It is the owner proving who they are, not a second person approving.
+4. **Delivery loss claims (migration 0121).** The table check that stopped the recorder approving a claim is dropped, because a check cannot see the approver's role. The approve command refuses a non-owner recorder.
+5. Supersedes the "sole owner only" wording in DEC-049 and the earlier separation-of-duties rule. The audit trail still records who requested and who approved, so an owner approving their own work remains visible.
+
+## DEC-055 — Recovering a delivery loss with approval (ACCEPTED, 2026-11-20)
+
+**Status:** ACCEPTED on the explicit instruction of the project lead ("lets go with your recommendations", 2026-11-20). The
+approval workflow is built (migration 0116). The accounting rules below are accepted, but Finance must
+still review them before production, and no ledger posting is built yet.
+
+**Accounting rules (accepted):**
+1. While a claim is open it is a memo beside the stock loss; no asset is booked. A claim agreed in writing may be booked as a receivable by Finance, with its own approval.
+2. On payback the credit goes to one separate "fuel loss recovered" report line for all three methods (cash received; less owed to the transporter; less owed to the supplier), so reports show gross loss, recovered and net loss. It does not change the stock cost history. Today a recovery lowers what is owed (supplier account) but does not yet reach profit; the report line is not built.
+3. A write-off is NOT posted as a new expense (changed 2026-11-20 after reading the code). The shortage is already in cost of sales: stock is received at the full invoiced cost spread over the litres actually received, so a shortage raises the cost per litre and reaches profit as the fuel is sold. A separate "Fuel loss" expense would count it twice. A write-off only closes the claim; Finance may show the loss as its own report line, as a split of cost of sales.
+4. A claim keeps its own currency and is converted at the settlement or write-off date rate. The expected amount is a memo and is never converted.
+5. A part payment settles only what was received; the rest stays open until an approver writes it off or keeps waiting.
+- Finance notes: a recovery after a closed period posts in the period it is received; a deduction from a taxed bill reduces the net amount, not the tax.
+
+- **The company bears the loss first, until it is repaid.** The project lead wants a special
+  treatment, because the fuel is gone now but is expected to be paid back.
+- **Who is repaid, and how, is decided case by case** and must be customisable. It is not a fixed rule.
+- **A write-off is a loss (an expense).**
+- **Permissions and checks.** Recording a settlement needs the fresh identity check. A supervisor and
+  above may record it; the administrator and the owner approve it.
+- **Money.** USD for now, but other currencies may come, so the currency stays on each claim. The
+  amount is typed by the person, never calculated.
+- **Confirmed by the project lead (2026-11-20):** the expected amount is recorded when the claim is
+  raised; both the raised claim and its settlement need an administrator or owner to approve; a
+  settlement is paid back in cash, taken off the transport company's bill, or taken off what is owed to
+  the supplier, chosen per case; Finance is to confirm the accounting treatment.
+- **Built (migration 0116, no ledger posting).** `delivery.loss.record` (supervisor, area manager,
+  finance, administrator, owner) and `delivery.loss.approve` (administrator, owner), both needing the
+  fresh identity check. Every change goes to "waiting for approval"; the person who recorded it cannot
+  approve it; a claim can be sent back with a reason; an approved settlement or write-off is closed.
+  `supplier.delivery.link` no longer governs claims.
+- **Posting built (USD only, project lead 2026-11-20).** When an administrator or owner approves a settlement taken off the transport bill or off the supplier balance, a credit note movement (source `DELIVERY_LOSS_CLAIM`) is added to the transport company's or supplier's account, once per claim. A transport-bill settlement on a delivery with no transport company is refused. Claims in another currency cannot be taken off an account for now.
+- **Not built:** cash paid back is only recorded on the claim (no cash movement), the "fuel loss recovered" report line (gross loss, recovered, net), and the open-claim memo beside the loss. The "Fuel loss" write-off expense is withdrawn because it would double-count the stock loss.
+
+## DEC-054 — A delivery loss is worked out by the system and explained by the person (ACCEPTED, 2026-11-20)
+
+**Status:** ACCEPTED on the explicit instruction of the project lead ("accept DEC-054", 2026-11-20), from their answers in chat on 2026-11-19.
+
+- **The tank is credited with the litres that actually arrived**, never the litres on the delivery note (unchanged).
+- **The gap is calculated, not typed.** Note against received, and, when both tank dips are given, what the dips say went into the tank against received. The allowance comes from the existing purchasing policy (shortage and over-receipt tolerances); the dip check reuses the shortage allowance until the project lead sets a separate one.
+- **A cause is mandatory above the allowance.** The person receiving picks a cause (fuel may have been taken, weather or temperature, measuring error, spill or leak, depot loaded less, something else) and "something else" needs words. The delivery is still recorded and the fuel is still in the tank: this is an explanation, not a block. Anyone who may record a delivery can accept it; it is flagged for the supervisor or owner.
+- **Temperature is evidence only.** The load temperature is stored; it never changes litres and the system does not adjust for expansion.
+- **Who pays is the owner's decision.** A shortage can be charged back to the driver, the transport company or the fuel supplier. The system records who was held responsible, whether a claim was raised, settled (with the amount) or written off, and a note. It never decides, and nothing is posted to any ledger. Recording a claim needs `supplier.delivery.link`.
+- **Schema (migration 0115).** Three columns on `fuel_deliveries` (cause, note, temperature) written when the delivery is recorded, so the existing "confirmed deliveries are immutable" guard keeps them frozen; and `fuel_delivery_loss_claims`, one mutable row per delivery, because claims are followed up after confirmation. The confirmed-delivery guard is not changed.
+- **Ordered, note, received.** The delivery shows the purchase order litres beside the note and the litres received. The order gap is shown, never a reason to explain.
+- **Repeat shortages.** The deliveries page lists confirmed short deliveries by supplier, transport company, driver and truck, with litres short and open claims.
+- **Not built yet:** a delivery-note photo as evidence (needs the file-storage design reviewed first), an owner switch for "require a cause" (today the owner controls it through the allowance; with none set, any gap needs a cause), a separate dip allowance, and posting a recovered amount to the ledger or the transport bill.
+
+## DEC-052 — Setup items can be changed after they are entered; a supervisor can start a price change
+
+Date: 2026-11-13. **Status:** ACCEPTED, on the explicit instruction of the project lead (answers to
+three questions asked in the working session).
+
+- **Changing setup (Settings > Stations).** Fuel tanks (name, size, reorder level, yellow and red limits),
+  pumps (number, name), nozzles (number) and shifts (name, start time and end time; an end before the start means the next day) can be changed from the
+  guided setup after they were first entered. Who: the people who may add them today — owner and
+  administrator (`station.manage`, `inventory.tank.manage`, `shift.template.manage`). Supervisors do not
+  change the station layout. Each change needs the fresh identity check and writes an audit event
+  (`INVENTORY.TANK_UPDATED`, `SETUP.PUMP_UPDATED`, `SETUP.NOZZLE_UPDATED`; shifts keep their existing audit).
+- **Not changeable:** the fuel in a tank or on a nozzle, and a nozzle's meter. Past dips, deliveries and
+  sales are recorded against them; a different fuel means a new tank or nozzle. A shift schedule on an
+  already-activated station with start times stays refused by the existing rule.
+- **Prices.** A supervisor holds `price.change.request` (migration 0090), so they can start a change for
+  their own station (an area manager, which holds the supervisor's permissions, can do the same over its stations) and, as before, prepare it and take the meter readings. Approving and activating
+  remain with the owner/administrator, and DEC-049 (the requester may not approve unless nobody else
+  could) is unchanged. Prices in use link to the existing Change a price screen (DEC-050).
+- **Supervisors on the setup screen.** The supervisor card adds, moves or removes people only through the
+  existing Staff commands (same permission and fresh identity check). The person in charge of a station
+  cannot be moved or removed until someone else is chosen. Removing a person from their only station is
+  done by deactivating them in Staff.
+
 ## DEC-051 — A delivery needs a purchase order or a reason
 
 Date: 2026-10-26. **Status:** ACCEPTED, on the explicit instruction of the project lead (reason
@@ -164,6 +245,7 @@ answer. **Status:** PROPOSED. Each is small, reversible, and easy to change; con
   device (24 hours, tied to the saved record version, cleared after a successful save) and offered
   back, never applied silently. They are per station and shift, not per person, so on a shared
   device the next person could be offered them.
+  Update 2026-11-03: other screens now use a page-level keeper that is also per signed-in person (see CURRENT_STATUS).
 
 ## DEC-044 — Deliver the client's full v1 on the Clerk-only integration branch
 
@@ -1099,6 +1181,7 @@ Status: ACCEPTED. Given in chat by the project lead on 2026-10-25 while the brie
 - **Tank tolerance.** The 20 L allowed difference is an accepted placeholder. Every active tank is always shown on the daily sheet and in the Stock Variances report, including a tank with no dip or no allowed difference set yet.
 - **Supplier credit limit** stays warn-only and below-price sales stay flagged, not blocked (DEC-045; the brief says "prevent or flag").
 - **Transporters** are recorded as suppliers (no new schema); a transporter set up as a supplier is counted under "Owed to suppliers". "Other liabilities" stay unrecorded until the owner supplies a real example.
+  - **Update 2026-11-19 (proposed, on branch `transportation`; needs owner approval).** The "no new schema" part above is revisited. A supplier now says what it does: supplies fuel, carries fuel, or both (`suppliers.provides_fuel` / `provides_transport`, migration 0112; existing suppliers stay fuel-only). A delivery can name which supplier carried it (`fuel_deliveries.transporter_supplier_id`); the typed transporter name still works for "someone else". The fuel-supplier pick-list offers only companies that supply fuel. The supplier may be chosen as the transporter. Transport is always a separate bill from the transporter. Step 2 (migration 0113, same proposal): a supplier bill's delivery link now has a kind, FUEL or TRANSPORT. A delivery carries at most one active fuel invoice and one active transport bill, each checked on its own, so the transporter's bill never blocks or is blocked by the fuel invoice. A TRANSPORT link requires that the bill's supplier is the delivery's transporter; the database guard on delivery links was updated to match. Transport bills are not compared with the delivery's litres or fuel price, and they are left out of the fuel-coverage and variance reports. A company that both supplies and carries must say which bill each is. The bill still posts to Owed to suppliers like any supplier document. Step 3 (migration 0114, same proposal): the purchasing policy gains "require a transport bill" (`purchasing_policies.require_transport_bill`), set for the whole company and overridable per transporter (a supplier row that says nothing follows the company; the company default is off). When on, a confirmed delivery carried by a supplier that has no posted transport bill is reported in the supplier variance read as an exception, `TRANSPORT_BILL_MISSING`, until that bill is posted (a reversed bill reopens it). It is a flag for finance to chase, not a block: it never stops a delivery being recorded, confirmed or paid, and a transporter that was only typed in (not a supplier) is out of its reach. The record-delivery form starts the transporter question on whoever carried that supplier's fuel last time, remembered on the device only and changeable; no data is stored for it. Not changed: a delivery's stored landed cost (still entered on the delivery; a transport bill does not change it automatically, because the cost already feeds stock value and margin once confirmed) and a haulier's single bill may cover several deliveries by giving each its own transport line.
 - **Alert emails** are deferred for now (ADR-020 review, DNS and owner go-ahead still outstanding).
 - **Stock variance** is computed against books that already include approved sales; approved sales are not subtracted again (fix in `production-reconciliation.ts`).
 
@@ -1154,3 +1237,51 @@ These need the owner's answer before anyone changes the code.
 1. **Should cash paid out of the till on a shift (the Expenses step) count as an expense in profit?** Today it only lowers the cash expected. Profit counts recognised expenses only, so TEI Oils shows Expenses USD 0.00 on every day. Counting it is correct accounting, but it must not be counted twice when a formal expense for the same cost is also entered. Recommendation: recognise the shift expense when the report is approved, and let a formal expense link to it instead of duplicating it.
 2. **Should a report page follow the station chosen at the top?** Today, with no station in the page's own filter it shows every station. Recommendation: when one station is chosen at the top and the address names none, start the report on that station, and say so in the filter bar.
 3. **Stock books lag by one day.** Sales reach the books when a report is approved, so between close and approval the Tank page's Difference compares a dip with books that miss that day. The alert now waits; the Tank page does not. Recommendation: show the Tank page difference as "waiting for approval" in the same case.
+
+## Daily Operations smoothing — 2026-11-17
+
+Owner decisions taken on the NOV17 branch after a live "meter not set up" error when closing a shift:
+
+1. **Daily Operations and My Shift are unlocked** for improvement; the UI-lock manifest is re-baselined with each approved change.
+2. **A nozzle added while a shift is open is counted from the start of the earliest open shift.** `meter_installations.created_at` keeps the true time, `effective_from` holds the backdated time, `replacement_reason` says why, and the signed audit event carries both times. No migration.
+3. **The close confirmation stays.** "Close shift" and "close day" are merged (built 2026-11-17) as a second button, "Close shift and end the day", offered only for the last unfinished shift when no scheduled shift is still to come and the person may close the day. It runs close meters, complete shift, then close day, behind its own confirmation, and asks for the usual reason when no figures are approved. The plain "Close Shift" button remains. If a later step fails, the earlier ones stay done and the card shows what is left.
+4. **Close-shift errors lead to a fix button** (reason `METER_NOT_SET_UP` goes to Settings, Stations). A stored "Ask the owner" message was declined for now (it would need a new table).
+5. **Closing a day with no approved figures asks for its reason on the card**, not in a browser pop-up.
+6. **The business day is locked when the owner approves its last report** (decided 2026-11-17, built 2026-11-17). Approving already needs a fresh identity check, and that same check covers the lock, so the owner does one thing instead of two. If the day is not closed, something still blocks the lock (a shift, a dip, a draft report), or the approver cannot lock, the approval stands and the day stays closed with the Lock button as before. An automatic lock 24 hours after approval was considered and **not** built: it would need a signed-out system identity that skips the identity check on a permanent action.
+7. **Only the owner and the administrator can lock a business day** (decided 2026-11-17). The supervisor never could. The Finance role lost `business_day.lock` in the role matrix (`permissions.ts`), so it no longer sees the Lock button or can run the command. The matching Finance row seeded by migration 0003 is removed by migration 0107 (additive-safe, one DELETE, same shape as 0024), so the database never grants more than the code (role-permissions parity test). 0107 has been written but not applied anywhere; like 0106 it needs approval before any real database. Nothing was run against production.
+
+## Fuel measured in litres or kilograms — 2026-11-17
+
+Owner decision on the NOV17 branch (Option A): each fuel has one measuring unit, litres or kilograms (for example LPG), set in setup.
+
+1. **One unit per fuel**, stored on the fuel (`app.products.unit`, default LITRES; migration 0106, additive). It is chosen when a fuel is added and can be changed in setup (`SetProductUnit`, `station.manage`, step-up) **only while the fuel has no deliveries, meter readings, stock movements, opening balances or tank dips**, because recorded quantities would silently change meaning.
+2. **Labels only.** Quantity columns keep their `*_litres` names and no litre-to-kilogram conversion exists: a quantity is in its fuel's own unit everywhere. Only display, form wording and exports follow the unit.
+3. **Mixed totals are not added.** A total that would add litre and kilogram fuels shows "Mixed units" (or no combined figure), and per-litre profit figures show "Not available" when mixed. The dashboard chart sums only the fuels in its main unit and lists each fuel in its own unit.
+4. **Exports.** CSV column names are unchanged so existing spreadsheets keep working. A `unit` column (LITRES, KILOGRAMS or MIXED) is added to the sales, stock, profit and commercial exports. Table reports gain a "Measured in" column and their "(L)" headings become neutral.
+5. **Deliberately litres:** the shift-message checker reads only Petrol and Diesel text from a WhatsApp message, so it stays in litres. Server error messages are worded as "quantity" so they fit either unit. The station daily report shows diesel and petrol each with its own unit, and lists any other fuel (for example LPG) in an "Other fuels sold" column. The purchasing allowance setting is one figure for every fuel and reads "litres or kg". Demo and design-system preview pages are not unit-aware.
+6. **Approval needed:** migration 0106 has been applied only to local development databases. It must be approved before any real database.
+
+## DEC-045 — Quotations, invoices and receipts as a standalone Sales documents module
+
+Date: 2026-11-18. Explicit human instruction (client request relayed by the owner). **Status:** ACCEPTED for build on branch `feat/sales-documents` (from NOV17). Not approved for any real database or deploy.
+
+1. **Scope.** A customizable generator for quotations, invoices and receipts, usable by any business type, not only fuel. This is outside DEC-044 and is recorded here as a new scope item.
+2. **Standalone.** Documents do **not** post to the customer ledger, profit, cash or any report. They are issued, numbered, kept and downloadable. Linking invoices to customer accounts is a separate future decision that needs accounting rules from the human.
+3. **Adjustable.** Per company: letterhead (name, address, phone, email, tax label and number, bank details, default terms and footer), numbering prefixes, default tax rate. Per document: free-form lines (fuels from the system as defaults, or anything typed), discount, optional tax, notes, validity or due date, a saved customer or a one-off recipient.
+4. **Numbers.** Gap-free per company, document type and year. An issued document is never edited; it can be voided with a reason and keeps its number. Quote to invoice and invoice to receipt keep a link.
+5. **PDF.** Produced by extending the existing hand-written PDF writer (no new dependency). The first version has a text letterhead; a logo image is deferred.
+6. **Not a fiscal or tax-authority invoice.** No ZIMRA or other fiscal compliance is claimed. Tax is a plain per-company rate the user sets.
+7. **Schema.** Migration 0108 (after 0107), additive, local development databases only until approved.
+8. **Needs owner approval before landing:** the navigation entry (it touches UI-locked navigation files and needs a manifest re-baseline) and migration 0108 for any real database.
+
+## Addendum to DEC-056 — ZERA monthly return: ZERA's rounding rule, who may see returns (#258, 2026-11-21)
+
+Date: 2026-11-21. Source: the owner's feedback round (issue #258) and the owner's instruction in chat.
+**Status:** built on branch `feat/zera-return-258`; PROPOSED until the owner confirms the open points below. Not approved for any real database.
+
+1. **Rounding.** Volumes follow the rule printed on ZERA's form: whole litres, rounded to the nearest litre. Amounts are added exactly and rounded once, on the total. An exact half litre goes up (0.5 becomes 1): the owner found on 2026-11-21 that ZERA does not accept a figure ending in .5, so every figure is a whole litre.
+2. **Boxes.** D50 is the Diesel 50ppm box; petrol and blends are the Petrol box; plain diesel, gas and other products appear only in the notes; kilograms are never added to litres; a product with no fuel type blocks saving; `0` means nothing moved and `m` means a day of the month has no approved report.
+3. **Who can see it.** Only roles with `report.view` can read, save, list or download a return, checked at the station. Nothing else grants it.
+4. **Kept as filed.** Each save is a new version; versions are never edited or deleted by the application role.
+5. **Downloads** need a fresh identity check and are written to the signed audit log.
+6. **Due date.** The screen quotes ZERA's own sentence from the form word for word and works out no date itself (owner's instruction, 2026-11-21). The form also says "on or before the 3rd of every second month" elsewhere; only the section-43 sentence is shown.

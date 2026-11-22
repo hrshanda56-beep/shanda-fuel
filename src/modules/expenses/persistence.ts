@@ -3,7 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
-import { soleOwnerMayApproveOwn } from '../../platform/security/separation-of-duties';
+import { ownerMayApproveOwn } from '../../platform/security/separation-of-duties';
 import {
   assertStepUp,
   holdsExpensePermission,
@@ -319,11 +319,11 @@ export async function submitExpenseInTransaction(
   await transaction.execute(sql`
     insert into app.expenses (
       id, tenant_id, legal_entity_id, station_id, category_id, expense_date, description,
-      payee, reference, payment_method, currency, amount, state, version, required_approvals, submitted_by, shift_id, observed_at
+      payee, reference, payment_method, payment_method_other, currency, amount, state, version, required_approvals, submitted_by, shift_id, observed_at
     ) values (
       ${expenseId}, ${context.tenantId}, ${context.legalEntityId}, ${context.stationId},
       ${input.categoryId}, ${validated.expenseDate}, ${validated.description},
-      ${validated.payee}, ${validated.reference}, ${input.paymentMethod ?? null}, 'USD', ${validated.amount.amount.toString()},
+      ${validated.payee}, ${validated.reference}, ${input.paymentMethod ?? null}, ${input.paymentMethod === 'OTHER' ? (input.paymentMethodOther ?? null) : null}, 'USD', ${validated.amount.amount.toString()},
       'SUBMITTED', 0, ${approvalsRequired}, ${actorId(context)}, ${input.shiftId ?? null}, ${input.observedAt ?? null}::timestamptz
     )
   `);
@@ -363,11 +363,11 @@ export async function approveExpenseInTransaction(
     select actor_membership_id from app.expense_approvals
     where tenant_id = ${context.tenantId} and expense_id = ${expense.id}
   `);
-  // Only a sole owner may approve their own expense; supervisors never count as the other approver.
+  // An owner may approve their own expense (DEC-057); supervisors never count as the other approver.
   const ownApproval = expense.submitted_by === actorId(context);
   const alternateApproverExists = !(
     ownApproval &&
-    (await soleOwnerMayApproveOwn(transaction, {
+    (await ownerMayApproveOwn(transaction, {
       tenantId: context.tenantId,
       stationId: context.stationId,
       membershipId: expense.submitted_by,

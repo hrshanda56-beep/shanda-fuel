@@ -59,6 +59,11 @@ export const PERMISSION_CODES = [
   'inventory.delivery.manage',
   'inventory.adjustment.post',
   'finance.opening_balance.manage',
+  'sales_document.view',
+  'sales_document.create',
+  'sales_document.issue',
+  'sales_document.void',
+  'sales_document.profile.manage',
   'cash.collection.view',
   'cash.collection.record',
   'cash.collection.receive',
@@ -116,6 +121,8 @@ export const PERMISSION_CODES = [
   'purchase_order.create',
   'purchase_order.approve',
   'purchase_order.cancel',
+  'delivery.loss.record',
+  'delivery.loss.approve',
 ] as const;
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
@@ -190,6 +197,7 @@ const highRiskPermissions = new Set<PermissionCode>([
   'inventory.delivery.manage',
   'inventory.adjustment.post',
   'finance.opening_balance.manage',
+  'sales_document.void',
   'cash.location.manage',
   'cash.handover.accept',
   'cash.handover.resolve',
@@ -211,6 +219,8 @@ const highRiskPermissions = new Set<PermissionCode>([
   'expense.reverse',
   'expense.payment.reverse',
   'expense.policy.manage',
+  'delivery.loss.record',
+  'delivery.loss.approve',
 ]);
 
 type OriginalRole = 'OWNER' | 'ADMINISTRATOR' | 'FINANCE' | 'SUPERVISOR' | 'ATTENDANT';
@@ -270,6 +280,11 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'exception.manage',
     'inventory.view',
     'finance.opening_balance.manage',
+    'sales_document.view',
+    'sales_document.create',
+    'sales_document.issue',
+    'sales_document.void',
+    'sales_document.profile.manage',
     'inventory.tank.manage',
     'inventory.dip.record',
     'inventory.delivery.manage',
@@ -331,6 +346,8 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'purchase_order.create',
     'purchase_order.approve',
     'purchase_order.cancel',
+    'delivery.loss.record',
+    'delivery.loss.approve',
   ],
   FINANCE: [
     'tenant.context.select',
@@ -353,11 +370,13 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'reconciliation.post',
     'approval.view',
     'approval.act',
-    'business_day.lock',
     'exception.view',
     'exception.manage',
     'inventory.view',
     'finance.opening_balance.manage',
+    'sales_document.view',
+    'sales_document.create',
+    'sales_document.issue',
     'cash.collection.view',
     'cash.collection.record',
     'cash.collection.receive',
@@ -408,6 +427,7 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'purchase_order.create',
     'purchase_order.approve',
     'purchase_order.cancel',
+    'delivery.loss.record',
   ],
   SUPERVISOR: [
     'tenant.context.select',
@@ -433,6 +453,7 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'meter.correction.execute',
     'meter.replace',
     'price.view',
+    'price.change.request',
     'price.change.boundary',
     'price.change.prepare',
     'reconciliation.view',
@@ -460,6 +481,7 @@ const originalRolePermissions: Record<OriginalRole, readonly PermissionCode[]> =
     'expense.approve',
     'purchase_order.view',
     'purchase_order.create',
+    'delivery.loss.record',
   ],
   ATTENDANT: [
     'tenant.context.select',

@@ -134,8 +134,8 @@ export function StaffBenefitExpenseWorkspace({
                     <thead>
                       <tr>
                         <th scope="col">Fuel</th>
-                        <th scope="col">Litres</th>
-                        <th scope="col">Cost a litre</th>
+                        <th scope="col">Quantity</th>
+                        <th scope="col">Cost per litre or kg</th>
                         <th scope="col">Cost</th>
                         <th scope="col">Pump price value</th>
                       </tr>
@@ -144,7 +144,7 @@ export function StaffBenefitExpenseWorkspace({
                       {row.cost.lines.map((line) => (
                         <tr key={line.productId}>
                           <th scope="row">{line.productName}</th>
-                          <td>{line.litres}</td>
+                          <td>{`${line.litres} ${line.unit === 'KILOGRAMS' ? 'kg' : 'L'}`}</td>
                           <td>{line.costPerLitre}</td>
                           <td>{line.cost}</td>
                           <td>{formatTileMoney(line.soldValue)}</td>

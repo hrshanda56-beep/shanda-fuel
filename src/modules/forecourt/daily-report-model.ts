@@ -1,4 +1,5 @@
 import { sumDecimals } from './decimal-sum';
+import { compareProducts } from '../../platform/domain/product-order';
 
 /** Raw rows the daily report is built from; every figure stays an exact decimal string. */
 export type DailyReportInput = Readonly<{
@@ -15,6 +16,11 @@ export type DailyReportInput = Readonly<{
     nozzleNumber: string;
     productId: string;
     productName: string;
+    /** Ordering only: see platform/domain/product-order.ts. */
+    productKind?: string | null;
+    productDisplayOrder?: number | null;
+    /** What the fuel is measured in; litres when absent. */
+    fuelUnit?: 'LITRES' | 'KILOGRAMS';
     openingReading: string;
     closingReading: string;
     litresSold: string;
@@ -30,6 +36,7 @@ export type DailyReportInput = Readonly<{
   dips: ReadonlyArray<{
     tankCode: string;
     productName: string;
+    fuelUnit?: 'LITRES' | 'KILOGRAMS';
     measuredAt: string;
     rawMeasurement: string | null;
     measurementUnit: string | null;
@@ -39,7 +46,12 @@ export type DailyReportInput = Readonly<{
   drops: ReadonlyArray<{ toLocation: string; amount: string; state: string }>;
   monthToDate: Readonly<{
     fromDate: string;
-    products: ReadonlyArray<{ productName: string; litres: string; sales: string }>;
+    products: ReadonlyArray<{
+      productName: string;
+      unit?: 'LITRES' | 'KILOGRAMS';
+      litres: string;
+      sales: string;
+    }>;
     expenses: string;
     shifts: number;
   }>;
@@ -54,6 +66,7 @@ export type DailyReportPump = Readonly<{
 
 export type DailyReportProduct = Readonly<{
   productName: string;
+  fuelUnit: 'LITRES' | 'KILOGRAMS';
   /** One price when every pump sold at the same price; otherwise each distinct price. */
   prices: readonly string[];
   pumps: readonly DailyReportPump[];
@@ -72,6 +85,7 @@ export type DailyReportDip = Readonly<{
 export type DailyReportDipReading = Readonly<{
   measurement: string | null;
   unit: string | null;
+  fuelUnit: 'LITRES' | 'KILOGRAMS';
   litres: string;
 }>;
 
@@ -130,14 +144,21 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
         .sort((a, b) => compareLabels(a.sortKey, b.sortKey))
         .map(({ sortKey: _sortKey, ...pump }) => pump);
       return {
+        order: {
+          name: rows[0]!.productName,
+          kind: rows[0]!.productKind,
+          displayOrder: rows[0]!.productDisplayOrder,
+        },
         productName: rows[0]!.productName,
+        fuelUnit: rows[0]!.fuelUnit === 'KILOGRAMS' ? ('KILOGRAMS' as const) : ('LITRES' as const),
         prices: [...new Set(rows.map((row) => row.unitPrice))].sort(compareLabels),
         pumps,
         totalLitres: sumDecimals(rows.map((row) => row.litresSold)),
         salesValue: sumDecimals(rows.map((row) => row.salesValue)),
       };
     })
-    .sort((a, b) => compareLabels(a.productName, b.productName));
+    .sort((a, b) => compareProducts(a.order, b.order))
+    .map(({ order: _order, ...product }) => product);
 
   const dipsByTank = new Map<string, DailyReportInput['dips'][number][]>();
   for (const dip of input.dips) {
@@ -148,6 +169,7 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
   const reading = (dip: DailyReportInput['dips'][number]): DailyReportDipReading => ({
     measurement: dip.rawMeasurement,
     unit: dip.measurementUnit,
+    fuelUnit: dip.fuelUnit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES',
     litres: dip.physicalLitres,
   });
   const dips: DailyReportDip[] = [...dipsByTank.entries()]
@@ -192,9 +214,10 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
 }
 
 function dipText(dip: DailyReportDipReading): string {
+  const word = dip.fuelUnit === 'KILOGRAMS' ? 'Kg' : 'Ltr';
   return dip.measurement !== null
-    ? `${dip.measurement}${dip.unit ?? ''}-${plainAmount(dip.litres)}Ltr`
-    : `${plainAmount(dip.litres)}Ltr`;
+    ? `${dip.measurement}${dip.unit ?? ''}-${plainAmount(dip.litres)}${word}`
+    : `${plainAmount(dip.litres)}${word}`;
 }
 
 /** The same layout the attendants send on WhatsApp, so it can be pasted straight into the chat. */
@@ -208,11 +231,14 @@ export function formatDailyReportText(report: DailyReport): string {
         `${pump.label}`,
         `Closing: ${plainAmount(pump.closing)}`,
         `Opening: ${plainAmount(pump.opening)}`,
-        `Ltrs: ${plainAmount(pump.litres)}`,
+        `${product.fuelUnit === 'KILOGRAMS' ? 'Kgs' : 'Ltrs'}: ${plainAmount(pump.litres)}`,
         '',
       );
     }
-    lines.push(`Total litres sold: ${plainAmount(product.totalLitres)}`, '');
+    lines.push(
+      `Total ${product.fuelUnit === 'KILOGRAMS' ? 'kilograms' : 'litres'} sold: ${plainAmount(product.totalLitres)}`,
+      '',
+    );
   }
   lines.push('Expenses');
   if (report.expenses.lines.length === 0) lines.push('None recorded');

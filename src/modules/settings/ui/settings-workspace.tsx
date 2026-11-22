@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 
 import { Icon, type IconName } from '@/design-system/icons';
@@ -9,14 +10,19 @@ import { CardEmpty, CardRow, CardRows, CardTiles, SectionCard } from '@/design-s
 
 import type { SettingsView } from '../contracts';
 import { SignOutButton } from './sign-out-button';
-import { StaffPanel } from './staff-panel';
-import { AuditPanel } from '../../audit/ui/audit-panel';
-import { StationSetupGuide } from '../../setup/ui/guided-setup-panel';
+import { StationDetail, StationList } from '../../setup/ui/station-detail';
 import { AlertSettingsPanel } from '../../setup/ui/alert-settings-panel';
-import { PaymentsPanel } from '../../setup/ui/payments-panel';
 import { ReadinessPanel } from '../../setup/ui/readiness-panel';
+import { EditDocumentDetails } from './document-details-edit';
 import { AddCompany, AddStation, EditCompany, EditStation } from './structure-forms';
 import styles from './settings-workspace.module.css';
+
+// These tabs are large and only one is open at a time, so each loads when its tab is first opened.
+const StaffPanel = dynamic(() => import('./staff-panel').then((m) => m.StaffPanel));
+const AuditPanel = dynamic(() => import('../../audit/ui/audit-panel').then((m) => m.AuditPanel));
+const PaymentsPanel = dynamic(() =>
+  import('../../setup/ui/payments-panel').then((m) => m.PaymentsPanel),
+);
 
 type Tab =
   | 'organisation'
@@ -30,7 +36,7 @@ type Tab =
 
 const TABS: ReadonlyArray<{ value: Tab; label: string; icon: IconName }> = [
   { value: 'organisation', label: 'Organisation', icon: 'building' },
-  { value: 'stations', label: 'Stations', icon: 'fuel' },
+  { value: 'stations', label: 'Stations', icon: 'station' },
   { value: 'readiness', label: 'Readiness', icon: 'check-circle' },
   { value: 'payments', label: 'Payments', icon: 'card' },
   { value: 'staff', label: 'Staff', icon: 'users' },
@@ -168,17 +174,25 @@ export function SettingsStations({
   return (
     <SectionCard
       id="stations"
-      title={context.selectedStation ? 'Station details' : 'Stations'}
+      title="Stations"
       note={
         canEdit && context.legalEntities.length === 0
           ? 'Add a company under Organisation before adding a station.'
           : undefined
       }
       action={
-        canEdit ? <AddStation tenantId={tenantId!} companies={context.legalEntities} /> : undefined
+        canEdit ? (
+          <AddStation
+            tenantId={tenantId!}
+            companies={context.legalEntities}
+            takenCodes={(context.stations ?? []).map((station) => station.code)}
+          />
+        ) : undefined
       }
     >
-      {stations.length ? (
+      {stations.length && onSetup ? (
+        <StationList stations={stations} canSeeReadiness onOpen={onSetup} />
+      ) : stations.length ? (
         <CardRows label="Stations">
           {stations.map((station) => {
             const settingUp = station.status === 'ONBOARDING';
@@ -192,21 +206,7 @@ export function SettingsStations({
                   </StatusBadge>
                 }
                 detail={`${station.code} · ${station.timezone}`}
-                aside={
-                  <>
-                    {onSetup ? (
-                      <Button
-                        variant={settingUp ? 'primary' : 'secondary'}
-                        size="sm"
-                        aria-label={`Station setup for ${station.name}`}
-                        onClick={() => onSetup(station.id)}
-                      >
-                        Station setup
-                      </Button>
-                    ) : null}
-                    {canEdit ? <EditStation tenantId={tenantId!} station={station} /> : null}
-                  </>
-                }
+                aside={canEdit ? <EditStation tenantId={tenantId!} station={station} /> : null}
               />
             );
           })}
@@ -255,12 +255,15 @@ export function SettingsWorkspace({
   view,
   initialTab,
   initialSetupStation,
+  initialFocus,
 }: {
   view: SettingsView;
   /** A section to open first, e.g. from a link on the readiness list. */
   initialTab?: string;
   /** A station whose setup should open straight away, e.g. from the readiness list. */
   initialSetupStation?: string;
+  /** Part of that station's setup to take the person to, e.g. from a blocked shift close. */
+  initialFocus?: 'meter-start' | 'prices';
 }) {
   // Station setup lives on the Stations section, so an older link to it lands there.
   const requested = initialTab === 'setup' ? 'stations' : initialTab;
@@ -330,12 +333,25 @@ export function SettingsWorkspace({
   const setupStation = canSetUp ? stations.find((item) => item.id === setupStationId) : undefined;
 
   // The section lives in the address, so a refresh or a shared link returns to it.
+  function chooseSetup(id: string | null) {
+    setSetupStationId(id);
+    try {
+      const url = new URL(window.location.href);
+      if (id) url.searchParams.set('setup', id);
+      else url.searchParams.delete('setup');
+      window.history.replaceState(window.history.state, '', url);
+    } catch {
+      // The setup still opens without a shareable link.
+    }
+  }
+
   function choose(next: Tab) {
     setSetupStationId(null);
     setTab(next);
     try {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', next);
+      url.searchParams.delete('setup');
       window.history.replaceState(window.history.state, '', url);
     } catch {
       // The section still works without a shareable link.
@@ -393,7 +409,12 @@ export function SettingsWorkspace({
                 id="companies"
                 title="Companies"
                 action={
-                  view.access?.canManageCompanies ? <AddCompany tenantId={organisation.id} /> : null
+                  view.access?.canManageCompanies ? (
+                    <AddCompany
+                      tenantId={organisation.id}
+                      takenNames={legalEntities.map((company) => company.name)}
+                    />
+                  ) : null
                 }
               >
                 {legalEntities.length > 0 ? (
@@ -414,35 +435,47 @@ export function SettingsWorkspace({
                   <CardEmpty>No companies are available to you.</CardEmpty>
                 )}
               </SectionCard>
+              {view.access?.canManageCompanies ? (
+                <SectionCard id="document-details" title="Quotations and invoices">
+                  <CardRows label="Quotations and invoices">
+                    {legalEntities.map((legalEntity) => (
+                      <CardRow
+                        key={legalEntity.id}
+                        title={
+                          legalEntities.length > 1
+                            ? `Company details for documents: ${legalEntity.name}`
+                            : 'Company details for documents'
+                        }
+                        detail="The name, address, tax number and bank details printed at the top of your quotations, invoices and receipts."
+                        aside={
+                          <EditDocumentDetails tenantId={organisation.id} company={legalEntity} />
+                        }
+                      />
+                    ))}
+                  </CardRows>
+                </SectionCard>
+              ) : null}
             </>
           ) : null}
 
           {shown === 'stations' && setupStation ? (
-            <SectionCard
-              id="station-setup"
-              title={`Station setup: ${setupStation.name}`}
-              note="Work through these steps from top to bottom. You can stop at any time and come back; what you have saved stays saved."
-              action={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setSetupStationId(null);
-                    askForFocus();
-                  }}
-                >
-                  <Icon name="chevron-right" className={styles.backIcon} />
-                  Back to stations
-                </Button>
-              }
-            >
-              <StationSetupGuide
-                key={setupStation.id}
-                tenantId={organisation.id}
-                stationId={setupStation.id}
-                stationName={setupStation.name}
-              />
-            </SectionCard>
+            <StationDetail
+              key={setupStation.id}
+              tenantId={organisation.id}
+              station={setupStation}
+              canSetUp={canSetUp}
+              canEditDetails={Boolean(view.access?.canManageStations)}
+              focus={initialFocus}
+              staff={view.staff?.canManage ? view.staff : undefined}
+              onBack={() => {
+                chooseSetup(null);
+                askForFocus();
+              }}
+              onOpenStaff={() => {
+                choose('staff');
+                askForFocus();
+              }}
+            />
           ) : null}
 
           {shown === 'stations' && !setupStation ? (
@@ -453,7 +486,7 @@ export function SettingsWorkspace({
               onSetup={
                 canSetUp
                   ? (stationId) => {
-                      setSetupStationId(stationId);
+                      chooseSetup(stationId);
                       askForFocus();
                     }
                   : undefined
@@ -461,7 +494,24 @@ export function SettingsWorkspace({
             />
           ) : null}
 
-          {shown === 'readiness' && view.access?.canViewReadiness ? <ReadinessPanel /> : null}
+          {shown === 'readiness' && view.access?.canViewReadiness ? (
+            <ReadinessPanel
+              staff={view.staff?.canManage ? view.staff : undefined}
+              onOpenStation={(stationId) => {
+                choose('stations');
+                chooseSetup(stationId);
+                askForFocus();
+              }}
+              onOpenStaff={
+                view.staff?.canManage
+                  ? () => {
+                      choose('staff');
+                      askForFocus();
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
 
           {shown === 'payments' && view.access?.canViewPayments ? <PaymentsPanel /> : null}
 

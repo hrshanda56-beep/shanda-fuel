@@ -7,6 +7,21 @@ import type { CurrentContext } from '@/modules/context/contracts';
 
 export type DashboardScope = { tenantId: string; legalEntityId?: string; stationId?: string };
 
+/**
+ * Carry the chosen organisation and station on a link. The link may already have a query
+ * (`/profitability?view=position`), so the scope is merged into it rather than appended.
+ * No station chosen means "all stations".
+ */
+export function withScope(href: string, scope: Partial<DashboardScope>): string {
+  const [path = '', existing = ''] = href.split('?');
+  const params = new URLSearchParams(existing);
+  if (scope.tenantId) params.set('tenantId', scope.tenantId);
+  if (scope.legalEntityId) params.set('legalEntityId', scope.legalEntityId);
+  if (scope.stationId) params.set('stationId', scope.stationId);
+  else params.set('allStations', 'true');
+  return `${path}?${params}`;
+}
+
 /** Convert only the server-verified current scope into dashboard input. */
 export function dashboardScopeFromCurrentContext(
   current: CurrentContext | null,
@@ -30,6 +45,7 @@ export const CLOSE_STATUS_PRESENTATION: Readonly<
   OPEN: { label: 'Open', tone: 'informational' },
   IN_PROGRESS: { label: 'In progress', tone: 'informational' },
   READY_FOR_REVIEW: { label: 'Ready for review', tone: 'pending' },
+  READY_TO_CLOSE: { label: 'Ready to close', tone: 'pending' },
   CLOSED: { label: 'Closed', tone: 'positive' },
   BLOCKED: { label: 'Blocked', tone: 'critical' },
   EXCEPTION: { label: 'Closed with exception', tone: 'warning' },
@@ -88,6 +104,14 @@ export function operationsAttention(
       id: 'operations-exception',
       title: `${station} closed with an exception`,
       detail: 'Review the day before it is locked.',
+      href,
+    };
+  }
+  if (close === 'READY_TO_CLOSE') {
+    return {
+      id: 'operations-ready-to-close',
+      title: `${station} is ready to close`,
+      detail: approvalLabel(approval) || 'The day is approved and can be closed.',
       href,
     };
   }

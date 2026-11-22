@@ -6,6 +6,7 @@ import { ConfirmDialog, WorkInProgressDialog, WorkInProgressTrigger } from '../d
 import { NeedsAttention, Notice, WipBadge, WorkInProgressPanel } from '../feedback';
 import { Checkbox, Disclosure, Fieldset, Radio, Select } from '../forms';
 import { MetricCard, PageContainer, PageHeader, Section } from '../layout';
+import { LoadingTruck } from '../loading-truck';
 import { Modal } from '../modal';
 import {
   BottomSheet,
@@ -33,6 +34,15 @@ import styles from './reference.module.css';
  * synthetic and exists only to exercise the primitives in both themes and at
  * every breakpoint. Nothing here represents client master data.
  */
+
+/** A made-up company, to show the loading truck wearing a logo (white lettering gets a dark tank). */
+const SAMPLE_BRAND = {
+  logo: `data:image/svg+xml;utf8,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><circle cx="30" cy="32" r="18" fill="#faa000"/><text x="56" y="40" font-family="sans-serif" font-size="24" font-weight="700" fill="#ffffff">SAMPLE</text></svg>',
+  )}`,
+  colour: '#237a3d',
+  tank: 'dark',
+} as const;
 
 const colourGroups: { title: string; tokens: string[] }[] = [
   {
@@ -551,6 +561,8 @@ export function DesignSystemReference() {
                 <Card className="card-body stack">
                   <LoadingState label="Loading reconciliation" />
                   <Skeleton lines={4} />
+                  <LoadingTruck />
+                  <LoadingTruck brand={SAMPLE_BRAND} />
                   <div className={styles.demoRow}>
                     <SkeletonBlock width="2.5rem" height="2.5rem" shape="circle" />
                     <SkeletonBlock width="60%" height="1.25rem" />

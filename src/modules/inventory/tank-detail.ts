@@ -48,6 +48,8 @@ export type TankDetail = Readonly<{
     status: string;
     productId: string;
     productName: string;
+    /** How this fuel is measured: litres or kilograms. */
+    unit: 'LITRES' | 'KILOGRAMS';
     capacityLitres: string;
     reorderLevelLitres: string | null;
     /** Yellow: a difference above this must be explained. */
@@ -86,6 +88,7 @@ export async function queryTankDetail(input: {
         status: string;
         product_id: string;
         product_name: string;
+        unit: string;
         capacity: string;
         reorder: string | null;
         yellow: string | null;
@@ -93,7 +96,7 @@ export async function queryTankDetail(input: {
         book: string;
         has_chart: boolean;
       }>(sql`
-        select t.id, t.code, t.status, t.product_id, p.name as product_name,
+        select t.id, t.code, t.status, t.product_id, p.name as product_name, p.unit as unit,
           t.capacity_litres::text as capacity, t.reorder_level_litres::text as reorder,
           t.acceptable_variance_litres::text as yellow, t.variance_red_litres::text as red,
           coalesce((select sum(m.quantity_litres) from app.inventory_movements m
@@ -206,6 +209,7 @@ export async function queryTankDetail(input: {
           status: tank.status,
           productId: tank.product_id,
           productName: tank.product_name,
+          unit: tank.unit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES',
           capacityLitres: tank.capacity,
           reorderLevelLitres: tank.reorder,
           yellowLitres: tank.yellow,

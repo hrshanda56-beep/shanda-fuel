@@ -11,7 +11,9 @@ const detail: DeliveryDetail = {
   stationTimezone: 'Africa/Harare',
   waterTestRequired: true,
   canConfirm: true,
-  tanks: [{ id: 'tk1', code: 'T1', productId: 'p1', productName: 'Diesel' }],
+  tanks: [
+    { id: 'tk1', code: 'T1', productId: 'p1', productName: 'Diesel', unit: 'LITRES' as const },
+  ],
   delivery: {
     id: 'd1',
     deliveryNoteNumber: 'DN-001',
@@ -19,8 +21,10 @@ const detail: DeliveryDetail = {
     businessDate: '2026-10-20',
     productId: 'p1',
     productName: 'Diesel',
+    unit: 'LITRES' as const,
     supplierName: 'Puma Energy',
     transporter: null,
+    transporterSupplierId: null,
     driver: 'T. Moyo',
     truckRegistration: 'ABC 1234',
     status: 'DRAFT',
@@ -33,7 +37,16 @@ const detail: DeliveryDetail = {
     receivedLitres: '9990.5',
     shortageExcessLitres: '-9.5',
     receipt: 'PARTIAL',
+    varianceCause: null,
+    varianceNote: null,
+    loadTemperatureC: null,
+    dipMeasuredLitres: null,
+    orderedLitres: null,
+    dipVarianceLitres: null,
   },
+  lossClaim: null,
+  canRecordClaim: false,
+  canApproveClaim: false,
   compartments: [
     {
       compartmentNumber: 1,
@@ -112,8 +125,24 @@ describe('delivery detail screens', () => {
     ).not.toContain('Confirm delivery');
   });
 
+  it('says plainly whether the purchase order is answered, using the shared reason words', () => {
+    const render = (noPoReason: string | null) =>
+      renderToStaticMarkup(
+        createElement(DeliveryDetails, {
+          context,
+          listHref: '/inventory/deliveries',
+          initialData: { ...detail, delivery: { ...detail.delivery, noPoReason } },
+        }),
+      );
+    expect(render(null)).toContain('Not answered yet.');
+    const answered = render('CASH_PURCHASE');
+    expect(answered).toContain('None. Bought for cash');
+    expect(answered).not.toContain('Not answered yet.');
+  });
+
   it('tells the truth when there are no deliveries', () => {
     const empty: DeliveryList = {
+      lossReport: [],
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
       canSetWaterTestRule: false,
@@ -129,6 +158,7 @@ describe('delivery detail screens', () => {
 
   it('does not offer to record a delivery to someone who may not', () => {
     const empty: DeliveryList = {
+      lossReport: [],
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
       canSetWaterTestRule: false,
@@ -145,6 +175,7 @@ describe('delivery detail screens', () => {
 
   it('makes each delivery row one link to its details', () => {
     const list: DeliveryList = {
+      lossReport: [],
       stationTimezone: 'Africa/Harare',
       waterTestRequired: false,
       canSetWaterTestRule: false,
@@ -157,6 +188,7 @@ describe('delivery detail screens', () => {
           deliveredAt: '2026-10-20T08:00:00.000Z',
           businessDate: '2026-10-20',
           productName: 'Diesel',
+          unit: 'LITRES' as const,
           supplierName: null,
           status: 'DRAFT',
           noteLitres: '10000',

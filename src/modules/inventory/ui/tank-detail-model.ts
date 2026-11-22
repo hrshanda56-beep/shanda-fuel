@@ -16,16 +16,20 @@ export function tankTabFrom(value: string | null | undefined, canManage: boolean
   return found.value;
 }
 
-function litres(value: number): string {
-  return `${new Intl.NumberFormat('en-GB', { maximumFractionDigits: 3 }).format(value)} L`;
+function litres(value: number, unit: 'LITRES' | 'KILOGRAMS' = 'LITRES'): string {
+  return `${new Intl.NumberFormat('en-GB', { maximumFractionDigits: 3 }).format(value)} ${unit === 'KILOGRAMS' ? 'kg' : 'L'}`;
 }
 
 /** One sentence a supervisor can act on: how far a dip was from the books, and what to do about it. */
-export function dipSentence(varianceLitres: string, signal: StockSignal): string {
+export function dipSentence(
+  varianceLitres: string,
+  signal: StockSignal,
+  unit: 'LITRES' | 'KILOGRAMS' = 'LITRES',
+): string {
   const variance = Number(varianceLitres);
   if (!Number.isFinite(variance)) return 'This dip could not be compared with the books.';
   if (variance === 0) return 'Exactly what the books expected.';
-  const amount = litres(Math.abs(variance));
+  const amount = litres(Math.abs(variance), unit);
   const direction = variance < 0 ? 'under' : 'over';
   switch (signal) {
     case 'ok':

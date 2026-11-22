@@ -92,6 +92,26 @@ const paths = {
       <path d="M14 8h2a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V9l-3-3" />
     </>
   ),
+  tank: (
+    <>
+      <rect x="2.5" y="7" width="19" height="10" rx="5" />
+      <path d="M8 7v10M16 7v10M12 4v3M10 4h4M6 17v3M18 17v3" />
+    </>
+  ),
+  nozzle: (
+    <>
+      <path d="M3 20h9M5 20V9a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v11M5 11h7" />
+      <path d="M12 9h2.5a2 2 0 0 1 2 2v4.5a1.5 1.5 0 0 0 3 0V8.5L17.5 6" />
+    </>
+  ),
+  station: (
+    <>
+      <rect x="2.5" y="4" width="19" height="4" rx="1" />
+      <path d="M19 8v12M2.5 20h19" />
+      <rect x="5.5" y="11" width="6" height="9" rx="1" />
+      <path d="M7.5 13.8h2M11.5 13h1.8a1.2 1.2 0 0 1 1.2 1.2v2.6a1 1 0 0 0 2 0V13" />
+    </>
+  ),
   wallet: (
     <>
       <rect x="3" y="6" width="18" height="14" rx="2" />
@@ -185,6 +205,44 @@ const paths = {
       <path d="M16 2v4M8 2v4M3 10h18" />
     </>
   ),
+  // One picture per kind of report, so no two reports look alike.
+  arrows: <path d="M4 8h15m-4-4 4 4-4 4M20 16H5m4-4-4 4 4 4" />,
+  layers: <path d="m12 3 9 5-9 5-9-5ZM3 13l9 5 9-5M3 17.5l9 5 9-5" />,
+  dipstick: (
+    <>
+      <path d="M12 2v13M9 5h3M9 8.5h3M9 12h3" />
+      <path d="M12 15c-2 2.2-3.2 3.5-3.2 5a3.2 3.2 0 0 0 6.4 0c0-1.5-1.2-2.8-3.2-5Z" />
+    </>
+  ),
+  factory: <path d="M3 21V9l6 4V9l6 4V4h5v17ZM7 17h2m3 0h2m3 0h1" />,
+  person: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </>
+  ),
+  'user-check': (
+    <>
+      <circle cx="9" cy="8" r="4" />
+      <path d="M2 21a7 7 0 0 1 14 0M16 11l2 2 4-4" />
+    </>
+  ),
+  safe: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 8.5V9m0 6v.5M8.5 12H9m6 0h.5M7 20v1.5M17 20v1.5" />
+    </>
+  ),
+  bank: <path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M4 18h16" />,
+  'clipboard-check': (
+    <>
+      <path d="M9 4H6a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-3" />
+      <rect x="9" y="2" width="6" height="4" rx="1" />
+      <path d="m9 14 2 2 4-4" />
+    </>
+  ),
+  pie: <path d="M12 3a9 9 0 1 0 9 9h-9ZM15 2.4A9 9 0 0 1 21.6 9H15Z" />,
 } as const;
 
 export type IconName = keyof typeof paths;

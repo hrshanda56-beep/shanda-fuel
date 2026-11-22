@@ -49,6 +49,32 @@ describe('staff invitation domain', () => {
     expect(() => normalizeActivationCode('7K3M')).toThrow();
   });
 
+  it('places the newer roles: auditor company-wide, area manager and cash collector on stations', () => {
+    expect(validateInvitationScope('AUDITOR', { scopeType: 'TENANT', stationIds: [] })).toEqual({
+      scopeType: 'TENANT',
+      stationIds: [],
+    });
+    expect(() =>
+      validateInvitationScope('AUDITOR', {
+        scopeType: 'STATION',
+        legalEntityId: '11111111-1111-4111-8111-111111111111',
+        stationIds: ['22222222-2222-4222-8222-222222222222'],
+      }),
+    ).toThrow('requires tenant scope');
+    for (const role of ['AREA_MANAGER', 'CASH_COLLECTOR'] as const) {
+      expect(() => validateInvitationScope(role, { scopeType: 'TENANT', stationIds: [] })).toThrow(
+        'requires one or more stations',
+      );
+      expect(
+        validateInvitationScope(role, {
+          scopeType: 'STATION',
+          legalEntityId: '11111111-1111-4111-8111-111111111111',
+          stationIds: ['22222222-2222-4222-8222-222222222222'],
+        }).scopeType,
+      ).toBe('STATION');
+    }
+  });
+
   it('requires explicit tenant and station scope by role', () => {
     expect(validateInvitationScope('OWNER', { scopeType: 'TENANT', stationIds: [] })).toEqual({
       scopeType: 'TENANT',

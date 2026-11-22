@@ -1,12 +1,27 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState } from 'react';
 import { useToast } from '@/design-system/feedback-provider';
 import { Select } from '@/design-system/forms';
 import { Modal } from '@/design-system/modal';
+import {
+  WizardActions,
+  WizardStep,
+  WIZARD_REVIEW_HINT,
+  WizardSummary,
+  WizardSummaryRow,
+  useWizard,
+} from '@/design-system/wizard';
 import { Button, ErrorState, Field } from '@/design-system/primitives';
 import { StepUpDialog } from '../../setup/ui/step-up-dialog';
+import {
+  checkCompanyName,
+  checkStationCode,
+  checkStationCompany,
+  checkStationName,
+  suggestStationCode,
+} from '../structure-checks';
 import type { SettingsLegalEntity, SettingsStation } from '../contracts';
 import { InfoTip } from '@/design-system/info-tip';
 
@@ -119,28 +134,117 @@ function ZoneField({
   );
 }
 
-export function AddCompany({ tenantId }: { tenantId: string }) {
-  const [open, setOpen] = useState(false);
+type CompanyStep = 'name' | 'registration' | 'review';
+const COMPANY_STEPS: readonly CompanyStep[] = ['name', 'registration', 'review'];
+
+function CompanyGuide({
+  takenNames,
+  busy,
+  error,
+  onCancel,
+  onSave,
+}: {
+  takenNames: readonly string[];
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSave: (name: string, registration: string) => void;
+}) {
   const [name, setName] = useState('');
   const [registration, setRegistration] = useState('');
-  const [fieldError, setFieldError] = useState<string | null>(null);
-  const { send, busy, error, setError, dialog, waiting } = useSettingsCommand(tenantId, () => {
-    setOpen(false);
-    setName('');
-    setRegistration('');
-  });
+  const wizard = useWizard<CompanyStep>({ start: 'name', sequence: COMPANY_STEPS, onCancel });
+  const { step, errors } = wizard;
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setFieldError(null);
-    if (!name.trim()) return setFieldError('Enter the company name.');
-    await send({
-      commandType: 'CreateLegalEntity',
-      tenantId,
-      legalName: name.trim(),
-      ...(registration.trim() ? { registrationReference: registration.trim() } : {}),
-    });
+  function next() {
+    if (step === 'name')
+      return wizard.advance(checkCompanyName(name, takenNames), 'registration', 'review');
+    if (step === 'registration') return wizard.advance({}, 'review');
+    onSave(name.trim(), registration.trim());
   }
+
+  return (
+    <form
+      className="form-stack"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        next();
+      }}
+    >
+      {error ? <ErrorState title="This could not be saved" message={error} /> : null}
+      {step === 'name' ? (
+        <WizardStep
+          wizard={wizard}
+          title="What is the company called?"
+          hint="The name used on documents and reports."
+        >
+          <Field id="name" label="Company name" error={errors.name} required>
+            <input
+              id="name"
+              maxLength={240}
+              autoComplete="off"
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'registration' ? (
+        <WizardStep
+          wizard={wizard}
+          title="Does it have a registration number?"
+          hint="You can leave this empty and add it later."
+        >
+          <Field id="registration" label="Registration number" optional>
+            <input
+              id="registration"
+              maxLength={120}
+              autoComplete="off"
+              value={registration}
+              onChange={(event) => setRegistration(event.target.value)}
+            />
+          </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'review' ? (
+        <WizardStep wizard={wizard} title="Check the company" hint={WIZARD_REVIEW_HINT}>
+          <WizardSummary>
+            <WizardSummaryRow label="Company" onChange={() => wizard.change('name')}>
+              {name.trim()}
+            </WizardSummaryRow>
+            <WizardSummaryRow
+              label="Registration number"
+              onChange={() => wizard.change('registration')}
+            >
+              {registration.trim() || 'Not given'}
+            </WizardSummaryRow>
+          </WizardSummary>
+          <WizardActions
+            wizard={wizard}
+            onContinue={next}
+            continueLabel="Save company"
+            busy={busy}
+          />
+        </WizardStep>
+      ) : null}
+    </form>
+  );
+}
+
+export function AddCompany({
+  tenantId,
+  takenNames = [],
+}: {
+  tenantId: string;
+  takenNames?: readonly string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const { send, busy, error, setError, dialog, waiting } = useSettingsCommand(tenantId, () =>
+    setOpen(false),
+  );
 
   return (
     <>
@@ -157,52 +261,107 @@ export function AddCompany({ tenantId }: { tenantId: string }) {
         open={open && !waiting}
         onClose={() => !busy && setOpen(false)}
         title="Add a company"
-        presentation="side"
+        presentation="page"
+        backLabel="Companies"
         size="sm"
         dismissible={!busy}
       >
-        <form className="form-stack" onSubmit={submit} noValidate>
-          {error ? <ErrorState title="This could not be saved" message={error} /> : null}
-          <Field id="company-name" label="Company name" required>
+        {open ? (
+          <CompanyGuide
+            busy={busy}
+            error={error}
+            takenNames={takenNames}
+            onCancel={() => setOpen(false)}
+            onSave={(name, registration) =>
+              void send({
+                commandType: 'CreateLegalEntity',
+                tenantId,
+                legalName: name,
+                ...(registration ? { registrationReference: registration } : {}),
+              })
+            }
+          />
+        ) : null}
+      </Modal>
+      {dialog}
+    </>
+  );
+}
+
+type EditCompanyStep = 'name' | 'review';
+
+export function EditCompanyGuide({
+  company,
+  busy,
+  error,
+  onCancel,
+  onSave,
+}: {
+  company: SettingsLegalEntity;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSave: (name: string) => void;
+}) {
+  const [name, setName] = useState(company.name);
+  const wizard = useWizard<EditCompanyStep>({
+    start: 'name',
+    sequence: ['name', 'review'],
+    onCancel,
+  });
+  const { step, errors } = wizard;
+
+  function next() {
+    if (step === 'name') return wizard.advance(checkCompanyName(name), 'review');
+    onSave(name.trim());
+  }
+
+  return (
+    <form
+      className="form-stack"
+      noValidate
+      aria-label={`Edit ${company.name}`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        next();
+      }}
+    >
+      {error ? <ErrorState title="This could not be saved" message={error} /> : null}
+      {step === 'name' ? (
+        <WizardStep
+          wizard={wizard}
+          title="What is the company called?"
+          hint="The name used on documents and reports."
+        >
+          <Field id="name" label="Company name" error={errors.name} required>
             <input
-              id="company-name"
+              id="name"
               maxLength={240}
               autoComplete="off"
+              autoFocus
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
           </Field>
-          <Field id="company-registration" label="Registration number" optional>
-            <input
-              id="company-registration"
-              maxLength={120}
-              autoComplete="off"
-              value={registration}
-              onChange={(event) => setRegistration(event.target.value)}
-            />
-          </Field>
-          {fieldError ? (
-            <p className="field-error" role="alert">
-              {fieldError}
-            </p>
-          ) : null}
-          <div className="form-actions">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={busy}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" loading={busy}>
-              Save company
-            </Button>
-          </div>
-        </form>
-      </Modal>
-      {dialog}
-    </>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'review' ? (
+        <WizardStep wizard={wizard} title="Check the company" hint={WIZARD_REVIEW_HINT}>
+          <WizardSummary>
+            <WizardSummaryRow label="Company" onChange={() => wizard.change('name')}>
+              {name.trim()}
+            </WizardSummaryRow>
+          </WizardSummary>
+          <WizardActions
+            wizard={wizard}
+            onContinue={next}
+            continueLabel="Save company"
+            busy={busy}
+          />
+        </WizardStep>
+      ) : null}
+    </form>
   );
 }
 
@@ -214,23 +373,9 @@ export function EditCompany({
   company: SettingsLegalEntity;
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(company.name);
-  const [fieldError, setFieldError] = useState<string | null>(null);
   const { send, busy, error, setError, dialog, waiting } = useSettingsCommand(tenantId, () =>
     setOpen(false),
   );
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setFieldError(null);
-    if (!name.trim()) return setFieldError('Enter the company name.');
-    await send({
-      commandType: 'UpdateLegalEntity',
-      tenantId,
-      legalEntityId: company.id,
-      legalName: name.trim(),
-    });
-  }
 
   return (
     <>
@@ -240,7 +385,6 @@ export function EditCompany({
         aria-haspopup="dialog"
         aria-label={`Edit ${company.name}`}
         onClick={() => {
-          setName(company.name);
           setError(null);
           setOpen(true);
         }}
@@ -251,82 +395,204 @@ export function EditCompany({
         open={open && !waiting}
         onClose={() => !busy && setOpen(false)}
         title="Edit company"
-        presentation="side"
+        presentation="page"
+        backLabel="Companies"
         size="sm"
         dismissible={!busy}
       >
-        <form className="form-stack" onSubmit={submit} noValidate>
-          {error ? <ErrorState title="This could not be saved" message={error} /> : null}
-          <Field id={`company-edit-${company.id}`} label="Company name" required>
-            <input
-              id={`company-edit-${company.id}`}
-              maxLength={240}
-              autoComplete="off"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </Field>
-          {fieldError ? (
-            <p className="field-error" role="alert">
-              {fieldError}
-            </p>
-          ) : null}
-          <div className="form-actions">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={busy}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" loading={busy}>
-              Save company
-            </Button>
-          </div>
-        </form>
+        {open ? (
+          <EditCompanyGuide
+            company={company}
+            busy={busy}
+            error={error}
+            onCancel={() => setOpen(false)}
+            onSave={(name) =>
+              void send({
+                commandType: 'UpdateLegalEntity',
+                tenantId,
+                legalEntityId: company.id,
+                legalName: name,
+              })
+            }
+          />
+        ) : null}
       </Modal>
       {dialog}
     </>
   );
 }
 
+type StationStep = 'company' | 'name' | 'code' | 'zone' | 'review';
+
+function StationGuide({
+  companies,
+  takenCodes,
+  busy,
+  error,
+  onCancel,
+  onSave,
+}: {
+  companies: readonly SettingsLegalEntity[];
+  takenCodes: readonly string[];
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSave: (value: { companyId: string; name: string; code: string; zone: string }) => void;
+}) {
+  const onlyCompany = companies.length === 1 ? companies[0]!.id : '';
+  const [companyId, setCompanyId] = useState(onlyCompany);
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [codeEdited, setCodeEdited] = useState(false);
+  const [zone, setZone] = useState('Africa/Harare');
+  // With one company there is nothing to choose, so that question is left out.
+  const sequence: readonly StationStep[] = onlyCompany
+    ? ['name', 'code', 'zone', 'review']
+    : ['company', 'name', 'code', 'zone', 'review'];
+  const wizard = useWizard<StationStep>({
+    start: sequence[0]!,
+    sequence,
+    onCancel,
+  });
+  const { step, errors } = wizard;
+  const companyName = companies.find((company) => company.id === companyId)?.name ?? '';
+
+  function next() {
+    if (step === 'company') return wizard.advance(checkStationCompany(companyId), 'name', 'review');
+    if (step === 'name') {
+      const found = checkStationName(name);
+      if (Object.keys(found).length === 0 && !codeEdited) {
+        setCode(suggestStationCode(name, takenCodes));
+      }
+      return wizard.advance(found, 'code', 'review');
+    }
+    if (step === 'code')
+      return wizard.advance(checkStationCode(code, takenCodes), 'zone', 'review');
+    if (step === 'zone') return wizard.advance({}, 'review');
+    onSave({ companyId, name: name.trim(), code: code.trim(), zone });
+  }
+
+  return (
+    <form
+      className="form-stack"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        next();
+      }}
+    >
+      {error ? <ErrorState title="This could not be saved" message={error} /> : null}
+      {step === 'company' ? (
+        <WizardStep
+          wizard={wizard}
+          title="Which company runs this station?"
+          hint="Each station belongs to one company."
+        >
+          <Field id="company" label="Company" error={errors.company} required>
+            <Select
+              id="company"
+              value={companyId}
+              onChange={(event) => setCompanyId(event.target.value)}
+              placeholder="Choose a company"
+              options={companies.map((company) => ({ value: company.id, label: company.name }))}
+            />
+          </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'name' ? (
+        <WizardStep
+          wizard={wizard}
+          title="What is the station called?"
+          hint="The name your team will see."
+        >
+          <Field id="name" label="Station name" error={errors.name} required>
+            <input
+              id="name"
+              maxLength={160}
+              autoComplete="off"
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'code' ? (
+        <WizardStep
+          wizard={wizard}
+          title="Pick a short code"
+          hint="Letters and numbers, for example BND. It cannot be changed later."
+        >
+          <Field id="code" label="Short code" error={errors.code} required>
+            <input
+              id="code"
+              maxLength={20}
+              autoComplete="off"
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value);
+                setCodeEdited(true);
+              }}
+            />
+          </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'zone' ? (
+        <WizardStep wizard={wizard} title="Which time zone is the station in?">
+          <ZoneField id="zone" value={zone} onChange={setZone} />
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'review' ? (
+        <WizardStep wizard={wizard} title="Check the station" hint={WIZARD_REVIEW_HINT}>
+          <WizardSummary>
+            {onlyCompany ? null : (
+              <WizardSummaryRow label="Company" onChange={() => wizard.change('company')}>
+                {companyName}
+              </WizardSummaryRow>
+            )}
+            <WizardSummaryRow label="Station" onChange={() => wizard.change('name')}>
+              {name.trim()}
+            </WizardSummaryRow>
+            <WizardSummaryRow label="Short code" onChange={() => wizard.change('code')}>
+              {code.trim().toUpperCase()}
+            </WizardSummaryRow>
+            <WizardSummaryRow label="Time zone" onChange={() => wizard.change('zone')}>
+              {zone}
+            </WizardSummaryRow>
+          </WizardSummary>
+          <InfoTip>
+            The station starts in setup. Press Station setup next to it to add its fuels, tanks and
+            pumps, then switch it on.
+          </InfoTip>
+          <WizardActions
+            wizard={wizard}
+            onContinue={next}
+            continueLabel="Save station"
+            busy={busy}
+          />
+        </WizardStep>
+      ) : null}
+    </form>
+  );
+}
+
 export function AddStation({
   tenantId,
   companies,
+  takenCodes = [],
 }: {
   tenantId: string;
   companies: readonly SettingsLegalEntity[];
+  takenCodes?: readonly string[];
 }) {
   const [open, setOpen] = useState(false);
-  const [companyId, setCompanyId] = useState(companies.length === 1 ? companies[0]!.id : '');
-  const [name, setName] = useState('');
-  const [code, setCode] = useState('');
-  const [zone, setZone] = useState('Africa/Harare');
-  const [fieldError, setFieldError] = useState<string | null>(null);
-  const { send, busy, error, setError, dialog, waiting } = useSettingsCommand(tenantId, () => {
-    setOpen(false);
-    setName('');
-    setCode('');
-  });
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setFieldError(null);
-    if (!companyId) return setFieldError('Choose the company that runs this station.');
-    if (!name.trim()) return setFieldError('Enter the station name.');
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,19}$/.test(code.trim())) {
-      return setFieldError('Enter a short code of 2 to 20 letters or numbers, for example BND.');
-    }
-    await send({
-      commandType: 'CreateStation',
-      tenantId,
-      legalEntityId: companyId,
-      name: name.trim(),
-      code: code.trim(),
-      timezone: zone,
-    });
-  }
+  const { send, busy, error, setError, dialog, waiting } = useSettingsCommand(tenantId, () =>
+    setOpen(false),
+  );
 
   return (
     <>
@@ -344,153 +610,186 @@ export function AddStation({
         open={open && !waiting}
         onClose={() => !busy && setOpen(false)}
         title="Add a station"
-        presentation="side"
+        presentation="page"
+        backLabel="Stations"
         size="sm"
         dismissible={!busy}
       >
-        <form className="form-stack" onSubmit={submit} noValidate>
-          {error ? <ErrorState title="This could not be saved" message={error} /> : null}
-          {companies.length > 1 ? (
-            <Field id="station-company" label="Company" required>
-              <Select
-                id="station-company"
-                value={companyId}
-                onChange={(event) => setCompanyId(event.target.value)}
-                placeholder="Choose a company"
-                options={companies.map((company) => ({ value: company.id, label: company.name }))}
-              />
-            </Field>
-          ) : null}
-          <Field id="station-name" label="Station name" required>
-            <input
-              id="station-name"
-              maxLength={160}
-              autoComplete="off"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </Field>
-          <Field
-            id="station-code"
-            label="Short code"
-            hint="Letters and numbers, for example BND. It cannot be changed later."
-            required
-          >
-            <input
-              id="station-code"
-              maxLength={20}
-              autoComplete="off"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-            />
-          </Field>
-          <ZoneField id="station-zone" value={zone} onChange={setZone} />
-          <InfoTip>
-            The station starts in setup. Press Station setup next to it to add its fuels, tanks and
-            pumps, then switch it on.
-          </InfoTip>
-          {fieldError ? (
-            <p className="field-error" role="alert">
-              {fieldError}
-            </p>
-          ) : null}
-          <div className="form-actions">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={busy}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" loading={busy}>
-              Save station
-            </Button>
-          </div>
-        </form>
+        {open ? (
+          <StationGuide
+            companies={companies}
+            takenCodes={takenCodes}
+            busy={busy}
+            error={error}
+            onCancel={() => setOpen(false)}
+            onSave={(value) =>
+              void send({
+                commandType: 'CreateStation',
+                tenantId,
+                legalEntityId: value.companyId,
+                name: value.name,
+                code: value.code,
+                timezone: value.zone,
+              })
+            }
+          />
+        ) : null}
       </Modal>
       {dialog}
     </>
   );
 }
 
-export function EditStation({ tenantId, station }: { tenantId: string; station: SettingsStation }) {
-  const [open, setOpen] = useState(false);
+type EditStationStep = 'name' | 'zone' | 'review';
+
+export function EditStationGuide({
+  station,
+  busy,
+  error,
+  onCancel,
+  onSave,
+}: {
+  station: SettingsStation;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSave: (value: { name: string; zone: string }) => void;
+}) {
   const [name, setName] = useState(station.name);
   const [zone, setZone] = useState(station.timezone);
-  const [fieldError, setFieldError] = useState<string | null>(null);
-  const { send, busy, error, setError, dialog, waiting } = useSettingsCommand(tenantId, () =>
-    setOpen(false),
-  );
+  const wizard = useWizard<EditStationStep>({
+    start: 'name',
+    sequence: ['name', 'zone', 'review'],
+    onCancel,
+  });
+  const { step, errors } = wizard;
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setFieldError(null);
-    if (!name.trim()) return setFieldError('Enter the station name.');
-    await send({
-      commandType: 'UpdateStation',
-      tenantId,
-      stationId: station.id,
-      name: name.trim(),
-      timezone: zone,
-    });
+  function next() {
+    if (step === 'name') return wizard.advance(checkStationName(name), 'zone', 'review');
+    if (step === 'zone') return wizard.advance({}, 'review');
+    onSave({ name: name.trim(), zone });
   }
 
   return (
-    <>
-      <Button
-        variant="secondary"
-        size="sm"
-        aria-haspopup="dialog"
-        aria-label={`Edit ${station.name}`}
-        onClick={() => {
-          setName(station.name);
-          setZone(station.timezone);
-          setError(null);
-          setOpen(true);
-        }}
-      >
-        Edit
-      </Button>
-      <Modal
-        open={open && !waiting}
-        onClose={() => !busy && setOpen(false)}
-        title="Edit station"
-        presentation="side"
-        size="sm"
-        dismissible={!busy}
-      >
-        <form className="form-stack" onSubmit={submit} noValidate>
-          {error ? <ErrorState title="This could not be saved" message={error} /> : null}
-          <Field id={`station-edit-${station.id}`} label="Station name" required>
+    <form
+      className="form-stack"
+      noValidate
+      aria-label={`Edit ${station.name}`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        next();
+      }}
+    >
+      {error ? <ErrorState title="This could not be saved" message={error} /> : null}
+      {step === 'name' ? (
+        <WizardStep
+          wizard={wizard}
+          title="What is the station called?"
+          hint="The name your team will see."
+        >
+          <Field id="name" label="Station name" error={errors.name} required>
             <input
-              id={`station-edit-${station.id}`}
+              id="name"
               maxLength={160}
               autoComplete="off"
+              autoFocus
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
           </Field>
-          <ZoneField id={`station-zone-${station.id}`} value={zone} onChange={setZone} />
-          {fieldError ? (
-            <p className="field-error" role="alert">
-              {fieldError}
-            </p>
-          ) : null}
-          <div className="form-actions">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={busy}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" loading={busy}>
-              Save station
-            </Button>
-          </div>
-        </form>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'zone' ? (
+        <WizardStep wizard={wizard} title="Which time zone is the station in?">
+          <ZoneField id="zone" value={zone} onChange={setZone} />
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'review' ? (
+        <WizardStep wizard={wizard} title="Check the station" hint={WIZARD_REVIEW_HINT}>
+          <WizardSummary>
+            <WizardSummaryRow label="Station" onChange={() => wizard.change('name')}>
+              {name.trim()}
+            </WizardSummaryRow>
+            <WizardSummaryRow label="Time zone" onChange={() => wizard.change('zone')}>
+              {zone}
+            </WizardSummaryRow>
+          </WizardSummary>
+          <WizardActions
+            wizard={wizard}
+            onContinue={next}
+            continueLabel="Save station"
+            busy={busy}
+          />
+        </WizardStep>
+      ) : null}
+    </form>
+  );
+}
+
+export function EditStation({
+  tenantId,
+  station,
+  controlled,
+}: {
+  tenantId: string;
+  station: SettingsStation;
+  /** When given, the guide is opened from elsewhere (a menu) and no button is shown here. */
+  controlled?: { open: boolean; onOpenChange: (open: boolean) => void };
+}) {
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlled ? controlled.open : ownOpen;
+  const setOpen = (next: boolean) => {
+    if (controlled) controlled.onOpenChange(next);
+    else setOwnOpen(next);
+  };
+  const { send, busy, error, setError, dialog, waiting } = useSettingsCommand(tenantId, () =>
+    setOpen(false),
+  );
+
+  return (
+    <>
+      {controlled ? null : (
+        <Button
+          variant="secondary"
+          size="sm"
+          aria-haspopup="dialog"
+          aria-label={`Edit ${station.name}`}
+          onClick={() => {
+            setError(null);
+            setOpen(true);
+          }}
+        >
+          Edit
+        </Button>
+      )}
+      <Modal
+        open={open && !waiting}
+        onClose={() => !busy && setOpen(false)}
+        title="Edit station"
+        presentation="page"
+        backLabel="Stations"
+        size="sm"
+        dismissible={!busy}
+      >
+        {open ? (
+          <EditStationGuide
+            station={station}
+            busy={busy}
+            error={error}
+            onCancel={() => setOpen(false)}
+            onSave={(value) =>
+              void send({
+                commandType: 'UpdateStation',
+                tenantId,
+                stationId: station.id,
+                name: value.name,
+                timezone: value.zone,
+              })
+            }
+          />
+        ) : null}
       </Modal>
       {dialog}
     </>

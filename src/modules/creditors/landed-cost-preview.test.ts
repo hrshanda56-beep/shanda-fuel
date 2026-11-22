@@ -19,11 +19,20 @@ describe('previewLandedCost', () => {
       deliveryId: 'd1',
       deliveryNoteNumber: 'DN-1',
       receivedLitres: '4983',
+      unit: 'LITRES',
       purchaseCost: '8900.0000',
       directCosts: '100.0000',
       totalCost: '9000.0000',
       perLitre: '1.8061',
     });
+  });
+
+  it('carries the unit of a fuel measured in kilograms', () => {
+    const [result] = previewLandedCost(
+      [fuel, transport],
+      [{ ...delivery, unit: 'KILOGRAMS' as const }],
+    );
+    expect(result?.unit).toBe('KILOGRAMS');
   });
 
   it('shows nothing until a delivery is chosen for a fuel line', () => {

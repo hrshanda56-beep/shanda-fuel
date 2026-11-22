@@ -22,6 +22,7 @@ describe('report catalog', () => {
       'stock-movements',
       'delivery-variance',
       'stock-variance',
+      'zera-return',
     ]);
   });
 

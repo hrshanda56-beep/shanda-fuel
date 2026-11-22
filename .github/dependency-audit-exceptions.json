@@ -2,15 +2,10 @@
   "schemaVersion": 1,
   "exceptions": [
     {
-      "npmAdvisoryId": 1240992,
-      "githubAdvisoryId": "GHSA-vfj7-8cjw-p6xm",
-      "package": "braces",
-      "affectedVersion": "3.0.3",
+      "advisoryId": "GHSA-fc5q-39xc-vjpf",
+      "packageName": "picomatch",
       "severity": "high",
-      "dependencyPath": ".>eslint-config-next>@next/eslint-plugin-next>fast-glob>micromatch>braces",
-      "reviewDate": "2026-11-03",
-      "status": "ACTIVE_PREPRODUCTION_ONLY",
-      "owner": "OPERATOR INPUT REQUIRED"
+      "expires": "2026-12-17"
     }
   ]
 }

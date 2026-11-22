@@ -7,6 +7,7 @@ import {
   updateDeliveryFromRequest,
   createTankFromRequest,
   setTankVarianceLimitsFromRequest,
+  updateTankFromRequest,
   deactivateTankFromRequest,
   approveInventoryCostRevaluationFromRequest,
   postInventoryAdjustmentFromRequest,
@@ -25,6 +26,7 @@ import { WRITE_RATE_LIMIT, withPersistentRateLimit } from '../../../../platform/
 
 const COMMANDS = [
   'CreateTank',
+  'UpdateTank',
   'DeactivateTank',
   'SetTankVarianceLimits',
   'RecordTankDip',
@@ -65,6 +67,9 @@ export const POST = withRequestObservability(
       switch (commandType as CommandType) {
         case 'CreateTank':
           result = await createTankFromRequest(request, body);
+          break;
+        case 'UpdateTank':
+          result = await updateTankFromRequest(request, body);
           break;
         case 'SetTankVarianceLimits':
           result = await setTankVarianceLimitsFromRequest(request, body);

@@ -1,0 +1,53 @@
+/* The editing screen: a flat list. Each row names a thing and offers the parts that can be changed. */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border, #d8dee0);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.main {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.name {
+  font-weight: 600;
+}
+
+.detail {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.parts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+@media (max-width: 760px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .parts {
+    justify-content: flex-start;
+  }
+}

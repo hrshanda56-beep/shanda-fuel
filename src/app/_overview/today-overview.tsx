@@ -14,7 +14,7 @@ import { Pagination, usePagination } from '@/design-system/pagination';
 import { NextStepCard } from '@/modules/forecourt/ui/next-step-card';
 
 import { businessToday } from '@/modules/reporting/period';
-import { formatTileLitres, formatTileMoney } from '@/modules/reporting/format';
+import { formatTileMoney, formatTileQuantity } from '@/modules/reporting/format';
 
 import {
   axisLabels,
@@ -52,6 +52,7 @@ import {
   CLOSE_STATUS_PRESENTATION,
   countSuspendedCustomers,
   shiftSummary,
+  withScope,
   type AttentionRow,
   type TodayOperations,
 } from './today-overview-model';
@@ -306,14 +307,7 @@ export function TodayOverview({
       finance.status === 'ready'
         ? finance.data.map((tile) => ({
             ...tile,
-            href: (() => {
-              const params = new URLSearchParams();
-              if (tenantId) params.set('tenantId', tenantId);
-              if (legalEntityId) params.set('legalEntityId', legalEntityId);
-              if (stationId) params.set('stationId', stationId);
-              else params.set('allStations', 'true');
-              return `${tile.href}?${params}`;
-            })(),
+            href: withScope(tile.href, { tenantId, legalEntityId, stationId }),
           }))
         : [],
     [finance, tenantId, legalEntityId, stationId],
@@ -359,7 +353,7 @@ export function TodayOverview({
   const figureValues: (string | null)[] = totals
     ? [
         formatTileMoney(totals.salesValue),
-        formatTileLitres(totals.litresSold),
+        formatTileQuantity(totals.litresSold, totals.unit),
         // The third card is profit for people who may see it; account sales for everyone else.
         profitTile
           ? profitTile.value === null
@@ -374,13 +368,14 @@ export function TodayOverview({
   const chartReady = chart.status === 'ready' && chart.key === chartKey ? chart : null;
   const salesRows = chartReady ? chartReady.data.sales.rows : [];
   const points = litresSeries(salesRows, rangeWindow.buckets);
+  const unitName = points[0]?.unit === 'KILOGRAMS' ? 'Kilograms' : 'Litres';
   const chartShown = chartReady !== null;
   const series = chartReady
     ? points.map((point) => ({
         label: point.label,
         value: plotValue(point.litres),
         detail: point.products
-          .map((product) => `${product.name} ${formatTileLitres(product.litres)}`)
+          .map((product) => `${product.name} ${formatTileQuantity(product.litres, product.unit)}`)
           .join(' · '),
       }))
     : null;
@@ -412,7 +407,13 @@ export function TodayOverview({
               value={figureValues[0] ?? null}
             />
             <Figure
-              label="Litres sold"
+              label={
+                totals?.unit === 'KILOGRAMS'
+                  ? 'Kilograms sold'
+                  : totals?.unit === 'MIXED'
+                    ? 'Fuel sold'
+                    : 'Litres sold'
+              }
               href={reportsHref}
               icon="drop"
               state={figureState}
@@ -569,7 +570,7 @@ export function TodayOverview({
         <section className="today-section today-stats" aria-labelledby="today-stats-heading">
           <div className="today-stats-head">
             <h2 id="today-stats-heading">
-              Sales performance <span className="today-stats-sub">Litres</span>
+              Sales performance <span className="today-stats-sub">{unitName}</span>
             </h2>
             <div className="today-periods" role="group" aria-label="Chart range">
               {CHART_RANGES.map((option) => (
@@ -608,8 +609,10 @@ export function TodayOverview({
                 <PerformanceChart
                   series={series}
                   xLabels={axisLabels(points.map((point) => point.label))}
-                  formatValue={(value) => formatTileLitres(String(Math.round(value)))}
-                  label={`Litres sold, ${range}, approved days only`}
+                  formatValue={(value) =>
+                    formatTileQuantity(String(Math.round(value)), points[0]?.unit)
+                  }
+                  label={`${unitName} sold, ${range}, approved days only`}
                   emptyMessage="No approved sales in this period yet."
                   gapMessage="No approved report"
                 />
@@ -741,18 +744,24 @@ function SnapshotTiles({
   asAt: string;
 }) {
   const { cash, stockVariance } = snapshot;
+  const cashTone = varianceTone(cash.difference);
+  // Nothing collected at all means the cash is waiting, not missing. Once some has been collected, a
+  // shortfall is a real difference (a partial collection, or a count below the sales) and stays red.
+  const cashWaiting = cashTone === 'short' && varianceTone(cash.collected) === 'none';
   return (
     <>
       <MetricCard
         label="Expected cash"
         value={formatTileMoney(cash.expected)}
         meta={
-          varianceTone(cash.difference) === 'none'
+          cashTone === 'none'
             ? 'Matches'
-            : `${signedMoney(cash.difference)} difference`
+            : cashWaiting
+              ? 'Not collected yet'
+              : `${signedMoney(cash.difference)} difference`
         }
-        info={`Cash expected ${periodPhrase}: ${formatTileMoney(cash.expected)}. Collected so far: ${formatTileMoney(cash.collected)}.`}
-        tone={varianceTone(cash.difference) === 'short' ? 'critical' : 'default'}
+        info={`Cash expected ${periodPhrase}: ${formatTileMoney(cash.expected)}. Collected so far: ${formatTileMoney(cash.collected)}. Cash is counted as collected once someone records the collection on the Cash page.`}
+        tone={cashTone === 'short' && !cashWaiting ? 'critical' : 'default'}
         href={reportsHref}
       />
       <MetricCard
@@ -764,14 +773,14 @@ function SnapshotTiles({
               : formatTileMoney(stock.value)
             : stockVariance.litres === null
               ? 'Not available'
-              : signedLitres(stockVariance.litres)
+              : signedLitres(stockVariance.litres, stockVariance.unit)
         }
         meta={asAt}
         info={[
           stock?.value === null ? stock.unavailableReason : undefined,
           stockVariance.litres === null
             ? 'No tank has a dip reading for the last day yet.'
-            : `Stock variance ${signedLitres(stockVariance.litres)}, from ${stockVariance.tanksMeasured} of ${stockVariance.tanksTotal} tanks measured.`,
+            : `Stock variance ${signedLitres(stockVariance.litres, stockVariance.unit)}, from ${stockVariance.tanksMeasured} of ${stockVariance.tanksTotal} tanks measured.`,
         ]
           .filter(Boolean)
           .join(' ')}
@@ -836,16 +845,19 @@ function periodLabel(from: string, to: string): string {
  */
 function ChartTableView({ points, range }: { points: LitresPoint[]; range: ChartRange }) {
   const table = chartTable(points);
+  const soldName = table.unit === 'KILOGRAMS' ? 'Kilograms sold' : 'Litres sold';
   const page = usePagination(table.rows, { resetKey: range });
   return (
     <div className="today-chart-table">
-      <TableScrollRegion label={`Litres sold by period, ${range}`}>
+      <TableScrollRegion label={`${soldName} by period, ${range}`}>
         <table className="responsive-table">
-          <caption>Litres sold, {range}, from approved reports only</caption>
+          <caption>
+            {soldName}, {range}, from approved reports only
+          </caption>
           <thead>
             <tr>
               <th scope="col">Business date</th>
-              <th scope="col">Litres sold</th>
+              <th scope="col">{soldName}</th>
               {table.products.map((name) => (
                 <th scope="col" key={name}>
                   {name}
@@ -860,13 +872,13 @@ function ChartTableView({ points, range }: { points: LitresPoint[]; range: Chart
                   {periodLabel(row.from, row.to)}
                 </th>
                 {row.total === null ? (
-                  <td data-label="Litres sold" colSpan={1 + table.products.length}>
+                  <td data-label={soldName} colSpan={1 + table.products.length}>
                     No approved report
                   </td>
                 ) : (
                   <>
-                    <td data-label="Litres sold" className="numeric">
-                      {formatTileLitres(row.total)}
+                    <td data-label={soldName} className="numeric">
+                      {formatTileQuantity(row.total, table.unit)}
                     </td>
                     {row.byProduct.map((litres, index) => (
                       <td
@@ -880,7 +892,7 @@ function ChartTableView({ points, range }: { points: LitresPoint[]; range: Chart
                             <span className="visually-hidden">No approved figure</span>
                           </>
                         ) : (
-                          formatTileLitres(litres)
+                          formatTileQuantity(litres, table.productUnits[index])
                         )}
                       </td>
                     ))}

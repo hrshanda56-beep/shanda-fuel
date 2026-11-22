@@ -41,6 +41,9 @@ export const suppliers = appSchema.table(
     contactEmail: text('contact_email'),
     /** Usual credit period; null = not recorded. Pre-fills the invoice's due date only. */
     defaultCreditDays: integer('default_credit_days'),
+    /** What this company does for the business: supplies fuel, carries it, or both (migration 0112). */
+    providesFuel: boolean('provides_fuel').notNull().default(true),
+    providesTransport: boolean('provides_transport').notNull().default(false),
     version: integer('version').notNull().default(0),
     createdBy: uuid('created_by').notNull(),
     updatedBy: uuid('updated_by').notNull(),
@@ -53,6 +56,10 @@ export const suppliers = appSchema.table(
     index('suppliers_tenant_status_idx').on(table.tenantId, table.status),
     check('suppliers_code_nonempty_ck', sql`btrim(${table.code}) <> ''`),
     check('suppliers_legal_name_nonempty_ck', sql`btrim(${table.legalName}) <> ''`),
+    check(
+      'suppliers_provides_something_ck',
+      sql`${table.providesFuel} or ${table.providesTransport}`,
+    ),
     check('suppliers_status_ck', sql`${table.status} in ('ACTIVE','INACTIVE')`),
     check(
       'suppliers_default_credit_days_ck',
@@ -232,6 +239,8 @@ export const supplierDocumentDeliveryRefs = appSchema.table(
     active: boolean('active').notNull().default(false),
     releasedAt: utcTimestamp('released_at'),
     needsFinanceReview: boolean('needs_finance_review').notNull().default(false),
+    /** FUEL for the fuel invoice, TRANSPORT for the transporter's own bill (migration 0113). */
+    kind: text('kind').notNull().default('FUEL'),
   },
   (table) => [
     unique('supplier_document_delivery_refs_tenant_id_id_uidx').on(table.tenantId, table.id),

@@ -6,6 +6,7 @@ import {
   formatDecimal,
   formatLitres,
   formatMoney,
+  formatUnitPriceText,
   formatUsd,
   moneyInputValue,
   formatPercentage,
@@ -99,5 +100,35 @@ describe('presentation formatters', () => {
 
   it('labels statuses', () => {
     expect(formatStatusLabel('PENDING_APPROVAL')).toBe('Pending Approval');
+  });
+});
+
+describe('formatQuantity', () => {
+  it('writes litres as L and kilograms as kg, with litres as the default', async () => {
+    const { formatQuantity, quantityUnitShort } = await import('./formatters');
+    expect(formatQuantity('1250')).toBe('1,250 L');
+    expect(formatQuantity('1250', 'LITRES')).toBe('1,250 L');
+    expect(formatQuantity('480.5', 'KILOGRAMS')).toBe('480.5 kg');
+    expect(formatQuantity('abc', 'KILOGRAMS')).toBe('—');
+    expect(quantityUnitShort('KILOGRAMS')).toBe('kg');
+    expect(quantityUnitShort(undefined)).toBe('L');
+  });
+});
+
+describe('formatUnitPriceText', () => {
+  it('shows a stored price as money, never as the stored digits', () => {
+    expect(formatUnitPriceText('1.500000', 'L')).toBe('US$1.50/L');
+    expect(formatUnitPriceText('2', 'kg')).toBe('US$2.00/kg');
+    expect(formatUnitPriceText('1.65', 'L')).toBe('US$1.65/L');
+  });
+
+  it('keeps decimals the price really has instead of rounding them away', () => {
+    expect(formatUnitPriceText('1.575000', 'L')).toBe('US$1.575/L');
+    expect(formatUnitPriceText('1.0005', 'L')).toBe('US$1.0005/L');
+  });
+
+  it('shows a dash for something that is not a price', () => {
+    expect(formatUnitPriceText('abc', 'L')).toBe('—');
+    expect(formatUnitPriceText('', 'L')).toBe('—');
   });
 });

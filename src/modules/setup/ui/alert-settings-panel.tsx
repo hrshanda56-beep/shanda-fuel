@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { Button, ErrorState, Field, LoadingState, SuccessState } from '@/design-system/primitives';
+import { Modal } from '@/design-system/modal';
+import { Button, ErrorState, LoadingState, SuccessState } from '@/design-system/primitives';
+import { CardRow, CardRows, SectionCard } from '@/design-system/section-card';
 
-import { SectionCard } from '@/design-system/section-card';
-
+import { cleanMinimum, daysLabel } from '../alert-settings-checks';
 import { friendlySetupError } from '../guided-setup';
+import { AlertSettingsWizard, type ReminderValues } from './alert-settings-wizard';
 
 type Loaded = {
   settings: {
@@ -19,15 +21,10 @@ type Loaded = {
   canManage: boolean;
 };
 
-const whole = (text: string, min: number, max: number): number | null => {
-  if (!/^\d+$/.test(text.trim())) return null;
-  const value = Number(text.trim());
-  return value >= min && value <= max ? value : null;
-};
-
 /**
  * When reminders start. They warn people; they never block any work. Until the organisation saves
- * its own numbers, the starting values shown here apply.
+ * its own numbers, the starting values shown here apply. The settings are listed; "Change reminders"
+ * opens a guide that asks about one setting at a time.
  */
 export function AlertSettingsPanel({
   tenantId,
@@ -37,10 +34,7 @@ export function AlertSettingsPanel({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [dueSoon, setDueSoon] = useState('');
-  const [posLag, setPosLag] = useState('');
-  const [grace, setGrace] = useState('');
-  const [minimum, setMinimum] = useState('');
+  const [open, setOpen] = useState(false);
   const key = useRef<string | null>(null);
 
   const load = useCallback(async () => {
@@ -54,10 +48,6 @@ export function AlertSettingsPanel({
       if (!response.ok)
         throw new Error(result.message ?? 'The reminder settings could not be loaded.');
       setLoaded(result);
-      setDueSoon(String(result.settings.dueSoonDays));
-      setPosLag(String(result.settings.posSettlementLagDays));
-      setGrace(String(result.settings.reportGraceDays));
-      setMinimum(result.settings.cashShortageMinimum);
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : 'The reminder settings could not be loaded.',
@@ -69,18 +59,8 @@ export function AlertSettingsPanel({
     void Promise.resolve().then(load);
   }, [load]);
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function save(values: ReminderValues) {
     if (!loaded || !stationId) return;
-    const days = whole(dueSoon, 1, 60);
-    const lag = whole(posLag, 0, 30);
-    const late = whole(grace, 0, 14);
-    const amount = minimum.trim().replace(/,/g, '');
-    if (days === null) return setError('Invoices due soon: enter a number of days from 1 to 60.');
-    if (lag === null) return setError('Card payments: enter a number of days from 0 to 30.');
-    if (late === null) return setError('Daily reports: enter a number of days from 0 to 14.');
-    if (!/^\d+(?:\.\d{1,4})?$/.test(amount))
-      return setError('Cash shortage: enter an amount such as 5.');
     setBusy(true);
     setError(null);
     setSaved(false);
@@ -88,10 +68,10 @@ export function AlertSettingsPanel({
       commandType: 'SetAlertSettings',
       tenantId,
       stationId,
-      dueSoonDays: days,
-      posSettlementLagDays: lag,
-      reportGraceDays: late,
-      cashShortageMinimum: amount,
+      dueSoonDays: Number(values.dueSoon.trim()),
+      posSettlementLagDays: Number(values.posLag.trim()),
+      reportGraceDays: Number(values.grace.trim()),
+      cashShortageMinimum: cleanMinimum(values.minimum),
       ...(loaded.version !== null ? { expectedVersion: loaded.version } : {}),
     };
     key.current ??= crypto.randomUUID();
@@ -109,6 +89,7 @@ export function AlertSettingsPanel({
         return;
       }
       key.current = null;
+      setOpen(false);
       setSaved(true);
       await load();
     } catch {
@@ -128,6 +109,7 @@ export function AlertSettingsPanel({
     );
   }
   const editable = loaded.canManage && Boolean(stationId);
+  const { settings } = loaded;
 
   return (
     <SectionCard
@@ -138,77 +120,72 @@ export function AlertSettingsPanel({
           ? ' You have not changed these yet, so the starting values apply.'
           : ''
       }`}
+      action={
+        editable ? (
+          <Button
+            aria-haspopup="dialog"
+            onClick={() => {
+              setError(null);
+              setSaved(false);
+              setOpen(true);
+            }}
+          >
+            Change reminders
+          </Button>
+        ) : null
+      }
     >
       {!loaded.canManage ? (
         <p className="sc-message">Only the owner or an administrator can change these.</p>
       ) : !stationId ? (
         <p className="sc-message">Choose a station at the top of the page to save changes.</p>
       ) : null}
-      {error ? <ErrorState message={error} /> : null}
+      {error && !open ? <ErrorState message={error} /> : null}
       {saved ? (
         <SuccessState title="Saved" message="Reminders will use these numbers from now on." />
       ) : null}
-      <form onSubmit={save} className="sc-form">
-        <div className="sc-form-grid">
-          <Field
-            id="alert-due-soon"
-            label="Warn about supplier invoices due within (days)"
-            hint="Invoices falling due in this many days show as “due soon”."
-          >
-            <input
-              id="alert-due-soon"
-              value={dueSoon}
-              onChange={(e) => setDueSoon(e.target.value)}
-              inputMode="numeric"
-              disabled={!editable}
-            />
-          </Field>
-          <Field
-            id="alert-pos-lag"
-            label="Card and mobile payments are late after (days)"
-            hint="If a card or mobile payment has not been matched to a payout by then, it is flagged."
-          >
-            <input
-              id="alert-pos-lag"
-              value={posLag}
-              onChange={(e) => setPosLag(e.target.value)}
-              inputMode="numeric"
-              disabled={!editable}
-            />
-          </Field>
-          <Field
-            id="alert-grace"
-            label="A daily report is late after (days)"
-            hint="0 flags a report the day after the day worked; larger numbers allow more time."
-          >
-            <input
-              id="alert-grace"
-              value={grace}
-              onChange={(e) => setGrace(e.target.value)}
-              inputMode="numeric"
-              disabled={!editable}
-            />
-          </Field>
-          <Field
-            id="alert-cash-minimum"
-            label="Ignore cash shortages smaller than (USD)"
-            hint="Tiny differences are not worth a reminder."
-          >
-            <input
-              id="alert-cash-minimum"
-              value={minimum}
-              onChange={(e) => setMinimum(e.target.value)}
-              inputMode="decimal"
-              disabled={!editable}
-            />
-          </Field>
-        </div>
-        <div className="sc-form-actions">
-          <Button type="submit" loading={busy} disabled={!editable}>
-            Save reminders
-          </Button>
-        </div>
-      </form>
+      <CardRows label="Reminder settings">
+        <CardRow
+          title="Supplier invoices due soon"
+          detail={`Warn ${daysLabel(settings.dueSoonDays)} before they are due`}
+        />
+        <CardRow
+          title="Card and mobile payments"
+          detail={`Late after ${daysLabel(settings.posSettlementLagDays)}`}
+        />
+        <CardRow
+          title="Daily reports"
+          detail={`Late after ${daysLabel(settings.reportGraceDays)}`}
+        />
+        <CardRow
+          title="Cash shortages"
+          detail={`Ignore shortages smaller than US$${settings.cashShortageMinimum}`}
+        />
+      </CardRows>
+      <Modal
+        open={open}
+        onClose={() => !busy && setOpen(false)}
+        title="Change reminders"
+        presentation="page"
+        backLabel="Settings"
+        size="sm"
+        dismissible={!busy}
+      >
+        {open ? (
+          <AlertSettingsWizard
+            current={{
+              dueSoon: String(settings.dueSoonDays),
+              posLag: String(settings.posSettlementLagDays),
+              grace: String(settings.reportGraceDays),
+              minimum: settings.cashShortageMinimum,
+            }}
+            busy={busy}
+            error={error}
+            onCancel={() => setOpen(false)}
+            onSubmit={(values) => void save(values)}
+          />
+        ) : null}
+      </Modal>
     </SectionCard>
   );
 }

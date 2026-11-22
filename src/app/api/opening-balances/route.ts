@@ -8,6 +8,7 @@ import {
 } from '../../../modules/opening-balances/commands';
 import {
   getOpeningBalanceBatchFromRequest,
+  getOpeningBalanceOptionsFromRequest,
   listOpeningBalanceBatchesFromRequest,
 } from '../../../modules/opening-balances/queries';
 import { AppError } from '../../../platform/errors';
@@ -25,6 +26,12 @@ export const GET = withRequestObservability(async (request: Request): Promise<Re
     const tenantId = params.get('tenantId');
     if (!tenantId) throw new AppError('VALIDATION_FAILED', 'tenantId is required');
     const batchId = params.get('batchId');
+    const optionsFor = params.get('optionsFor');
+    if (optionsFor) {
+      return json({
+        options: await getOpeningBalanceOptionsFromRequest(request, tenantId, optionsFor),
+      });
+    }
     return json(
       batchId
         ? await getOpeningBalanceBatchFromRequest(request, tenantId, batchId)

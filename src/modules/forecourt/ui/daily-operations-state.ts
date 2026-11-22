@@ -20,6 +20,60 @@ export function liveLitresSold(opening: string, closing: string): string | null 
   return sumDecimals([close, `-${open}`]);
 }
 
+/**
+ * Sales value as the closing reading is typed: litres sold times the price per litre, in exact
+ * decimals (no floating point). Null until both are plain numbers or when litres are negative; the
+ * saved figure comes from the server and replaces this after a save.
+ */
+export function liveSalesValue(
+  litres: string | null | undefined,
+  unitPrice: string | null | undefined,
+): string | null {
+  const l = litres?.trim() ?? '';
+  const p = unitPrice?.trim() ?? '';
+  if (!DECIMAL_TEXT.test(l) || !DECIMAL_TEXT.test(p)) return null;
+  const [li, lf = ''] = l.split('.');
+  const [pi, pf = ''] = p.split('.');
+  const scale = lf.length + pf.length;
+  const digits = (BigInt(li + lf) * BigInt(pi + pf)).toString().padStart(scale + 1, '0');
+  return scale === 0 ? digits : `${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
+}
+
+export type LiveSalesFigures = Readonly<{
+  expected: string;
+  accounted: string;
+  difference: string;
+}>;
+
+/**
+ * The "This shift" sales totals as the person types. Expected sales start from the saved total and
+ * move by however much each pump's live value differs from what was saved for it (so pumps with
+ * more than one price period stay right); accounted for is the payments typed so far.
+ */
+export function liveSalesFigures(
+  savedExpected: string,
+  readings: ReadonlyArray<{
+    openingReading: string;
+    closingReading: string;
+    unitPrice?: string | null;
+    salesValue?: string | null;
+  }>,
+  payments: ReadonlyArray<{ amount: string }>,
+): LiveSalesFigures {
+  const moves = readings.flatMap((reading) => {
+    const litres = liveLitresSold(reading.openingReading, reading.closingReading);
+    if (litres === null || litres.startsWith('-')) return [];
+    const value = liveSalesValue(litres, reading.unitPrice);
+    if (value === null) return [];
+    return [value, `-${reading.salesValue?.trim() || '0'}`];
+  });
+  const expected = sumDecimals([savedExpected, ...moves]);
+  const accounted = sumDecimals(
+    payments.map((item) => item.amount.trim()).filter((value) => DECIMAL_TEXT.test(value)),
+  );
+  return { expected, accounted, difference: sumDecimals([accounted, `-${expected}`]) };
+}
+
 export type LiveCashFigures = Readonly<{
   expected: string;
   paidOut: string;
@@ -103,7 +157,11 @@ export function dailyOperationsStatusLabel(state: DailyOperationsState): string 
 /** Where a person can go to put a problem right: a step of this workspace, or another page. */
 export type DailyOperationsFix =
   | Readonly<{ kind: 'link'; label: string; href: string }>
-  | Readonly<{ kind: 'step'; label: string; step: number }>;
+  | Readonly<{ kind: 'step'; label: string; step: number }>
+  /** Closes the shift on this page, so the person need not go anywhere else. */
+  | Readonly<{ kind: 'close-shift'; label: string }>
+  /** Marks this shift as not operated, for a shift nobody worked. */
+  | Readonly<{ kind: 'mark-not-operated'; label: string }>;
 
 export type DailyOperationsProblem = Readonly<{ message: string; fix?: DailyOperationsFix }>;
 
@@ -124,7 +182,58 @@ export function dailyOperationsProblem(
   status: number,
   code: string | undefined,
   message: string | undefined,
+  context?: Readonly<{
+    attendantCount?: number;
+    /** The shift's state, and whether the person may mark it not operated (the server only allows a shift that has not started). */
+    shiftState?: string;
+    canMarkNotOperated?: boolean;
+    /** The server's error details, such as `{ reason: 'METER_NOT_SET_UP' }`. */
+    details?: Record<string, unknown>;
+    /** The station being closed, so the link opens that station's setup straight away. */
+    stationId?: string;
+    /** The company, so a link to another shift can be built. */
+    tenantId?: string;
+  }>,
 ): DailyOperationsProblem {
+  // Matched by the server's reason when it was sent, and by the wording when only the message is
+  // known, so every screen that shows this block offers the same way out.
+  if (
+    context?.details?.reason === 'METER_NOT_SET_UP' ||
+    /not set up as working for this shift/i.test(message ?? '')
+  ) {
+    const detailStation = context?.details?.stationId;
+    const stationId =
+      context?.stationId ?? (typeof detailStation === 'string' ? detailStation : undefined);
+    return {
+      message: message ?? 'A pump is not set up for this shift.',
+      fix: link(
+        'Set the meter start date',
+        stationId
+          ? `/settings?tab=stations&setup=${encodeURIComponent(stationId)}&focus=meter-start`
+          : '/settings?tab=stations',
+      ),
+    };
+  }
+  // Another shift is in the way: say which one, and open it so the person can deal with it.
+  if (context?.details?.reason === 'SHIFT_OVERLAP') {
+    const dayId = context.details.blockingBusinessDayId;
+    const shiftId = context.details.blockingShiftId;
+    return {
+      message: message ?? 'Another shift at this station is in the way.',
+      fix:
+        context.tenantId &&
+        context.stationId &&
+        typeof dayId === 'string' &&
+        typeof shiftId === 'string'
+          ? link(
+              context.details.blockingState === 'COMPLETED'
+                ? 'Look at that shift'
+                : 'Open that shift',
+              `/operations/daily?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: dayId, shiftId }).toString()}`,
+            )
+          : undefined,
+    };
+  }
   const a12Message = mapA12OperatorError(code, message);
   if (a12Message)
     return { message: a12Message, fix: link('Open inventory valuation', '/inventory/valuation') };
@@ -145,9 +254,28 @@ export function dailyOperationsProblem(
   // The server states why the shift cannot be closed, and what to do, in its own words.
   if (/^This shift cannot be closed yet/i.test(text)) return { message: text };
   if (/sealed meter segments|meter-close boundary/i.test(text)) {
+    if (
+      context?.attendantCount === 0 &&
+      context.shiftState === 'PLANNED' &&
+      context.canMarkNotOperated === true
+    ) {
+      return {
+        message:
+          'No one worked this shift, so there are no pump readings to close. If the shift did not run, mark it as not operated. Nothing was changed.',
+        fix: { kind: 'mark-not-operated', label: 'Mark as not operated' },
+      };
+    }
+    if (context?.attendantCount === 0) {
+      return {
+        message:
+          'This shift cannot be closed yet because no pump readings have been submitted for it. Enter the pump readings and submit them before it can be closed. Nothing was changed.',
+        fix: step('Go to pump readings', 1),
+      };
+    }
     return {
       message:
         'This shift cannot be closed yet because no pump readings have been submitted for it. Open the shift figures, enter the pump readings and submit them, then press Close Shift again. Nothing was changed.',
+      fix: step('Go to pump readings', 1),
     };
   }
   if (/meter-unavailable exception/i.test(text)) {
@@ -159,7 +287,8 @@ export function dailyOperationsProblem(
   if (/no matching sealed meter-segment evidence/i.test(text)) {
     return {
       message:
-        'This shift has not been closed yet, so there is nothing to approve. Ask the supervisor to press Close Shift on the shift, then approve again.',
+        'This shift has not been closed yet, so there is nothing to approve. Press Close Shift to close it, then approve again.',
+      fix: { kind: 'close-shift', label: 'Close Shift' },
     };
   }
   if (/sealed meter segment does not match/i.test(text)) {
@@ -269,8 +398,9 @@ export function dailyOperationsProblem(
 /** The page that puts a problem right, for screens that only have the message text. */
 export function dailyOperationsLinkFix(
   message: string | undefined,
+  stationId?: string,
 ): Extract<DailyOperationsFix, { kind: 'link' }> | undefined {
-  const fix = dailyOperationsProblem(0, undefined, message).fix;
+  const fix = dailyOperationsProblem(0, undefined, message, { stationId }).fix;
   return fix?.kind === 'link' ? fix : undefined;
 }
 
@@ -280,4 +410,25 @@ export function mapDailyOperationsError(
   message: string | undefined,
 ): string {
   return dailyOperationsProblem(status, code, message).message;
+}
+
+/** The part of the overview that says whether a closed day can be locked right now. */
+export type LockCheckOverview = Readonly<{
+  lockBlockedReason?: string | null;
+  actions: Readonly<{ LockBusinessDay: Readonly<{ permissionGranted: boolean }> }>;
+  selectedBusinessDay?: Readonly<{ id: string; state: string; version: number }>;
+}>;
+
+/**
+ * The day to lock straight after an approval, or null. The day must be closed, nothing may block
+ * the lock, and the person must be allowed to lock (only the owner and the administrator are).
+ */
+export function dayReadyToLock(
+  overview: LockCheckOverview,
+): { id: string; version: number } | null {
+  const day = overview.selectedBusinessDay;
+  if (!day || day.state !== 'CLOSED') return null;
+  if (overview.lockBlockedReason) return null;
+  if (!overview.actions.LockBusinessDay.permissionGranted) return null;
+  return { id: day.id, version: day.version };
 }

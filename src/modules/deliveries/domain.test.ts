@@ -82,10 +82,10 @@ describe('checkCompartments', () => {
           compartment({ compartmentNumber: 2 }),
         ],
       }),
-    ).toThrow(/litres received/);
+    ).toThrow(/received/);
     expect(() =>
       checkCompartments({ ...base, compartments: [compartment({ noteLitres: '4000' })] }),
-    ).toThrow(/litres on the note/);
+    ).toThrow(/on the note/);
   });
 
   it('rejects empty, duplicated or out-of-range compartments', () => {

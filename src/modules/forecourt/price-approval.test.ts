@@ -7,6 +7,7 @@ import { createTrustedActor } from './trusted-actor';
 const tenantId = '11111111-1111-4111-8111-111111111111';
 const stationId = '22222222-2222-4222-8222-222222222222';
 const memberId = '33333333-3333-4333-8333-333333333333';
+const ownerId = '88888888-8888-4888-8888-888888888888';
 
 const actor = createTrustedActor({
   transaction: createTrustedTenantTransactionContext({
@@ -49,5 +50,34 @@ describe('approving your own price change', () => {
     const approved = approvePriceChange(pending, actor, '2026-10-26T08:00:00.000Z', false);
     expect(approved.state).toBe('APPROVED');
     expect(approved.approvedBy).toBe(memberId);
+  });
+});
+
+describe('a supervisor asks, the owner approves', () => {
+  const ownerActor = createTrustedActor({
+    transaction: createTrustedTenantTransactionContext({
+      tenantId,
+      actorId: ownerId,
+      membershipId: ownerId,
+      requestId: '99999999-9999-4999-8999-999999999999',
+    }),
+    actorId: ownerId,
+    membershipId: ownerId,
+    tenantId,
+    stationId,
+    legalEntityId: '55555555-5555-4555-8555-555555555555',
+  });
+
+  it('lets a different member (the owner) approve a request made by the supervisor', () => {
+    const approved = approvePriceChange(pending, ownerActor, '2026-10-26T08:00:00.000Z', true);
+    expect(approved.state).toBe('APPROVED');
+    expect(approved.approvedBy).toBe(ownerId);
+    expect(approved.requestedBy).toBe(memberId);
+  });
+
+  it('still refuses the supervisor approving their own request while an owner exists', () => {
+    expect(() => approvePriceChange(pending, actor, '2026-10-26T08:00:00.000Z', true)).toThrow(
+      /requester/,
+    );
   });
 });

@@ -442,7 +442,7 @@ async function sidewaysOverflow(page: Page) {
       const box = element.getBoundingClientRect();
       if (box.width <= 1 || box.height <= 1) continue;
       const style = getComputedStyle(element);
-      const scrollContainer = element.closest<HTMLElement>('.pill-group, .profit-tabs');
+      const scrollContainer = element.closest<HTMLElement>('.pill-group, .ds-tabs');
       if (scrollContainer && getComputedStyle(scrollContainer).overflowX === 'auto') continue;
       const scrolls =
         /(auto|scroll)/.test(style.overflowX) && element.scrollWidth > element.clientWidth + 1;
@@ -599,7 +599,9 @@ test.describe('click targets', () => {
     await page.goto('/foundation');
 
     const sidebar = page.locator('.shell-sidebar');
-    expect(await cursorOver(page, sidebar.getByRole('link', { name: 'Reports' }))).toBe('pointer');
+    expect(await cursorOver(page, sidebar.getByRole('button', { name: 'Reports' }))).toBe(
+      'pointer',
+    );
     expect(await cursorOver(page, sidebar.getByRole('button', { name: 'Operations' }))).toBe(
       'pointer',
     );

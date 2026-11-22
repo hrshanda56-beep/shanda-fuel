@@ -149,10 +149,10 @@ test.describe('Cash workspace', () => {
     await expect(deposit).toContainText('USD 100.00');
     await expect(deposit).toContainText('On its way to the bank');
 
-    // Forms live in a side sheet opened from the action bar.
+    // Each cash job is a page guide opened from the action bar: one question per screen.
     await actionBar(page).getByRole('button', { name: 'Receive cash' }).click();
     const sheet = page.getByRole('dialog', { name: 'Receive cash' });
-    await expect(sheet.getByRole('button', { name: 'Receive cash', exact: true })).toBeVisible();
+    await expect(sheet.getByRole('heading', { name: 'Which cash has arrived?' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
     await actionBar(page)
@@ -161,7 +161,7 @@ test.describe('Cash workspace', () => {
     await expect(
       page
         .getByRole('dialog', { name: 'Confirm bank deposits' })
-        .getByRole('button', { name: 'Confirm deposit' }),
+        .getByRole('heading', { name: 'What amount does the bank show?' }),
     ).toBeVisible();
   });
 
@@ -233,9 +233,14 @@ test.describe('Cash workspace', () => {
     await receiveSheet
       .getByRole('combobox', { name: 'Cash to receive' })
       .selectOption('collection-1');
+    await receiveSheet.getByRole('button', { name: 'Continue' }).click();
     await receiveSheet
       .getByRole('combobox', { name: 'Receiving location' })
       .selectOption('location-2');
+    await receiveSheet.getByRole('button', { name: 'Continue' }).click();
+    await expect(
+      receiveSheet.getByRole('heading', { name: 'Check the cash received' }),
+    ).toBeVisible();
     await receiveSheet.getByRole('button', { name: 'Receive cash', exact: true }).click();
 
     await expect
@@ -272,17 +277,59 @@ test.describe('Cash workspace', () => {
     await collectSheet
       .getByRole('combobox', { name: 'Shift cash' })
       .selectOption('reconciliation-1');
+    await collectSheet.getByRole('button', { name: 'Continue' }).click();
     await collectSheet
       .getByRole('combobox', { name: 'Where the cash is' })
       .selectOption('location-1');
+    await collectSheet.getByRole('button', { name: 'Continue' }).click();
     // Choosing a shift fills in the amount available; it can still be changed.
     await expect(collectSheet.getByLabel('Amount')).toHaveValue('1000.00');
-    await collectSheet.getByLabel('Reference').fill('COL-002');
     await collectSheet.getByLabel('Amount').fill('25.00');
+    await collectSheet.getByRole('button', { name: 'Continue' }).click();
+    await collectSheet.getByLabel('Reference').fill('COL-002');
+    await collectSheet.getByRole('button', { name: 'Continue' }).click();
     await collectSheet.getByRole('button', { name: 'Collect cash', exact: true }).click();
 
     await expect(page.getByText('The cash collection is stale.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Update and keep my details' })).toBeVisible();
+    // The answers are still there: the guide stays on its last screen.
+    await expect(collectSheet.getByRole('heading', { name: 'Check the collection' })).toBeVisible();
+  });
+
+  test('says why the server refused a save, and keeps the person on the check screen', async ({
+    page,
+  }) => {
+    await mockCash(page);
+    await page.route('**/api/cash/commands', (route) =>
+      route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'VALIDATION_FAILED',
+          message: 'Attach the deposit slip before confirming this deposit with the bank.',
+        }),
+      }),
+    );
+    await page.goto('/stations/station-1/cash?tenantId=tenant-1');
+    await actionBar(page).getByRole('button', { name: 'Collect cash' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Collect cash' });
+    await sheet.getByRole('combobox', { name: 'Shift cash' }).selectOption('reconciliation-1');
+    await sheet.getByRole('button', { name: 'Continue' }).click();
+    await sheet.getByRole('combobox', { name: 'Where the cash is' }).selectOption('location-1');
+    await sheet.getByRole('button', { name: 'Continue' }).click();
+    await sheet.getByRole('button', { name: 'Continue' }).click();
+    await sheet.getByLabel('Reference').fill('COL-003');
+    await sheet.getByRole('button', { name: 'Continue' }).click();
+    await sheet.getByRole('button', { name: 'Collect cash', exact: true }).click();
+
+    // The server's own words, not "some details are not right".
+    await expect(
+      page
+        .getByText('Attach the deposit slip before confirming this deposit with the bank.')
+        .first(),
+    ).toBeVisible();
+    await expect(page.getByText('Some of the details are not right')).toHaveCount(0);
+    await expect(sheet.getByRole('heading', { name: 'Check the collection' })).toBeVisible();
   });
 
   test('a view-only role sees the cash position but no cash actions', async ({ page }) => {
@@ -304,18 +351,30 @@ test.describe('Cash workspace', () => {
     await expect(page.getByRole('heading', { name: 'No cash actions available' })).toBeVisible();
   });
 
-  test('asks before discarding an unsaved sheet', async ({ page }) => {
+  test('checks each answer on its own screen and goes back without losing the others', async ({
+    page,
+  }) => {
     await mockCash(page);
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
     await actionBar(page).getByRole('button', { name: 'Collect cash' }).click();
     const sheet = page.getByRole('dialog', { name: 'Collect cash' });
-    await sheet.getByLabel('Reference').fill('COL-003');
-    await page.keyboard.press('Escape');
-    await expect(sheet.getByText('Discard what you have entered?')).toBeVisible();
-    await sheet.getByRole('button', { name: 'Keep editing' }).click();
-    await expect(sheet.getByLabel('Reference')).toHaveValue('COL-003');
-    await page.keyboard.press('Escape');
-    await sheet.getByRole('button', { name: 'Discard' }).click();
+    // The only approved shift is already chosen, so the first screen just confirms it.
+    await sheet.getByRole('combobox', { name: 'Shift cash' }).selectOption('reconciliation-1');
+    await sheet.getByRole('button', { name: 'Continue' }).click();
+    await sheet.getByRole('combobox', { name: 'Where the cash is' }).selectOption('location-1');
+    await sheet.getByRole('button', { name: 'Continue' }).click();
+    // More than the shift has is refused.
+    await sheet.getByLabel('Amount').fill('1500');
+    await sheet.getByRole('button', { name: 'Continue' }).click();
+    await expect(sheet.getByText(/more than the 1000.00 available/)).toBeVisible();
+    await sheet.getByLabel('Amount').fill('400');
+    await sheet.getByRole('button', { name: 'Back' }).click();
+    await expect(sheet.getByRole('combobox', { name: 'Where the cash is' })).toHaveValue(
+      'location-1',
+    );
+    // Cancelling on the first screen closes the guide.
+    await sheet.getByRole('button', { name: 'Back' }).click();
+    await sheet.getByRole('button', { name: 'Cancel' }).click();
     await expect(sheet).toBeHidden();
   });
 
@@ -327,12 +386,14 @@ test.describe('Cash workspace', () => {
     await page.goto('/stations/station-1/cash?tenantId=tenant-1');
     await expect(page.getByRole('row', { name: /COL-001/ })).toBeVisible();
 
-    // The row's own button opens the sheet with the cash and its full amount already filled in.
+    // The row's own button opens the guide with the cash and its full amount already filled in.
     await page
       .getByRole('row', { name: /COL-001/ })
       .getByRole('button', { name: 'Bank it' })
       .click();
     const sheet = page.getByRole('dialog', { name: 'Bank cash' });
+    await sheet.getByRole('combobox', { name: 'Bank account' }).selectOption('bank-account-1');
+    await sheet.getByRole('button', { name: 'Continue' }).click();
     await expect(sheet.getByRole('combobox', { name: /^Cash\b/ })).toHaveValue('collection-1');
     await expect(sheet.getByLabel('Amount')).toHaveValue('700.00');
   });
@@ -346,6 +407,7 @@ test.describe('Cash workspace', () => {
       .getByRole('button', { name: 'Confirm' })
       .click();
     const sheet = page.getByRole('dialog', { name: 'Confirm bank deposits' });
+    // The deposit is already chosen, so the first question is the amount the bank shows.
     await expect(sheet.getByLabel('Amount the bank shows')).toHaveValue('100.00');
   });
 

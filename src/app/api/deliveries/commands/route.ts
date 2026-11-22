@@ -3,7 +3,10 @@ import { requireAuthenticatedActor } from '../../../../modules/identity';
 import {
   recordDeliveryCompartmentsFromRequest,
   recordDeliveryDriverConfirmationFromRequest,
+  recordDeliveryLossClaimFromRequest,
   recordDeliveryWaterTestFromRequest,
+  reviewDeliveryLossClaimFromRequest,
+  setDeliveryNoPurchaseOrderReasonFromRequest,
   setWaterTestRequiredFromRequest,
 } from '../../../../modules/deliveries';
 import { AppError } from '../../../../platform/errors';
@@ -14,6 +17,9 @@ const COMMANDS = [
   'RecordDeliveryCompartments',
   'RecordDeliveryWaterTest',
   'RecordDeliveryDriverConfirmation',
+  'RecordDeliveryLossClaim',
+  'ReviewDeliveryLossClaim',
+  'SetDeliveryNoPurchaseOrderReason',
   'SetWaterTestRequired',
 ] as const;
 
@@ -45,6 +51,15 @@ export const POST = withRequestObservability(
           break;
         case 'RecordDeliveryDriverConfirmation':
           result = await recordDeliveryDriverConfirmationFromRequest(request, body);
+          break;
+        case 'RecordDeliveryLossClaim':
+          result = await recordDeliveryLossClaimFromRequest(request, body);
+          break;
+        case 'ReviewDeliveryLossClaim':
+          result = await reviewDeliveryLossClaimFromRequest(request, body);
+          break;
+        case 'SetDeliveryNoPurchaseOrderReason':
+          result = await setDeliveryNoPurchaseOrderReasonFromRequest(request, body);
           break;
         case 'SetWaterTestRequired':
           result = await setWaterTestRequiredFromRequest(request, body);

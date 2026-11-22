@@ -23,12 +23,27 @@ it('adapts the transaction client without changing the BEGIN implementation', as
   expect(unsafe).toHaveBeenCalledWith('select $1', [42], { prepare: true });
   expect(raw.begin).toBe(begin);
 });
-it('preserves explicit query options and propagates query failures', () => {
+it('prepares parameterised queries even though Drizzle always passes prepare: false for raw SQL', () => {
+  // Drizzle's session calls unsafe(sql, params, { prepare: false }) for every unnamed query, so an
+  // adapter that lets the caller's value win would never prepare anything.
+  const unsafe = vi.fn();
+  const client = preparedDrizzleClient({ unsafe });
+  client.unsafe('select $1', [42], { prepare: false });
+  expect(unsafe).toHaveBeenCalledWith('select $1', [42], { prepare: true });
+});
+it('keeps every other query option and leaves parameterless queries as the caller sent them', () => {
+  const unsafe = vi.fn();
+  const client = preparedDrizzleClient({ unsafe });
+  client.unsafe('select $1', [42], { prepare: false, simple: false });
+  expect(unsafe).toHaveBeenCalledWith('select $1', [42], { prepare: true, simple: false });
+  client.unsafe('select 1', [], { prepare: false });
+  expect(unsafe).toHaveBeenLastCalledWith('select 1', [], { prepare: false });
+});
+it('propagates query failures unchanged', () => {
   const error = new Error('query failed');
   const unsafe = vi.fn((..._args: unknown[]) => {
     throw error;
   });
   const client = preparedDrizzleClient({ unsafe });
   expect(() => client.unsafe('select $1', [42], { prepare: false })).toThrow(error);
-  expect(unsafe).toHaveBeenCalledWith('select $1', [42], { prepare: false });
 });

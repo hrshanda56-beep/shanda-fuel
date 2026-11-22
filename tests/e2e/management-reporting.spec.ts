@@ -122,6 +122,9 @@ test.describe('management reporting surface', () => {
       await page.getByRole('option', { name: 'Last month' }).click();
       await periodDialog.getByRole('button', { name: 'Open report' }).click();
       await expect(page).toHaveURL(/\/reports\/cash-movement\?.*period=last-month/);
+      // The URL changes before the new page has finished loading; wait for its title so the
+      // accessibility check runs on the loaded page, not on the transition.
+      await expect(page).toHaveTitle(/Cash Movement/);
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations).toEqual([]);
     });

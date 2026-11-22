@@ -51,6 +51,13 @@ export function ClerkLoginForm({ next, invited = false }: { next?: string; invit
         Array.isArray(caught.errors)
           ? caught.errors.map((item: { code?: string }) => item?.code)
           : [];
+      // The browser already holds a valid Clerk session (the server briefly failed to see it, so it
+      // showed this form). Clerk refuses a second sign-in, which is not a failure: carry on. A full
+      // page load, not router.push, so the server re-checks the session instead of bouncing back.
+      if (!activatingSession && codes.includes('session_exists')) {
+        window.location.assign(safePostSignInPath(next));
+        return;
+      }
       const invalidCredentials = codes.some((code) =>
         [
           'form_password_incorrect',

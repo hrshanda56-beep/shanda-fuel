@@ -2,6 +2,8 @@ export type CustomerProductBalance = {
   productId: string;
   productCode: string;
   productName: string;
+  /** What the fuel is measured in; litres when absent. */
+  unit?: 'LITRES' | 'KILOGRAMS';
   balanceLitres: string;
   availableLitres: string;
 };
@@ -46,6 +48,7 @@ export type CustomerTransaction = {
   amount: string | null;
   currency: string;
   litres: string | null;
+  unit?: 'LITRES' | 'KILOGRAMS';
   productId: string | null;
   productCode: string | null;
   productName: string | null;

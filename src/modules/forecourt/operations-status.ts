@@ -3,6 +3,7 @@ export const OPERATIONS_CLOSE_STATUSES = [
   'OPEN',
   'IN_PROGRESS',
   'READY_FOR_REVIEW',
+  'READY_TO_CLOSE',
   'CLOSED',
   'BLOCKED',
   'EXCEPTION',
@@ -58,14 +59,12 @@ export function projectOperationsStatus(input: {
   revisionStates: readonly string[];
 }): OperationsStatusProjection {
   const approval = approvalStatus(input.reconciliationStates, input.revisionStates);
-  const hasReviewState = [
-    'READY',
-    'SUBMITTED',
-    'PENDING_APPROVAL',
-    'APPROVED',
-    'POSTED',
-    'LOCKED',
-  ].includes(approval);
+  // Waiting for a reviewer. Once the approval is done there is nothing left to review.
+  const awaitsReview = ['READY', 'SUBMITTED', 'PENDING_APPROVAL'].includes(approval);
+  const isApproved = ['APPROVED', 'POSTED', 'LOCKED'].includes(approval);
+  const shiftStillRunning = input.shiftStates.some((state) =>
+    ['OPEN', 'METER_CLOSED'].includes(state),
+  );
 
   let close: OperationsCloseStatus;
   if (input.businessDayState === 'NOT_STARTED') {
@@ -76,7 +75,12 @@ export function projectOperationsStatus(input: {
     close = 'CLOSED';
   } else if (['RETURNED', 'REJECTED'].includes(approval)) {
     close = 'BLOCKED';
-  } else if (hasReviewState || input.businessDayState === 'OPERATIONS_COMPLETE') {
+  } else if (awaitsReview) {
+    close = 'READY_FOR_REVIEW';
+  } else if (isApproved && !shiftStillRunning) {
+    // Approved, but the day itself has not been closed yet: closing it is the next step.
+    close = 'READY_TO_CLOSE';
+  } else if (input.businessDayState === 'OPERATIONS_COMPLETE') {
     close = 'READY_FOR_REVIEW';
   } else if (
     input.businessDayState === 'OPEN' &&

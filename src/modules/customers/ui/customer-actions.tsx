@@ -10,7 +10,12 @@ import type { CustomerAccount, CustomerSummary } from './types';
 import { InfoTip } from '@/design-system/info-tip';
 
 export type ActionStation = { id: string; name: string; code: string };
-export type ActionProduct = { id: string; code: string; name: string };
+export type ActionProduct = {
+  id: string;
+  code: string;
+  name: string;
+  unit?: 'LITRES' | 'KILOGRAMS';
+};
 
 type Sheet = 'payment' | 'topup' | 'account' | 'suspend' | 'reactivate';
 
@@ -226,10 +231,11 @@ export function CustomerActions({
           'PREPAID_TOPUP',
         );
       } else {
-        const value = parsePositive(litres, 3);
-        if (!value) return setFieldError('Enter the litres paid for, for example 200.');
-        if (!productId) return setFieldError('Choose which fuel the litres are for.');
         const fuel = fuelProducts.find((product) => product.id === productId);
+        const word = fuel?.unit === 'KILOGRAMS' ? 'kilograms' : 'litres';
+        const value = parsePositive(litres, 3);
+        if (!value) return setFieldError(`Enter the ${word} paid for, for example 200.`);
+        if (!productId) return setFieldError('Choose which fuel the quantity is for.');
         await send(
           {
             commandType: 'RecordPrepaidTopUp',
@@ -242,7 +248,7 @@ export function CustomerActions({
             businessDate: date,
             ...entryDetailsFromForm(),
           },
-          `${value} litres of ${fuel?.name ?? 'fuel'} added for ${who}.`,
+          `${value} ${word} of ${fuel?.name ?? 'fuel'} added for ${who}.`,
           'PREPAID_TOPUP',
         );
       }
@@ -461,7 +467,15 @@ export function CustomerActions({
                       }))}
                     />
                   </Field>
-                  <Field id="action-litres" label="Litres paid for" required>
+                  <Field
+                    id="action-litres"
+                    label={
+                      fuelProducts.find((product) => product.id === productId)?.unit === 'KILOGRAMS'
+                        ? 'Kilograms paid for'
+                        : 'Litres paid for'
+                    }
+                    required
+                  >
                     <input
                       id="action-litres"
                       inputMode="decimal"

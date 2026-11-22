@@ -953,6 +953,39 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
       variance_status: 'APPROVED',
       variance_approved_by: ids.finance2Membership,
     });
+
+    // An owner never waits on anyone (DEC-057): the same person, holding an owner role, may
+    // approve and post the invoice they submitted themselves.
+    const d3 = await confirmedDelivery(s1, {
+      unitLandedCost: '1.20000000',
+      totalLandedCost: '1200.0000',
+      currency: 'USD',
+    });
+    const ownInvoice = await supplierCmd(
+      tokens.finance,
+      invoice(s1, {
+        amount: '1200.3600',
+        lines: [fuelLine(d3.deliveryId, '1000.300')],
+        deliveryReferences: [{ stationId: ids.station, deliveryId: d3.deliveryId }],
+      }),
+    );
+    await client.unsafe(`
+      insert into app.membership_role_assignments
+        (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+      values ('${ids.tenant}', '${ids.financeMembership}', 'OWNER', 'LEGAL_ENTITY', '${ids.legal}', null)
+    `);
+    try {
+      const ownerPosted = await post(ownInvoice.json.documentId, tokens.finance, {
+        varianceApprovalReason: 'Owner checked the delivery note',
+      });
+      expect(ownerPosted.status, JSON.stringify(ownerPosted.json)).toBe(200);
+      expect(ownerPosted.json.varianceStatus).toBe('APPROVED');
+    } finally {
+      await client.unsafe(`
+        delete from app.membership_role_assignments
+        where membership_id = '${ids.financeMembership}' and role_code = 'OWNER'
+      `);
+    }
     await setPolicy({ ...fields, toleranceAction: 'FLAG' });
   });
 
@@ -1244,7 +1277,15 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
       expect(rows.map((row) => row.id)).toEqual(expect.arrayContaining([s1, s2]));
       expect(rows.map((row) => row.id)).not.toContain(hidden); // inactive
       expect(rows.map((row) => row.id)).not.toContain(sB); // other tenant
-      for (const row of rows) expect(Object.keys(row).sort()).toEqual(['code', 'id', 'name']);
+      for (const row of rows) {
+        expect(Object.keys(row).sort()).toEqual([
+          'code',
+          'id',
+          'name',
+          'providesFuel',
+          'providesTransport',
+        ]);
+      }
     }
     // Finance can read the supplier reference list without the delivery write permission.
     expect((await get(tokens.finance)).status).toBe(200);
@@ -1482,7 +1523,11 @@ describe('ADR-018 supplier side: delivery supplier, invoice lines, coverage and 
   it('flags over-receipt beyond the tolerance without blocking, and honours the tolerance action', async () => {
     await strictPolicy({ overReceiptToleranceLitres: '5.000' });
     const supplier = await createSupplier('90B0-OVERREC');
-    const d = await confirmedDelivery(supplier, { noteQuantityLitres: '1000.000' }, '1010.000');
+    const d = await confirmedDelivery(
+      supplier,
+      { noteQuantityLitres: '1000.000', varianceCause: 'MEASURING_ERROR' },
+      '1010.000',
+    );
     const status = await client`
       select status from app.fuel_deliveries where id = ${d.deliveryId}`;
     expect(status[0]!.status).toBe('CONFIRMED'); // never blocked at the dock

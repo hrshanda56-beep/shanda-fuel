@@ -9,7 +9,10 @@ import { Modal } from '@/design-system/modal';
 import { useToast } from '@/design-system/feedback-provider';
 
 import type { RoleCode } from '@/modules/authorization';
+import { defaultScopeForRole, scopeChoicesForRole } from '@/modules/staff/role-scopes';
 import type { SettingsView } from '../contracts';
+import { staffInvitationCommand } from '../staff-invite-checks';
+import { STAFF_ROLE_LABELS } from '../staff-role-labels';
 import styles from './settings-workspace.module.css';
 import { matchesStaffScope } from './staff-filter';
 import { formatStaffInvitationMessage } from './staff-invitation-message';
@@ -20,6 +23,8 @@ import {
   stepUpFailureMessage,
 } from './staff-step-up-diagnostics';
 import { InfoTip } from '@/design-system/info-tip';
+import { StaffAccessWizard, type StaffAccessValue } from './staff-access-wizard';
+import { StaffInviteWizard, type StaffInviteValue } from './staff-invite-wizard';
 
 type StaffOverview = NonNullable<SettingsView['staff']>;
 type Role = Exclude<RoleCode, 'OWNER'> | 'OWNER';
@@ -30,23 +35,10 @@ type DeactivationOutcome =
   | { kind: 'provider'; message: string }
   | { kind: 'blocked'; message: string };
 
-const ROLE_LABELS: Record<Role, string> = {
-  OWNER: 'Owner',
-  ADMINISTRATOR: 'Administrator',
-  FINANCE: 'Finance',
-  SUPERVISOR: 'Supervisor',
-  ATTENDANT: 'Attendant',
-  AUDITOR: 'Auditor (read only)',
-  AREA_MANAGER: 'Area manager',
-  CASH_COLLECTOR: 'Cash collector',
-};
+const ROLE_LABELS = STAFF_ROLE_LABELS;
 
 function defaultScope(role: Role) {
-  return role === 'OWNER' || role === 'ADMINISTRATOR' || role === 'AUDITOR'
-    ? 'TENANT'
-    : role === 'FINANCE'
-      ? 'LEGAL_ENTITY'
-      : 'STATION';
+  return defaultScopeForRole(role);
 }
 
 const COMMAND_SUCCESS_MESSAGES: Record<string, string> = {
@@ -86,7 +78,7 @@ function initials(name: string) {
 }
 
 /** Change one active person's role and stations. The server re-checks everything. */
-function EditAccessModal({
+export function EditAccessModal({
   member,
   overview,
   verify,
@@ -100,35 +92,24 @@ function EditAccessModal({
   onSave: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
   const first = member?.assignments?.[0];
-  const [role, setRole] = useState<Role>(first?.role ?? 'ATTENDANT');
-  const [scopeType, setScopeType] = useState<'TENANT' | 'LEGAL_ENTITY' | 'STATION'>(
-    (first?.scopeType as 'TENANT' | 'LEGAL_ENTITY' | 'STATION' | undefined) ?? defaultScope(role),
-  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const role: Role = first?.role ?? 'ATTENDANT';
   const entityOf = (stationId?: string) =>
     overview.scopeOptions.find((option) =>
       option.stations.some((station) => station.id === stationId),
     )?.id;
-  const [legalEntityId, setLegalEntityId] = useState(
-    first?.legalEntityId ??
-      entityOf(first?.stationId) ??
-      (overview.scopeOptions.length === 1 ? (overview.scopeOptions[0]?.id ?? '') : ''),
-  );
-  const [stationIds, setStationIds] = useState<string[]>(
-    (member?.assignments ?? []).flatMap((item) => (item.stationId ? [item.stationId] : [])),
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const entity = overview.scopeOptions.find((option) => option.id === legalEntityId);
+  const initial: StaffAccessValue = {
+    role,
+    scopeType:
+      (first?.scopeType as 'TENANT' | 'LEGAL_ENTITY' | 'STATION' | undefined) ?? defaultScope(role),
+    legalEntityId: first?.legalEntityId ?? entityOf(first?.stationId) ?? '',
+    stationIds: (member?.assignments ?? []).flatMap((item) =>
+      item.stationId ? [item.stationId] : [],
+    ),
+  };
 
-  function changeRole(next: Role) {
-    setRole(next);
-    setScopeType(defaultScope(next));
-    setStationIds([]);
-    if (defaultScope(next) === 'TENANT') setLegalEntityId('');
-  }
-
-  async function save(event: React.FormEvent) {
-    event.preventDefault();
+  async function save(value: StaffAccessValue) {
     setBusy(true);
     setError(undefined);
     try {
@@ -140,10 +121,12 @@ function EditAccessModal({
     }
     const saved = await onSave({
       membershipId: member?.membershipId,
-      assignedRole: role,
-      scopeType,
-      ...(scopeType !== 'TENANT' && legalEntityId ? { legalEntityId } : {}),
-      stationIds: scopeType === 'STATION' ? stationIds : [],
+      assignedRole: value.role,
+      scopeType: value.scopeType,
+      ...(value.scopeType !== 'TENANT' && value.legalEntityId
+        ? { legalEntityId: value.legalEntityId }
+        : {}),
+      stationIds: value.scopeType === 'STATION' ? value.stationIds : [],
     });
     if (!saved) setError('The change was not saved. See the message on the page.');
     setBusy(false);
@@ -152,92 +135,25 @@ function EditAccessModal({
   return (
     <Modal
       open={Boolean(member)}
-      onClose={onClose}
+      onClose={() => !busy && onClose()}
       title={member ? `Edit access for ${member.name}` : 'Edit access'}
-      description="Change the role and the stations this person can work in. It takes effect straight away."
-      presentation="side"
+      presentation="page"
+      backLabel="Staff"
+      size="sm"
+      dismissible={!busy}
     >
-      <form className={styles.staffForm} onSubmit={save}>
-        <label>
-          <span>Role</span>
-          <select value={role} onChange={(event) => changeRole(event.target.value as Role)}>
-            {(Object.keys(ROLE_LABELS) as Role[])
-              .filter((item) => item !== 'OWNER' || overview.canInviteOwner)
-              .map((item) => (
-                <option key={item} value={item}>
-                  {ROLE_LABELS[item]}
-                </option>
-              ))}
-          </select>
-        </label>
-        {role === 'FINANCE' ? (
-          <label>
-            <span>Scope</span>
-            <select
-              value={scopeType}
-              onChange={(event) => {
-                setScopeType(event.target.value as 'LEGAL_ENTITY' | 'STATION');
-                setStationIds([]);
-              }}
-            >
-              <option value="LEGAL_ENTITY">Whole company</option>
-              <option value="STATION">Selected stations</option>
-            </select>
-          </label>
-        ) : null}
-        {scopeType !== 'TENANT' ? (
-          <label>
-            <span>Company</span>
-            <select
-              required
-              value={legalEntityId}
-              onChange={(event) => {
-                setLegalEntityId(event.target.value);
-                setStationIds([]);
-              }}
-            >
-              <option value="">Choose a company</option>
-              {overview.scopeOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        {scopeType === 'STATION' ? (
-          <fieldset className={styles.staffStations}>
-            <legend>Stations</legend>
-            {entity?.stations.length ? (
-              entity.stations.map((station) => (
-                <label key={station.id} className={styles.staffCheck}>
-                  <input
-                    type="checkbox"
-                    checked={stationIds.includes(station.id)}
-                    onChange={() =>
-                      setStationIds((current) =>
-                        current.includes(station.id)
-                          ? current.filter((id) => id !== station.id)
-                          : [...current, station.id],
-                      )
-                    }
-                  />
-                  <span>
-                    {station.name} <small>{station.code}</small>
-                    {station.setup ? <small> · Setting up</small> : null}
-                  </span>
-                </label>
-              ))
-            ) : (
-              <p className={styles.note}>Choose a company to see its stations.</p>
-            )}
-          </fieldset>
-        ) : null}
-        {error ? <p role="alert">{error}</p> : null}
-        <Button type="submit" variant="primary" loading={busy}>
-          Save changes
-        </Button>
-      </form>
+      {member ? (
+        <StaffAccessWizard
+          name={member.name}
+          overview={overview}
+          roleLabels={ROLE_LABELS}
+          initial={initial}
+          busy={busy}
+          error={error}
+          onCancel={onClose}
+          onSubmit={(value) => void save(value)}
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -256,13 +172,6 @@ export function StaffPanel({
   const [query, setQuery] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string>();
-  const [role, setRole] = useState<Role>('ATTENDANT');
-  const [scopeType, setScopeType] = useState<'TENANT' | 'LEGAL_ENTITY' | 'STATION'>(
-    defaultScope('ATTENDANT'),
-  );
-  const [legalEntityId, setLegalEntityId] = useState('');
-  const [stationIds, setStationIds] = useState<string[]>([]);
-  const [deliveryMethod, setDeliveryMethod] = useState<'EMAIL' | 'MANUAL'>('MANUAL');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [manualActivation, setManualActivation] = useState<{
@@ -277,21 +186,6 @@ export function StaffPanel({
   const [deactivationOutcome, setDeactivationOutcome] = useState<DeactivationOutcome>();
   const deactivationInFlight = useRef(false);
   const toast = useToast();
-
-  const legalEntity = useMemo(
-    () => overview.scopeOptions.find((option) => option.id === legalEntityId),
-    [legalEntityId, overview.scopeOptions],
-  );
-
-  function changeRole(nextRole: Role) {
-    setRole(nextRole);
-    const nextScope = defaultScope(nextRole) as 'TENANT' | 'LEGAL_ENTITY' | 'STATION';
-    setScopeType(nextScope);
-    if (nextScope === 'TENANT') {
-      setLegalEntityId('');
-      setStationIds([]);
-    }
-  }
 
   async function command(body: Record<string, unknown>, reload = true) {
     setBusy(true);
@@ -323,23 +217,8 @@ export function StaffPanel({
     }
   }
 
-  async function submitInvite(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const result = await command(
-      {
-        commandType: 'CreateStaffInvitation',
-        invitedName: String(form.get('name') ?? ''),
-        ...(deliveryMethod === 'EMAIL'
-          ? { invitedEmail: String(form.get('email') ?? ''), deliveryMethod }
-          : { deliveryMethod, staffNumber: String(form.get('staffNumber') ?? '').trim() }),
-        assignedRole: role,
-        scopeType,
-        ...(legalEntityId ? { legalEntityId } : {}),
-        stationIds,
-      },
-      false,
-    );
+  async function submitInvite(value: StaffInviteValue) {
+    const result = await command(staffInvitationCommand(value), false);
     if (
       result &&
       typeof result === 'object' &&
@@ -355,7 +234,7 @@ export function StaffPanel({
       setInviteOpen(false);
     } else if (result) {
       const email = typeof result === 'object' ? (result as { delivery?: string }) : {};
-      const address = String(form.get('email') ?? '').trim();
+      const address = value.email;
       // The toast is carried across the reload that shows the new invite.
       if (email.delivery === 'failed') {
         toast.error(
@@ -406,14 +285,6 @@ export function StaffPanel({
     if (!response.ok && !body.clerk_error) throw new Error('Security verification required');
     return body;
   });
-
-  function toggleStation(stationId: string) {
-    setStationIds((current) =>
-      current.includes(stationId)
-        ? current.filter((id) => id !== stationId)
-        : [...current, stationId],
-    );
-  }
 
   function openDeactivation(member: StaffMember) {
     setDeactivationTarget(member);
@@ -533,7 +404,11 @@ export function StaffPanel({
               type="button"
               variant="quiet"
               size="sm"
-              onClick={() => setEditTarget(member)}
+              onClick={() => {
+                // One page at a time: leave the person's page before the access guide opens.
+                setSelectedId(undefined);
+                setEditTarget(member);
+              }}
               disabled={busy || deactivationBusy}
             >
               Edit access
@@ -833,7 +708,9 @@ export function StaffPanel({
         onClose={() => setSelectedId(undefined)}
         title={selectedRow?.name ?? 'Staff member'}
         description={selectedRow?.staffNumber}
-        presentation="side"
+        presentation="page"
+        backLabel="Staff"
+        size="sm"
       >
         {selectedRow ? (
           <div className={styles.staffDetail}>
@@ -889,119 +766,19 @@ export function StaffPanel({
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         title="Invite staff"
+        presentation="page"
+        backLabel="Staff"
         description="Invitations expire after 72 hours and can be resent or revoked."
-        presentation="side"
       >
-        <form className={styles.staffForm} onSubmit={submitInvite}>
-          <label>
-            <span>Name</span>
-            <input name="name" required maxLength={160} />
-          </label>
-          <label>
-            <span>Invite using</span>
-            <select
-              value={deliveryMethod}
-              onChange={(event) => setDeliveryMethod(event.target.value as 'EMAIL' | 'MANUAL')}
-            >
-              <option value="MANUAL">Staff number</option>
-              <option value="EMAIL">Email</option>
-            </select>
-          </label>
-          {deliveryMethod === 'EMAIL' ? (
-            <label>
-              <span>Email</span>
-              <input name="email" type="email" required maxLength={320} />
-            </label>
-          ) : (
-            <label>
-              <span>Staff number (optional)</span>
-              <input
-                name="staffNumber"
-                maxLength={32}
-                minLength={4}
-                autoCapitalize="characters"
-                aria-describedby="staff-number-help"
-              />
-              <small id="staff-number-help">
-                Leave blank to generate a staff number automatically. Use 4–32 letters, numbers,
-                hyphens or underscores. This is their login username.
-              </small>
-            </label>
-          )}
-          <label>
-            <span>Role</span>
-            <select value={role} onChange={(event) => changeRole(event.target.value as Role)}>
-              {(Object.keys(ROLE_LABELS) as Role[])
-                .filter((item) => item !== 'OWNER' || overview.canInviteOwner)
-                .map((item) => (
-                  <option key={item} value={item}>
-                    {ROLE_LABELS[item]}
-                  </option>
-                ))}
-            </select>
-          </label>
-          {role !== 'OWNER' && role !== 'ADMINISTRATOR' ? (
-            <label>
-              <span>Scope</span>
-              <select
-                value={scopeType}
-                onChange={(event) => {
-                  const next = event.target.value as 'LEGAL_ENTITY' | 'STATION';
-                  setScopeType(next);
-                  setStationIds([]);
-                }}
-              >
-                {role === 'FINANCE' ? <option value="LEGAL_ENTITY">Legal entity</option> : null}
-                <option value="STATION">Selected stations</option>
-              </select>
-            </label>
-          ) : null}
-          {scopeType !== 'TENANT' ? (
-            <label>
-              <span>Legal entity</span>
-              <select
-                required
-                value={legalEntityId}
-                onChange={(event) => {
-                  setLegalEntityId(event.target.value);
-                  setStationIds([]);
-                }}
-              >
-                <option value="">Choose a legal entity</option>
-                {overview.scopeOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {scopeType === 'STATION' ? (
-            <fieldset className={styles.staffStations}>
-              <legend>Stations</legend>
-              {legalEntity?.stations.length ? (
-                legalEntity.stations.map((station) => (
-                  <label key={station.id} className={styles.staffCheck}>
-                    <input
-                      type="checkbox"
-                      checked={stationIds.includes(station.id)}
-                      onChange={() => toggleStation(station.id)}
-                    />
-                    <span>
-                      {station.name} <small>{station.code}</small>
-                      {station.setup ? <small> · Setting up</small> : null}
-                    </span>
-                  </label>
-                ))
-              ) : (
-                <p className={styles.note}>Choose a legal entity to see stations.</p>
-              )}
-            </fieldset>
-          ) : null}
-          <Button type="submit" variant="primary" loading={busy}>
-            {deliveryMethod === 'EMAIL' ? 'Send invitation' : 'Generate manual activation'}
-          </Button>
-        </form>
+        {inviteOpen ? (
+          <StaffInviteWizard
+            overview={overview}
+            roleLabels={ROLE_LABELS}
+            busy={busy}
+            onCancel={() => setInviteOpen(false)}
+            onSubmit={(value) => void submitInvite(value)}
+          />
+        ) : null}
       </Modal>
 
       <EditAccessModal

@@ -22,6 +22,27 @@ export function formatMoney(value: string, currency = 'USD'): string {
   );
 }
 
+/** A unit price split for display: "US$1.65" and "/L". Unit is "L" or "kg". */
+export function formatUnitPrice(value: string, unit: 'L' | 'kg'): { amount: string; unit: string } {
+  const money = formatMoney(value);
+  return { amount: money === '—' ? money : money.replace(/^USD /, 'US$'), unit: `/${unit}` };
+}
+
+/**
+ * A unit price as a person reads it: "US$1.50/L". Cents are always shown, and extra decimals only
+ * when the price really has them (a stored "1.575000" is "US$1.575/L", never "1.575000" and never
+ * rounded to "1.58"). An unreadable value is shown as a dash.
+ */
+export function formatUnitPriceText(value: string, unit: string): string {
+  const trimmed = value.trim();
+  if (!DECIMAL_PATTERN.test(trimmed)) return '—';
+  const exact = new Decimal(trimmed);
+  const places = Math.max(2, exact.decimalPlaces());
+  const [whole = '', fraction = ''] = exact.toFixed(places).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `US$${grouped}.${fraction}/${unit}`;
+}
+
 /**
  * A saved money value as it should appear in an input box: "450.0000" becomes "450.00". Only zeros
  * past the cents are dropped, so the value is never changed and saving it again changes nothing.
@@ -56,6 +77,48 @@ export function formatLitres(value: string): string {
   const trimmed = fixed.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1');
   const [whole = '', fraction] = trimmed.split('.');
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction ? `.${fraction}` : ''} L`;
+}
+
+export type QuantityUnit = 'LITRES' | 'KILOGRAMS';
+
+/** The short unit written beside a figure: L for litres, kg for kilograms. */
+export function quantityUnitShort(unit: QuantityUnit | undefined): string {
+  return unit === 'KILOGRAMS' ? 'kg' : 'L';
+}
+
+/** A quantity of fuel in its own unit: "1,250 L" or "480 kg". Litres is the default. */
+export function formatQuantity(value: string, unit?: QuantityUnit): string {
+  if (unit !== 'KILOGRAMS') return formatLitres(value);
+  const formatted = formatLitres(value);
+  return formatted === '—' ? formatted : `${formatted.slice(0, -2)} kg`;
+}
+
+/** The unit as a word for a table cell: "Litres", "Kilograms" or "Mixed units". */
+export function quantityUnitLabel(unit: string | null | undefined): string {
+  return unit === 'KILOGRAMS' ? 'Kilograms' : unit === 'MIXED' ? 'Mixed units' : 'Litres';
+}
+
+/** A unit read from the database; anything unexpected counts as litres. */
+export function asQuantityUnit(value: string | null | undefined): QuantityUnit {
+  return value === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES';
+}
+
+/** A set of fuels is measured in one unit, or in a mix of both. */
+export type CombinedUnit = QuantityUnit | 'MIXED';
+
+/** The one unit a group of fuels shares; "MIXED" when litres and kilograms are both present. */
+export function combineQuantityUnits(
+  units: readonly (CombinedUnit | null | undefined)[],
+): CombinedUnit {
+  if (units.includes('MIXED')) return 'MIXED';
+  const found = new Set(units.map((unit) => (unit === 'KILOGRAMS' ? 'KILOGRAMS' : 'LITRES')));
+  if (found.size > 1) return 'MIXED';
+  return found.has('KILOGRAMS') ? 'KILOGRAMS' : 'LITRES';
+}
+
+/** A total across fuels: in the shared unit, or a plain note when the fuels are measured differently. */
+export function formatCombinedQuantity(value: string, unit: CombinedUnit | undefined): string {
+  return unit === 'MIXED' ? 'Mixed units' : formatQuantity(value, unit);
 }
 
 export function formatPercentage(value: string): string {

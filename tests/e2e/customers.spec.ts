@@ -155,7 +155,7 @@ test.describe('customer accounts', () => {
 
     await expect(page.getByRole('heading', { name: 'Acme Transport' })).toBeVisible();
     await expect(page.getByText('Can still buy on credit').first()).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Prepaid fuel' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Prepaid fuel', exact: true })).toBeVisible();
     await expect(page.getByText('Fuel charged')).toBeVisible();
     await expect(page.getByText('Not shown here yet')).toHaveCount(0);
   });

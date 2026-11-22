@@ -97,3 +97,33 @@ export function clearDraft(key: string, storage: WritableStorage | null = browse
     /* nothing to clear */
   }
 }
+
+/** Remove every draft past its lifetime, whoever saved it, so old entries do not pile up on a shared device. */
+export function purgeExpiredDrafts(
+  now: number = Date.now(),
+  storage:
+    | (ReadableStorage & WritableStorage & Pick<Storage, 'length' | 'key'>)
+    | null = browserStorage() as
+    (ReadableStorage & WritableStorage & Pick<Storage, 'length' | 'key'>) | null,
+): void {
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (key?.startsWith(PREFIX)) keys.push(key);
+    }
+    for (const key of keys) {
+      const raw = storage.getItem(key);
+      let savedAt = Number.NaN;
+      try {
+        savedAt = (JSON.parse(raw ?? 'null') as { savedAt?: number } | null)?.savedAt ?? Number.NaN;
+      } catch {
+        /* unreadable: treated as expired below */
+      }
+      if (!(now - savedAt <= DRAFT_MAX_AGE_MS)) storage.removeItem(key);
+    }
+  } catch {
+    /* nothing to purge */
+  }
+}
