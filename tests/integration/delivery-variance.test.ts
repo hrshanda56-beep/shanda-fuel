@@ -254,6 +254,40 @@ describe('delivery loss: explain it and follow it up (PostgreSQL)', { timeout: 1
       'admin',
     );
     expect((await review('var-rev-self', { decision: 'APPROVED' })).response.status).toBe(403);
+    // The same person as an owner never waits on anyone (DEC-057).
+    await client.unsafe(`
+      insert into app.membership_role_assignments
+        (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+      values ('${ctx.tenantId}', '${ctx.actors.admin.membershipId}', 'OWNER', 'STATION',
+              '${ctx.legalEntityId}', '${ctx.stationId}')
+    `);
+    try {
+      const ownerSelf = await review('var-rev-owner-self', { decision: 'APPROVED' });
+      expect(ownerSelf.response.status, JSON.stringify(ownerSelf.body)).toBe(200);
+      expect(ownerSelf.body.approvalStatus).toBe('APPROVED');
+      const detail = await deliveryDetail(
+        ctx,
+        {
+          commandType: 'RecordDeliveryLossClaim',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          deliveryId,
+          liableParty: 'DRIVER',
+          status: 'RAISED',
+          expectedAmount: '130',
+          currency: 'USD',
+        },
+        'var-claim-admin-again',
+        'admin',
+      );
+      expect(detail.response.status, JSON.stringify(detail.body)).toBe(200);
+    } finally {
+      await client.unsafe(`
+        delete from app.membership_role_assignments
+        where membership_id = '${ctx.actors.admin.membershipId}' and role_code = 'OWNER'
+      `);
+    }
+    expect((await review('var-rev-self2', { decision: 'APPROVED' })).response.status).toBe(403);
     const byFinanceRecord = await claim(
       'var-claim-fin',
       {

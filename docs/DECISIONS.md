@@ -1,5 +1,15 @@
 # Shanda Fuel — Decision Log
 
+## DEC-057 — Owners never wait on anyone to approve (ACCEPTED, 2026-11-22)
+
+The project lead asked that owners need no approval from anyone, including another owner. Before this, one owner could approve their own work only while they were the only active owner; with two owners each needed the other.
+
+1. **An active owner at the station may approve their own request, however many owners there are.** This covers prices (DEC-049), expenses, purchase orders, cost revaluations, reconciliations, delivery loss claims and settlements (DEC-055) and receiving cash they recorded. One shared rule (`src/platform/security/separation-of-duties.ts`) decides it.
+2. **Everyone else is unchanged.** Finance and administrators still need another approver or an owner; supervisors and attendants never approve their own and are never counted as the second approver.
+3. **The "confirm it's you" password re-check stays.** It is the owner proving who they are, not a second person approving.
+4. **Delivery loss claims (migration 0121).** The table check that stopped the recorder approving a claim is dropped, because a check cannot see the approver's role. The approve command refuses a non-owner recorder.
+5. Supersedes the "sole owner only" wording in DEC-049 and the earlier separation-of-duties rule. The audit trail still records who requested and who approved, so an owner approving their own work remains visible.
+
 ## DEC-055 — Recovering a delivery loss with approval (ACCEPTED, 2026-11-20)
 
 **Status:** ACCEPTED on the explicit instruction of the project lead ("lets go with your recommendations", 2026-11-20). The

@@ -4,7 +4,10 @@ import postgres, { type Sql, type TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { assertApproverAllowed } from '../../src/modules/customers/approver';
-import { soleOwnerMayApproveOwn } from '../../src/platform/security/separation-of-duties';
+import {
+  hasAlternateApprover,
+  ownerMayApproveOwn,
+} from '../../src/platform/security/separation-of-duties';
 
 /**
  * Row-level security lets a person read only their own membership unless they hold a tenant-wide
@@ -175,14 +178,14 @@ describe('station-level staff can see who people are, as the application role', 
     });
   });
 
-  it('sees a second station-level owner, so a station owner is not the "sole owner"', async () => {
+  it('treats a station-level owner as an owner even when a second owner exists (DEC-057)', async () => {
     await asMember(ids.otherTenant, 'otherOwnerA', async (transaction) => {
-      const sole = await soleOwnerMayApproveOwn(executor(transaction) as never, {
+      const isOwner = await ownerMayApproveOwn(executor(transaction) as never, {
         tenantId: ids.otherTenant,
         stationId: ids.otherStation,
         membershipId: membership('otherOwnerA'),
       });
-      expect(sole).toBe(false);
+      expect(isOwner).toBe(true);
     });
   });
 
@@ -214,14 +217,45 @@ describe('station-level staff can see who people are, as the application role', 
     expect(otherTenant).toEqual({ removed: 0, left: 1 });
   });
 
-  it('still treats the only owner as the sole owner', async () => {
+  it('says someone else must approve for a non-owner, never for an owner (DEC-057)', async () => {
+    // This is the rule every "someone else needs to approve it" screen and command reads.
+    await asMember(ids.otherTenant, 'otherOwnerA', async (transaction) => {
+      // A second owner exists here, and the owner still waits on nobody.
+      expect(
+        await hasAlternateApprover(executor(transaction) as never, {
+          tenantId: ids.otherTenant,
+          stationId: ids.otherStation,
+          excludeMembershipId: membership('otherOwnerA'),
+        }),
+      ).toBe(false);
+    });
+    await asMember(ids.tenant, 'supervisor', async (transaction) => {
+      expect(
+        await hasAlternateApprover(executor(transaction) as never, {
+          tenantId: ids.tenant,
+          stationId: ids.s1,
+          excludeMembershipId: membership('supervisor'),
+        }),
+      ).toBe(true);
+    });
+  });
+
+  it('treats the only owner as an owner, and a non-owner as not one', async () => {
     await asMember(ids.tenant, 'owner', async (transaction) => {
-      const sole = await soleOwnerMayApproveOwn(executor(transaction) as never, {
+      const isOwner = await ownerMayApproveOwn(executor(transaction) as never, {
         tenantId: ids.tenant,
         stationId: ids.s1,
         membershipId: membership('owner'),
       });
-      expect(sole).toBe(true);
+      expect(isOwner).toBe(true);
+    });
+    await asMember(ids.tenant, 'supervisor', async (transaction) => {
+      const isOwner = await ownerMayApproveOwn(executor(transaction) as never, {
+        tenantId: ids.tenant,
+        stationId: ids.s1,
+        membershipId: membership('supervisor'),
+      });
+      expect(isOwner).toBe(false);
     });
   });
 });

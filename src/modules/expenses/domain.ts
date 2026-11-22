@@ -227,8 +227,8 @@ export function assertCategoryUsableForExpense(
 }
 
 /**
- * The submitter may not approve their own expense, except a sole owner. The caller passes false
- * for alternateApproverExists only in that case.
+ * The submitter may not approve their own expense, except an owner (DEC-057). The caller passes
+ * false for alternateApproverExists only in that case.
  */
 export function assertApproverAllowed(input: {
   submitterMembershipId: string;

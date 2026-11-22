@@ -3,6 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
+import { ownerMayApproveOwn } from '../../platform/security/separation-of-duties';
 import { ExactDecimal } from '../../platform/domain/primitives';
 import {
   calculateBankDepositAmount,
@@ -343,7 +344,14 @@ export async function receiveCashCollectionInTransaction(
       },
     );
   }
-  if (collection.recorded_by === context.actor.membershipId) {
+  if (
+    collection.recorded_by === context.actor.membershipId &&
+    !(await ownerMayApproveOwn(transaction, {
+      tenantId: context.tenantId,
+      stationId: context.stationId,
+      membershipId: context.actor.membershipId,
+    }))
+  ) {
     throw new AppError(
       'FORBIDDEN',
       'The person who recorded this cash cannot also receive it. Ask someone else to receive it.',

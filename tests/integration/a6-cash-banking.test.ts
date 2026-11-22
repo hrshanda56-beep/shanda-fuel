@@ -493,6 +493,45 @@ describe('A6 cash collection and banking persistence', () => {
     expect(audited).toEqual([{ before_state: 'RECORDED', after_state: 'RECEIVED' }]);
   });
 
+  it('lets an owner receive cash they recorded themselves (DEC-057)', async () => {
+    await client.unsafe(`
+      insert into app.membership_role_assignments
+        (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id)
+      values ('${ids.tenant}', '${ids.supervisorMembership}', 'OWNER', 'STATION', '${ids.legal}', '${ids.station}')
+    `);
+    try {
+      const recorded = await postCashCommand(
+        {
+          commandType: 'RecordCashCollection',
+          context: stationContext,
+          collectionReference: 'A6-COL-OWNER',
+          sourceLocationId: ids.till,
+          sources: [{ reconciliationId: ids.reconciliation, amount: '1.00' }],
+        },
+        'a6-collection-owner',
+      );
+      expect(recorded.status).toBe(201);
+      const { collectionId } = await body(recorded);
+      const received = await postCashCommand(
+        {
+          commandType: 'ReceiveCashCollection',
+          context: stationContext,
+          collectionId,
+          targetLocationId: ids.safe,
+          expectedVersion: 0,
+        },
+        'a6-receive-owner',
+        'a6-supervisor-session-token',
+      );
+      expect(received.status, JSON.stringify(await body(received))).toBe(200);
+    } finally {
+      await client.unsafe(`
+        delete from app.membership_role_assignments
+        where membership_id = '${ids.supervisorMembership}' and role_code = 'OWNER'
+      `);
+    }
+  });
+
   it('refuses a repeated collection or deposit reference without a server error', async () => {
     const repeatedCollection = await postCashCommand(
       {

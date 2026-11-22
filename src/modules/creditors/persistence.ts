@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
 import { ExactDecimal, money } from '../../platform/domain/primitives';
+import { ownerMayApproveOwnAtLegalEntity } from '../../platform/security/separation-of-duties';
 import {
   assertSupplierDocumentTransition,
   assertSupplierPaymentTransition,
@@ -512,7 +513,14 @@ export async function postSupplierDocumentInTransaction(
           { varianceApprovalRequired: true, findings: messages },
         );
       }
-      if (document.submitted_by === context.authority.membership.membershipId) {
+      if (
+        document.submitted_by === context.authority.membership.membershipId &&
+        !(await ownerMayApproveOwnAtLegalEntity(transaction, {
+          tenantId: context.tenantId,
+          legalEntityId: context.legalEntityId,
+          membershipId: context.authority.membership.membershipId,
+        }))
+      ) {
         throw new AppError(
           'FORBIDDEN',
           'This invoice is outside your purchasing tolerances. Someone other than the person who submitted it must approve and post it.',
