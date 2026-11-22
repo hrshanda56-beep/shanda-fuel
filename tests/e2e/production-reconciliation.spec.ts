@@ -15,7 +15,9 @@ import { ExactDecimal } from '../../src/platform/domain/primitives';
 async function acceptConfirmation(page: Page) {
   await page
     .getByRole('alertdialog')
-    .getByRole('button', { name: /^(Continue|Approve reconciliation|Close Shift)$/i })
+    .getByRole('button', {
+      name: /^(Continue|Approve reconciliation|Close Shift|Close shift and end the day)$/i,
+    })
     .click();
 }
 
@@ -434,6 +436,16 @@ test.describe('production reconciliation persistence', () => {
       { timeout: 15_000 },
     );
     await closeShift.click();
+    // The only shift of the day also ends the day, and with no approved figures it asks why first.
+    const reason = page.locator('#next-step-reason');
+    if (await reason.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await reason.fill('Stale-state test, closing the only shift');
+      await page
+        .locator('[aria-label="Operations control room"]')
+        .getByRole('button', { name: /^Close shift/i })
+        .first()
+        .click();
+    }
     await acceptConfirmation(page);
     const response = await responsePromise.catch((error) => {
       throw new Error(`No command was sent. POSTs seen: ${JSON.stringify(posts)}. ${error}`);
