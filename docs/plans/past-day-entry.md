@@ -34,5 +34,6 @@ Unit: date rules, price-in-force lookup, window and role checks. Database: openi
 
 ## Progress
 - Slice 1 (this branch): migration 0120, date rules, `OpenPastBusinessDay` command, tests. A past day can be opened and is tagged late.
-- Slice 2: shift times and meter-close stamping from the shift schedule for late days; price and meter installation looked up as of the day.
-- Slice 3: the "Record a past day" wizard and the missing-days list; go-live date setting.
+- Slice 2 (done): shift times and meter-close stamping from the shift schedule for late days; meter install dates after the day are ignored; opening readings chain to the last close before the shift.
+- Slice 3 (done): the "Record a past day" wizard at `/operations/daily/past-days` (pick a missing day, check, record), then the usual Daily Operations steps for that day. Late days are never the default day on Daily Operations.
+- Still to do: a link to the wizard from Daily Operations (after PR #287 lands, to avoid editing the same file); a go-live date setting; "added late" badge on the day card; owner-only bulk lock of late days; price in force on the day when the day's price was never recorded.
