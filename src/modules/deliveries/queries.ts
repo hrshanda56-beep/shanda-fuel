@@ -5,6 +5,7 @@ import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
 import { isPermissionGranted, type PermissionCode } from '../../platform/security/permissions';
+import { ownerMayApproveOwn } from '../../platform/security/separation-of-duties';
 import { authorizeInventoryCommand, withInventoryReadContext } from '../inventory/application';
 import { classifyCompartmentVariance, classifyDeliveryReceipt } from './domain';
 import type { CompartmentVarianceKind, DeliveryReceiptKind } from './domain';
@@ -489,6 +490,11 @@ export async function queryDeliveryDetail(input: {
         where tenant_id = ${context.tenantId} and delivery_id = ${parsed.deliveryId}
       `);
       const claim = claims[0];
+      const ownerMaySelfApprove = await ownerMayApproveOwn(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        membershipId: context.authority.membership.membershipId,
+      });
       const dipMeasured = delivery.dip_measured_litres;
       const water = waterTests[0];
       const driver = confirmations[0];
@@ -517,7 +523,7 @@ export async function queryDeliveryDetail(input: {
         canApproveClaim:
           roleAllows(context, 'delivery.loss.approve') &&
           claim?.approval_status === 'PENDING' &&
-          claim.updated_by !== context.authority.membership.membershipId,
+          (claim.updated_by !== context.authority.membership.membershipId || ownerMaySelfApprove),
         stationTimezone: context.stationTimezone,
         waterTestRequired: settings[0]?.water_test_required ?? false,
         canConfirm: roleAllows(context, 'inventory.delivery.manage'),

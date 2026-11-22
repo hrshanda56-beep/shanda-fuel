@@ -17,7 +17,7 @@ Where a role works is set by where it is assigned: the whole company, one legal 
 
 ## Rules that apply to everyone
 
-- **Nobody approves their own submission.** The person who submitted a shift report, expense, purchase order, price change or cost change cannot approve it. Only a sole owner (the last resort) may approve their own, and only when no one else can. Supervisors and attendants are never counted as the second approver.
+- **Nobody but an owner approves their own submission.** The person who submitted a shift report, expense, purchase order, price change, cost change or delivery loss claim cannot approve it, unless they are an owner. An owner never waits on anyone, even when there are several owners (DEC-057). Supervisors and attendants are never counted as the second approver.
 - **Locked and approved records cannot be edited.** The server refuses it; a change needs a recorded correction.
 - **The auditor and the attendant cannot change anything outside their own work**, tested on the real routes in `tests/integration/roles-enforcement.test.ts`.
 - **Stations are separate.** A person assigned to Station A cannot read or change Station B, or another company, through any route.

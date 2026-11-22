@@ -3,7 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
-import { soleOwnerMayApproveOwn } from '../../platform/security/separation-of-duties';
+import { ownerMayApproveOwn } from '../../platform/security/separation-of-duties';
 import {
   assertStepUp,
   holdsExpensePermission,
@@ -363,11 +363,11 @@ export async function approveExpenseInTransaction(
     select actor_membership_id from app.expense_approvals
     where tenant_id = ${context.tenantId} and expense_id = ${expense.id}
   `);
-  // Only a sole owner may approve their own expense; supervisors never count as the other approver.
+  // An owner may approve their own expense (DEC-057); supervisors never count as the other approver.
   const ownApproval = expense.submitted_by === actorId(context);
   const alternateApproverExists = !(
     ownApproval &&
-    (await soleOwnerMayApproveOwn(transaction, {
+    (await ownerMayApproveOwn(transaction, {
       tenantId: context.tenantId,
       stationId: context.stationId,
       membershipId: expense.submitted_by,

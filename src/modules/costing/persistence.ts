@@ -822,7 +822,7 @@ export async function approveInventoryCostRevaluationInTransaction(
   if (revaluation.status !== 'REQUESTED') {
     throw new AppError('CONFLICT', 'Only a requested inventory cost revaluation can be approved');
   }
-  // Separation of duties: the requester cannot approve, unless no one else could (solo owner).
+  // Separation of duties: the requester cannot approve, unless they are an owner (DEC-057).
   if (
     revaluation.requestedBy === input.approvedBy &&
     (await hasAlternateApprover(transaction, {

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError } from '../../platform/errors';
+import { ownerMayApproveOwn } from '../../platform/security/separation-of-duties';
 import { fuelDeliveries } from '../../platform/db/schema/a4';
 import {
   deliverySettings,
@@ -645,7 +646,14 @@ export function reviewDeliveryLossClaimCommand(
         throw new AppError('CONFLICT', 'This claim is not waiting for approval.');
       }
       const me = context.authority.membership.membershipId;
-      if (claim.updated_by === me) {
+      if (
+        claim.updated_by === me &&
+        !(await ownerMayApproveOwn(transaction, {
+          tenantId: context.tenantId,
+          stationId: context.stationId,
+          membershipId: me,
+        }))
+      ) {
         throw new AppError(
           'FORBIDDEN',
           'You recorded this claim, so someone else must approve it.',

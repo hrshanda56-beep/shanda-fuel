@@ -225,17 +225,16 @@ describe('supervisor expense approval limit', () => {
     expect((await approve(tokens.admin, expenseId)).status).toBe(200);
   });
 
-  it('lets a sole owner approve their own expense, but not once a second owner is active', async () => {
+  it('lets an owner approve their own expense, with or without a second owner (DEC-057)', async () => {
     // owner2 starts suspended, so owner1 is the only active owner.
     const solo = await submit('900.0000', tokens.owner1);
     expect((await approve(tokens.owner1, solo)).status).toBe(200);
-    // A supervisor is never counted as the other approver.
+    // With a second active owner the first owner still does not wait on them.
     await client.unsafe(
       `update app.memberships set status = 'ACTIVE' where id = '${ids.owner2Membership}'`,
     );
     const shared = await submit('900.0000', tokens.owner1);
-    expect((await approve(tokens.owner1, shared)).status).toBe(403);
-    expect((await approve(tokens.owner2, shared)).status).toBe(200);
+    expect((await approve(tokens.owner1, shared)).status).toBe(200);
     await client.unsafe(
       `update app.memberships set status = 'SUSPENDED' where id = '${ids.owner2Membership}'`,
     );
