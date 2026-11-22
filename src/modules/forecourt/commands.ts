@@ -1435,11 +1435,46 @@ async function runShiftLifecycleCommand(
               ) as conflict
             `)
           : [];
-        if (overlapping[0]?.conflict)
+        if (overlapping[0]?.conflict) {
+          // Name the shift in the way, so the person can open it instead of guessing.
+          const blocking = await transaction.execute<{
+            id: string;
+            business_day_id: string;
+            state: string;
+            business_date: string;
+            ends_at: string;
+          }>(sql`
+            select s.id, s.business_day_id, s.state, s.business_date::text as business_date,
+              (case when s.state = 'COMPLETED' then coalesce(s.completed_at, s.planned_end_at)
+                else s.planned_end_at end)::text as ends_at
+            from app.shifts s
+            where s.tenant_id = ${context.tenantId} and s.station_id = ${context.stationId}
+              and s.id <> ${payload.shiftId}
+              and s.state not in ('CANCELLED_BEFORE_START', 'NOT_OPERATED')
+              and coalesce(s.opened_at, s.planned_start_at) < ${resolvedPlannedEndAt}::timestamptz
+              and ${resolvedPlannedStartAt}::timestamptz < (case when s.state = 'COMPLETED'
+                then coalesce(s.completed_at, s.planned_end_at) else s.planned_end_at end)
+            order by s.planned_start_at desc
+            limit 1
+          `);
+          const other = blocking[0];
           throw new AppError(
             'CONFLICT',
-            'Another shift at this station already covers part of this time. Finish or cancel it first, or pick the shift that follows it.',
+            other
+              ? other.state === 'COMPLETED'
+                ? `The shift of ${new Date(`${other.business_date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })} was closed at ${stationClockTime(new Date(other.ends_at).toISOString(), station.timezone)}, which is after this shift was due to start. A shift cannot overlap another one.`
+                : `The shift of ${new Date(`${other.business_date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })} is still open. Close it first, then start this shift.`
+              : 'Another shift at this station already covers part of this time. Finish or cancel it first, or pick the shift that follows it.',
+            other
+              ? {
+                  reason: 'SHIFT_OVERLAP',
+                  blockingShiftId: other.id,
+                  blockingBusinessDayId: other.business_day_id,
+                  blockingState: other.state,
+                }
+              : undefined,
           );
+        }
         try {
           await transaction.execute(sql`
             insert into app.shifts
