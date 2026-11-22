@@ -63,6 +63,8 @@ import {
 } from './domain';
 import { resolveForecourtCommandContext } from './application';
 import { shiftOpensAt } from './shift-schedule';
+import { daysBetween, refusePastDay } from './past-day-rules';
+import { isPermissionGranted } from '../../platform/security/permissions';
 import { meterNotWorkingForShiftMessage } from './shift-close-messages';
 import { readLockBlockers } from './lock-blockers';
 import { ensureDefaultExpenseCategories } from '../expenses/default-categories';
@@ -191,6 +193,8 @@ async function sealMetersFromSavedReadings(
   context: ForecourtCommandContext,
   businessDayId: string,
   shiftId: string,
+  /** A day recorded after the fact: times come from the shift schedule, not the clock. */
+  lateDay = false,
 ): Promise<void> {
   const existing = await transaction.execute<{ count: number }>(sql`
     select (
@@ -226,14 +230,19 @@ async function sealMetersFromSavedReadings(
   `);
   if (readings.length === 0) return;
 
-  const shiftRows = await transaction.execute<{ opened_at: Date | string | null }>(sql`
-    select opened_at from app.shifts
+  const shiftRows = await transaction.execute<{
+    opened_at: Date | string | null;
+    planned_end_at: Date | string;
+  }>(sql`
+    select opened_at, planned_end_at from app.shifts
     where tenant_id = ${context.tenantId} and station_id = ${context.stationId} and id = ${shiftId}
   `);
   const openedAt = shiftRows[0]?.opened_at;
   if (!openedAt) return;
   const startAt = new Date(openedAt).toISOString();
-  const now = await serverNow(transaction);
+  const now = lateDay
+    ? new Date(shiftRows[0]!.planned_end_at).toISOString()
+    : await serverNow(transaction);
 
   const pumpLabel = async (nozzleId: string): Promise<string> => {
     const rows = await transaction.execute<{ pump_number: string; nozzle_number: string }>(sql`
@@ -258,7 +267,7 @@ async function sealMetersFromSavedReadings(
       join app.meters m on m.tenant_id = i.tenant_id and m.id = i.meter_id
       where i.tenant_id = ${context.tenantId} and i.station_id = ${context.stationId}
         and i.nozzle_id = ${reading.nozzle_id} and i.effective_to is null
-        and i.effective_from <= ${startAt}::timestamptz
+        and (${lateDay} or i.effective_from <= ${startAt}::timestamptz)
         and n.status = 'ACTIVE' and m.status = 'ACTIVE' and n.product_id = ${reading.product_id}
       limit 1
       ${lock ? sql`for update of i` : sql``}
@@ -329,6 +338,7 @@ async function sealMetersFromSavedReadings(
       where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
         and nozzle_id = ${reading.nozzle_id} and meter_installation_id = ${installation.installation_id}
         and reading_status = 'AVAILABLE'
+        and (${!lateDay} or effective_at <= ${startAt}::timestamptz)
       order by effective_at desc, id desc limit 1
       for update
     `);
@@ -932,6 +942,177 @@ export async function openBusinessDayFromRequest(request: Request, input: unknow
   });
 }
 
+const openPastBusinessDayPayload = z
+  .object({
+    commandType: z.literal('OpenPastBusinessDay').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    businessDayId: z.string().uuid(),
+    /** The station-local date being recorded, YYYY-MM-DD. */
+    businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .strict();
+
+/**
+ * Open a business day for a date that has already passed, so its figures can be entered after the
+ * fact. The day is created OPEN and marked as entered late, with who recorded it and when. The date
+ * rules (not today, after go-live, inside the window, owner for older days) live in past-day-rules.
+ */
+export async function openPastBusinessDayFromRequest(request: Request, input: unknown) {
+  const payload = openPastBusinessDayPayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  const ownerLevel = isPermissionGranted({
+    actor: context.authority.authorization,
+    permissionCode: 'business_day.lock',
+    requestedScope: context.scope,
+  });
+  return executeForecourtCommand({
+    context,
+    commandType: 'OpenPastBusinessDay',
+    idempotencyKey: key,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'StationBusinessDay',
+    subjectId: payload.businessDayId,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const now = await serverNow(transaction);
+      const station = await loadStationTimezone(transaction, context.tenantId, context.stationId);
+      const goLive = (
+        await transaction.execute<{ go_live_date: string | null }>(sql`
+          select go_live_date from app.stations
+          where tenant_id = ${context.tenantId} and id = ${context.stationId}
+        `)
+      )[0]?.go_live_date;
+      const existing = await transaction.execute<{ business_date: string }>(sql`
+        select business_date from app.station_business_days
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and business_date = ${payload.businessDate}
+      `);
+      const refusal = refusePastDay({
+        date: payload.businessDate,
+        today: deriveBusinessDate(now, station.timezone),
+        goLiveDate: goLive ?? null,
+        canGoBeyondSupervisorWindow: ownerLevel,
+        existingDates: new Set(existing.map((row) => row.business_date)),
+      });
+      if (refusal) {
+        throw new AppError(
+          refusal.code === 'ALREADY_EXISTS' ? 'CONFLICT' : 'VALIDATION_FAILED',
+          refusal.message,
+          { reason: refusal.code },
+        );
+      }
+      try {
+        await transaction.execute(sql`
+          insert into app.station_business_days
+            (id, tenant_id, station_id, business_date, state, version, opened_at,
+             entered_late, entered_late_by, entered_late_at)
+          values (${payload.businessDayId}, ${context.tenantId}, ${context.stationId},
+            ${payload.businessDate}, 'NOT_STARTED', 0, null,
+            true, ${context.actor.membershipId}, ${now}::timestamptz)
+        `);
+        // A day is always created NOT_STARTED and then opened, exactly like a live day.
+        await transaction.execute(sql`
+          update app.station_business_days set state = 'OPEN', opened_at = ${now}::timestamptz,
+            version = version + 1, updated_at = ${now}::timestamptz
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${payload.businessDayId} and version = 0
+        `);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new AppError(
+            'CONFLICT',
+            'This day already has a record. Open it from the day list instead.',
+            { reason: 'ALREADY_EXISTS' },
+          );
+        }
+        throw error;
+      }
+      return {
+        result: { businessDayId: payload.businessDayId, businessDate: payload.businessDate },
+        after: { businessDayId: payload.businessDayId, state: 'OPEN', enteredLate: true },
+        event: businessDayOpenedEvent({
+          eventId: randomUUID(),
+          tenantId: context.tenantId,
+          legalEntityId: context.legalEntityId,
+          stationId: context.stationId,
+          businessDayId: payload.businessDayId,
+          businessDate: payload.businessDate as never,
+          openedAt: now,
+        }),
+      };
+    },
+  });
+}
+
+const setGoLivePayload = z
+  .object({
+    commandType: z.literal('SetStationGoLiveDate').optional(),
+    tenantId: z.string().uuid(),
+    stationId: z.string().uuid(),
+    /** The first station-local day the station is run in the app, YYYY-MM-DD; null clears it. */
+    goLiveDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable(),
+  })
+  .strict();
+
+/** Owner-level: set the date before which past days cannot be recorded (the station's start in the app). */
+export async function setStationGoLiveDateFromRequest(request: Request, input: unknown) {
+  const payload = setGoLivePayload.parse(input);
+  const key = request.headers.get('idempotency-key')?.trim();
+  if (!key) throw new AppError('VALIDATION_FAILED', 'Idempotency-Key is required');
+  const context = await priceContext(request, payload);
+  // Opening days is not enough: only owner level may change how far back recording reaches.
+  const ownerLevel = isPermissionGranted({
+    actor: context.authority.authorization,
+    permissionCode: 'business_day.lock',
+    requestedScope: context.scope,
+  });
+  if (!ownerLevel) {
+    throw new AppError('FORBIDDEN', 'Only the owner can change the station start date.');
+  }
+  return executeForecourtCommand({
+    context,
+    commandType: 'SetStationGoLiveDate',
+    idempotencyKey: key,
+    requestHash: genericRequestHash(payload),
+    subjectType: 'Station',
+    subjectId: context.stationId,
+    ports: databaseForecourtPorts(),
+    execute: async (transaction) => {
+      const now = await serverNow(transaction);
+      const station = await loadStationTimezone(transaction, context.tenantId, context.stationId);
+      if (
+        payload.goLiveDate &&
+        (daysBetween(payload.goLiveDate, deriveBusinessDate(now, station.timezone)) ?? 0) < 1
+      ) {
+        throw new AppError('VALIDATION_FAILED', 'The start date must be before today.', {
+          reason: 'NOT_IN_THE_PAST',
+        });
+      }
+      const before = (
+        await transaction.execute<{ go_live_date: string | null }>(sql`
+          select go_live_date from app.stations
+          where tenant_id = ${context.tenantId} and id = ${context.stationId}
+        `)
+      )[0];
+      await transaction.execute(sql`
+        update app.stations set go_live_date = ${payload.goLiveDate}, updated_at = now()
+        where tenant_id = ${context.tenantId} and id = ${context.stationId}
+      `);
+      return {
+        result: { goLiveDate: payload.goLiveDate },
+        before: { goLiveDate: before?.go_live_date ?? null },
+        after: { goLiveDate: payload.goLiveDate },
+      };
+    },
+  });
+}
+
 const closeBusinessDayPayload = z
   .object({
     commandType: z.literal('CloseBusinessDay').optional(),
@@ -1277,14 +1458,16 @@ async function runShiftLifecycleCommand(
       const dayRows = await transaction.execute<{
         business_date: string;
         state: string;
+        entered_late: boolean;
       }>(sql`
-        select business_date, state from app.station_business_days
+        select business_date, state, entered_late from app.station_business_days
         where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
           and id = ${payload.businessDayId}
         for update
       `);
       const dayRow = dayRows[0];
       if (!dayRow) throw new AppError('NOT_FOUND', 'Business day was not found');
+      const lateDay = dayRow.entered_late === true;
       const day = {
         id: payload.businessDayId,
         tenantId: context.tenantId,
@@ -1435,11 +1618,46 @@ async function runShiftLifecycleCommand(
               ) as conflict
             `)
           : [];
-        if (overlapping[0]?.conflict)
+        if (overlapping[0]?.conflict) {
+          // Name the shift in the way, so the person can open it instead of guessing.
+          const blocking = await transaction.execute<{
+            id: string;
+            business_day_id: string;
+            state: string;
+            business_date: string;
+            ends_at: string;
+          }>(sql`
+            select s.id, s.business_day_id, s.state, s.business_date::text as business_date,
+              (case when s.state = 'COMPLETED' then coalesce(s.completed_at, s.planned_end_at)
+                else s.planned_end_at end)::text as ends_at
+            from app.shifts s
+            where s.tenant_id = ${context.tenantId} and s.station_id = ${context.stationId}
+              and s.id <> ${payload.shiftId}
+              and s.state not in ('CANCELLED_BEFORE_START', 'NOT_OPERATED')
+              and coalesce(s.opened_at, s.planned_start_at) < ${resolvedPlannedEndAt}::timestamptz
+              and ${resolvedPlannedStartAt}::timestamptz < (case when s.state = 'COMPLETED'
+                then coalesce(s.completed_at, s.planned_end_at) else s.planned_end_at end)
+            order by s.planned_start_at desc
+            limit 1
+          `);
+          const other = blocking[0];
           throw new AppError(
             'CONFLICT',
-            'Another shift at this station already covers part of this time. Finish or cancel it first, or pick the shift that follows it.',
+            other
+              ? other.state === 'COMPLETED'
+                ? `The shift of ${new Date(`${other.business_date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })} was closed at ${stationClockTime(new Date(other.ends_at).toISOString(), station.timezone)}, which is after this shift was due to start. A shift cannot overlap another one.`
+                : `The shift of ${new Date(`${other.business_date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })} is still open. Close it first, then start this shift.`
+              : 'Another shift at this station already covers part of this time. Finish or cancel it first, or pick the shift that follows it.',
+            other
+              ? {
+                  reason: 'SHIFT_OVERLAP',
+                  blockingShiftId: other.id,
+                  blockingBusinessDayId: other.business_day_id,
+                  blockingState: other.state,
+                }
+              : undefined,
           );
+        }
         try {
           await transaction.execute(sql`
             insert into app.shifts
@@ -1488,6 +1706,7 @@ async function runShiftLifecycleCommand(
           context,
           payload.businessDayId,
           payload.shiftId,
+          lateDay,
         );
       }
       if (commandType === 'CloseMeters' || commandType === 'CompleteShift') {
@@ -1506,7 +1725,13 @@ async function runShiftLifecycleCommand(
             : commandType === 'CompleteShift'
               ? completeShift(shift)
               : markNotOperated(shift, payload.reason!);
-      const now = await serverNow(transaction);
+      // A day recorded late is stamped from the shift schedule (start when opened, end when closed),
+      // so shifts line up and cannot overlap; a live day uses the database clock.
+      const now = lateDay
+        ? commandType === 'StartShift'
+          ? shift.plannedStartAt
+          : shift.plannedEndAt
+        : await serverNow(transaction);
       const state = updated.state;
       const timestampColumn =
         commandType === 'StartShift'

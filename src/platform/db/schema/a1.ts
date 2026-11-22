@@ -77,6 +77,8 @@ export const stations = appSchema.table(
     zeraRepresentativeName: text('zera_representative_name'),
     zeraRepresentativePhone: text('zera_representative_phone'),
     zeraRepresentativeEmail: text('zera_representative_email'),
+    /** First business date recorded in this system (YYYY-MM-DD); past days are accepted from it. */
+    goLiveDate: text('go_live_date'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },

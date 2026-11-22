@@ -191,6 +191,8 @@ export function dailyOperationsProblem(
     details?: Record<string, unknown>;
     /** The station being closed, so the link opens that station's setup straight away. */
     stationId?: string;
+    /** The company, so a link to another shift can be built. */
+    tenantId?: string;
   }>,
 ): DailyOperationsProblem {
   // Matched by the server's reason when it was sent, and by the wording when only the message is
@@ -210,6 +212,26 @@ export function dailyOperationsProblem(
           ? `/settings?tab=stations&setup=${encodeURIComponent(stationId)}&focus=meter-start`
           : '/settings?tab=stations',
       ),
+    };
+  }
+  // Another shift is in the way: say which one, and open it so the person can deal with it.
+  if (context?.details?.reason === 'SHIFT_OVERLAP') {
+    const dayId = context.details.blockingBusinessDayId;
+    const shiftId = context.details.blockingShiftId;
+    return {
+      message: message ?? 'Another shift at this station is in the way.',
+      fix:
+        context.tenantId &&
+        context.stationId &&
+        typeof dayId === 'string' &&
+        typeof shiftId === 'string'
+          ? link(
+              context.details.blockingState === 'COMPLETED'
+                ? 'Look at that shift'
+                : 'Open that shift',
+              `/operations/daily?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId, businessDayId: dayId, shiftId }).toString()}`,
+            )
+          : undefined,
     };
   }
   const a12Message = mapA12OperatorError(code, message);

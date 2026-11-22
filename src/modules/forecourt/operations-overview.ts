@@ -62,6 +62,8 @@ type BusinessDayRow = {
   closedAt: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+  /** Recorded after the day itself (past-day entry); never the screen's default day. */
+  enteredLate?: boolean;
 };
 
 function iso(value: Date | string | null): string | null {
@@ -239,7 +241,7 @@ async function loadOperationsOverview(
       coalesce((select json_agg(recent_days) from (
         select id, business_date as date, state, version,
           opened_at as "openedAt", closed_at as "closedAt",
-          created_at as "createdAt", updated_at as "updatedAt"
+          created_at as "createdAt", updated_at as "updatedAt", entered_late as "enteredLate"
         from app.station_business_days
         where tenant_id = s.tenant_id and station_id = s.id
         order by business_date desc limit 30
@@ -286,11 +288,14 @@ async function loadOperationsOverview(
   } else {
     // Today's day if it exists. Otherwise the latest day, but only while it is still being worked on:
     // once it is finished the screen must offer to start today, not show yesterday as "closed".
-    const latest = days[0] ?? null;
+    // A day recorded late is opened on purpose from its own list, so it is never the default.
+    const liveDays = days.filter((day) => !day.enteredLate);
+    const latest = liveDays[0] ?? null;
     const latestIsFinished =
       latest !== null && ['CLOSED', 'LOCKED', 'EXCEPTIONALLY_CLOSED'].includes(latest.state);
     selectedDay =
-      days.find((day) => day.date === currentBusinessDate) ?? (latestIsFinished ? null : latest);
+      liveDays.find((day) => day.date === currentBusinessDate) ??
+      (latestIsFinished ? null : latest);
   }
 
   if (!selectedDay) {
@@ -504,6 +509,7 @@ async function loadOperationsOverview(
       version: Number(selectedDay.version),
       openedAt: iso(selectedDay.openedAt),
       closedAt: iso(selectedDay.closedAt),
+      enteredLate: Boolean(selectedDay.enteredLate),
     },
     shifts: shifts.map((shift) => ({
       id: shift.id,

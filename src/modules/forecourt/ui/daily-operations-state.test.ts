@@ -14,6 +14,36 @@ import {
   stepTitle,
 } from './daily-operations-state';
 
+describe('a shift in the way of starting a new one', () => {
+  it('keeps the reason and links to the shift that is in the way', () => {
+    const problem = dailyOperationsProblem(
+      409,
+      'CONFLICT',
+      'The shift of 2026-11-20 is still open.',
+      {
+        tenantId: 't1',
+        stationId: 's1',
+        details: {
+          reason: 'SHIFT_OVERLAP',
+          blockingShiftId: 'sh1',
+          blockingBusinessDayId: 'd1',
+          blockingState: 'OPEN',
+        },
+      },
+    );
+    expect(problem.message).toBe('The shift of 2026-11-20 is still open.');
+    expect(problem.fix).toEqual({
+      kind: 'link',
+      label: 'Open that shift',
+      href: '/operations/daily?tenantId=t1&stationId=s1&businessDayId=d1&shiftId=sh1',
+    });
+  });
+
+  it('still says "changed elsewhere" for an ordinary conflict', () => {
+    expect(dailyOperationsProblem(409, 'CONFLICT', 'x').message).toMatch(/changed elsewhere/);
+  });
+});
+
 describe('liveLitresSold', () => {
   it('is closing minus opening, exactly', () => {
     expect(liveLitresSold('65000', '100000')).toBe('35000.00');

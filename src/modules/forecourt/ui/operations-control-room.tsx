@@ -70,6 +70,7 @@ type Overview = {
     version: number;
     openedAt: string | null;
     closedAt: string | null;
+    enteredLate?: boolean;
   };
   shiftTemplates?: Array<{
     id: string;
@@ -260,6 +261,8 @@ export function OperationsControlRoom({
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  // Someone running the shift sees one question at a time; the full day summary is one tap away.
+  const [showSummary, setShowSummary] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
   const idempotencyKeys = useRef(new Map<string, string>());
   // One id per visit, so retrying the first shift's opening cannot create two shifts.
@@ -549,6 +552,7 @@ export function OperationsControlRoom({
   // Someone who runs the shift gets one "next step" button (it also opens the day and starts the
   // shift), so the page does not offer the same jobs again as separate buttons.
   const oneNextStep = canRunShift(overview);
+  const wizardOnly = oneNextStep && !showSummary;
   const shiftsForDay = day ? overview.shifts : [];
   const reviewHref = (reconciliationId: string, shiftId: string) =>
     day
@@ -564,11 +568,12 @@ export function OperationsControlRoom({
   return (
     <div className="operations-control-room" aria-label="Operations control room">
       {focus === 'operations' ? (
-        <div className="ops-top">
-          {showDayCard ? (
+        <div className={wizardOnly ? 'ops-top ops-top--wizard' : 'ops-top'}>
+          {showDayCard && !wizardOnly ? (
             <header className="ops-hero">
               <h2>{formatBusinessDate(day ? day.date : overview.currentBusinessDate)}</h2>
               <div className="ops-hero-side">
+                {day?.enteredLate ? <StatusBadge tone="neutral">Added late</StatusBadge> : null}
                 <StatusBadge tone={tone(day?.state ?? 'NOT_STARTED')}>
                   {formatStatusLabel(day?.state ?? 'NOT_STARTED')}
                 </StatusBadge>
@@ -601,6 +606,16 @@ export function OperationsControlRoom({
                         : 'No business day yet. Open the station’s current business day to begin.'}
                     </p>
                   )}
+                  <p className="panel-detail">
+                    <a
+                      href={`/operations/daily/past-days?${new URLSearchParams({
+                        tenantId: context.tenantId,
+                        stationId: context.stationId,
+                      })}`}
+                    >
+                      Record a past day
+                    </a>
+                  </p>
                   {day && day.state === 'OPEN' && day.date < overview.currentBusinessDate ? (
                     <p className="panel-detail" role="status">
                       ⚠ This day started on {formatBusinessDate(day.date)} and is still open. Close
@@ -686,6 +701,26 @@ export function OperationsControlRoom({
             stationId={context.stationId}
             onChanged={() => void load()}
           />
+          {wizardOnly ? (
+            <div className="ops-wizard-links">
+              <Link
+                className="text-link"
+                href={`/settings?${new URLSearchParams({ tab: 'stations', setup: context.stationId, focus: 'prices' }).toString()}`}
+              >
+                Change a price
+              </Link>
+              <button type="button" className="text-link" onClick={() => setShowSummary(true)}>
+                View today’s summary
+              </button>
+            </div>
+          ) : null}
+          {oneNextStep && showSummary ? (
+            <div className="ops-wizard-links">
+              <button type="button" className="text-link" onClick={() => setShowSummary(false)}>
+                Back to the next step
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -758,7 +793,7 @@ export function OperationsControlRoom({
         )
       ) : null}
 
-      {focus === 'operations' ? (
+      {focus === 'operations' && !wizardOnly ? (
         <div className="operations-layout">
           <div className="operations-layout-main">
             {focus === 'operations' ? (

@@ -9,6 +9,8 @@ import { WizardOptions } from '@/design-system/wizard-kit';
 import {
   WIZARD_REVIEW_HINT,
   WizardActions,
+  WizardCard,
+  WizardHeading,
   WizardNotice,
   WizardPair,
   WizardStep,
@@ -419,303 +421,312 @@ export function ZeraReturnWizard({ tenantId, stations, months }: Props) {
         void next();
       }}
     >
+      <WizardCard>
+        {step === 'month' ? (
+          <WizardStep
+            wizard={wizard}
+            title="Which month is the return for?"
+            hint="Most people file for last month. ZERA wants it by the 3rd of the month after."
+          >
+            <Field id="month" label="Month" error={errors.month} required>
+              <Select
+                id="month"
+                value={month}
+                onChange={(event) => setMonth(event.target.value)}
+                options={months.map((m) => ({ value: m.value, label: m.label }))}
+              />
+            </Field>
+            <WizardActions wizard={wizard} onContinue={() => void next()} busy={loading} />
+          </WizardStep>
+        ) : null}
+
+        {step === 'station' ? (
+          <WizardStep
+            wizard={wizard}
+            title="Which station is it for?"
+            hint="Each station files its own return."
+          >
+            <WizardOptions
+              label="Station"
+              name="station"
+              options={stations.map((s) => ({ value: s.id, label: s.name }))}
+              value={stationId}
+              onPick={setStationId}
+            />
+            {errors.station ? <p role="alert">{errors.station}</p> : null}
+            <WizardActions wizard={wizard} onContinue={() => void next()} busy={loading} />
+          </WizardStep>
+        ) : null}
+
+        {step === 'holder' ? (
+          <WizardStep
+            wizard={wizard}
+            title="What name is on the licence?"
+            hint="Exactly as it is written on the ZERA licence. We keep it for next month."
+          >
+            <Field id="holder" label="Name on the licence" error={errors.holder} required>
+              <input
+                id="holder"
+                maxLength={240}
+                autoComplete="off"
+                autoFocus
+                value={holder}
+                onChange={(event) => setHolder(event.target.value)}
+              />
+            </Field>
+            <WizardActions wizard={wizard} onContinue={() => void next()} />
+          </WizardStep>
+        ) : null}
+
+        {step === 'number' ? (
+          <WizardStep wizard={wizard} title="What is the licence number?">
+            <Field id="number" label="Licence number" error={errors.number} required>
+              <input
+                id="number"
+                maxLength={60}
+                autoComplete="off"
+                autoFocus
+                value={number}
+                onChange={(event) => setNumber(event.target.value)}
+              />
+            </Field>
+            <WizardActions wizard={wizard} onContinue={() => void next()} />
+          </WizardStep>
+        ) : null}
+
+        {step === 'ownership' ? (
+          <WizardStep wizard={wizard} title="Who owns and runs the station?">
+            <WizardOptions
+              label="Ownership"
+              name="ownership"
+              options={ZERA_OWNERSHIPS.map((value) => ({
+                value,
+                label: value,
+                detail: ZERA_OWNERSHIP_LABELS[value],
+              }))}
+              value={ownership}
+              onPick={setOwnership}
+            />
+            {errors.ownership ? <p role="alert">{errors.ownership}</p> : null}
+            <WizardActions wizard={wizard} onContinue={() => void next()} />
+          </WizardStep>
+        ) : null}
+
+        {step === 'province' ? (
+          <WizardStep wizard={wizard} title="Which province is the station in?">
+            <Field id="province" label="Province" error={errors.province} required>
+              <Select
+                id="province"
+                value={province ?? ''}
+                onChange={(event) =>
+                  setProvince((event.target.value || null) as ZeraProvince | null)
+                }
+                options={[
+                  { value: '', label: 'Choose a province' },
+                  ...ZERA_PROVINCES.map((name) => ({ value: name, label: name })),
+                ]}
+              />
+            </Field>
+            <WizardActions wizard={wizard} onContinue={() => void next()} />
+          </WizardStep>
+        ) : null}
+
+        {step === 'contact' ? (
+          <WizardStep
+            wizard={wizard}
+            title="Who should ZERA contact?"
+            hint="A person at the station, with a phone number and email they can be reached on."
+          >
+            <Field id="contactName" label="Name" error={errors.contactName} required>
+              <input
+                id="contactName"
+                maxLength={160}
+                autoComplete="off"
+                autoFocus
+                value={contactName}
+                onChange={(event) => setContactName(event.target.value)}
+              />
+            </Field>
+            <WizardPair>
+              <Field id="contactPhone" label="Phone number" error={errors.contactPhone} required>
+                <input
+                  id="contactPhone"
+                  type="tel"
+                  maxLength={40}
+                  autoComplete="off"
+                  value={contactPhone}
+                  onChange={(event) => setContactPhone(event.target.value)}
+                />
+              </Field>
+              <Field id="contactEmail" label="Email address" error={errors.contactEmail} required>
+                <input
+                  id="contactEmail"
+                  type="email"
+                  maxLength={254}
+                  autoComplete="off"
+                  value={contactEmail}
+                  onChange={(event) => setContactEmail(event.target.value)}
+                />
+              </Field>
+            </WizardPair>
+            <WizardActions wizard={wizard} onContinue={() => void next()} />
+          </WizardStep>
+        ) : null}
+
+        {step === 'ethanol' ? (
+          <WizardStep
+            wizard={wizard}
+            title="What is the ethanol percentage of your blended petrol?"
+            hint={
+              result && result.ethanolChoices.length > 1
+                ? 'More than one blend was sold. Choose the one the return should show.'
+                : 'We could not tell from your fuel setup. Choose one.'
+            }
+          >
+            <WizardOptions
+              label="Ethanol percentage"
+              name="ethanol"
+              options={ETHANOL_CHOICES}
+              value={ethanol}
+              onPick={setEthanol}
+            />
+            {errors.ethanol ? <p role="alert">{errors.ethanol}</p> : null}
+            <WizardActions wizard={wizard} onContinue={() => void next()} />
+          </WizardStep>
+        ) : null}
+
+        {step === 'problems' && result ? (
+          <WizardStep
+            wizard={wizard}
+            title="Something needs your attention"
+            hint="We never guess. These are shown on the return as they are."
+          >
+            {result.blockers.length > 0 ? (
+              <WizardNotice>
+                These products have no fuel type, so we cannot tell which box they belong in:{' '}
+                {result.blockers.map((b) => b.productName).join(', ')}. Set the type under{' '}
+                <Link
+                  href={`/settings?tab=stations&setup=${encodeURIComponent(stationId ?? '')}&tenantId=${encodeURIComponent(tenantId)}`}
+                >
+                  Fuels
+                </Link>
+                : open the fuel, choose Yes, Change It, then The fuel itself and Change the type of
+                fuel. Then come back here.
+              </WizardNotice>
+            ) : null}
+            {result.missingDays.length > 0 ? (
+              <WizardNotice>
+                {result.missingDays.length} day(s) have no approved report:{' '}
+                {result.missingDays.join(', ')}. Sold litres will show <strong>m</strong> (missing)
+                until they are approved.
+              </WizardNotice>
+            ) : null}
+            {errors.problems ? <p role="alert">{errors.problems}</p> : null}
+            <WizardActions
+              wizard={wizard}
+              onContinue={() => void next()}
+              continueLabel={result.blockers.length > 0 ? 'Continue' : 'Continue with m'}
+            />
+          </WizardStep>
+        ) : null}
+
+        {step === 'notes' ? (
+          <WizardStep
+            wizard={wizard}
+            title="Anything to add in the notes?"
+            hint="Optional. Fuels that do not belong in a box are already listed for you."
+          >
+            <Field id="notes" label="Notes">
+              <textarea
+                id="notes"
+                rows={4}
+                maxLength={500}
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+              />
+            </Field>
+            <WizardActions wizard={wizard} onContinue={() => void next()} />
+          </WizardStep>
+        ) : null}
+
+        {step === 'review' && result ? (
+          <>
+            <WizardStep wizard={wizard} title="Check the return" hint={WIZARD_REVIEW_HINT}>
+              <p className="field-hint">
+                {monthLabel} · {stationName}. Saving keeps this version; a later change is saved as
+                a new version.
+              </p>
+              <p className="field-hint">ZERA says: “{ZERA_DEADLINE_WORDING}”</p>
+              <WizardSummary>
+                {answers.map((answer, position) => {
+                  const target = CHANGE_STEP[position];
+                  // Ethanol is only a question when it was asked.
+                  const changeable =
+                    target && (target !== 'ethanol' || steps.includes('ethanol')) ? target : null;
+                  return (
+                    <WizardSummaryRow
+                      key={answer.label}
+                      label={answer.label}
+                      onChange={changeable ? () => change(changeable) : undefined}
+                    >
+                      {answer.value || 'Not given'}
+                    </WizardSummaryRow>
+                  );
+                })}
+              </WizardSummary>
+              <WizardActions
+                wizard={wizard}
+                onContinue={() => void next()}
+                continueLabel="Save this return"
+                busy={saving}
+              />
+            </WizardStep>
+          </>
+        ) : null}
+
+        {step === 'done' && result ? (
+          <>
+            <div className="form-stack">
+              <WizardHeading
+                position={wizard.position}
+                total={0}
+                onHeading={wizard.captureHeading}
+                title={`ZERA return for ${monthLabel}, ${stationName}`}
+              />
+              <p role="status">
+                Saved as version {savedVersion}. Copy each answer into the ZERA form, or download
+                the saved return.
+              </p>
+              <p className="field-hint">ZERA says: “{ZERA_DEADLINE_WORDING}”</p>
+              <ul className="form-stack">
+                {answers.map((answer) => (
+                  <li key={answer.label}>
+                    <strong>{answer.label}:</strong> {answer.value || 'Not given'}{' '}
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      size="sm"
+                      aria-label={`Copy ${answer.label}`}
+                      onClick={() => void copy(answer.label, answer.value)}
+                    >
+                      {copied === answer.label ? 'Copied' : 'Copy'}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        ) : null}
+      </WizardCard>
+
+      {step === 'review' || step === 'done' ? (
+        <PastReturns returns={pastReturns} months={months} onDownload={download} />
+      ) : null}
+
       {loadError ? <ErrorState title="The figures could not be read" message={loadError} /> : null}
       {saveError ? <ErrorState title="This could not be saved" message={saveError} /> : null}
       {downloadError ? (
         <ErrorState title="The download could not be created" message={downloadError} />
-      ) : null}
-
-      {step === 'month' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Which month is the return for?"
-          hint="Most people file for last month. ZERA wants it by the 3rd of the month after."
-        >
-          <Field id="month" label="Month" error={errors.month} required>
-            <Select
-              id="month"
-              value={month}
-              onChange={(event) => setMonth(event.target.value)}
-              options={months.map((m) => ({ value: m.value, label: m.label }))}
-            />
-          </Field>
-          <WizardActions wizard={wizard} onContinue={() => void next()} busy={loading} />
-        </WizardStep>
-      ) : null}
-
-      {step === 'station' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Which station is it for?"
-          hint="Each station files its own return."
-        >
-          <WizardOptions
-            label="Station"
-            name="station"
-            options={stations.map((s) => ({ value: s.id, label: s.name }))}
-            value={stationId}
-            onPick={setStationId}
-          />
-          {errors.station ? <p role="alert">{errors.station}</p> : null}
-          <WizardActions wizard={wizard} onContinue={() => void next()} busy={loading} />
-        </WizardStep>
-      ) : null}
-
-      {step === 'holder' ? (
-        <WizardStep
-          wizard={wizard}
-          title="What name is on the licence?"
-          hint="Exactly as it is written on the ZERA licence. We keep it for next month."
-        >
-          <Field id="holder" label="Name on the licence" error={errors.holder} required>
-            <input
-              id="holder"
-              maxLength={240}
-              autoComplete="off"
-              autoFocus
-              value={holder}
-              onChange={(event) => setHolder(event.target.value)}
-            />
-          </Field>
-          <WizardActions wizard={wizard} onContinue={() => void next()} />
-        </WizardStep>
-      ) : null}
-
-      {step === 'number' ? (
-        <WizardStep wizard={wizard} title="What is the licence number?">
-          <Field id="number" label="Licence number" error={errors.number} required>
-            <input
-              id="number"
-              maxLength={60}
-              autoComplete="off"
-              autoFocus
-              value={number}
-              onChange={(event) => setNumber(event.target.value)}
-            />
-          </Field>
-          <WizardActions wizard={wizard} onContinue={() => void next()} />
-        </WizardStep>
-      ) : null}
-
-      {step === 'ownership' ? (
-        <WizardStep wizard={wizard} title="Who owns and runs the station?">
-          <WizardOptions
-            label="Ownership"
-            name="ownership"
-            options={ZERA_OWNERSHIPS.map((value) => ({
-              value,
-              label: value,
-              detail: ZERA_OWNERSHIP_LABELS[value],
-            }))}
-            value={ownership}
-            onPick={setOwnership}
-          />
-          {errors.ownership ? <p role="alert">{errors.ownership}</p> : null}
-          <WizardActions wizard={wizard} onContinue={() => void next()} />
-        </WizardStep>
-      ) : null}
-
-      {step === 'province' ? (
-        <WizardStep wizard={wizard} title="Which province is the station in?">
-          <Field id="province" label="Province" error={errors.province} required>
-            <Select
-              id="province"
-              value={province ?? ''}
-              onChange={(event) => setProvince((event.target.value || null) as ZeraProvince | null)}
-              options={[
-                { value: '', label: 'Choose a province' },
-                ...ZERA_PROVINCES.map((name) => ({ value: name, label: name })),
-              ]}
-            />
-          </Field>
-          <WizardActions wizard={wizard} onContinue={() => void next()} />
-        </WizardStep>
-      ) : null}
-
-      {step === 'contact' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Who should ZERA contact?"
-          hint="A person at the station, with a phone number and email they can be reached on."
-        >
-          <Field id="contactName" label="Name" error={errors.contactName} required>
-            <input
-              id="contactName"
-              maxLength={160}
-              autoComplete="off"
-              autoFocus
-              value={contactName}
-              onChange={(event) => setContactName(event.target.value)}
-            />
-          </Field>
-          <WizardPair>
-            <Field id="contactPhone" label="Phone number" error={errors.contactPhone} required>
-              <input
-                id="contactPhone"
-                type="tel"
-                maxLength={40}
-                autoComplete="off"
-                value={contactPhone}
-                onChange={(event) => setContactPhone(event.target.value)}
-              />
-            </Field>
-            <Field id="contactEmail" label="Email address" error={errors.contactEmail} required>
-              <input
-                id="contactEmail"
-                type="email"
-                maxLength={254}
-                autoComplete="off"
-                value={contactEmail}
-                onChange={(event) => setContactEmail(event.target.value)}
-              />
-            </Field>
-          </WizardPair>
-          <WizardActions wizard={wizard} onContinue={() => void next()} />
-        </WizardStep>
-      ) : null}
-
-      {step === 'ethanol' ? (
-        <WizardStep
-          wizard={wizard}
-          title="What is the ethanol percentage of your blended petrol?"
-          hint={
-            result && result.ethanolChoices.length > 1
-              ? 'More than one blend was sold. Choose the one the return should show.'
-              : 'We could not tell from your fuel setup. Choose one.'
-          }
-        >
-          <WizardOptions
-            label="Ethanol percentage"
-            name="ethanol"
-            options={ETHANOL_CHOICES}
-            value={ethanol}
-            onPick={setEthanol}
-          />
-          {errors.ethanol ? <p role="alert">{errors.ethanol}</p> : null}
-          <WizardActions wizard={wizard} onContinue={() => void next()} />
-        </WizardStep>
-      ) : null}
-
-      {step === 'problems' && result ? (
-        <WizardStep
-          wizard={wizard}
-          title="Something needs your attention"
-          hint="We never guess. These are shown on the return as they are."
-        >
-          {result.blockers.length > 0 ? (
-            <WizardNotice>
-              These products have no fuel type, so we cannot tell which box they belong in:{' '}
-              {result.blockers.map((b) => b.productName).join(', ')}. Set the type under{' '}
-              <Link
-                href={`/settings?tab=stations&setup=${encodeURIComponent(stationId ?? '')}&tenantId=${encodeURIComponent(tenantId)}`}
-              >
-                Fuels
-              </Link>
-              : open the fuel, choose Yes, Change It, then The fuel itself and Change the type of
-              fuel. Then come back here.
-            </WizardNotice>
-          ) : null}
-          {result.missingDays.length > 0 ? (
-            <WizardNotice>
-              {result.missingDays.length} day(s) have no approved report:{' '}
-              {result.missingDays.join(', ')}. Sold litres will show <strong>m</strong> (missing)
-              until they are approved.
-            </WizardNotice>
-          ) : null}
-          {errors.problems ? <p role="alert">{errors.problems}</p> : null}
-          <WizardActions
-            wizard={wizard}
-            onContinue={() => void next()}
-            continueLabel={result.blockers.length > 0 ? 'Continue' : 'Continue with m'}
-          />
-        </WizardStep>
-      ) : null}
-
-      {step === 'notes' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Anything to add in the notes?"
-          hint="Optional. Fuels that do not belong in a box are already listed for you."
-        >
-          <Field id="notes" label="Notes">
-            <textarea
-              id="notes"
-              rows={4}
-              maxLength={500}
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </Field>
-          <WizardActions wizard={wizard} onContinue={() => void next()} />
-        </WizardStep>
-      ) : null}
-
-      {step === 'review' && result ? (
-        <>
-          <WizardStep wizard={wizard} title="Check the return" hint={WIZARD_REVIEW_HINT}>
-            <p className="field-hint">
-              {monthLabel} · {stationName}. Saving keeps this version; a later change is saved as a
-              new version.
-            </p>
-            <p className="field-hint">ZERA says: “{ZERA_DEADLINE_WORDING}”</p>
-            <WizardSummary>
-              {answers.map((answer, position) => {
-                const target = CHANGE_STEP[position];
-                // Ethanol is only a question when it was asked.
-                const changeable =
-                  target && (target !== 'ethanol' || steps.includes('ethanol')) ? target : null;
-                return (
-                  <WizardSummaryRow
-                    key={answer.label}
-                    label={answer.label}
-                    onChange={changeable ? () => change(changeable) : undefined}
-                  >
-                    {answer.value || 'Not given'}
-                  </WizardSummaryRow>
-                );
-              })}
-            </WizardSummary>
-            <WizardActions
-              wizard={wizard}
-              onContinue={() => void next()}
-              continueLabel="Save this return"
-              busy={saving}
-            />
-          </WizardStep>
-          <PastReturns returns={pastReturns} months={months} onDownload={download} />
-        </>
-      ) : null}
-
-      {step === 'done' && result ? (
-        <>
-          <Card>
-            <h2>
-              ZERA return for {monthLabel}, {stationName}
-            </h2>
-            <p role="status">
-              Saved as version {savedVersion}. Copy each answer into the ZERA form, or download the
-              saved return.
-            </p>
-            <p className="field-hint">ZERA says: “{ZERA_DEADLINE_WORDING}”</p>
-            <ul className="form-stack">
-              {answers.map((answer) => (
-                <li key={answer.label}>
-                  <strong>{answer.label}:</strong> {answer.value || 'Not given'}{' '}
-                  <Button
-                    type="button"
-                    variant="quiet"
-                    size="sm"
-                    aria-label={`Copy ${answer.label}`}
-                    onClick={() => void copy(answer.label, answer.value)}
-                  >
-                    {copied === answer.label ? 'Copied' : 'Copy'}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </Card>
-          <PastReturns returns={pastReturns} months={months} onDownload={download} />
-        </>
       ) : null}
     </form>
   );
