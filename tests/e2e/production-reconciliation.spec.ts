@@ -393,6 +393,7 @@ test.describe('production reconciliation persistence', () => {
       })}`,
     );
 
+    await openDaySummary(page);
     const shiftRow = page
       // The approved layout no longer prints raw shift ids; rows carry data-shift-id.
       .locator(`article.operations-shift-row[data-shift-id="${ids.controlRoomShift}"]`);

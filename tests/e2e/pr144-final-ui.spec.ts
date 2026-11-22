@@ -107,6 +107,8 @@ test.describe('console hygiene', () => {
     ).toBeVisible();
     await page.goBack();
     await expect(page).toHaveURL(/\/operations\/daily/);
+    // Coming back loads the page fresh, so it opens on the next step again.
+    await openDaySummary(page);
     await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
     await page.goForward();
     await expect(page).toHaveURL(/\/reconciliations/);
