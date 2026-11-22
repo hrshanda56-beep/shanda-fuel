@@ -36,7 +36,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pag
       }}
       render={(data) =>
         data ? (
-          <div className="reports-stack wide-workspace">
+          <div className="reports-stack">
             <p>
               <Link href={`/reports?tenantId=${encodeURIComponent(data.tenantId)}`}>
                 ← All reports
