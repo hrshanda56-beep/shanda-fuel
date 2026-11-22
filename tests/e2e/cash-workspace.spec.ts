@@ -233,11 +233,9 @@ test.describe('Cash workspace', () => {
     await receiveSheet
       .getByRole('combobox', { name: 'Cash to receive' })
       .selectOption('collection-1');
-    await receiveSheet.getByRole('button', { name: 'Continue' }).click();
     await receiveSheet
       .getByRole('combobox', { name: 'Receiving location' })
       .selectOption('location-2');
-    await receiveSheet.getByRole('button', { name: 'Continue' }).click();
     await expect(
       receiveSheet.getByRole('heading', { name: 'Check the cash received' }),
     ).toBeVisible();
@@ -277,11 +275,9 @@ test.describe('Cash workspace', () => {
     await collectSheet
       .getByRole('combobox', { name: 'Shift cash' })
       .selectOption('reconciliation-1');
-    await collectSheet.getByRole('button', { name: 'Continue' }).click();
     await collectSheet
       .getByRole('combobox', { name: 'Where the cash is' })
       .selectOption('location-1');
-    await collectSheet.getByRole('button', { name: 'Continue' }).click();
     // Choosing a shift fills in the amount available; it can still be changed.
     await expect(collectSheet.getByLabel('Amount')).toHaveValue('1000.00');
     await collectSheet.getByLabel('Amount').fill('25.00');
@@ -392,8 +388,8 @@ test.describe('Cash workspace', () => {
       .getByRole('button', { name: 'Bank it' })
       .click();
     const sheet = page.getByRole('dialog', { name: 'Bank cash' });
+    // Picking the only choice on a screen carries straight on to the next question.
     await sheet.getByRole('combobox', { name: 'Bank account' }).selectOption('bank-account-1');
-    await sheet.getByRole('button', { name: 'Continue' }).click();
     await expect(sheet.getByRole('combobox', { name: /^Cash\b/ })).toHaveValue('collection-1');
     await expect(sheet.getByLabel('Amount')).toHaveValue('700.00');
   });

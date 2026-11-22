@@ -172,8 +172,8 @@ test.describe('ZERA monthly return wizard', () => {
     await heading(page, 'What is the ethanol percentage of your blended petrol?');
     await next(page).click();
     await expect(page.getByRole('alert').filter({ hasText: 'Choose one.' })).toBeVisible();
+    // Picking the only choice on a screen carries straight on to the next question.
     await page.getByText('10%', { exact: true }).click();
-    await next(page).click();
 
     // A day with no approved report is explained, never hidden.
     await heading(page, 'Something needs your attention');
@@ -269,7 +269,7 @@ test.describe('ZERA monthly return wizard', () => {
     await page.getByRole('button', { name: 'Save this return' }).click();
     await expect(page.getByText(/Saved as version 1/)).toBeVisible();
     const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: /Download CSV, 2026-10 version 1/ }).click();
+    await page.getByRole('button', { name: 'Download CSV', exact: true }).click();
     expect((await download).suggestedFilename()).toBe('zera-return-2026-10-v1.csv');
     expect(seen.stepUps).toBe(1);
     expect(seen.downloads).toBe(2);

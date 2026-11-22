@@ -78,10 +78,11 @@ test.describe('supplier workflows', () => {
     // The form is a short wizard. It starts with what the company does (fuel is the default).
     await expect(page.getByText('What does this company do for you?')).toBeVisible();
     await page.getByRole('button', { name: 'Continue' }).click();
-    await page.getByLabel('Supplier code').fill('SUP-0002');
+    // Who they are, a short name, then the optional steps (registration, contact, credit).
     await page.getByLabel('Legal name').fill('Harare Fuel Hauliers');
-    // Then: who, contact, credit, then a check before creating.
-    for (let step = 0; step < 3; step += 1) {
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByLabel('Supplier code').fill('SUP-0002');
+    for (let step = 0; step < 4; step += 1) {
       await page.getByRole('button', { name: 'Continue' }).click();
     }
     await page.getByRole('button', { name: 'Create supplier' }).click();

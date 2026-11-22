@@ -352,13 +352,13 @@ test.describe('production reconciliation persistence', () => {
     // This scenario runs with CI's Better Auth provider. Rendering the control
     // room must not require a ClerkProvider or crash before its content loads.
     await expect(controlRoom).toBeVisible();
-    // The one next step is offered; the day summary (shifts list, day card) is not shown.
+    // The one next step is offered (the last shift of the day also ends the day, in one button); the day summary (shifts list, day card) is not shown.
     await expect(controlRoom.locator('#next-step-title')).toBeVisible();
-    await expect(controlRoom.getByRole('button', { name: 'Close Shift' }).first()).toBeVisible();
+    await expect(controlRoom.getByRole('button', { name: /^Close shift/i }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
     await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toHaveCount(0);
 
-    const closeMeters = controlRoom.getByRole('button', { name: 'Close Shift' }).first();
+    const closeMeters = controlRoom.getByRole('button', { name: /^Close shift/i }).first();
     await closeMeters.focus();
     await expect(closeMeters).toBeFocused();
 
@@ -387,7 +387,7 @@ test.describe('production reconciliation persistence', () => {
 
     const closeMeters = page
       .locator('[aria-label="Operations control room"]')
-      .getByRole('button', { name: 'Close Shift' })
+      .getByRole('button', { name: /^Close shift/i })
       .first();
     await expect(closeMeters).toBeVisible();
     await client.unsafe(
