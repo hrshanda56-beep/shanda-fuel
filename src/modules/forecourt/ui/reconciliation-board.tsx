@@ -62,36 +62,46 @@ const money = (value: string | null | undefined) => formatTileMoney(value, CURRE
 function useDetails(items: readonly QueueItem[], tenantId: string, stationId: string) {
   const [details, setDetails] = useState<Record<string, ReconciliationDetail | null>>({});
 
+  // Keyed on the ids, not the array: the parent hands over a fresh array on every refresh, which
+  // used to cancel the fetches mid-flight and leave "Loading shift figures" on screen.
+  const idKey = items.map((item) => item.id).join(',');
+
   useEffect(() => {
-    let cancelled = false;
-    void Promise.all(
-      items.map(async (item): Promise<[string, ReconciliationDetail | null]> => {
+    let stopped = false;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 15000);
+    for (const id of idKey ? idKey.split(',') : []) {
+      void (async () => {
+        let detail: ReconciliationDetail | null = null;
         try {
           const params = new URLSearchParams({ tenantId, stationId });
-          const response = await fetch(`/api/forecourt/reconciliations/${item.id}?${params}`, {
+          const response = await fetch(`/api/forecourt/reconciliations/${id}?${params}`, {
             cache: 'no-store',
+            signal: controller.signal,
           });
-          if (!response.ok) return [item.id, null];
-          const body = (await response.json()) as Partial<ReconciliationDetail>;
-          const ready =
-            typeof body.totals?.expectedSales === 'string' &&
-            typeof body.totals.accountedSales === 'string' &&
-            typeof body.totals.salesVariance === 'string' &&
-            Array.isArray(body.readings) &&
-            Array.isArray(body.payments) &&
-            Array.isArray(body.expenses);
-          return [item.id, ready ? (body as ReconciliationDetail) : null];
+          if (response.ok) {
+            const body = (await response.json()) as Partial<ReconciliationDetail>;
+            const ready =
+              typeof body.totals?.expectedSales === 'string' &&
+              typeof body.totals.accountedSales === 'string' &&
+              typeof body.totals.salesVariance === 'string' &&
+              Array.isArray(body.readings) &&
+              Array.isArray(body.payments) &&
+              Array.isArray(body.expenses);
+            if (ready) detail = body as ReconciliationDetail;
+          }
         } catch {
-          return [item.id, null];
+          detail = null;
         }
-      }),
-    ).then((entries) => {
-      if (!cancelled) setDetails(Object.fromEntries(entries));
-    });
+        if (!stopped) setDetails((current) => ({ ...current, [id]: detail }));
+      })();
+    }
     return () => {
-      cancelled = true;
+      stopped = true;
+      window.clearTimeout(timer);
+      controller.abort();
     };
-  }, [items, tenantId, stationId]);
+  }, [idKey, tenantId, stationId]);
 
   return { details, loaded: items.every((item) => item.id in details) };
 }

@@ -294,7 +294,7 @@
     "src/modules/forecourt/ui/production-reconciliation-state.ts": "307b2872642e80442cb965986562682ebed59041d4bdccb5fa99a36e63a4a219",
     "src/modules/forecourt/ui/production-reconciliation-workflow.tsx": "e93034976162f4ac9a40ee652d56651f37b324323c22b2cd8998aee54aaaa560",
     "src/modules/forecourt/ui/pump-readout.tsx": "652428e4d18c86be8f24405328596243379105731c21a3da731a4734f1805f21",
-    "src/modules/forecourt/ui/reconciliation-board.tsx": "a25b62dcfb2a94e2734ad5323d46525b57b0ec827573bb9820a6da414ed1d054",
+    "src/modules/forecourt/ui/reconciliation-board.tsx": "10c2354aedc19dcdf817dfe1cc5ce2217c1c23459fbded077f82352ab0065a51",
     "src/modules/forecourt/ui/reconciliation-statement.ts": "2b31c349ed24ff7119c9cce9dfcf7d50dfb158993d60faad8479dccb6c14dd5f",
     "src/modules/forecourt/ui/shift-message-check.tsx": "45839c210f01feaff8a88ba4f2bd44852cf06e772e2476660c40ba4d8a9a98f7",
     "src/modules/forecourt/ui/transition-messages.ts": "1d7fd13fceeb4ba38341876c0d1454df5cb6745d3e38f3e7322117643f4fb6f6",
