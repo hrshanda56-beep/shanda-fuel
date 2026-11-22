@@ -451,10 +451,22 @@ test.describe('production reconciliation persistence', () => {
       throw new Error(`No command was sent. POSTs seen: ${JSON.stringify(posts)}. ${error}`);
     });
     expect(response.status()).toBe(409);
-    await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
+    // The card explains the conflict in its own words, shows the refreshed state, and does not retry.
     await expect(
-      page.getByText(/authoritative state has been refreshed; review it before trying again/i),
+      page
+        .locator('[aria-label="Operations control room"]')
+        .getByRole('alert')
+        .filter({ hasText: /changed elsewhere|already locked/i }),
     ).toBeVisible();
+    await expect(
+      page
+        .locator('[aria-label="Operations control room"]')
+        .getByRole('button', {
+          name: /^Close shift/i,
+        })
+        .first(),
+    ).toBeVisible();
+    expect(posts.filter((url) => url.includes('/api/forecourt/commands'))).toHaveLength(1);
   });
 
   // Needs a real Clerk second factor for the manager (step-up). The test Clerk instance has none
