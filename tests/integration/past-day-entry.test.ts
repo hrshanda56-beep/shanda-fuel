@@ -23,6 +23,14 @@ const ids = {
   ownerSession: 'a3d00000-0000-4000-8000-000000000112',
   morning: 'a3d00000-0000-4000-8000-000000000201',
   afternoon: 'a3d00000-0000-4000-8000-000000000202',
+  attendant: 'a3d00000-0000-4000-8000-000000000033',
+  attendantMembership: 'a3d00000-0000-4000-8000-000000000043',
+  product: 'a3d00000-0000-4000-8000-000000000301',
+  pump: 'a3d00000-0000-4000-8000-000000000302',
+  nozzle: 'a3d00000-0000-4000-8000-000000000303',
+  meter: 'a3d00000-0000-4000-8000-000000000304',
+  installation: 'a3d00000-0000-4000-8000-000000000305',
+  price: 'a3d00000-0000-4000-8000-000000000306',
 };
 const supervisorToken = 'a3d-supervisor-token';
 const ownerToken = 'a3d-owner-token';
@@ -96,6 +104,34 @@ describe('past-day entry: OpenPastBusinessDay', () => {
         ('${ids.morning}', '${ids.tenant}', '${ids.station}', 'AM', 'Morning', 480, '06:00', '${ids.supervisorMembership}'),
         ('${ids.afternoon}', '${ids.tenant}', '${ids.station}', 'PM', 'Afternoon', 480, '14:00', '${ids.supervisorMembership}')
         on conflict (id) do nothing;
+      insert into app.users (id, name, email) values
+        ('${ids.attendant}', 'Past Day Attendant', 'past-day-attendant@example.test')
+        on conflict (id) do nothing;
+      insert into app.memberships (id, tenant_id, identity_id, status) values
+        ('${ids.attendantMembership}', '${ids.tenant}', '${ids.attendant}', 'ACTIVE')
+        on conflict (id) do nothing;
+      insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id) values
+        ('${ids.tenant}', '${ids.attendantMembership}', 'ATTENDANT', 'STATION', '${ids.legal}', '${ids.station}')
+        on conflict do nothing;
+      insert into app.products (id, tenant_id, code, name)
+        values ('${ids.product}', '${ids.tenant}', 'PDE-DIESEL', 'Diesel') on conflict (id) do nothing;
+      insert into app.pumps (id, tenant_id, station_id, number)
+        values ('${ids.pump}', '${ids.tenant}', '${ids.station}', '1') on conflict (id) do nothing;
+      insert into app.nozzles (id, tenant_id, station_id, pump_id, number, product_id)
+        values ('${ids.nozzle}', '${ids.tenant}', '${ids.station}', '${ids.pump}', '1', '${ids.product}') on conflict (id) do nothing;
+      insert into app.meters (id, tenant_id, serial_number)
+        values ('${ids.meter}', '${ids.tenant}', 'PDE-METER-1') on conflict (id) do nothing;
+      insert into app.meter_installations (id, tenant_id, station_id, nozzle_id, meter_id, effective_from, installed_by)
+        values ('${ids.installation}', '${ids.tenant}', '${ids.station}', '${ids.nozzle}', '${ids.meter}', '2020-01-01T00:00:00Z', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      insert into app.selling_prices (id, tenant_id, station_id, product_id, effective_from, unit_price, state, requested_by)
+        values ('${ids.price}', '${ids.tenant}', '${ids.station}', '${ids.product}', '2020-01-01T00:00:00Z', 1.500000, 'DRAFT', '${ids.supervisorMembership}')
+        on conflict (id) do nothing;
+      update app.selling_prices set state = 'PENDING_APPROVAL' where id = '${ids.price}' and state = 'DRAFT';
+      update app.selling_prices set state = 'APPROVED', approved_by = '${ids.ownerMembership}', approved_at = clock_timestamp() where id = '${ids.price}' and state = 'PENDING_APPROVAL';
+      update app.selling_prices set state = 'PENDING_STATION_ACTIVATION' where id = '${ids.price}' and state = 'APPROVED';
+      update app.selling_prices set state = 'BOUNDARIES_IN_PROGRESS' where id = '${ids.price}' and state = 'PENDING_STATION_ACTIVATION';
+      update app.selling_prices set state = 'ACTIVE' where id = '${ids.price}' and state = 'BOUNDARIES_IN_PROGRESS';
       delete from app.shifts where station_id = '${ids.station}';
       delete from app.station_business_days where station_id = '${ids.station}';
       update app.stations set go_live_date = null where id = '${ids.station}';
@@ -226,6 +262,125 @@ describe('past-day entry: OpenPastBusinessDay', () => {
     expect(shifts).toEqual([
       { code: 'AM', start: '06:00', opened: '06:00' },
       { code: 'PM', start: '14:00', opened: '14:00' },
+    ]);
+  });
+  it('closes two late shifts end to end: readings chain, times come from the schedule', async () => {
+    const date = addDays(await stationToday(), -4);
+    const dayId = randomUUID();
+    expect(
+      (
+        await post(
+          {
+            commandType: 'OpenPastBusinessDay',
+            tenantId: ids.tenant,
+            stationId: ids.station,
+            businessDayId: dayId,
+            businessDate: date,
+          },
+          supervisorToken,
+        )
+      ).status,
+    ).toBe(200);
+
+    const runShift = async (templateId: string, opening: string, closing: string) => {
+      const shiftId = randomUUID();
+      const reconciliationId = randomUUID();
+      const common = { tenantId: ids.tenant, stationId: ids.station, reconciliationId };
+      const ok = async (input: Record<string, unknown>) => {
+        const response = await post(input, supervisorToken);
+        if (response.status !== 200) {
+          throw new Error(
+            `${String(input.commandType)} gave ${response.status}: ${await response.text()}`,
+          );
+        }
+      };
+      const litres = Number(closing) - Number(opening);
+      const value = (litres * 1.5).toFixed(2);
+      await ok({
+        commandType: 'StartShift',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        businessDayId: dayId,
+        shiftId,
+        expectedVersion: 0,
+        shiftTemplateId: templateId,
+      });
+      await ok({
+        ...common,
+        commandType: 'CreateProductionReconciliation',
+        businessDayId: dayId,
+        shiftId,
+        expectedVersion: 0,
+      });
+      await ok({
+        ...common,
+        commandType: 'SaveMeterReadings',
+        expectedVersion: 0,
+        readings: [
+          {
+            nozzleId: ids.nozzle,
+            productId: ids.product,
+            shiftId,
+            openingReading: opening,
+            closingReading: closing,
+            sellingPriceId: ids.price,
+          },
+        ],
+      });
+      await ok({
+        ...common,
+        commandType: 'SavePaymentAllocations',
+        expectedVersion: 1,
+        payments: [{ method: 'CASH', amount: value }],
+      });
+      await ok({ ...common, commandType: 'SaveExpenses', expectedVersion: 2, expenses: [] });
+      await ok({
+        ...common,
+        commandType: 'SaveCashDeclaration',
+        expectedVersion: 3,
+        countedCash: value,
+      });
+      await ok({
+        ...common,
+        commandType: 'SaveVarianceExplanations',
+        expectedVersion: 4,
+        explanations: {},
+      });
+      await ok({
+        ...common,
+        commandType: 'SetAttendants',
+        expectedVersion: 5,
+        attendantIds: [ids.attendantMembership],
+      });
+      await ok({ ...common, commandType: 'SubmitProductionReconciliation', expectedVersion: 6 });
+      const shiftVersion = await client<{ version: number }[]>`
+        select version from app.shifts where id = ${shiftId}`;
+      await ok({
+        commandType: 'CloseMeters',
+        tenantId: ids.tenant,
+        stationId: ids.station,
+        businessDayId: dayId,
+        shiftId,
+        expectedVersion: shiftVersion[0]!.version,
+      });
+      return shiftId;
+    };
+
+    const morning = await runShift(ids.morning, '1000', '1200');
+    const afternoon = await runShift(ids.afternoon, '1200', '1500');
+
+    const segments = await client<{ code: string; litres: string; start: string; end: string }[]>`
+      select t.code, ms.litres::text as litres,
+        to_char(s.planned_start_at at time zone 'Africa/Harare', 'HH24:MI') as start,
+        to_char(s.planned_end_at at time zone 'Africa/Harare', 'HH24:MI') as end
+      from app.meter_segments ms
+      join app.shifts s on s.id = ms.shift_id
+      join app.shift_templates t on t.id = s.shift_template_id
+      where ms.shift_id in (${morning}, ${afternoon})
+      order by s.planned_start_at`;
+    expect(segments.map((row) => [row.code, Number(row.litres), row.start, row.end])).toEqual([
+      ['AM', 200, '06:00', '14:00'],
+      ['PM', 300, '14:00', '22:00'],
     ]);
   });
 });
