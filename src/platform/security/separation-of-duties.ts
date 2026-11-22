@@ -60,6 +60,29 @@ export function ownerQuery(scope: { tenantId: string; stationId: string; members
   `;
 }
 
+/** Whether the member is an active owner for the legal entity (any owner assignment covering it). */
+export async function ownerMayApproveOwnAtLegalEntity(
+  transaction: Executor,
+  scope: { tenantId: string; legalEntityId: string; membershipId: string },
+): Promise<boolean> {
+  const rows = (await transaction.execute(sql`
+    select 1 as found
+    from app.membership_role_assignments a
+    join app.member_directory(${scope.tenantId}::uuid) m on m.id = a.membership_id
+    where a.tenant_id = ${scope.tenantId}
+      and a.membership_id = ${scope.membershipId}
+      and a.role_code = 'OWNER'
+      and m.status = 'ACTIVE'
+      and (a.expires_at is null or a.expires_at > now())
+      and (
+        a.scope_type = 'TENANT'
+        or a.legal_entity_id = ${scope.legalEntityId}
+      )
+    limit 1
+  `)) as Array<{ found: number }>;
+  return rows.length > 0;
+}
+
 export async function ownerMayApproveOwn(
   transaction: Executor,
   scope: Parameters<typeof ownerQuery>[0],
