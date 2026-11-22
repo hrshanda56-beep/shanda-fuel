@@ -49,6 +49,8 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  // Where the person can go to fix what stopped the step, when the refusal says.
+  const [fixLink, setFixLink] = useState<{ label: string; href: string } | null>(null);
   // The action that is waiting for the person to say why, and what they have typed so far.
   const [askingReason, setAskingReason] = useState<StepAction | null>(null);
   const [reason, setReason] = useState('');
@@ -144,8 +146,15 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
       const body = (await response.json().catch(() => ({}))) as {
         message?: string;
         code?: string;
+        details?: Record<string, unknown>;
       };
-      throw new Error(dailyOperationsProblem(response.status, body.code, body.message).message);
+      const problem = dailyOperationsProblem(response.status, body.code, body.message, {
+        details: body.details,
+        stationId,
+        tenantId,
+      });
+      if (problem.fix?.kind === 'link') setFixLink(problem.fix);
+      throw new Error(problem.message);
     }
   }
 
@@ -160,6 +169,7 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
     setBusy(true);
     setError(undefined);
     setNotice(undefined);
+    setFixLink(null);
     try {
       // Opening the day comes first; if the shift then fails, the day stays open and the
       // refreshed card offers the shift on its own.
@@ -214,6 +224,11 @@ export function NextStepCard({ tenantId, stationId, onChanged, embedded = false 
         <p className="field-error" role="alert">
           {error}
         </p>
+      ) : null}
+      {error && fixLink ? (
+        <a className="button button-secondary next-step-action" href={fixLink.href}>
+          {fixLink.label}
+        </a>
       ) : null}
       {error && closing && figuresLink ? (
         <a className="button button-secondary next-step-action" href={figuresLink.href}>

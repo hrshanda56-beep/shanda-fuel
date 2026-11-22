@@ -1,4 +1,5 @@
 import { seedClerkIdentity, authenticateClerk, establishClerkStepUp } from './clerk-fixtures';
+import { openDaySummary } from './fixtures/day-summary';
 import AxeBuilder from '@axe-core/playwright';
 import {
   expect,
@@ -352,6 +353,7 @@ test.describe('production reconciliation persistence', () => {
     // This scenario runs with CI's Better Auth provider. Rendering the control
     // room must not require a ClerkProvider or crash before its content loads.
     await expect(controlRoom).toBeVisible();
+    await openDaySummary(page);
     await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Close Shift' }).first()).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
@@ -391,6 +393,7 @@ test.describe('production reconciliation persistence', () => {
       })}`,
     );
 
+    await openDaySummary(page);
     const shiftRow = page
       // The approved layout no longer prints raw shift ids; rows carry data-shift-id.
       .locator(`article.operations-shift-row[data-shift-id="${ids.controlRoomShift}"]`);
