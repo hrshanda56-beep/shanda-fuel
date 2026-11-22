@@ -191,6 +191,10 @@ export const stationBusinessDays = appSchema.table(
     openedAt: utcTimestamp('opened_at'),
     closedAt: utcTimestamp('closed_at'),
     closedReason: text('closed_reason'),
+    /** True when the day was recorded after the day itself (past-day entry). */
+    enteredLate: boolean('entered_late').notNull().default(false),
+    enteredLateBy: uuid('entered_late_by'),
+    enteredLateAt: utcTimestamp('entered_late_at'),
     createdAt: utcTimestamp('created_at').notNull().defaultNow(),
     updatedAt: utcTimestamp('updated_at').notNull().defaultNow(),
   },

@@ -685,7 +685,7 @@ export function DailyOperationsWorkspace({
     }
     if (readings.some((reading) => !reading.sellingPriceId)) {
       const message =
-        'A current active selling price is required for every meter row before saving.';
+        'Every pump needs a selling price that was in force on this day before saving. If this day is before the first price was recorded, ask the owner.';
       setError(message);
       setErrorFix({
         message,
@@ -1471,7 +1471,7 @@ export function DailyOperationsWorkspace({
         if (!reading.sellingPriceId) {
           return stop(
             {},
-            'No selling price is set for this fuel. Ask your manager before continuing.',
+            'No selling price was in force for this fuel on this day. Ask your manager before continuing.',
           );
         }
       }
@@ -2565,8 +2565,8 @@ export function DailyOperationsWorkspace({
                                 ) : null}
                                 {!reading.sellingPriceId ? (
                                   <p className="field-error" role="alert">
-                                    No selling price is set for this fuel. Ask your manager before
-                                    continuing.
+                                    No selling price was in force for this fuel on this day. Ask
+                                    your manager before continuing.
                                   </p>
                                 ) : null}
                               </article>
