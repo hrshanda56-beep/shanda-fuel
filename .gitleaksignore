@@ -8,3 +8,6 @@ e091c85013a6d87fcd1b4634562150f977637192:docs/ui-lock/manifest.json:generic-api-
 
 # A file hash in the UI-lock manifest (a list of file fingerprints) that looks like an API key; not a secret.
 38b7d2756cb5907f67b45b668c5d96cedc531336:docs/ui-lock/manifest.json:generic-api-key:209
+
+# A file hash in the UI-lock manifest that looks like an API key; not a secret.
+b1cd0968ee597b6137605da7b0391318dd9a5a3e:docs/ui-lock/manifest.json:generic-api-key:363
