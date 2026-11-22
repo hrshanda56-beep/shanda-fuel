@@ -212,6 +212,8 @@ type GuideStep =
   | 'supplier'
   | 'tank'
   | 'note'
+  | 'notelitres'
+  | 'arrived'
   | 'received'
   | 'po'
   | 'truck'
@@ -389,6 +391,8 @@ export function RecordDelivery({
     'supplier',
     ...(tanks.length > 1 ? (['tank'] as const) : []),
     'note',
+    'notelitres',
+    'arrived',
     'received',
     'po',
     'truck',
@@ -957,8 +961,15 @@ export function RecordDelivery({
   function guideNext() {
     if (step === 'supplier') return wizard.advance(checkSupplier(supplierId), after, 'review');
     if (step === 'tank') return wizard.advance(checkTank(tankId), after, 'review');
-    if (step === 'note') {
-      return wizard.advance(checkNote(deliveryNote, deliveredAt, noteLitres), after, 'review');
+    if (step === 'note' || step === 'notelitres' || step === 'arrived') {
+      const found = checkNote(deliveryNote, deliveredAt, noteLitres);
+      const id =
+        step === 'note'
+          ? 'rd-note-number'
+          : step === 'arrived'
+            ? 'rd-delivered-at'
+            : 'rd-note-litres';
+      return wizard.advance(found[id] ? { [id]: found[id] } : {}, after, 'review');
     }
     if (step === 'received') return wizard.advance(checkReceived(receivedLitres), after, 'review');
     if (step === 'po') {
@@ -1010,11 +1021,7 @@ export function RecordDelivery({
       }}
     >
       {step === 'supplier' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Who delivered the fuel?"
-          hint="Choose the supplier named on the delivery note."
-        >
+        <WizardStep wizard={wizard} title="Who delivered the fuel?">
           <Field id="rd-supplier" label="Supplier" error={errors['rd-supplier']} required>
             <select
               id="rd-supplier"
@@ -1036,11 +1043,7 @@ export function RecordDelivery({
         </WizardStep>
       ) : null}
       {step === 'tank' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Which fuel, and which tank?"
-          hint="Choose what was delivered and where it was poured."
-        >
+        <WizardStep wizard={wizard} title="Which fuel, and which tank?">
           <Field id="rd-tank" label="Fuel and tank" error={errors['rd-tank']} required>
             <select id="rd-tank" value={tankId} onChange={(event) => setTankId(event.target.value)}>
               {tanks.map((item) => (
@@ -1054,11 +1057,7 @@ export function RecordDelivery({
         </WizardStep>
       ) : null}
       {step === 'note' ? (
-        <WizardStep
-          wizard={wizard}
-          title="What does the delivery note say?"
-          hint="Copy these from the driver's paperwork."
-        >
+        <WizardStep wizard={wizard} title="What is the delivery note number?">
           <Field
             id="rd-note-number"
             label="Delivery note number"
@@ -1073,35 +1072,44 @@ export function RecordDelivery({
               onChange={(event) => setDeliveryNote(event.target.value)}
             />
           </Field>
-          <WizardPair>
-            <Field
-              id="rd-delivered-at"
-              label="Delivered at"
-              error={errors['rd-delivered-at']}
-              required
-            >
-              <input
-                id="rd-delivered-at"
-                type="datetime-local"
-                value={deliveredAt}
-                onChange={(event) => setDeliveredAt(event.target.value)}
-              />
-            </Field>
-            <Field
+          <WizardActions wizard={wizard} onContinue={guideNext} />
+        </WizardStep>
+      ) : null}
+      {step === 'notelitres' ? (
+        <WizardStep wizard={wizard} title={`How many ${unitWord} does the note say?`}>
+          <Field
+            id="rd-note-litres"
+            label={`${UnitWord} on the note`}
+            error={errors['rd-note-litres']}
+            required
+          >
+            <input
               id="rd-note-litres"
-              label={`${UnitWord} on the note`}
-              error={errors['rd-note-litres']}
-              required
-            >
-              <input
-                id="rd-note-litres"
-                inputMode="decimal"
-                autoComplete="off"
-                value={noteLitres}
-                onChange={(event) => setNoteLitres(event.target.value)}
-              />
-            </Field>
-          </WizardPair>
+              inputMode="decimal"
+              autoComplete="off"
+              autoFocus
+              value={noteLitres}
+              onChange={(event) => setNoteLitres(event.target.value)}
+            />
+          </Field>
+          <WizardActions wizard={wizard} onContinue={guideNext} />
+        </WizardStep>
+      ) : null}
+      {step === 'arrived' ? (
+        <WizardStep wizard={wizard} title="When did the fuel arrive?">
+          <Field
+            id="rd-delivered-at"
+            label="Delivered at"
+            error={errors['rd-delivered-at']}
+            required
+          >
+            <input
+              id="rd-delivered-at"
+              type="datetime-local"
+              value={deliveredAt}
+              onChange={(event) => setDeliveredAt(event.target.value)}
+            />
+          </Field>
           <WizardActions wizard={wizard} onContinue={guideNext} />
         </WizardStep>
       ) : null}
@@ -1109,7 +1117,7 @@ export function RecordDelivery({
         <WizardStep
           wizard={wizard}
           title={`How many ${unitWord} did you actually receive?`}
-          hint="Use the tank dip or the meter, not the note."
+          hint="From the tank dip or meter, not the note."
         >
           <Field
             id="rd-received-litres"
@@ -1151,7 +1159,7 @@ export function RecordDelivery({
         <WizardStep
           wizard={wizard}
           title="Is there a purchase order for this delivery?"
-          hint="Linking an order lets us check the price and quantity."
+          hint="Linking one lets us check price and quantity."
         >
           <PurchaseOrderChoice
             id="rd-po"
@@ -1168,11 +1176,7 @@ export function RecordDelivery({
         </WizardStep>
       ) : null}
       {step === 'truck' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Who brought it?"
-          hint="You can leave this empty and carry on."
-        >
+        <WizardStep wizard={wizard} title="Who brought it?" hint="Optional.">
           {carrierField('rd-transporter', 'Who is the transporter?')}
           <WizardPair>
             <Field id="rd-truck" label="Truck registration" optional>
@@ -1211,7 +1215,7 @@ export function RecordDelivery({
         <WizardStep
           wizard={wizard}
           title="What did the tank dip show?"
-          hint="Before and after the delivery. You can leave this empty and carry on."
+          hint="Before and after. Optional."
         >
           <WizardPair>
             <Field
@@ -1250,7 +1254,7 @@ export function RecordDelivery({
         <WizardStep
           wizard={wizard}
           title="Did the truck have compartments?"
-          hint="Add one for each, with its seal numbers. You can leave this empty and carry on."
+          hint="Add one for each, with seal numbers. Optional."
         >
           <CompartmentFields rows={compartments} onChange={setCompartments} />
           {sumProblem ? (
@@ -1262,11 +1266,7 @@ export function RecordDelivery({
         </WizardStep>
       ) : null}
       {step === 'water' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Did you test for water?"
-          hint="You can leave this empty and carry on."
-        >
+        <WizardStep wizard={wizard} title="Did you test for water?" hint="Optional.">
           <Field id="rd-water" label="Result" optional>
             <select
               id="rd-water"
@@ -1293,7 +1293,7 @@ export function RecordDelivery({
         </WizardStep>
       ) : null}
       {step === 'review' ? (
-        <WizardStep wizard={wizard} title="Check the delivery" hint={WIZARD_REVIEW_HINT}>
+        <WizardStep wizard={wizard} title="Check the delivery">
           <WizardSummary>
             <WizardSummaryRow label="Supplier" onChange={() => wizard.change('supplier')}>
               {suppliers?.find((item) => item.id === supplierId)?.label ?? unanswered}

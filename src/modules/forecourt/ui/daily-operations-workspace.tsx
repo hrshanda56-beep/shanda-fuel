@@ -45,14 +45,15 @@ import { InfoTip } from '../../../design-system/info-tip';
 import { DailyTankDips } from './daily-tank-dips';
 import { PumpReadout } from './pump-readout';
 import { OpeningReadingsEntry } from './opening-readings-entry';
-import { useWizard } from '../../../design-system/wizard';
+import { WizardQuiet, useWizard } from '../../../design-system/wizard';
 import {
   EXPLAIN_QUESTION,
   buildScreens,
   checkCashCounted,
   checkClosing,
-  checkExpenseLine,
+  checkMoney,
   checkPaymentLine,
+  paymentNeeds,
   indexOfScreen,
   neighbourScreen,
   resumeScreen,
@@ -62,10 +63,14 @@ import {
 import {
   AddMoreScreen,
   CashScreen,
-  ExpenseLineScreen,
+  ExpenseAmountScreen,
+  ExpensePaidScreen,
+  ExpenseWhatScreen,
   ExplainScreen,
   NoPumpsScreen,
   PaymentLineScreen,
+  PaymentNameScreen,
+  PaymentWhoScreen,
   PumpScreen,
   SubmitScreen,
   TankScreen,
@@ -217,6 +222,13 @@ const methodLabels: Record<PaymentMethod, string> = {
   PREPAID: 'Prepaid account',
   STAFF_OR_MANAGEMENT_FUEL: 'Staff or management fuel',
   OTHER_APPROVED: 'Other (approved)',
+};
+
+/** The two ways customers usually pay, each asked on a screen of its own (#253). */
+const NAMED_PAYMENTS: readonly PaymentMethod[] = ['CASH', 'POS'];
+const NAMED_PAYMENT_TITLE: Partial<Record<PaymentMethod, string>> = {
+  CASH: 'How much did customers pay in cash?',
+  POS: 'How much was paid by card?',
 };
 
 /** The ways customers usually pay; one tap adds a line for each. */
@@ -608,7 +620,8 @@ export function DailyOperationsWorkspace({
           'idempotency-key': idempotencyKey,
           [OWN_ERRORS_HEADER]: '1',
           // The supervisor's figures save at every question; the page says "Saved" once, not each time.
-          ...(role === 'SUPERVISOR' && /^(Save|Set)/.test(commandType)
+          ...((role === 'SUPERVISOR' || isEditableDailyOperationsState(record?.state)) &&
+          /^(Save|Set)/.test(commandType)
             ? { [OWN_CONFIRMATION_HEADER]: '1' }
             : {}),
         },
@@ -1334,8 +1347,10 @@ export function DailyOperationsWorkspace({
       ]
     : [];
 
-  /* ---- One question per screen: the supervisor entering a shift's figures (#253) ---- */
-  const wizardMode = role === 'SUPERVISOR' && editable && Boolean(record);
+  /* ---- One question per screen: whoever is entering a shift's figures (#253). Supervisor, owner or
+     manager alike: a draft or returned record is being filled in, so it gets the same questions.
+     A submitted or locked record is reviewed, and keeps the stepped overview. ---- */
+  const wizardMode = editable && Boolean(record);
   // Pumps in the order they stand on the forecourt, as on the old screen.
   const orderedReadings = useMemo(() => {
     const place = (nozzleId: string) => {
@@ -1363,20 +1378,37 @@ export function DailyOperationsWorkspace({
   const tankIds = (record?.tanks ?? []).map((tank) => tank.tankId);
   const tankKey = tankIds.join(',');
   const readingKey = orderedReadings.map((reading) => reading.rowKey).join(',');
-  const paymentRowKey = payments.map((payment) => payment.rowKey).join(',');
   const expenseRowKey = expenses.map((expense) => expense.rowKey).join(',');
   const hasVisiting = visitingAttendants.length > 0;
+  // The first line of cash and of card is asked on its own screen; every other line comes after.
+  const namedLines = new Map(
+    NAMED_PAYMENTS.flatMap((method) => {
+      const line = payments.find((item) => item.method === method);
+      return line ? [[line.rowKey, method] as const] : [];
+    }),
+  );
+  const extraPayments = payments.filter((item) => !namedLines.has(item.rowKey));
+  const extraKey = extraPayments.map((item) => item.rowKey).join(',');
+  const whoKey = extraPayments
+    .filter((item) => {
+      const needs = paymentNeeds(item.method);
+      return needs.customer || needs.beneficiary;
+    })
+    .map((item) => item.rowKey)
+    .join(',');
   const screens = useMemo(
     () =>
       buildScreens({
         hasVisiting,
         pumpIds: readingKey ? readingKey.split(',') : [],
-        paymentKeys: paymentRowKey ? paymentRowKey.split(',') : [],
+        namedPayments: NAMED_PAYMENTS,
+        paymentKeys: extraKey ? extraKey.split(',') : [],
+        paymentWho: whoKey ? whoKey.split(',') : [],
         expenseKeys: expenseRowKey ? expenseRowKey.split(',') : [],
         tankIds: tankKey ? tankKey.split(',') : [],
         explain: (explainKey ? explainKey.split(',') : []) as Difference[],
       }),
-    [hasVisiting, readingKey, paymentRowKey, expenseRowKey, tankKey, explainKey],
+    [hasVisiting, readingKey, extraKey, whoKey, expenseRowKey, tankKey, explainKey],
   );
   /** What shows in the closing box: nothing until the person types, even though it starts level with the opening. */
   const shownClosing = (reading: {
@@ -1429,6 +1461,19 @@ export function DailyOperationsWorkspace({
       window.history.replaceState(window.history.state, '', url);
   }, [wizardMode, wizard.step]);
 
+  // Each question opens with the cursor in its box, so a figure is typed and Enter pressed.
+  useEffect(() => {
+    if (!wizardMode) return;
+    const timer = setTimeout(() => {
+      document
+        .querySelector<HTMLElement>(
+          '.entry-flow input:not([type=checkbox]):not([type=radio]):not([type=file]), .entry-flow textarea, .entry-flow select',
+        )
+        ?.focus({ preventScroll: true });
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [wizardMode, wizard.step]);
+
   /** Saves what has been typed, then shows the screen. Stays put if the save fails. */
   async function goScreen(id: string) {
     if (dirty && editable) {
@@ -1475,17 +1520,34 @@ export function DailyOperationsWorkspace({
           );
         }
       }
-    } else if (kind === 'payment') {
+    } else if (kind === 'payname') {
+      // Empty is a real answer: nobody paid this way.
+      const line = payments.find((item) => item.method === key);
+      if (line && line.amount.trim() !== '') {
+        const checked = checkMoney(line.amount);
+        if (!checked.ok) return stop({ amount: checked.message });
+      }
+    } else if (kind === 'paywho' || kind === 'payment') {
       const line = payments.find((item) => item.rowKey === key);
       if (line) {
-        const problems = checkPaymentLine(line);
+        // Who is asked on one screen and how much on the next; each checks only its own answer.
+        const problems = checkPaymentLine(
+          kind === 'paywho'
+            ? { ...line, amount: '1' }
+            : { ...line, customerAccountId: 'x', beneficiaryName: 'x' },
+        );
         if (Object.keys(problems).length > 0) return stop(problems);
       }
     } else if (kind === 'expense') {
       const line = expenses.find((item) => item.rowKey === key);
+      if (line && line.category.trim() === '') {
+        return stop({ category: 'Say what the money was for.' });
+      }
+    } else if (kind === 'expenseamt') {
+      const line = expenses.find((item) => item.rowKey === key);
       if (line) {
-        const problems = checkExpenseLine(line);
-        if (Object.keys(problems).length > 0) return stop(problems);
+        const checked = checkMoney(line.amount);
+        if (!checked.ok) return stop({ amount: checked.message });
       }
     } else if (kind === 'cash') {
       const checked = checkCashCounted(cashCounted);
@@ -1680,13 +1742,13 @@ export function DailyOperationsWorkspace({
         <TeamScreen
           nav={nav}
           title="Who worked this shift?"
-          hint="Tick everyone who worked this shift."
+          hint="Tick everyone who worked."
           people={operation.attendants}
           selected={attendantIds}
           onToggle={toggle}
           emptyText={
             operation.attendants.length === 0
-              ? 'No attendants are set up for this station yet. Ask your manager to add them.'
+              ? 'No attendants are set up yet. Ask your manager to add them.'
               : undefined
           }
           problem={wizard.problem}
@@ -1698,7 +1760,7 @@ export function DailyOperationsWorkspace({
         <TeamScreen
           nav={nav}
           title="Did anyone cover from another station?"
-          hint="Tick anyone who came to work here from another station. Leave it empty if nobody did."
+          hint="Leave empty if nobody did."
           people={visitingAttendants}
           selected={attendantIds}
           onToggle={toggle}
@@ -1737,9 +1799,11 @@ export function DailyOperationsWorkspace({
           error={errors.closing}
           unit={quantityUnitShort(fuelUnit)}
           litresLabel={fuelUnit === 'KILOGRAMS' ? 'Kilograms sold' : 'Litres sold'}
-          litresSold={litresShown ? formatQuantity(litresShown, fuelUnit) : '—'}
-          priceText={reading.unitPrice ? formatMoney(reading.unitPrice) : '—'}
-          salesValue={valueShown ? formatMoney(valueShown) : '—'}
+          result={
+            litresShown
+              ? `${formatQuantity(litresShown, fuelUnit)}${valueShown ? ` · ${formatMoney(valueShown)}` : ''}`
+              : ''
+          }
           belowOpening={belowOpening}
           noPrice={!reading.sellingPriceId}
           onChange={(value) => {
@@ -1807,15 +1871,50 @@ export function DailyOperationsWorkspace({
         />
       );
     }
+    if (kind === 'payname') {
+      const method = key as PaymentMethod;
+      const line = payments.find((item) => item.method === method);
+      return (
+        <PaymentNameScreen
+          nav={nav}
+          title={NAMED_PAYMENT_TITLE[method] ?? `How much was paid by ${methodLabels[method]}?`}
+          amount={line?.amount ?? ''}
+          error={errors.amount}
+          onAmount={(amount) => {
+            setDirty(true);
+            setPayments((rows) => {
+              const existing = rows.find((item) => item.method === method);
+              // Nothing typed means nobody paid this way, so there is no line at all.
+              if (amount.trim() === '') return rows.filter((item) => item !== existing);
+              if (existing) {
+                return rows.map((item) => (item === existing ? { ...item, amount } : item));
+              }
+              return [
+                ...rows,
+                {
+                  rowKey: newRowKey(),
+                  method,
+                  amount,
+                  reference: '',
+                  note: '',
+                  customerAccountId: '',
+                  beneficiaryName: '',
+                },
+              ];
+            });
+          }}
+        />
+      );
+    }
     if (kind === 'payments-more') {
+      const other = paymentMethods.filter((method) => !NAMED_PAYMENTS.includes(method));
       return (
         <AddMoreScreen
           nav={nav}
-          title={payments.length > 0 ? 'Did customers pay another way?' : 'How did customers pay?'}
-          hint="Pick a way customers paid this shift. The total should match the expected sales."
+          title="Did customers pay any other way?"
           name="payment-way"
-          choices={methodChoices(paymentMethods)}
-          doneLabel={payments.length > 0 ? 'No, that is all' : 'Skip for now'}
+          choices={methodChoices(other)}
+          doneLabel="No, that is all"
           onPick={(method) => {
             const rowKey = newRowKey();
             setDirty(true);
@@ -1832,47 +1931,52 @@ export function DailyOperationsWorkspace({
               },
             ]);
             wizard.setErrors({});
-            wizard.show(`payment:${rowKey}`);
+            const needs = paymentNeeds(method);
+            wizard.show(
+              needs.customer || needs.beneficiary ? `paywho:${rowKey}` : `payment:${rowKey}`,
+            );
           }}
           onDone={() => void continueFromScreen(here.id)}
         />
       );
     }
-    if (kind === 'payment') {
-      const index = payments.findIndex((item) => item.rowKey === key);
-      const line = payments[index];
+    if (kind === 'paywho' || kind === 'payment') {
+      const line = payments.find((item) => item.rowKey === key);
       if (!line) return null;
+      const removeLine = () => {
+        setDirty(true);
+        setPayments((rows) => rows.filter((item) => item.rowKey !== line.rowKey));
+        wizard.setErrors({});
+        wizard.show('payments-more');
+      };
+      if (kind === 'paywho') {
+        return (
+          <PaymentWhoScreen
+            nav={nav}
+            method={line.method}
+            customerAccountId={line.customerAccountId}
+            beneficiaryName={line.beneficiaryName}
+            customers={(record.customerAccounts ?? [])
+              .filter((account) => account.accountType === ACCOUNT_TYPE_FOR_METHOD[line.method])
+              .map((account) => ({
+                value: account.id,
+                label: `${account.name} · ${formatMoney(account.available)} available`,
+              }))}
+            errors={errors}
+            onCustomer={(customerAccountId) => patchPayment(line.rowKey, { customerAccountId })}
+            onBeneficiary={(beneficiaryName) => patchPayment(line.rowKey, { beneficiaryName })}
+            onRemove={removeLine}
+          />
+        );
+      }
       return (
         <PaymentLineScreen
           nav={nav}
-          number={index + 1}
-          method={line.method}
-          methods={methodChoices(paymentMethods)}
+          title={`How much was paid by ${methodLabels[line.method].toLowerCase()}?`}
           amount={line.amount}
-          reference={line.reference}
-          customerAccountId={line.customerAccountId}
-          beneficiaryName={line.beneficiaryName}
-          customers={(record.customerAccounts ?? [])
-            .filter((account) => account.accountType === ACCOUNT_TYPE_FOR_METHOD[line.method])
-            .map((account) => ({
-              value: account.id,
-              label: `${account.name} · ${formatMoney(account.available)} available`,
-            }))}
-          errors={errors}
-          onMethod={(method) =>
-            patchPayment(line.rowKey, { method: method as PaymentMethod, customerAccountId: '' })
-          }
+          error={errors.amount}
           onAmount={(amount) => patchPayment(line.rowKey, { amount })}
-          onReference={(reference) => patchPayment(line.rowKey, { reference })}
-          onCustomer={(customerAccountId) => patchPayment(line.rowKey, { customerAccountId })}
-          onBeneficiary={(beneficiaryName) => patchPayment(line.rowKey, { beneficiaryName })}
-          onRemove={() => {
-            setDirty(true);
-            setPayments((rows) => rows.filter((item) => item.rowKey !== line.rowKey));
-            wizard.setErrors({});
-            wizard.show('payments-more');
-          }}
-          runningTotal={formatMoney(sumDecimals(payments.map((item) => item.amount || '0')))}
+          onRemove={removeLine}
         />
       );
     }
@@ -1880,20 +1984,11 @@ export function DailyOperationsWorkspace({
       return (
         <AddMoreScreen
           nav={nav}
-          title={
-            expenses.length > 0
-              ? 'Was anything else paid out?'
-              : 'Was anything paid out during the shift?'
-          }
-          hint="Money paid out of the till or by the station, for example repairs or supplies."
+          title={expenses.length > 0 ? 'Was anything else paid out?' : 'Was anything paid out?'}
+          hint="Repairs or supplies, for example."
           name="expense-more"
-          choices={[
-            {
-              value: 'add',
-              label: expenses.length > 0 ? 'Yes, add another expense' : 'Yes, add an expense',
-            },
-          ]}
-          doneLabel={expenses.length > 0 ? 'No, that is all' : 'No'}
+          choices={[{ value: 'add', label: 'Yes' }]}
+          doneLabel="No"
           onPick={() => {
             const rowKey = newRowKey();
             setDirty(true);
@@ -1916,33 +2011,50 @@ export function DailyOperationsWorkspace({
         />
       );
     }
-    if (kind === 'expense') {
-      const index = expenses.findIndex((item) => item.rowKey === key);
-      const line = expenses[index];
+    if (kind === 'expense' || kind === 'expenseamt' || kind === 'expensepay') {
+      const line = expenses.find((item) => item.rowKey === key);
       if (!line) return null;
+      if (kind === 'expense') {
+        return (
+          <ExpenseWhatScreen
+            nav={nav}
+            value={line.category}
+            error={errors.category}
+            onChange={(category) =>
+              // One short answer says what it was for; it fills the details too.
+              patchExpense(line.rowKey, { category, description: category })
+            }
+            onRemove={() => {
+              setDirty(true);
+              setExpenses((rows) => rows.filter((item) => item.rowKey !== line.rowKey));
+              wizard.setErrors({});
+              wizard.show('expenses-more');
+            }}
+          />
+        );
+      }
+      if (kind === 'expenseamt') {
+        return (
+          <ExpenseAmountScreen
+            nav={nav}
+            amount={line.amount}
+            error={errors.amount}
+            onAmount={(amount) => patchExpense(line.rowKey, { amount })}
+          />
+        );
+      }
       return (
-        <ExpenseLineScreen
+        <ExpensePaidScreen
           nav={nav}
-          number={index + 1}
-          category={line.category}
-          description={line.description}
-          amount={line.amount}
-          paymentMethod={line.paymentMethod}
           methods={methodChoices(expensePaymentMethods)}
-          errors={errors}
-          onCategory={(category) => patchExpense(line.rowKey, { category })}
-          onDescription={(description) => patchExpense(line.rowKey, { description })}
-          onAmount={(amount) => patchExpense(line.rowKey, { amount })}
-          onMethod={(paymentMethod) =>
-            patchExpense(line.rowKey, { paymentMethod: paymentMethod as PaymentMethod })
-          }
-          onRemove={() => {
-            setDirty(true);
-            setExpenses((rows) => rows.filter((item) => item.rowKey !== line.rowKey));
-            wizard.setErrors({});
-            wizard.show('expenses-more');
+          value={line.paymentMethod}
+          onContinue={() => void continueFromScreen(here.id)}
+          onPick={(paymentMethod) => {
+            // One tap: choose the way and move on. It is saved with the next answer.
+            patchExpense(line.rowKey, { paymentMethod: paymentMethod as PaymentMethod });
+            const next = neighbourScreen(screens, here.id, 1);
+            if (next) wizard.show(next.id);
           }}
-          runningTotal={formatMoney(sumDecimals(expenses.map((item) => item.amount || '0')))}
         />
       );
     }
@@ -1956,18 +2068,8 @@ export function DailyOperationsWorkspace({
             setDirty(true);
             setCashCounted(value);
           }}
-          rows={[
-            { label: 'Cash we expected', value: formatMoney(liveCash.expected) },
-            { label: 'Paid out in cash', value: formatMoney(liveCash.paidOut) },
-            { label: 'Expected after payouts', value: formatMoney(liveCash.net) },
-            {
-              label: 'Cash difference',
-              value:
-                liveCash.difference === null
-                  ? 'Enter the cash counted'
-                  : formatMoney(liveCash.difference),
-            },
-          ]}
+          expected={formatMoney(liveCash.net)}
+          difference={liveCash.difference === null ? null : formatMoney(liveCash.difference)}
         />
       );
     }
@@ -1976,7 +2078,7 @@ export function DailyOperationsWorkspace({
         <TankScreen
           nav={nav}
           title="No tanks are set up yet"
-          hint="Your manager needs to set up the tanks for this station before dips can be recorded."
+          hint="Ask your manager to set them up."
         >
           {null}
         </TankScreen>
@@ -1992,7 +2094,7 @@ export function DailyOperationsWorkspace({
         <TankScreen
           nav={nav}
           title={`What does the dipstick show for ${tank.productName}?`}
-          hint="Dip the tank, type the reading and press Save dip. Every tank needs a dip before the shift can be submitted."
+          hint="Type the reading, then press Save dip."
           problem={wizard.problem}
         >
           <DailyTankDips
@@ -2020,7 +2122,7 @@ export function DailyOperationsWorkspace({
             </section>
           ) : null}
           <Link
-            className="button button-secondary"
+            className="text-link"
             href={`/inventory/deliveries?${new URLSearchParams({ tenantId: context.tenantId, stationId: context.stationId }).toString()}`}
           >
             Record a delivery
@@ -2038,15 +2140,15 @@ export function DailyOperationsWorkspace({
             : requiresStockExplanation;
       const figure =
         category === 'SALES'
-          ? `The sales difference is ${formatMoney(liveSales?.difference ?? record.totals.salesVariance)}. `
+          ? `Sales difference: ${formatMoney(liveSales?.difference ?? record.totals.salesVariance)}.`
           : category === 'CASH' && record.totals.cashVariance !== null
-            ? `The cash difference is ${formatMoney(record.totals.cashVariance)}. `
+            ? `Cash difference: ${formatMoney(record.totals.cashVariance)}.`
             : '';
       return (
         <ExplainScreen
           nav={nav}
           question={EXPLAIN_QUESTION[category]}
-          detail={`${figure}${required ? 'Please explain this difference before submitting.' : 'Only needed if there is a difference.'}`}
+          detail={required ? figure : 'Only needed if there is a difference.'}
           id={`explanation-${category.toLowerCase()}`}
           value={explanations[category] ?? ''}
           error={errors.explain}
@@ -2066,11 +2168,15 @@ export function DailyOperationsWorkspace({
         banners={
           state === 'RETURNED' ? (
             <p className="state state-warning" role="status">
-              <strong>Returned:</strong> {record?.returnReason ? `“${record.returnReason}” ` : null}
-              Fix the figures and save before you submit again.
+              <strong>Returned:</strong> {record?.returnReason ?? 'Fix the figures.'}
             </p>
           ) : null
         }
+        summary={`Sales difference ${formatMoney(liveSales?.difference ?? record.totals.salesVariance)}${
+          liveCash.difference === null
+            ? ''
+            : ` · Cash difference ${formatMoney(liveCash.difference)}`
+        }`}
         actions={
           <>
             <Button
@@ -2116,7 +2222,7 @@ export function DailyOperationsWorkspace({
               {dailyOperationsStatusLabel(state)}
             </StatusBadge>
           )}
-          {dirty ? (
+          {wizardMode ? null : dirty ? (
             <span className="dirty-indicator">Unsaved changes (copy kept on this device)</span>
           ) : role === 'MANAGEMENT' ? null : (
             <span className="saved-indicator">Saved</span>
@@ -2140,7 +2246,7 @@ export function DailyOperationsWorkspace({
         )}
       </div>
 
-      {error || notice ? (
+      {error || (notice && !wizardMode) ? (
         <div className="entry-notices">
           {error ? (
             <ErrorState
@@ -2152,7 +2258,7 @@ export function DailyOperationsWorkspace({
               }
             />
           ) : null}
-          {notice ? (
+          {notice && !wizardMode ? (
             <div className="state state-success" role="status" aria-live="polite">
               {notice}
             </div>
@@ -2211,48 +2317,50 @@ export function DailyOperationsWorkspace({
         }
       >
         <div className="entry-body card panel profit-panel">
-          <div className="entry-rail">
-            <aside className="entry-side" aria-labelledby="entry-side-title">
-              <span className="heading-with-tip">
-                <h2 id="entry-side-title" className="profit-title">
-                  This shift
-                </h2>
-                <InfoTip>Totals so far. They update as you type.</InfoTip>
-              </span>
-              <dl className="profit-rows" aria-label="Totals so far">
-                <div className="profit-row">
-                  <dt>Expected sales</dt>
-                  <dd>{formatMoney(liveSales?.expected ?? record.totals.expectedSales)}</dd>
-                </div>
-                <div className="profit-row">
-                  <dt>Accounted for</dt>
-                  <dd>{formatMoney(liveSales?.accounted ?? record.totals.accountedSales)}</dd>
-                </div>
-                <div
-                  className="profit-row"
-                  data-strong
-                  data-tone={
-                    isZero(liveSales?.difference ?? record.totals.salesVariance)
-                      ? undefined
-                      : 'warning'
-                  }
-                >
-                  <dt>Sales difference</dt>
-                  <dd>{formatMoney(liveSales?.difference ?? record.totals.salesVariance)}</dd>
-                </div>
-                {record.totals.cashVariance !== null ? (
+          {wizardMode ? null : (
+            <div className="entry-rail">
+              <aside className="entry-side" aria-labelledby="entry-side-title">
+                <span className="heading-with-tip">
+                  <h2 id="entry-side-title" className="profit-title">
+                    This shift
+                  </h2>
+                  <InfoTip>Totals so far. They update as you type.</InfoTip>
+                </span>
+                <dl className="profit-rows" aria-label="Totals so far">
+                  <div className="profit-row">
+                    <dt>Expected sales</dt>
+                    <dd>{formatMoney(liveSales?.expected ?? record.totals.expectedSales)}</dd>
+                  </div>
+                  <div className="profit-row">
+                    <dt>Accounted for</dt>
+                    <dd>{formatMoney(liveSales?.accounted ?? record.totals.accountedSales)}</dd>
+                  </div>
                   <div
                     className="profit-row"
                     data-strong
-                    data-tone={isZero(record.totals.cashVariance) ? undefined : 'warning'}
+                    data-tone={
+                      isZero(liveSales?.difference ?? record.totals.salesVariance)
+                        ? undefined
+                        : 'warning'
+                    }
                   >
-                    <dt>Cash difference</dt>
-                    <dd>{formatMoney(record.totals.cashVariance)}</dd>
+                    <dt>Sales difference</dt>
+                    <dd>{formatMoney(liveSales?.difference ?? record.totals.salesVariance)}</dd>
                   </div>
-                ) : null}
-              </dl>
-            </aside>
-          </div>
+                  {record.totals.cashVariance !== null ? (
+                    <div
+                      className="profit-row"
+                      data-strong
+                      data-tone={isZero(record.totals.cashVariance) ? undefined : 'warning'}
+                    >
+                      <dt>Cash difference</dt>
+                      <dd>{formatMoney(record.totals.cashVariance)}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </aside>
+            </div>
+          )}
 
           <div className="entry-flow">
             {wizardMode ? figureScreen() : null}

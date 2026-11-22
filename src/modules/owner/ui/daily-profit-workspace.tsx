@@ -102,10 +102,10 @@ export function DailyProfitWorkspace({
   const combinedUnit = summary?.combined.unit;
   const profitPerLabel =
     combinedUnit === 'KILOGRAMS'
-      ? 'Profit per kilogram'
+      ? 'Gross profit per kilogram'
       : combinedUnit === 'MIXED'
-        ? 'Profit per unit'
-        : 'Profit per litre';
+        ? 'Gross profit per unit'
+        : 'Gross profit per litre';
   const period = report
     ? `${formatBusinessDate(report.filters.fromDate)} to ${formatBusinessDate(report.filters.toDate)}`
     : null;

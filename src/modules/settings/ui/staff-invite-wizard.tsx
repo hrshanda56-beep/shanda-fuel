@@ -145,11 +145,7 @@ export function StaffInviteWizard({
       }}
     >
       {step === 'name' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Who are you inviting?"
-          hint="Their full name, as you want it shown."
-        >
+        <WizardStep wizard={wizard} title="Who are you inviting?" hint="As you want it shown.">
           <Field id="inv-name" label="Full name" error={errors['inv-name']} required>
             <input
               id="inv-name"
@@ -167,14 +163,14 @@ export function StaffInviteWizard({
         <WizardStep
           wizard={wizard}
           title="How will they sign in?"
-          hint="Invitations expire after 72 hours and can be resent or cancelled."
+          hint="Invitations expire after 72 hours."
         >
           <WizardChoices label="How they sign in">
             <WizardChoice
               name="inv-method"
               checked={method === 'MANUAL'}
               onPick={() => setMethod('MANUAL')}
-              detail="You give them a staff number and a one-time code. No email needed."
+              detail="You give them a number and a one-time code."
             >
               With a staff number
             </WizardChoice>
@@ -182,7 +178,7 @@ export function StaffInviteWizard({
               name="inv-method"
               checked={method === 'EMAIL'}
               onPick={() => setMethod('EMAIL')}
-              detail="We email them a link to set up their account."
+              detail="We email them a link."
             >
               With their email address
             </WizardChoice>
@@ -194,11 +190,7 @@ export function StaffInviteWizard({
         <WizardStep
           wizard={wizard}
           title={method === 'EMAIL' ? 'What is their email address?' : 'Pick a staff number'}
-          hint={
-            method === 'EMAIL'
-              ? 'The invitation is sent here.'
-              : 'This is their login name. Leave it blank and we will make one for you.'
-          }
+          hint={method === 'EMAIL' ? undefined : 'Leave it blank and we will make one.'}
         >
           {method === 'EMAIL' ? (
             <Field id="inv-email" label="Email address" error={errors['inv-email']} required>
@@ -216,7 +208,7 @@ export function StaffInviteWizard({
             <Field
               id="inv-number"
               label="Staff number"
-              hint="4 to 32 letters, numbers, hyphens or underscores."
+              hint="4 to 32 letters or numbers."
               error={errors['inv-number']}
               optional
             >
@@ -235,11 +227,7 @@ export function StaffInviteWizard({
         </WizardStep>
       ) : null}
       {step === 'role' ? (
-        <WizardStep
-          wizard={wizard}
-          title="What will they do?"
-          hint="This decides what they can see and do."
-        >
+        <WizardStep wizard={wizard} title="What will they do?">
           <Field id="inv-role" label="Role" required>
             <Select
               id="inv-role"
@@ -252,11 +240,7 @@ export function StaffInviteWizard({
         </WizardStep>
       ) : null}
       {step === 'scope' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Where will they work?"
-          hint="They can only use the stations you choose."
-        >
+        <WizardStep wizard={wizard} title="Where will they work?">
           {onlyCompany ? null : (
             <Field id="inv-company" label="Company" error={errors['inv-company']} required>
               <Select
@@ -337,7 +321,7 @@ export function StaffInviteWizard({
         </WizardStep>
       ) : null}
       {step === 'review' ? (
-        <WizardStep wizard={wizard} title="Check the invitation" hint={WIZARD_REVIEW_HINT}>
+        <WizardStep wizard={wizard} title="Check the invitation">
           <WizardSummary>
             <WizardSummaryRow label="Name" onChange={() => wizard.change('name')}>
               {name.trim()}

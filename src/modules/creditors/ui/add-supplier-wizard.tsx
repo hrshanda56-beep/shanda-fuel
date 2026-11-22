@@ -18,7 +18,7 @@ import {
   checkSupplierName,
 } from '../new-supplier-checks';
 
-type SupplierStep = 'does' | 'who' | 'contact' | 'credit' | 'review';
+type SupplierStep = 'does' | 'who' | 'code' | 'reg' | 'contact' | 'credit' | 'review';
 
 /** What the company does for the business. */
 export type SupplierRole = 'FUEL' | 'TRANSPORT' | 'BOTH';
@@ -35,16 +35,24 @@ export type NewSupplierValue = {
   creditLimit: string;
 };
 
-const SEQUENCE: readonly SupplierStep[] = ['does', 'who', 'contact', 'credit', 'review'];
+const SEQUENCE: readonly SupplierStep[] = [
+  'does',
+  'who',
+  'code',
+  'reg',
+  'contact',
+  'credit',
+  'review',
+];
 
 export const ROLE_CHOICES: readonly { value: SupplierRole; label: string; detail: string }[] = [
-  { value: 'FUEL', label: 'Supplies fuel', detail: 'Sells you fuel. This is the usual choice.' },
+  { value: 'FUEL', label: 'Supplies fuel', detail: 'Sells you fuel.' },
   {
     value: 'TRANSPORT',
     label: 'Transports fuel',
-    detail: 'Brings fuel to the station and sends you its own bill.',
+    detail: 'Brings fuel and bills you.',
   },
-  { value: 'BOTH', label: 'Both', detail: 'Sells you fuel and also brings it.' },
+  { value: 'BOTH', label: 'Both', detail: 'Sells and brings fuel.' },
 ];
 
 /** The two flags the server stores for a role. */
@@ -89,8 +97,22 @@ export function AddSupplierWizard({
   function next() {
     if (step === 'does') return wizard.advance({}, 'who', 'review');
     if (step === 'who') {
-      return wizard.advance(checkSupplierName(form.code, form.legalName), 'contact', 'review');
+      const found = checkSupplierName(form.code || 'x', form.legalName);
+      return wizard.advance(
+        found['supplier-legal-name'] ? { 'supplier-legal-name': found['supplier-legal-name'] } : {},
+        'code',
+        form.code.trim() ? 'review' : undefined,
+      );
     }
+    if (step === 'code') {
+      const found = checkSupplierName(form.code, form.legalName || 'x');
+      return wizard.advance(
+        found['supplier-code'] ? { 'supplier-code': found['supplier-code'] } : {},
+        'reg',
+        'review',
+      );
+    }
+    if (step === 'reg') return wizard.advance({}, 'contact', 'review');
     if (step === 'contact') {
       return wizard.advance(checkSupplierContact(form.contactEmail), 'credit', 'review');
     }
@@ -121,11 +143,7 @@ export function AddSupplierWizard({
       }}
     >
       {step === 'does' ? (
-        <WizardStep
-          wizard={wizard}
-          title="What does this company do for you?"
-          hint="A company that brings your fuel is a different company from the one that sells it. Add each one separately, or pick both if one company does both."
-        >
+        <WizardStep wizard={wizard} title="What does this company do for you?">
           <WizardChoices label="What this company does">
             {ROLE_CHOICES.map((choice) => (
               <WizardChoice
@@ -144,11 +162,7 @@ export function AddSupplierWizard({
         </WizardStep>
       ) : null}
       {step === 'who' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Who is the supplier?"
-          hint={`The supplier is added to ${companyName}.`}
-        >
+        <WizardStep wizard={wizard} title="Who is the supplier?">
           <Field
             id="supplier-legal-name"
             label="Legal name"
@@ -164,10 +178,15 @@ export function AddSupplierWizard({
               onChange={(event) => set({ legalName: event.target.value })}
             />
           </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'code' ? (
+        <WizardStep wizard={wizard} title="What short name will you use for them?">
           <Field
             id="supplier-code"
             label="Supplier code"
-            hint="A short name you will recognise, for example PUMA."
+            hint="For example PUMA."
             error={errors['supplier-code']}
             required
           >
@@ -176,11 +195,18 @@ export function AddSupplierWizard({
               value={form.code}
               maxLength={80}
               autoComplete="off"
+              autoFocus
               onChange={(event) => set({ code: event.target.value })}
             />
           </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'reg' ? (
+        <WizardStep wizard={wizard} title="What is their registration reference?" hint="Optional.">
           <Field id="supplier-registration-reference" label="Registration reference" optional>
             <input
+              autoFocus
               id="supplier-registration-reference"
               value={form.registrationReference}
               maxLength={120}
@@ -192,11 +218,7 @@ export function AddSupplierWizard({
         </WizardStep>
       ) : null}
       {step === 'contact' ? (
-        <WizardStep
-          wizard={wizard}
-          title="How do you reach them?"
-          hint="You can leave this empty and carry on."
-        >
+        <WizardStep wizard={wizard} title="How do you reach them?" hint="Optional.">
           <Field id="supplier-contact-name" label="Contact person" optional>
             <input
               id="supplier-contact-name"
@@ -236,15 +258,10 @@ export function AddSupplierWizard({
         </WizardStep>
       ) : null}
       {step === 'credit' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Do they give you credit?"
-          hint="You can leave this empty and carry on."
-        >
+        <WizardStep wizard={wizard} title="Do they give you credit?" hint="Optional.">
           <Field
             id="supplier-credit-days"
             label="Usual credit period (days)"
-            hint="How long this supplier normally gives you to pay. Pre-fills the due date on credit invoices."
             error={errors['supplier-credit-days']}
             optional
           >
@@ -261,7 +278,6 @@ export function AddSupplierWizard({
           <Field
             id="supplier-create-credit-limit"
             label="Credit limit (USD)"
-            hint="The most you are willing to owe this supplier. It warns you; it never stops a purchase."
             error={errors['supplier-create-credit-limit']}
             optional
           >
@@ -277,7 +293,7 @@ export function AddSupplierWizard({
         </WizardStep>
       ) : null}
       {step === 'review' ? (
-        <WizardStep wizard={wizard} title="Check the supplier" hint={WIZARD_REVIEW_HINT}>
+        <WizardStep wizard={wizard} title="Check the supplier">
           <WizardSummary>
             <WizardSummaryRow label="Does" onChange={() => wizard.change('does')}>
               {ROLE_CHOICES.find((choice) => choice.value === form.role)?.label}

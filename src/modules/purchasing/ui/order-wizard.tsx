@@ -16,7 +16,7 @@ import { checkOrderDates, checkOrderFuel, checkOrderSupplier } from '../order-ch
 import { checkOrderLines, todayBusinessDate, type OrderLineInput } from './purchasing-format';
 import type { OrderReference } from './purchasing-types';
 
-type OrderStep = 'supplier' | 'fuel' | 'dates' | 'notes' | 'review';
+type OrderStep = 'supplier' | 'fuel' | 'price' | 'dates' | 'expected' | 'notes' | 'review';
 
 export type NewOrderValue = {
   supplierId: string;
@@ -56,7 +56,15 @@ export function OrderWizard({
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<OrderLineInput[]>([blankLine(reference)]);
 
-  const sequence: readonly OrderStep[] = ['supplier', 'fuel', 'dates', 'notes', 'review'];
+  const sequence: readonly OrderStep[] = [
+    'supplier',
+    'fuel',
+    'price',
+    'dates',
+    'expected',
+    'notes',
+    'review',
+  ];
   const wizard = useWizard<OrderStep>({ start: 'supplier', sequence, onCancel });
   const { step, errors } = wizard;
 
@@ -66,13 +74,43 @@ export function OrderWizard({
   const updateLine = (index: number, patch: Partial<OrderLineInput>) =>
     setLines((current) => current.map((line, i) => (i === index ? { ...line, ...patch } : line)));
 
+  /** Keeps only the errors for the boxes on this screen. */
+  function pick(found: Record<string, string>, keep: (id: string) => boolean) {
+    return Object.fromEntries(Object.entries(found).filter(([id]) => keep(id)));
+  }
+
   function next() {
     if (step === 'supplier') {
       return wizard.advance(checkOrderSupplier(supplierId), 'fuel', 'review');
     }
-    if (step === 'fuel') return wizard.advance(checkOrderFuel(lines, unitOf), 'dates', 'review');
-    if (step === 'dates')
-      return wizard.advance(checkOrderDates(orderDate, expected), 'notes', 'review');
+    if (step === 'fuel') {
+      return wizard.advance(
+        pick(checkOrderFuel(lines, unitOf), (id) => !id.startsWith('po-price')),
+        'price',
+        'review',
+      );
+    }
+    if (step === 'price') {
+      return wizard.advance(
+        pick(checkOrderFuel(lines, unitOf), (id) => id.startsWith('po-price')),
+        'dates',
+        'review',
+      );
+    }
+    if (step === 'dates') {
+      return wizard.advance(
+        pick(checkOrderDates(orderDate, expected), (id) => id === 'po-date'),
+        'expected',
+        'review',
+      );
+    }
+    if (step === 'expected') {
+      return wizard.advance(
+        pick(checkOrderDates(orderDate, expected), (id) => id !== 'po-date'),
+        'notes',
+        'review',
+      );
+    }
     if (step === 'notes') return wizard.advance({}, 'review');
     const checked = checkOrderLines(lines, unitOf);
     if (!checked.ok) return wizard.change('fuel');
@@ -92,21 +130,13 @@ export function OrderWizard({
       }}
     >
       {step === 'supplier' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Who are you ordering from?"
-          hint="The order stays a draft until you send it for approval."
-        >
+        <WizardStep wizard={wizard} title="Who are you ordering from?">
           <Field
             id="po-supplier"
             label="Supplier"
             error={errors['po-supplier']}
             required
-            hint={
-              suppliers.length === 0
-                ? 'There are no active suppliers yet. Add one on the Suppliers page first.'
-                : undefined
-            }
+            hint={suppliers.length === 0 ? 'No suppliers yet. Add one first.' : undefined}
           >
             <Select
               id="po-supplier"
@@ -120,11 +150,7 @@ export function OrderWizard({
         </WizardStep>
       ) : null}
       {step === 'fuel' ? (
-        <WizardStep
-          wizard={wizard}
-          title="What fuel do you want?"
-          hint="The agreed price is used later to check the supplier's invoice. Leave it empty if you have not agreed one."
-        >
+        <WizardStep wizard={wizard} title="What fuel do you want?">
           {lines.map((line, index) => (
             <div key={index} className="form-stack">
               <Field
@@ -141,38 +167,21 @@ export function OrderWizard({
                   options={products.map((p) => ({ value: p.id, label: p.name }))}
                 />
               </Field>
-              <WizardPair>
-                <Field
+              <Field
+                id={`po-litres-${index}`}
+                label={unitOf(line.productId) === 'KILOGRAMS' ? 'Kilograms' : 'Litres'}
+                error={errors[`po-litres-${index}`]}
+                required
+              >
+                <input
                   id={`po-litres-${index}`}
-                  label={unitOf(line.productId) === 'KILOGRAMS' ? 'Kilograms' : 'Litres'}
-                  error={errors[`po-litres-${index}`]}
-                  required
-                >
-                  <input
-                    id={`po-litres-${index}`}
-                    inputMode="decimal"
-                    autoComplete="off"
-                    placeholder="e.g. 10000"
-                    value={line.litres}
-                    onChange={(event) => updateLine(index, { litres: event.target.value })}
-                  />
-                </Field>
-                <Field
-                  id={`po-price-${index}`}
-                  label={`Agreed price per ${unitOf(line.productId) === 'KILOGRAMS' ? 'kilogram' : 'litre'}`}
-                  error={errors[`po-price-${index}`]}
-                  optional
-                >
-                  <input
-                    id={`po-price-${index}`}
-                    inputMode="decimal"
-                    autoComplete="off"
-                    placeholder="e.g. 1.45"
-                    value={line.price}
-                    onChange={(event) => updateLine(index, { price: event.target.value })}
-                  />
-                </Field>
-              </WizardPair>
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="e.g. 10000"
+                  value={line.litres}
+                  onChange={(event) => updateLine(index, { litres: event.target.value })}
+                />
+              </Field>
               {lines.length > 1 ? (
                 <div>
                   <Button
@@ -201,40 +210,63 @@ export function OrderWizard({
           <WizardActions wizard={wizard} onContinue={next} />
         </WizardStep>
       ) : null}
-      {step === 'dates' ? (
+      {step === 'price' ? (
         <WizardStep
           wizard={wizard}
-          title="When is it for?"
-          hint="The day you order it, and the day you expect it."
+          title="What price did you agree?"
+          hint="Used to check the invoice. Optional."
         >
-          <WizardPair>
-            <Field id="po-date" label="Order date" error={errors['po-date']} required>
-              <input
-                id="po-date"
-                type="date"
-                value={orderDate}
-                onChange={(event) => setOrderDate(event.target.value)}
-              />
-            </Field>
-            <Field id="po-expected" label="Fuel expected by" error={errors['po-expected']} optional>
-              <input
-                id="po-expected"
-                type="date"
-                value={expected}
-                min={orderDate}
-                onChange={(event) => setExpected(event.target.value)}
-              />
-            </Field>
-          </WizardPair>
+          {lines.map((line, index) => (
+            <div key={index} className="form-stack">
+              <Field
+                id={`po-price-${index}`}
+                label={`Agreed price per ${unitOf(line.productId) === 'KILOGRAMS' ? 'kilogram' : 'litre'}`}
+                error={errors[`po-price-${index}`]}
+                optional
+              >
+                <input
+                  id={`po-price-${index}`}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="e.g. 1.45"
+                  value={line.price}
+                  onChange={(event) => updateLine(index, { price: event.target.value })}
+                />
+              </Field>
+            </div>
+          ))}
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'dates' ? (
+        <WizardStep wizard={wizard} title="What is the order date?">
+          <Field id="po-date" label="Order date" error={errors['po-date']} required>
+            <input
+              id="po-date"
+              type="date"
+              value={orderDate}
+              onChange={(event) => setOrderDate(event.target.value)}
+            />
+          </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'expected' ? (
+        <WizardStep wizard={wizard} title="When do you expect the fuel?" hint="Optional.">
+          <Field id="po-expected" label="Fuel expected by" error={errors['po-expected']} optional>
+            <input
+              id="po-expected"
+              type="date"
+              value={expected}
+              min={orderDate}
+              onChange={(event) => setExpected(event.target.value)}
+            />
+          </Field>
           <WizardActions wizard={wizard} onContinue={next} />
         </WizardStep>
       ) : null}
       {step === 'notes' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Anything to add?"
-          hint="You can leave this empty and carry on."
-        >
+        <WizardStep wizard={wizard} title="Anything to add?" hint="Optional.">
           <Field id="po-notes" label="Notes for yourself or the supplier" optional>
             <textarea
               id="po-notes"
@@ -249,7 +281,7 @@ export function OrderWizard({
         </WizardStep>
       ) : null}
       {step === 'review' ? (
-        <WizardStep wizard={wizard} title="Check the order" hint={WIZARD_REVIEW_HINT}>
+        <WizardStep wizard={wizard} title="Check the order">
           <WizardSummary>
             <WizardSummaryRow label="Supplier" onChange={() => wizard.change('supplier')}>
               {supplierName}

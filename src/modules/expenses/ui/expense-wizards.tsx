@@ -52,12 +52,12 @@ export function ExpenseKindStep({
     {
       value: 'new' as const,
       label: 'Enter an expense',
-      detail: 'Money that was spent once, such as a repair or a purchase.',
+      detail: 'Spent once, such as a repair.',
     },
     {
       value: 'regular' as const,
       label: 'Add a regular cost',
-      detail: 'A cost that repeats every month, such as rent or salaries.',
+      detail: 'Repeats every month, such as rent.',
     },
   ].filter((option) => kinds.includes(option.value));
   return (
@@ -83,7 +83,7 @@ export function ExpenseKindStep({
 
 // ---------------------------------------------------------------- one-off expense
 
-type ExpenseStep = 'what' | 'money' | 'paid' | 'extra' | 'review';
+type ExpenseStep = 'what' | 'desc' | 'amount' | 'when' | 'paid' | 'extra' | 'review';
 
 export type NewExpenseValue = {
   categoryId: string;
@@ -98,7 +98,20 @@ export type NewExpenseValue = {
   receiptFile: File | null;
 };
 
-const EXPENSE_SEQUENCE: readonly ExpenseStep[] = ['what', 'money', 'paid', 'extra', 'review'];
+const EXPENSE_SEQUENCE: readonly ExpenseStep[] = [
+  'what',
+  'desc',
+  'amount',
+  'when',
+  'paid',
+  'extra',
+  'review',
+];
+
+/** Keeps only the errors for the box on this screen. */
+function only(found: Record<string, string>, id: string): Record<string, string> {
+  return found[id] ? { [id]: found[id] } : {};
+}
 
 /** Enter an expense one question at a time, ending in a check screen. */
 export function ExpenseWizard({
@@ -146,13 +159,31 @@ export function ExpenseWizard({
   function next() {
     if (step === 'what') {
       return wizard.advance(
-        checkExpenseWhat(form.categoryId, form.description, isOther),
-        'money',
+        only(checkExpenseWhat(form.categoryId, 'x', isOther), 'expense-category'),
+        'desc',
+        form.description.trim() ? 'review' : undefined,
+      );
+    }
+    if (step === 'desc') {
+      return wizard.advance(
+        only(checkExpenseWhat(form.categoryId, form.description, isOther), 'expense-description'),
+        'amount',
         'review',
       );
     }
-    if (step === 'money') {
-      return wizard.advance(checkExpenseMoney(form.amount, form.date, '', false), 'paid', 'review');
+    if (step === 'amount') {
+      return wizard.advance(
+        only(checkExpenseMoney(form.amount, form.date, '', false), 'expense-amount'),
+        'when',
+        'review',
+      );
+    }
+    if (step === 'when') {
+      return wizard.advance(
+        only(checkExpenseMoney(form.amount, form.date, '', false), 'expense-date'),
+        'paid',
+        'review',
+      );
     }
     if (step === 'paid') {
       return wizard.advance(
@@ -175,11 +206,7 @@ export function ExpenseWizard({
       }}
     >
       {step === 'what' ? (
-        <WizardStep
-          wizard={wizard}
-          title="What was the money spent on?"
-          hint="It counts as spending once it is approved and recorded."
-        >
+        <WizardStep wizard={wizard} title="What kind of expense is it?">
           {categories.length === 0 ? kindsHint : null}
           <Field
             id="expense-category"
@@ -201,10 +228,17 @@ export function ExpenseWizard({
               ))}
             </select>
           </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'desc' ? (
+        <WizardStep
+          wizard={wizard}
+          title={isOther ? 'What kind of expense is it?' : 'What was it for?'}
+        >
           <Field
             id="expense-description"
-            label={isOther ? 'What kind of expense is it?' : 'What was it for?'}
-            hint={isOther ? 'You chose Other, so tell us what it is.' : undefined}
+            label="What it was for"
             error={errors['expense-description']}
             required
           >
@@ -214,55 +248,50 @@ export function ExpenseWizard({
               maxLength={500}
               placeholder={isOther ? 'e.g. Generator repair' : 'e.g. Replaced pump hose'}
               autoComplete="off"
+              autoFocus
               onChange={(event) => set({ description: event.target.value })}
             />
           </Field>
           <WizardActions wizard={wizard} onContinue={next} />
         </WizardStep>
       ) : null}
-      {step === 'money' ? (
+      {step === 'amount' ? (
+        <WizardStep wizard={wizard} title="How much was it?">
+          <Field id="expense-amount" label="Amount (USD)" error={errors['expense-amount']} required>
+            <input
+              id="expense-amount"
+              inputMode="decimal"
+              value={form.amount}
+              placeholder="0.00"
+              autoComplete="off"
+              autoFocus
+              onChange={(event) => set({ amount: event.target.value })}
+            />
+          </Field>
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'when' ? (
         <WizardStep
           wizard={wizard}
-          title="How much, and when?"
-          hint="The amount spent and the day it was spent."
+          title="When was it spent?"
+          hint="Change the day if it was earlier."
         >
-          <WizardPair>
-            <Field
-              id="expense-amount"
-              label="Amount (USD)"
-              error={errors['expense-amount']}
-              required
-            >
-              <input
-                id="expense-amount"
-                inputMode="decimal"
-                value={form.amount}
-                placeholder="0.00"
-                autoComplete="off"
-                autoFocus
-                onChange={(event) => set({ amount: event.target.value })}
-              />
-            </Field>
-            <Field id="expense-date" label="Date" error={errors['expense-date']} required>
-              <input
-                id="expense-date"
-                type="date"
-                value={form.date}
-                max={today}
-                onChange={(event) => set({ date: event.target.value })}
-              />
-            </Field>
-          </WizardPair>
+          <Field id="expense-date" label="Date" error={errors['expense-date']} required>
+            <input
+              id="expense-date"
+              type="date"
+              value={form.date}
+              max={today}
+              onChange={(event) => set({ date: event.target.value })}
+            />
+          </Field>
           <WizardActions wizard={wizard} onContinue={next} />
         </WizardStep>
       ) : null}
 
       {step === 'paid' ? (
-        <WizardStep
-          wizard={wizard}
-          title="How was it paid?"
-          hint="Cash paid out of the station's cash is taken off the cash to collect."
-        >
+        <WizardStep wizard={wizard} title="How was it paid?">
           {needsStation ? (
             <Field
               id="expense-station"
@@ -307,7 +336,6 @@ export function ExpenseWizard({
             <Field
               id="expense-payment-other"
               label="How was it paid?"
-              hint="You chose Other, so tell us how."
               error={errors['expense-payment-other']}
               required
             >
@@ -325,11 +353,7 @@ export function ExpenseWizard({
         </WizardStep>
       ) : null}
       {step === 'extra' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Anything to help find it later?"
-          hint="You can leave all of this empty and carry on."
-        >
+        <WizardStep wizard={wizard} title="Anything to add?" hint="All optional.">
           <Field id="expense-payee" label="Paid to" optional>
             <input
               id="expense-payee"
@@ -372,12 +396,12 @@ export function ExpenseWizard({
         </WizardStep>
       ) : null}
       {step === 'review' ? (
-        <WizardStep wizard={wizard} title="Check the expense" hint={WIZARD_REVIEW_HINT}>
+        <WizardStep wizard={wizard} title="Check the expense">
           <WizardSummary>
             <WizardSummaryRow label="Spent on" onChange={() => wizard.change('what')}>
               {form.description.trim()} ({kindName})
             </WizardSummaryRow>
-            <WizardSummaryRow label="Amount" onChange={() => wizard.change('money')}>
+            <WizardSummaryRow label="Amount" onChange={() => wizard.change('amount')}>
               USD {form.amount.trim()} on {formatFriendlyDate(form.date)}
             </WizardSummaryRow>
             <WizardSummaryRow label="Paid" onChange={() => wizard.change('paid')}>
@@ -482,7 +506,7 @@ export function RegularCostWizard({
         <WizardStep
           wizard={wizard}
           title="What is the regular cost?"
-          hint="A cost that repeats every month, such as rent or security."
+          hint="Repeats every month, such as rent."
         >
           <Field
             id="regular-name"
@@ -546,7 +570,7 @@ export function RegularCostWizard({
         <WizardStep
           wizard={wizard}
           title="How much, and from when?"
-          hint="It is spread across every day automatically."
+          hint="Spread across the days automatically."
         >
           <Field
             id="regular-amount"
@@ -586,7 +610,7 @@ export function RegularCostWizard({
         </WizardStep>
       ) : null}
       {step === 'review' ? (
-        <WizardStep wizard={wizard} title="Check the regular cost" hint={WIZARD_REVIEW_HINT}>
+        <WizardStep wizard={wizard} title="Check the regular cost">
           <WizardSummary>
             <WizardSummaryRow label="Cost" onChange={() => wizard.change('what')}>
               {form.name.trim()} ({kindName}) · {stationName}

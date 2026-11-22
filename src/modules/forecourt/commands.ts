@@ -1609,6 +1609,41 @@ async function runShiftLifecycleCommand(
               );
           }
         }
+        // A shift may be started at any time while no other shift is open. When only finished
+        // shifts reach past its scheduled start, it starts when the last of them ended instead.
+        if (payload.shiftTemplateId) {
+          const template = await loadShiftTemplate(
+            transaction,
+            context.tenantId,
+            context.stationId,
+            payload.shiftTemplateId,
+          );
+          const reach = await transaction.execute<{
+            open_count: number;
+            last_end: string | null;
+          }>(sql`
+            select count(*) filter (where s.state <> 'COMPLETED')::int as open_count,
+              max(coalesce(s.completed_at, s.planned_end_at))
+                filter (where s.state = 'COMPLETED')::text as last_end
+            from app.shifts s
+            where s.tenant_id = ${context.tenantId} and s.station_id = ${context.stationId}
+              and s.id <> ${payload.shiftId}
+              and s.state not in ('CANCELLED_BEFORE_START', 'NOT_OPERATED')
+              and coalesce(s.opened_at, s.planned_start_at) < ${resolvedPlannedEndAt}::timestamptz
+              and ${resolvedPlannedStartAt}::timestamptz < (case when s.state = 'COMPLETED'
+                then coalesce(s.completed_at, s.planned_end_at) else s.planned_end_at end)
+          `);
+          const lastEnd = reach[0]?.last_end ? new Date(reach[0].last_end) : null;
+          if (reach[0] && reach[0].open_count === 0 && lastEnd) {
+            const slidStart = lastEnd.toISOString();
+            if (deriveBusinessDate(slidStart, station.timezone) === dayRow.business_date) {
+              resolvedPlannedStartAt = slidStart;
+              resolvedPlannedEndAt = new Date(
+                lastEnd.getTime() + template.durationMinutes * 60_000,
+              ).toISOString();
+            }
+          }
+        }
         // Shifts opened from a template (every real shift) may not overlap another shift.
         const overlapping = payload.shiftTemplateId
           ? await transaction.execute<{ conflict: boolean }>(sql`

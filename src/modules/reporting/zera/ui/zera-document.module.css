@@ -1,0 +1,225 @@
+/* The ZERA return laid out as a finished document, to read, copy from and send. */
+.paper {
+  display: grid;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  overflow: hidden;
+  background: var(--surface-raised, transparent);
+}
+
+.band {
+  display: grid;
+  gap: 0.35rem;
+  padding: var(--space-7, 2rem) var(--space-7, 2rem) var(--space-6, 1.5rem);
+  color: #fff;
+  background: linear-gradient(135deg, #1f4d40 0%, #2f6b57 100%);
+  border-bottom: 3px solid #8cc7ab;
+}
+
+.kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #c7e6d8;
+}
+
+.period {
+  margin: 0;
+  font-size: clamp(1.6rem, 4vw, 2.25rem);
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.station {
+  margin: 0;
+  font-size: 1rem;
+  color: #e1f2ea;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3, 0.75rem) var(--space-7, 2rem);
+  padding: var(--space-5, 1.25rem) var(--space-7, 2rem);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.fact {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.factLabel {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.factValue {
+  font-weight: 600;
+}
+
+.note {
+  margin: var(--space-5, 1.25rem) var(--space-7, 2rem) 0;
+  padding: var(--space-4, 1rem) var(--space-5, 1.25rem);
+  border-left: 3px solid #2f6b57;
+  border-radius: 0 0.5rem 0.5rem 0;
+  background: color-mix(in srgb, #2f6b57 8%, transparent);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.noteLabel {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #2f6b57;
+}
+
+.section {
+  display: grid;
+  padding: var(--space-6, 1.5rem) var(--space-7, 2rem) 0;
+}
+
+.section:last-child {
+  padding-bottom: var(--space-7, 2rem);
+}
+
+.sectionTitle {
+  margin: 0 0 0.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #2f6b57;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #2f6b57;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) 1fr auto;
+  align-items: baseline;
+  gap: var(--space-4, 1rem);
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.label {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.value {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.empty {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.copy {
+  min-width: 4.5rem;
+}
+
+@media (max-width: 40rem) {
+  .band,
+  .facts,
+  .section {
+    padding-inline: var(--space-4, 1rem);
+  }
+  .note {
+    margin-inline: var(--space-4, 1rem);
+  }
+  .row {
+    grid-template-columns: 1fr auto;
+    gap: 0.15rem var(--space-3, 0.75rem);
+  }
+  .label {
+    grid-column: 1 / -1;
+    font-size: 0.82rem;
+  }
+}
+
+@media print {
+  .copy {
+    display: none;
+  }
+}
+
+/* Returns already saved: a quiet ledger of past versions. */
+.saved {
+  display: grid;
+  gap: var(--space-3, 0.75rem);
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  padding: var(--space-5, 1.25rem) var(--space-6, 1.5rem);
+  background: var(--surface-raised, transparent);
+}
+
+.savedHeading {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #2f6b57;
+}
+
+.savedList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.savedRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-3, 0.75rem) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.savedRow:first-child {
+  border-top: 0;
+}
+
+.savedText {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.savedMonth {
+  font-size: 1rem;
+}
+
+.savedMeta {
+  font-size: 0.85rem;
+  color: var(--text-muted, #66726e);
+}
+
+.savedActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}

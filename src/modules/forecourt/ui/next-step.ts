@@ -86,8 +86,6 @@ export type NextStep = Readonly<{
       }>
     | Readonly<{ kind: 'link'; label: string; href: string }>
     | null;
-  /** A second, optional button: close this last shift and the business day in one go. */
-  alternative?: Extract<NonNullable<NextStep['action']>, { kind: 'command' }>;
 }>;
 
 function stationClock(instant: Date, timeZone: string): string {
@@ -465,8 +463,10 @@ export function nextStep(
           stage: 2,
           title: 'Close the shift',
           detail,
-          action: closeShiftAction(open, shiftValues),
-          alternative: closeShiftAndDayAction(overview, open, shiftValues, day, base, now),
+          // The last shift of the day closes the business day with it: still one button.
+          action:
+            closeShiftAndDayAction(overview, open, shiftValues, day, base, now) ??
+            closeShiftAction(open, shiftValues),
         };
       }
       return {

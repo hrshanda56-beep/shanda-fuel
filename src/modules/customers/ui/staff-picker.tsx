@@ -13,11 +13,14 @@ export function StaffPicker({
   options,
   value,
   onChange,
+  onPick,
 }: {
   id: string;
   options: readonly StaffPickerOption[];
   value: string;
   onChange: (membershipId: string) => void;
+  /** Called when a person is chosen from the list by mouse or finger (not while typing). */
+  onPick?: () => void;
 }) {
   const listId = useId();
   const selected = options.find((option) => option.membershipId === value) ?? null;
@@ -31,6 +34,11 @@ export function StaffPicker({
     onChange(option.membershipId);
     setQuery('');
     setOpen(false);
+  }
+
+  function pick(option: StaffPickerOption) {
+    choose(option);
+    onPick?.();
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -96,7 +104,7 @@ export function StaffPicker({
                 // mousedown, not click: the input's blur would otherwise close the list first.
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  choose(option);
+                  pick(option);
                 }}
               >
                 <span>{option.name}</span>

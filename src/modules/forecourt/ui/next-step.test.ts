@@ -27,6 +27,11 @@ const shift = (state: string, id = 'sh') => ({
 });
 const step = (o: Partial<StepOverview>) => nextStep({ ...base, ...o }, ctx, () => 'new-id');
 
+/** True when the step's button also ends the business day. */
+function endsDay(result: { action: unknown }): boolean {
+  return Boolean((result.action as { after?: unknown } | null)?.after);
+}
+
 describe('nextStep', () => {
   it('never asks for a start time or length: with no schedule it offers nothing to fill in', () => {
     const result = step({ selectedBusinessDay: undefined });
@@ -85,8 +90,9 @@ describe('nextStep', () => {
   });
 
   it('offers one Close Shift button once figures are submitted, asking first', () => {
+    // Another shift is still to come, so closing this one does not end the day.
     const result = step({
-      shifts: [shift('OPEN')],
+      shifts: [shift('OPEN'), shift('PLANNED', 'other')],
       reconciliations: [{ id: 'r1', shiftId: 'sh', state: 'SUBMITTED' }],
     });
     expect(result.title).toBe('Close the shift');
@@ -101,12 +107,12 @@ describe('nextStep', () => {
     expect((result.action as { confirm?: string }).confirm).toContain('Close this shift?');
   });
 
-  it('also offers closing the last shift and the day together, with a reason when nothing is approved', () => {
+  it('closes the last shift and the day together with one button, asking a reason when nothing is approved', () => {
     const result = step({
       shifts: [shift('OPEN')],
       reconciliations: [{ id: 'r1', shiftId: 'sh', state: 'SUBMITTED' }],
     });
-    expect(result.alternative).toMatchObject({
+    expect(result.action).toMatchObject({
       label: 'Close shift and end the day',
       commandType: 'CompleteShift',
       before: { commandType: 'CloseMeters' },
@@ -116,7 +122,9 @@ describe('nextStep', () => {
       },
       askReason: { field: 'reasonWithoutReconciliation' },
     });
-    expect(result.alternative?.confirm).toContain('Close this shift and end the business day?');
+    expect((result.action as { confirm?: string }).confirm).toContain(
+      'Close this shift and end the business day?',
+    );
   });
 
   it('asks for no reason when figures are already approved', () => {
@@ -124,32 +132,36 @@ describe('nextStep', () => {
       shifts: [shift('OPEN')],
       reconciliations: [{ id: 'r1', shiftId: 'sh', state: 'APPROVED' }],
     });
-    expect(result.alternative).toBeDefined();
-    expect(result.alternative?.askReason).toBeUndefined();
+    expect(result.action).toMatchObject({ after: { commandType: 'CloseBusinessDay' } });
+    expect((result.action as { askReason?: unknown }).askReason).toBeUndefined();
   });
 
-  it('does not offer ending the day while another shift is unfinished or the person may not close the day', () => {
+  it('does not end the day with the shift while another shift is unfinished or the person may not close the day', () => {
     const submitted = [{ id: 'r1', shiftId: 'sh', state: 'SUBMITTED' }];
     expect(
-      step({ shifts: [shift('OPEN'), shift('PLANNED', 'other')], reconciliations: submitted })
-        .alternative,
-    ).toBeUndefined();
+      endsDay(
+        step({ shifts: [shift('OPEN'), shift('PLANNED', 'other')], reconciliations: submitted }),
+      ),
+    ).toBe(false);
     expect(
-      step({
-        shifts: [shift('OPEN')],
-        reconciliations: submitted,
-        actions: { ...base.actions, CloseBusinessDay: { canExecute: false } },
-      }).alternative,
-    ).toBeUndefined();
+      endsDay(
+        step({
+          shifts: [shift('OPEN')],
+          reconciliations: submitted,
+          actions: { ...base.actions, CloseBusinessDay: { canExecute: false } },
+        }),
+      ),
+    ).toBe(false);
   });
 
-  it('does not offer ending the day while a scheduled shift is still to come', () => {
+  it('does not end the day with the shift while a scheduled shift is still to come', () => {
     const result = step({
       shifts: [shift('OPEN')],
       reconciliations: [{ id: 'r1', shiftId: 'sh', state: 'SUBMITTED' }],
       shiftTemplates: [{ id: 'night', name: 'Night', startTime: '18:00', durationMinutes: 480 }],
     });
-    expect(result.alternative).toBeUndefined();
+    expect(endsDay(result)).toBe(false);
+    expect(result.action).toMatchObject({ label: 'Close Shift' });
   });
 
   it('offers only the meters step under the Close Shift label when the person may not complete the shift', () => {

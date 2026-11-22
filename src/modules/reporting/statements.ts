@@ -612,10 +612,15 @@ export function buildQuickFigures(report: ManagementReport): QuickFigure[] {
     { id: 'gross', label: 'Gross Profit', value: gross, slug: 'profit-loss' },
     { id: 'expenses', label: 'Total Expenses', value: totalExpenses, slug: 'profit-loss' },
     { id: 'net', label: 'Net Profit', value: net, slug: 'profit-loss' },
-    { id: 'banked', label: 'Banked Cash', value: report.cash.banked, slug: 'cash-movement' },
+    {
+      id: 'banked',
+      label: 'Cash banked this period',
+      value: report.cash.banked,
+      slug: 'cash-movement',
+    },
     {
       id: 'unbanked',
-      label: 'Cash not yet banked',
+      label: 'Cash not banked by period end',
       value: unbankedCash(report.cash),
       slug: 'cash-movement',
     },

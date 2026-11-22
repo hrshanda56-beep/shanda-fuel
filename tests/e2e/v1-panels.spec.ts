@@ -109,6 +109,8 @@ test.describe('New v1 screens', () => {
   test('lets a receiver accept cash and shows what is waiting in plain words', async ({ page }) => {
     const { posted } = await mockApi(page);
     await page.goto('/dev-preview/v1-panels');
+    // Someone who can hand cash over sees that wizard first; what waits for them is one link away.
+    await page.getByRole('button', { name: /waiting for you to accept/ }).click();
     const waiting = page.getByRole('list', { name: 'Handovers waiting for action' });
     await expect(waiting.getByText('Waiting to be accepted')).toBeVisible();
     await expect(waiting.getByText('Does not add up')).toBeVisible();
@@ -131,14 +133,14 @@ test.describe('New v1 screens', () => {
   }) => {
     const { posted } = await mockApi(page);
     await page.goto('/dev-preview/v1-panels');
-    // The handover is a short wizard: where from, who to, the amounts, why it differs, then a check.
+    // Picking the only choice on a screen carries straight on, so the dropdowns need no Continue.
+    // The handover is a short wizard: where from, who to, the amount it should be, the amount counted, why it differs, then a check.
     const next = () => page.getByRole('button', { name: 'Continue' }).click();
     await page.getByLabel('Cash is coming from').selectOption({ label: 'Station till' });
-    await next();
     await page.getByLabel('Handing it to').selectOption({ label: 'Station safe' });
-    await next();
     await page.getByLabel('Amount that should be handed over').fill('100');
-    await page.getByLabel('Amount you actually counted').fill('90');
+    await next();
+    await page.getByLabel('Amount you counted').fill('90');
     await next();
     await expect(page.getByRole('heading', { name: 'Why is it different?' })).toBeVisible();
     await page.getByLabel('Reason').fill('Till was short');
@@ -152,6 +154,7 @@ test.describe('New v1 screens', () => {
       reason: 'Till was short',
     });
 
+    await page.getByRole('button', { name: /waiting for you to accept/ }).click();
     await page.getByRole('button', { name: 'Settle' }).click();
     const save = page.getByRole('button', { name: 'Save and settle' });
     await expect(save).toBeDisabled();

@@ -261,8 +261,6 @@ export function OperationsControlRoom({
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<string>();
   const [notice, setNotice] = useState<string>();
-  // Someone running the shift sees one question at a time; the full day summary is one tap away.
-  const [showSummary, setShowSummary] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
   const idempotencyKeys = useRef(new Map<string, string>());
   // One id per visit, so retrying the first shift's opening cannot create two shifts.
@@ -552,7 +550,7 @@ export function OperationsControlRoom({
   // Someone who runs the shift gets one "next step" button (it also opens the day and starts the
   // shift), so the page does not offer the same jobs again as separate buttons.
   const oneNextStep = canRunShift(overview);
-  const wizardOnly = oneNextStep && !showSummary;
+  const wizardOnly = oneNextStep;
   const shiftsForDay = day ? overview.shifts : [];
   const reviewHref = (reconciliationId: string, shiftId: string) =>
     day
@@ -702,24 +700,31 @@ export function OperationsControlRoom({
             onChanged={() => void load()}
           />
           {wizardOnly ? (
-            <div className="ops-wizard-links">
-              <Link
-                className="text-link"
-                href={`/settings?${new URLSearchParams({ tab: 'stations', setup: context.stationId, focus: 'prices' }).toString()}`}
-              >
-                Change a price
-              </Link>
-              <button type="button" className="text-link" onClick={() => setShowSummary(true)}>
-                View today’s summary
-              </button>
-            </div>
-          ) : null}
-          {oneNextStep && showSummary ? (
-            <div className="ops-wizard-links">
-              <button type="button" className="text-link" onClick={() => setShowSummary(false)}>
-                Back to the next step
-              </button>
-            </div>
+            <>
+              {day && day.state === 'OPEN' && day.date < overview.currentBusinessDate ? (
+                <p className="panel-detail" role="status">
+                  ⚠ This day started on {formatBusinessDate(day.date)} and is still open. Close it
+                  below.
+                </p>
+              ) : null}
+              <div className="ops-wizard-links">
+                <Link
+                  className="text-link"
+                  href={`/settings?${new URLSearchParams({ tab: 'stations', setup: context.stationId, focus: 'prices' }).toString()}`}
+                >
+                  Change a price
+                </Link>
+                <Link
+                  className="text-link"
+                  href={`/operations/daily/past-days?${new URLSearchParams({
+                    tenantId: context.tenantId,
+                    stationId: context.stationId,
+                  })}`}
+                >
+                  Record a past day
+                </Link>
+              </div>
+            </>
           ) : null}
         </div>
       ) : null}

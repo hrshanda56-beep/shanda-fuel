@@ -65,6 +65,7 @@ export function CashHandoverSheet(props: Props) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
+  const [showList, setShowList] = useState(false);
   const keys = useRef(new Map<string, string>());
   const name = (id: string) => locations.find((l) => l.locationId === id)?.name ?? 'Unknown place';
   const money = (value: string) => (props.hidden ? '••••••' : formatTileMoney(value));
@@ -144,6 +145,9 @@ export function CashHandoverSheet(props: Props) {
     canSubmit: props.canSubmit,
   };
   const open = handovers.filter((h) => h.state === 'SUBMITTED' || h.state === 'DISPUTED');
+  // Someone who can hand cash over sees only that wizard; what is waiting for them is one link away.
+  const waitingForMe = open.filter((h) => availableHandoverActions(h, viewer).length > 0);
+  const wizardOnly = props.canSubmit && !showList;
   const recent = handovers.filter((h) => h.state !== 'SUBMITTED' && h.state !== 'DISPUTED');
 
   return (
@@ -162,7 +166,7 @@ export function CashHandoverSheet(props: Props) {
         </p>
       ) : null}
 
-      {props.canSubmit && props.open ? (
+      {wizardOnly && props.open ? (
         <CashHandoverWizard
           locations={locations}
           busy={busy}
@@ -172,51 +176,70 @@ export function CashHandoverSheet(props: Props) {
         />
       ) : null}
 
-      <section className={styles.waiting} aria-label="Waiting for action">
-        <h3>Waiting for action</h3>
-        {open.length === 0 ? (
-          <EmptyState title="Nothing waiting" message="No cash is waiting to be accepted." />
-        ) : (
-          <ul className={styles.list} aria-label="Handovers waiting for action">
-            {open.map((h) => (
-              <HandoverRow
-                key={h.handoverId}
-                handover={h}
-                from={name(h.fromLocationId)}
-                to={name(h.toLocationId)}
-                money={money}
-                actions={availableHandoverActions(h, viewer)}
-                busy={busy}
-                settling={settling === h.handoverId}
-                onStartSettle={() => setSettling(h.handoverId)}
-                onAct={(action, note) => void act(h, action, note)}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {recent.length > 0 ? (
-        <section className={styles.recent}>
-          <h3>Last 14 days</h3>
-          <ul className={styles.list} aria-label="Recent handovers">
-            {recent.map((h) => (
-              <HandoverRow
-                key={h.handoverId}
-                handover={h}
-                from={name(h.fromLocationId)}
-                to={name(h.toLocationId)}
-                money={money}
-                actions={[]}
-                busy={busy}
-                settling={false}
-                onStartSettle={() => undefined}
-                onAct={() => undefined}
-              />
-            ))}
-          </ul>
-        </section>
+      {wizardOnly && waitingForMe.length > 0 ? (
+        <button type="button" className="text-link" onClick={() => setShowList(true)}>
+          {waitingForMe.length} waiting for you to accept
+        </button>
       ) : null}
+
+      {wizardOnly ? null : (
+        <>
+          {props.canSubmit ? (
+            <button
+              type="button"
+              className="text-link text-link-back"
+              onClick={() => setShowList(false)}
+            >
+              ← Hand over cash instead
+            </button>
+          ) : null}
+          <section className={styles.waiting} aria-label="Waiting for action">
+            <h3>Waiting for action</h3>
+            {open.length === 0 ? (
+              <EmptyState title="Nothing waiting" message="No cash is waiting to be accepted." />
+            ) : (
+              <ul className={styles.list} aria-label="Handovers waiting for action">
+                {open.map((h) => (
+                  <HandoverRow
+                    key={h.handoverId}
+                    handover={h}
+                    from={name(h.fromLocationId)}
+                    to={name(h.toLocationId)}
+                    money={money}
+                    actions={availableHandoverActions(h, viewer)}
+                    busy={busy}
+                    settling={settling === h.handoverId}
+                    onStartSettle={() => setSettling(h.handoverId)}
+                    onAct={(action, note) => void act(h, action, note)}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {recent.length > 0 ? (
+            <section className={styles.recent}>
+              <h3>Last 14 days</h3>
+              <ul className={styles.list} aria-label="Recent handovers">
+                {recent.map((h) => (
+                  <HandoverRow
+                    key={h.handoverId}
+                    handover={h}
+                    from={name(h.fromLocationId)}
+                    to={name(h.toLocationId)}
+                    money={money}
+                    actions={[]}
+                    busy={busy}
+                    settling={false}
+                    onStartSettle={() => undefined}
+                    onAct={() => undefined}
+                  />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </>
+      )}
     </Modal>
   );
 }
@@ -235,17 +258,19 @@ function HandoverRow(props: {
   const { handover: h } = props;
   const [note, setNote] = useState('');
   return (
-    <li className="card">
-      <p>
+    <li className={styles.row}>
+      <div className={styles.rowTop}>
+        <strong className={styles.amount}>
+          {props.money(h.countedAmount ?? h.expectedAmount)}
+        </strong>
         <StatusBadge tone={handoverTone(h.state)}>
           {HANDOVER_STATE_LABELS[h.state] ?? h.state}
-        </StatusBadge>{' '}
-        <strong>{props.money(h.countedAmount ?? h.expectedAmount)}</strong>
-        {h.variance && h.variance !== '0' ? (
-          <> (should have been {props.money(h.expectedAmount)})</>
-        ) : null}
-      </p>
-      <p>
+        </StatusBadge>
+      </div>
+      {h.variance && h.variance !== '0' ? (
+        <p className={styles.rowMeta}>Should have been {props.money(h.expectedAmount)}</p>
+      ) : null}
+      <p className={styles.rowText}>
         {describeHandover({
           from: props.from,
           to: props.to,
@@ -254,8 +279,10 @@ function HandoverRow(props: {
           state: h.state,
         })}
       </p>
-      {h.reason ? <p>Reason given: {h.reason}</p> : null}
-      {h.resolutionNote ? <p>How it was settled: {h.resolutionNote}</p> : null}
+      {h.reason ? <p className={styles.rowMeta}>Reason given: {h.reason}</p> : null}
+      {h.resolutionNote ? (
+        <p className={styles.rowMeta}>How it was settled: {h.resolutionNote}</p>
+      ) : null}
       {props.settling ? (
         <div className="stack">
           <Field id={`settle-${h.handoverId}`} label="How was this settled?" required>
@@ -274,17 +301,19 @@ function HandoverRow(props: {
             Save and settle
           </Button>
         </div>
-      ) : (
-        props.actions.map((action) => (
-          <Button
-            key={action}
-            variant={action === 'withdraw' ? 'quiet' : 'secondary'}
-            disabled={props.busy}
-            onClick={() => (action === 'resolve' ? props.onStartSettle() : props.onAct(action))}
-          >
-            {ACTION_LABELS[action]}
-          </Button>
-        ))
+      ) : props.actions.length === 0 ? null : (
+        <div className={styles.rowActions}>
+          {props.actions.map((action) => (
+            <Button
+              key={action}
+              variant={action === 'withdraw' ? 'quiet' : 'secondary'}
+              disabled={props.busy}
+              onClick={() => (action === 'resolve' ? props.onStartSettle() : props.onAct(action))}
+            >
+              {ACTION_LABELS[action]}
+            </Button>
+          ))}
+        </div>
       )}
     </li>
   );

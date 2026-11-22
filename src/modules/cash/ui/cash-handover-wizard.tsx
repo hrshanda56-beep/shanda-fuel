@@ -2,13 +2,11 @@
 
 import { useState } from 'react';
 import { Select } from '@/design-system/forms';
-import { InfoTip } from '@/design-system/info-tip';
 import { Field, NumericInput } from '@/design-system/primitives';
 import {
   WizardActions,
-  WizardPair,
+  WizardQuiet,
   WizardStep,
-  WIZARD_REVIEW_HINT,
   WizardSummary,
   WizardSummaryRow,
   useWizard,
@@ -21,7 +19,7 @@ import {
   handoverDiffers,
 } from '../handover-checks';
 
-type HandoverStep = 'from' | 'to' | 'amounts' | 'reason' | 'review';
+type HandoverStep = 'from' | 'to' | 'expected' | 'counted' | 'reason' | 'review';
 
 export type CashHandoverValue = {
   fromLocationId: string;
@@ -56,7 +54,8 @@ export function CashHandoverWizard({
   const sequence: readonly HandoverStep[] = [
     'from',
     'to',
-    'amounts',
+    'expected',
+    'counted',
     ...(differs ? (['reason'] as const) : []),
     'review',
   ];
@@ -70,13 +69,20 @@ export function CashHandoverWizard({
     if (step === 'from') {
       return wizard.advance(checkHandoverFrom(fromId), 'to', toId ? 'review' : undefined);
     }
-    if (step === 'to') return wizard.advance(checkHandoverTo(fromId, toId), 'amounts', 'review');
-    if (step === 'amounts') {
+    if (step === 'to') return wizard.advance(checkHandoverTo(fromId, toId), 'expected', 'review');
+    if (step === 'expected') {
+      const only = checkHandoverAmounts(expected, '0');
+      return wizard.advance(
+        'ho-expected' in only ? { 'ho-expected': only['ho-expected']! } : {},
+        'counted',
+      );
+    }
+    if (step === 'counted') {
       const found = checkHandoverAmounts(expected, counted);
       // Amounts that now differ need a reason, even when the person came from the check screen.
       const needsReason = handoverDiffers(expected, counted) && !reason.trim();
       return wizard.advance(
-        found,
+        'ho-counted' in found ? { 'ho-counted': found['ho-counted']! } : {},
         handoverDiffers(expected, counted) ? 'reason' : 'review',
         needsReason ? undefined : 'review',
       );
@@ -103,11 +109,7 @@ export function CashHandoverWizard({
       }}
     >
       {step === 'from' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Where is the cash now?"
-          hint="Choose where the cash is being taken from."
-        >
+        <WizardStep wizard={wizard} title="Where is the cash now?">
           <Field id="ho-from" label="Cash is coming from" error={errors['ho-from']} required>
             <Select
               id="ho-from"
@@ -124,11 +126,7 @@ export function CashHandoverWizard({
         </WizardStep>
       ) : null}
       {step === 'to' ? (
-        <WizardStep
-          wizard={wizard}
-          title="Who is it going to?"
-          hint="The person receiving it has to accept it."
-        >
+        <WizardStep wizard={wizard} title="Who is it going to?">
           <Field id="ho-to" label="Handing it to" error={errors['ho-to']} required>
             <Select
               id="ho-to"
@@ -141,31 +139,31 @@ export function CashHandoverWizard({
           <WizardActions wizard={wizard} onContinue={next} />
         </WizardStep>
       ) : null}
-      {step === 'amounts' ? (
-        <WizardStep
-          wizard={wizard}
-          title="How much cash?"
-          hint="Count it first, then compare with what it should be."
-        >
-          <WizardPair>
-            <NumericInput
-              id="ho-expected"
-              label="Amount that should be handed over"
-              required
-              autoFocus
-              error={errors['ho-expected']}
-              value={expected}
-              onChange={(event) => setExpected(event.target.value)}
-            />
-            <NumericInput
-              id="ho-counted"
-              label="Amount you actually counted"
-              required
-              error={errors['ho-counted']}
-              value={counted}
-              onChange={(event) => setCounted(event.target.value)}
-            />
-          </WizardPair>
+      {step === 'expected' ? (
+        <WizardStep wizard={wizard} title="How much should be handed over?">
+          <NumericInput
+            id="ho-expected"
+            label="Amount that should be handed over"
+            required
+            autoFocus
+            error={errors['ho-expected']}
+            value={expected}
+            onChange={(event) => setExpected(event.target.value)}
+          />
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'counted' ? (
+        <WizardStep wizard={wizard} title="How much did you count?" hint="Count it first.">
+          <NumericInput
+            id="ho-counted"
+            label="Amount you counted"
+            required
+            autoFocus
+            error={errors['ho-counted']}
+            value={counted}
+            onChange={(event) => setCounted(event.target.value)}
+          />
           <WizardActions wizard={wizard} onContinue={next} />
         </WizardStep>
       ) : null}
@@ -173,15 +171,9 @@ export function CashHandoverWizard({
         <WizardStep
           wizard={wizard}
           title="Why is it different?"
-          hint={`You counted ${money(counted.trim())} but ${money(expected.trim())} was expected.`}
+          hint={`Counted ${money(counted.trim())}, expected ${money(expected.trim())}.`}
         >
-          <Field
-            id="ho-reason"
-            label="Reason"
-            hint="The person receiving the cash will see this."
-            error={errors['ho-reason']}
-            required
-          >
+          <Field id="ho-reason" label="Reason" error={errors['ho-reason']} required>
             <textarea
               id="ho-reason"
               rows={3}
@@ -195,7 +187,7 @@ export function CashHandoverWizard({
         </WizardStep>
       ) : null}
       {step === 'review' ? (
-        <WizardStep wizard={wizard} title="Check the handover" hint={WIZARD_REVIEW_HINT}>
+        <WizardStep wizard={wizard} title="Check the handover">
           <WizardSummary>
             <WizardSummaryRow label="From" onChange={() => wizard.change('from')}>
               {nameOf(fromId)}
@@ -203,10 +195,10 @@ export function CashHandoverWizard({
             <WizardSummaryRow label="To" onChange={() => wizard.change('to')}>
               {nameOf(toId)}
             </WizardSummaryRow>
-            <WizardSummaryRow label="Should be" onChange={() => wizard.change('amounts')}>
+            <WizardSummaryRow label="Should be" onChange={() => wizard.change('expected')}>
               {money(expected.trim())}
             </WizardSummaryRow>
-            <WizardSummaryRow label="Counted" onChange={() => wizard.change('amounts')}>
+            <WizardSummaryRow label="Counted" onChange={() => wizard.change('counted')}>
               {money(counted.trim())}
             </WizardSummaryRow>
             {differs ? (
@@ -215,7 +207,7 @@ export function CashHandoverWizard({
               </WizardSummaryRow>
             ) : null}
           </WizardSummary>
-          <InfoTip>The cash is not counted as received until the other person accepts it.</InfoTip>
+          <WizardQuiet>It counts as received once they accept it.</WizardQuiet>
           <WizardActions
             wizard={wizard}
             onContinue={next}

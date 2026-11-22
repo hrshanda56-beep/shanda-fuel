@@ -353,7 +353,7 @@ test.describe('provider settlement workspace', () => {
     await matchDialog.getByRole('button', { name: 'Continue' }).click();
     await matchDialog.getByRole('button', { name: 'Match', exact: true }).click();
     await expect(
-      page.getByRole('alert').getByText('The provider settlement is stale'),
+      page.getByRole('alert').getByText('The provider settlement is stale').first(),
     ).toBeVisible();
     await page.getByRole('button', { name: 'Match', exact: true }).click();
     await expect(

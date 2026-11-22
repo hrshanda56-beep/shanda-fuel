@@ -625,7 +625,7 @@ export function PumpWizard({
       <WizardStep
         wizard={shown}
         title="Which day was the meter fitted?"
-        hint="A shift cannot be closed for a nozzle whose meter started working after the shift opened. You can only move the date earlier, and only until readings are recorded."
+        hint="You can only move the date earlier, and only before readings are recorded."
       >
         <Field id="date" label="The day it was fitted" error={errors.date} required>
           <input

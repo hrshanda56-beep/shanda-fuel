@@ -89,13 +89,12 @@ test.describe('Station page and setup wizards', () => {
     expect(commands).toHaveLength(0);
 
     // Gas is measured in kilograms by default; every other type in litres.
+    // Picking a type carries straight on to the next screen, so there is no Continue to press.
     await page.getByText('Gas', { exact: true }).click();
-    await next(page).click();
     await page.locator('#name').fill('Unleaded 95');
     await next(page).click();
     await expect(page.locator('#fuel-unit-KILOGRAMS')).toBeChecked();
     await page.getByText('Litres', { exact: true }).click();
-    await next(page).click();
 
     // The answers wait. The identity check and the save happen once, at the review step.
     await page.getByRole('button', { name: 'Add the fuel' }).click();

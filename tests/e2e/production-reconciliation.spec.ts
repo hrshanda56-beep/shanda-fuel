@@ -1,5 +1,4 @@
 import { seedClerkIdentity, authenticateClerk, establishClerkStepUp } from './clerk-fixtures';
-import { openDaySummary } from './fixtures/day-summary';
 import AxeBuilder from '@axe-core/playwright';
 import {
   expect,
@@ -16,7 +15,9 @@ import { ExactDecimal } from '../../src/platform/domain/primitives';
 async function acceptConfirmation(page: Page) {
   await page
     .getByRole('alertdialog')
-    .getByRole('button', { name: /^(Continue|Approve reconciliation)$/ })
+    .getByRole('button', {
+      name: /^(Continue|Approve reconciliation|Close Shift|Close shift and end the day)$/i,
+    })
     .click();
 }
 
@@ -353,22 +354,16 @@ test.describe('production reconciliation persistence', () => {
     // This scenario runs with CI's Better Auth provider. Rendering the control
     // room must not require a ClerkProvider or crash before its content loads.
     await expect(controlRoom).toBeVisible();
-    await openDaySummary(page);
-    await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
-    await expect(controlRoom.getByRole('button', { name: 'Close Shift' }).first()).toBeVisible();
+    // The one next step is offered. This shift has no figures yet, so that step is to enter them
+    // (Close shift appears only once they are in); the day summary is not shown.
+    await expect(controlRoom.locator('#next-step-title')).toBeVisible();
+    const nextStep = controlRoom.getByRole('link', { name: 'Start entering figures' });
+    await expect(nextStep).toBeVisible();
     await expect(controlRoom.getByRole('button', { name: 'Lock business day' })).toHaveCount(0);
-    await expect(
-      controlRoom
-        .locator('article.operations-shift-row strong')
-        .filter({
-          hasText: '08:00 – 16:00',
-        })
-        .first(),
-    ).toBeVisible();
+    await expect(controlRoom.getByRole('heading', { name: 'Shifts', exact: true })).toHaveCount(0);
 
-    const closeMeters = controlRoom.getByRole('button', { name: 'Close Shift' }).first();
-    await closeMeters.focus();
-    await expect(closeMeters).toBeFocused();
+    await nextStep.focus();
+    await expect(nextStep).toBeFocused();
 
     const layout = await page.evaluate(() => ({
       viewportWidth: window.innerWidth,
@@ -383,39 +378,95 @@ test.describe('production reconciliation persistence', () => {
     context,
     page,
   }) => {
+    // A day of its own, so the submitted figures (which the database will not let anyone delete)
+    // never touch the shared fixture day. Everything is idempotent for Playwright retries.
+    const staleDay = 'a5e00000-0000-4000-8000-000000000221';
+    const staleShift = 'a5e00000-0000-4000-8000-000000000231';
+    const staleReconciliation = 'a5e00000-0000-4000-8000-000000000241';
+    const staleRevision = 'a5e00000-0000-4000-8000-000000000251';
+    await client.unsafe(`
+      insert into app.station_business_days (id, tenant_id, station_id, business_date, state)
+        values ('${staleDay}', '${ids.tenant}', '${ids.station}', '2026-09-25', 'NOT_STARTED')
+        on conflict (id) do nothing;
+      update app.station_business_days set state='OPEN', opened_at=coalesce(opened_at, now())
+        where id='${staleDay}' and state='NOT_STARTED';
+      insert into app.shifts
+        (id, tenant_id, station_id, business_day_id, state, planned_start_at, planned_end_at, business_date)
+      values
+        ('${staleShift}', '${ids.tenant}', '${ids.station}', '${staleDay}', 'PLANNED', '2026-09-25T06:00:00Z', '2026-09-25T14:00:00Z', '2026-09-25')
+        on conflict (id) do nothing;
+      update app.shifts set state='OPEN', opened_at=coalesce(opened_at, now())
+        where id='${staleShift}' and state='PLANNED';
+      insert into app.reconciliations (id, tenant_id, station_id, business_day_id, shift_id, state)
+        values ('${staleReconciliation}', '${ids.tenant}', '${ids.station}', '${staleDay}', '${staleShift}', 'DRAFT')
+        on conflict (id) do nothing;
+      update app.reconciliations set state = 'READY' where id = '${staleReconciliation}' and state = 'DRAFT';
+      update app.reconciliations set state = 'SUBMITTED' where id = '${staleReconciliation}' and state = 'READY';
+      insert into app.reconciliation_revisions
+        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, variance_classification, declarations, source_segment_ids, source_shift_ids)
+      values ('${staleRevision}', '${ids.tenant}', '${ids.station}', '${staleReconciliation}', 1, 'READY', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)
+        on conflict (id) do nothing;
+      update app.reconciliation_revisions set state = 'SUBMITTED' where id = '${staleRevision}' and state = 'READY';
+    `);
+
+    const posts: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST') posts.push(request.url());
+    });
     await authenticate(context, supervisorToken);
     await gotoAndWaitForHydration(
       page,
       `/operations/daily?${new URLSearchParams({
         tenantId: ids.tenant,
         stationId: ids.station,
-        businessDayId: ids.day,
+        businessDayId: staleDay,
       })}`,
     );
-
-    await openDaySummary(page);
-    const shiftRow = page
-      // The approved layout no longer prints raw shift ids; rows carry data-shift-id.
-      .locator(`article.operations-shift-row[data-shift-id="${ids.controlRoomShift}"]`);
-    const closeMeters = shiftRow.getByRole('button', { name: 'Close Shift' });
-    await expect(closeMeters).toBeVisible();
-    await client.unsafe(
-      `update app.shifts set version = version + 1 where id = '${ids.controlRoomShift}'`,
-    );
+    const closeShift = page
+      .locator('[aria-label="Operations control room"]')
+      .getByRole('button', { name: /^Close shift/i })
+      .first();
+    await expect(closeShift).toBeVisible();
+    await client.unsafe(`update app.shifts set version = version + 1 where id = '${staleShift}'`);
 
     const responsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/forecourt/commands') &&
         response.request().method() === 'POST',
+      { timeout: 15_000 },
     );
-    await closeMeters.click();
+    await closeShift.click();
+    // The only shift of the day also ends the day, and with no approved figures it asks why first.
+    const reason = page.locator('#next-step-reason');
+    if (await reason.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await reason.fill('Stale-state test, closing the only shift');
+      await page
+        .locator('[aria-label="Operations control room"]')
+        .getByRole('button', { name: /^Close shift/i })
+        .first()
+        .click();
+    }
     await acceptConfirmation(page);
-    const response = await responsePromise;
+    const response = await responsePromise.catch((error) => {
+      throw new Error(`No command was sent. POSTs seen: ${JSON.stringify(posts)}. ${error}`);
+    });
     expect(response.status()).toBe(409);
-    await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
+    // The card explains the conflict in its own words, shows the refreshed state, and does not retry.
     await expect(
-      page.getByText(/authoritative state has been refreshed; review it before trying again/i),
+      page
+        .locator('[aria-label="Operations control room"]')
+        .getByRole('alert')
+        .filter({ hasText: /changed elsewhere|already locked/i }),
     ).toBeVisible();
+    await expect(
+      page
+        .locator('[aria-label="Operations control room"]')
+        .getByRole('button', {
+          name: /^Close shift/i,
+        })
+        .first(),
+    ).toBeVisible();
+    expect(posts.filter((url) => url.includes('/api/forecourt/commands'))).toHaveLength(1);
   });
 
   // Needs a real Clerk second factor for the manager (step-up). The test Clerk instance has none

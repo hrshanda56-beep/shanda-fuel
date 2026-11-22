@@ -19,7 +19,7 @@ import {
 } from '../new-customer-checks';
 import { isDuplicateCustomerName } from './customer-reference';
 
-type CustomerStep = 'kind' | 'who' | 'terms' | 'review';
+type CustomerStep = 'kind' | 'who' | 'phone' | 'terms' | 'days' | 'review';
 
 export type NewCustomerValue = {
   kind: CustomerKind | '';
@@ -69,7 +69,9 @@ export function AddCustomerWizard({
   const sequence: readonly CustomerStep[] = [
     ...(canOpenAccount ? (['kind'] as const) : []),
     'who',
+    'phone',
     ...(kindNeedsTerms(kind) ? (['terms'] as const) : []),
+    ...(kind === 'CREDIT' ? (['days'] as const) : []),
     'review',
   ];
   const wizard = useWizard<CustomerStep>({
@@ -89,14 +91,27 @@ export function AddCustomerWizard({
       // A kind changed from the check screen may now need terms that were never given.
       const needsTerms =
         kindNeedsTerms(kind) && Object.keys(checkCustomerTerms(kind, limit, days)).length > 0;
-      return wizard.advance(
-        found,
-        needsTerms ? 'terms' : 'review',
-        needsTerms ? undefined : 'review',
-      );
+      return wizard.advance(found, 'phone', needsTerms ? undefined : 'review');
+    }
+    if (step === 'phone') {
+      const needsTerms =
+        kindNeedsTerms(kind) && Object.keys(checkCustomerTerms(kind, limit, days)).length > 0;
+      return wizard.advance({}, needsTerms ? 'terms' : 'review', 'review');
     }
     if (step === 'terms') {
-      return wizard.advance(checkCustomerTerms(kind, limit, days), 'review');
+      const found = checkCustomerTerms(kind, limit, days);
+      return wizard.advance(
+        found['add-customer-limit'] ? { 'add-customer-limit': found['add-customer-limit'] } : {},
+        kind === 'CREDIT' ? 'days' : 'review',
+        kind === 'CREDIT' ? undefined : 'review',
+      );
+    }
+    if (step === 'days') {
+      const found = checkCustomerTerms(kind, limit, days);
+      return wizard.advance(
+        found['add-customer-days'] ? { 'add-customer-days': found['add-customer-days'] } : {},
+        'review',
+      );
     }
     onSubmit({ kind, name, staffName, phone, limit, days });
   }
@@ -114,7 +129,7 @@ export function AddCustomerWizard({
         <WizardStep
           wizard={wizard}
           title="What kind of account?"
-          hint="You can just add the customer now and open an account later."
+          hint="You can open an account later."
         >
           <Field id="add-customer-kind" label="Kind of account" optional>
             <Select
@@ -132,15 +147,7 @@ export function AddCustomerWizard({
         </WizardStep>
       ) : null}
       {step === 'who' ? (
-        <WizardStep
-          wizard={wizard}
-          title={staff ? 'Which staff member?' : 'Who is the customer?'}
-          hint={
-            staff
-              ? 'Pick the person this fuel account is for.'
-              : 'Their name is what appears on statements.'
-          }
-        >
+        <WizardStep wizard={wizard} title={staff ? 'Which staff member?' : 'Who is the customer?'}>
           {staff ? (
             <Field
               id="add-customer-staff"
@@ -164,9 +171,7 @@ export function AddCustomerWizard({
               error={errors['add-customer-name']}
               required
               hint={
-                isDuplicateCustomerName(name, existingNames)
-                  ? 'A customer with this name already exists. Check the list before adding another.'
-                  : undefined
+                isDuplicateCustomerName(name, existingNames) ? 'Already on your list.' : undefined
               }
             >
               <input
@@ -179,12 +184,18 @@ export function AddCustomerWizard({
               />
             </Field>
           )}
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'phone' ? (
+        <WizardStep wizard={wizard} title="What is their phone number?" hint="Optional.">
           <Field id="add-customer-phone" label="Phone number" optional>
             <input
               id="add-customer-phone"
               type="tel"
               maxLength={200}
               autoComplete="off"
+              autoFocus
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
             />
@@ -196,16 +207,10 @@ export function AddCustomerWizard({
         <WizardStep
           wizard={wizard}
           title={staff ? 'What is the monthly limit?' : 'How much credit?'}
-          hint={
-            staff
-              ? 'The most fuel this person can take each month.'
-              : 'The most this customer can owe at one time.'
-          }
         >
           <Field
             id="add-customer-limit"
             label={staff ? 'Monthly limit (USD)' : 'Most they may owe at one time (USD)'}
-            hint={staff ? undefined : 'This is the credit limit.'}
             error={errors['add-customer-limit']}
             required
           >
@@ -218,28 +223,31 @@ export function AddCustomerWizard({
               onChange={(event) => setLimit(event.target.value)}
             />
           </Field>
-          {kind === 'CREDIT' ? (
-            <Field
+          <WizardActions wizard={wizard} onContinue={next} />
+        </WizardStep>
+      ) : null}
+      {step === 'days' ? (
+        <WizardStep wizard={wizard} title="How many days do they have to pay?" hint="Optional.">
+          <Field
+            id="add-customer-days"
+            label="Usual days to pay"
+            error={errors['add-customer-days']}
+            optional
+          >
+            <input
               id="add-customer-days"
-              label="Usual days to pay"
-              hint="How many days they have to pay. It sets when each charge falls due and when it counts as overdue."
-              error={errors['add-customer-days']}
-              optional
-            >
-              <input
-                id="add-customer-days"
-                inputMode="numeric"
-                autoComplete="off"
-                value={days}
-                onChange={(event) => setDays(event.target.value)}
-              />
-            </Field>
-          ) : null}
+              inputMode="numeric"
+              autoComplete="off"
+              autoFocus
+              value={days}
+              onChange={(event) => setDays(event.target.value)}
+            />
+          </Field>
           <WizardActions wizard={wizard} onContinue={next} />
         </WizardStep>
       ) : null}
       {step === 'review' ? (
-        <WizardStep wizard={wizard} title="Check the customer" hint={WIZARD_REVIEW_HINT}>
+        <WizardStep wizard={wizard} title="Check the customer">
           <WizardSummary>
             {canOpenAccount ? (
               <WizardSummaryRow label="Account" onChange={() => wizard.change('kind')}>

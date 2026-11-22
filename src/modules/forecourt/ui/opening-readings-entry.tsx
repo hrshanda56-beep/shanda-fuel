@@ -6,7 +6,6 @@ import { useMemo, useState } from 'react';
 import { useToast } from '../../../design-system/feedback-provider';
 import { NumericInput } from '../../../design-system/primitives';
 import {
-  WIZARD_REVIEW_HINT,
   WizardActions,
   WizardCard,
   WizardNotice,
@@ -174,7 +173,7 @@ export function OpeningReadingsEntry({
           <WizardStep
             wizard={{ position: 1, total: 0, captureHeading: wizard.captureHeading }}
             title="No pumps are set up yet"
-            hint="A manager needs to set up the pumps for this station before readings can be entered."
+            hint="Ask your manager to set them up."
           >
             <WizardActions
               wizard={wizard}
@@ -192,7 +191,7 @@ export function OpeningReadingsEntry({
       <WizardCard ownDraft>
         <WizardResumeNotice offer={draft.offer} onResume={draft.resume} onDiscard={draft.discard} />
         {onReview ? (
-          <WizardStep wizard={shown} title="Check the opening readings" hint={WIZARD_REVIEW_HINT}>
+          <WizardStep wizard={shown} title="Check the opening readings">
             <WizardSummary>
               {sorted.map((item, index) => (
                 <WizardSummaryRow
@@ -206,8 +205,8 @@ export function OpeningReadingsEntry({
             </WizardSummary>
             {unpriced.length > 0 ? (
               <WizardNotice>
-                {unpriced.map((item) => item.productName).join(' and ')} has no selling price yet.
-                Ask a manager to set it before you save.
+                {unpriced.map((item) => item.productName).join(' and ')} has no price yet. Ask your
+                manager to set it.
               </WizardNotice>
             ) : null}
             {wizard.problem ? (
@@ -228,22 +227,32 @@ export function OpeningReadingsEntry({
             title={`What does the meter show on ${pumpName(pump).toLowerCase()}?`}
             hint={
               pump.previousReading
-                ? `${pump.productName}. The last closing reading was ${pump.previousReading}. Change it if the meter shows something else.`
-                : `${pump.productName}. Read the number on the pump meter now.`
+                ? `${pump.productName} · last closing reading ${pump.previousReading}`
+                : pump.productName
             }
           >
-            <NumericInput
-              id={`opening-${pump.nozzleId}`}
-              label="Opening reading"
-              value={values[pump.nozzleId] ?? ''}
-              error={wizard.errors[`opening-${pump.nozzleId}`]}
-              onChange={(event) =>
-                setValues((current) => ({ ...current, [pump.nozzleId]: event.target.value }))
-              }
-              unit="L"
-              required
-              autoComplete="off"
-            />
+            <div
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  nextPump();
+                }
+              }}
+            >
+              <NumericInput
+                id={`opening-${pump.nozzleId}`}
+                label="Opening reading"
+                value={values[pump.nozzleId] ?? ''}
+                error={wizard.errors[`opening-${pump.nozzleId}`]}
+                onChange={(event) =>
+                  setValues((current) => ({ ...current, [pump.nozzleId]: event.target.value }))
+                }
+                unit="L"
+                required
+                autoComplete="off"
+                autoFocus
+              />
+            </div>
             {wizard.problem ? (
               <p className="field-error" role="alert">
                 {wizard.problem}

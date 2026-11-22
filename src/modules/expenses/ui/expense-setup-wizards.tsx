@@ -143,7 +143,7 @@ export function CategoryWizard({
         <WizardStep
           wizard={wizard}
           title="Is it a fixed monthly cost?"
-          hint="Say Yes for costs such as rent, salaries or insurance, which are the same every month."
+          hint="Yes for rent, salaries or insurance."
         >
           <WizardYesNo
             label="Is it a fixed monthly cost?"

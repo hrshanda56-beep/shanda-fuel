@@ -250,7 +250,7 @@ export function AccountWizard({
         <WizardStep
           wizard={wizard}
           title="Which station and provider?"
-          hint="Electronic payments can only be settled at a station that has a provider account."
+          hint="Needs a provider account at this station."
         >
           <Field id="account-station" label="Station" error={errors['account-station']} required>
             <Select

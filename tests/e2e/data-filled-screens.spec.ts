@@ -1,8 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
-import { openDaySummary } from './fixtures/day-summary';
-
 import {
   mockContext,
   mockOverview,
@@ -62,11 +60,13 @@ test.describe('data-filled screens', () => {
       await expect(glance).toHaveCount(0);
       await expect(page.locator('section[aria-labelledby="day-history-title"]')).toHaveCount(0);
 
-      // Someone who runs the shift lands on one question (#253); the day summary is one tap away.
-      await openDaySummary(page);
-      await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
+      // Someone who runs the shift lands on one question (#253) and nothing else: no day summary.
+      await expect(page.locator('#next-step-title')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toHaveCount(0);
       await expect(page.getByText('Shift board ·', { exact: false })).toHaveCount(0);
-      await expect(page.locator('.ops-hero')).toBeVisible();
+      await expect(page.locator('.ops-hero')).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Change a price' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Record a past day' })).toBeVisible();
       const attention = page.locator('section[aria-labelledby="operations-attention-title"]');
       await expect(attention).toHaveCount(0);
       await expect(page.locator('section[aria-labelledby="timeline-title"]')).toHaveCount(0);
@@ -173,10 +173,11 @@ test.describe('data-filled screens', () => {
       await mockContext(page, '/operations/daily');
       await mockOverview(page);
       await page.goto(`/operations/daily?tenantId=${TENANT}&stationId=${STATION}`);
-      await openDaySummary(page);
-      await expect(page.getByRole('heading', { name: 'Shifts', exact: true })).toBeVisible();
-      await expect(page.locator('.status').first()).toBeVisible();
-      expect(await wordsSplitAcrossLines(page, '.status'), `daily ops ${width}`).toEqual([]);
+      await expect(page.locator('#next-step-title')).toBeVisible();
+      expect(
+        await wordsSplitAcrossLines(page, '.next-step-trail *, .next-step-action'),
+        `daily ops ${width}`,
+      ).toEqual([]);
 
       await mockContext(page, `/stations/${STATION}/settlements`);
       await mockSettlements(page);
