@@ -15,7 +15,7 @@ import { ExactDecimal } from '../../src/platform/domain/primitives';
 async function acceptConfirmation(page: Page) {
   await page
     .getByRole('alertdialog')
-    .getByRole('button', { name: /^(Continue|Approve reconciliation)$/ })
+    .getByRole('button', { name: /^(Continue|Approve reconciliation|Close Shift)$/i })
     .click();
 }
 
