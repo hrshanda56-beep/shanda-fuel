@@ -386,28 +386,60 @@ test.describe('production reconciliation persistence', () => {
       })}`,
     );
 
-    const closeMeters = page
+    // The screen offers one next step for the first open shift. Find which shift that is from the
+    // "Start entering figures" link, then give it submitted figures so Close Shift is offered.
+    const startLink = page
       .locator('[aria-label="Operations control room"]')
-      .getByRole('button', { name: /^Close shift/i })
-      .first();
-    await expect(closeMeters).toBeVisible();
-    await client.unsafe(
-      `update app.shifts set version = version + 1 where id = '${ids.controlRoomShift}'`,
-    );
+      .getByRole('link', { name: 'Start entering figures' });
+    await expect(startLink).toBeVisible();
+    const targetShiftId = new URL(
+      (await startLink.getAttribute('href')) ?? '',
+      'http://127.0.0.1',
+    ).searchParams.get('shiftId');
+    expect(targetShiftId).toBeTruthy();
+    const staleReconciliation = crypto.randomUUID();
+    const staleRevision = crypto.randomUUID();
+    await client.unsafe(`
+      insert into app.reconciliations (id, tenant_id, station_id, business_day_id, shift_id, state)
+      values ('${staleReconciliation}', '${ids.tenant}', '${ids.station}', '${ids.day}', '${targetShiftId}', 'DRAFT');
+      update app.reconciliations set state = 'READY' where id = '${staleReconciliation}';
+      update app.reconciliations set state = 'SUBMITTED' where id = '${staleReconciliation}';
+      insert into app.reconciliation_revisions
+        (id, tenant_id, station_id, reconciliation_id, revision, state, expected_sales, accounted_sales, variance, variance_classification, declarations, source_segment_ids, source_shift_ids)
+      values ('${staleRevision}', '${ids.tenant}', '${ids.station}', '${staleReconciliation}', 1, 'READY', 0, 0, 0, 'INFORMATIONAL', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb);
+      update app.reconciliation_revisions set state = 'SUBMITTED' where id = '${staleRevision}';
+    `);
+    try {
+      await page.reload();
+      await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
+      const closeMeters = page
+        .locator('[aria-label="Operations control room"]')
+        .getByRole('button', { name: /^Close shift/i })
+        .first();
+      await expect(closeMeters).toBeVisible();
+      await client.unsafe(
+        `update app.shifts set version = version + 1 where id = '${targetShiftId}'`,
+      );
 
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/forecourt/commands') &&
-        response.request().method() === 'POST',
-    );
-    await closeMeters.click();
-    await acceptConfirmation(page);
-    const response = await responsePromise;
-    expect(response.status()).toBe(409);
-    await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
-    await expect(
-      page.getByText(/authoritative state has been refreshed; review it before trying again/i),
-    ).toBeVisible();
+      const responsePromise = page.waitForResponse(
+        (response) =>
+          response.url().includes('/api/forecourt/commands') &&
+          response.request().method() === 'POST',
+      );
+      await closeMeters.click();
+      await acceptConfirmation(page);
+      const response = await responsePromise;
+      expect(response.status()).toBe(409);
+      await expect(page.getByRole('heading', { name: 'State changed' })).toBeVisible();
+      await expect(
+        page.getByText(/authoritative state has been refreshed; review it before trying again/i),
+      ).toBeVisible();
+    } finally {
+      await client.unsafe(`
+        delete from app.reconciliation_revisions where id = '${staleRevision}';
+        delete from app.reconciliations where id = '${staleReconciliation}';
+      `);
+    }
   });
 
   // Needs a real Clerk second factor for the manager (step-up). The test Clerk instance has none
