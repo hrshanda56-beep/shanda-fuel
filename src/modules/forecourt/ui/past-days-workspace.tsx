@@ -18,6 +18,7 @@ import {
 } from '@/design-system/wizard';
 
 import type { PastDaysData } from '../past-days';
+import { lockClosedDays, useLockVerification } from './lock-days';
 
 type Step = 'pick' | 'check';
 const SEQUENCE: readonly Step[] = ['pick', 'check'];
@@ -80,6 +81,38 @@ export function PastDaysWorkspace({
       setProblem('The day could not be started. Check the connection, then try again.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  const verifyIdentity = useLockVerification();
+  const [locking, setLocking] = useState(false);
+  const [lockNote, setLockNote] = useState<string | null>(null);
+  const closedDays = data.recorded.filter((day) => day.state === 'CLOSED');
+
+  async function lockAll() {
+    setLocking(true);
+    setLockNote(null);
+    try {
+      await verifyIdentity(tenantId);
+      const outcomes = await lockClosedDays({ tenantId, stationId }, closedDays);
+      const locked = outcomes.filter((outcome) => outcome.locked).length;
+      const skipped = outcomes.filter((outcome) => !outcome.locked);
+      setLockNote(
+        skipped.length === 0
+          ? `Locked ${locked} ${locked === 1 ? 'day' : 'days'}.`
+          : `Locked ${locked} of ${outcomes.length}. ${skipped.length} could not be locked: ${
+              skipped[0]?.message ?? 'open that day to see why.'
+            }`,
+      );
+      router.refresh();
+    } catch (caught) {
+      setLockNote(
+        caught instanceof Error
+          ? caught.message
+          : 'The days could not be locked. Nothing was changed.',
+      );
+    } finally {
+      setLocking(false);
     }
   }
 
@@ -157,6 +190,27 @@ export function PastDaysWorkspace({
           </li>
         ))}
       </ul>
+      {data.canGoBack && closedDays.length > 0 ? (
+        <>
+          <p className="panel-detail">
+            {closedDays.length} added {closedDays.length === 1 ? 'day is' : 'days are'} closed and
+            ready to lock. You will be asked to confirm it is you once. A day that is not ready is
+            skipped.
+          </p>
+          <div>
+            <Button type="button" onClick={() => void lockAll()} disabled={locking}>
+              {closedDays.length === 1
+                ? 'Lock this day'
+                : `Lock all ${closedDays.length} closed days`}
+            </Button>
+          </div>
+        </>
+      ) : null}
+      {lockNote ? (
+        <p className="panel-detail" role="status">
+          {lockNote}
+        </p>
+      ) : null}
     </section>
   );
 

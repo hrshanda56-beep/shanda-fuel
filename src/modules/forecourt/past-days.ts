@@ -29,7 +29,7 @@ export type PastDaysData = {
   /** Dates with no record yet, oldest first, within the person's reach. */
   missing: string[];
   /** Days already recorded late, newest first. */
-  recorded: { id: string; date: string; state: string }[];
+  recorded: { id: string; date: string; state: string; version: number }[];
 };
 
 /** What the "Record a past day" screen needs: the gaps, the person's reach, and days already added. */
@@ -104,9 +104,10 @@ export async function getPastDaysFromRequest(
       id: string;
       date: string;
       state: string;
+      version: number;
       entered_late: boolean;
     }>(sql`
-      select id, business_date as date, state, entered_late
+      select id, business_date as date, state, version, entered_late
       from app.station_business_days
       where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
         and business_date >= ${since}
@@ -129,7 +130,12 @@ export async function getPastDaysFromRequest(
         : [],
       recorded: days
         .filter((day) => day.entered_late)
-        .map((day) => ({ id: day.id, date: day.date, state: day.state })),
+        .map((day) => ({
+          id: day.id,
+          date: day.date,
+          state: day.state,
+          version: Number(day.version),
+        })),
     };
   });
 }
