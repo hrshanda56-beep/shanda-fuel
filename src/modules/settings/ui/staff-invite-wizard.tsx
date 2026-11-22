@@ -17,6 +17,7 @@ import {
 import type { RoleCode } from '@/modules/authorization';
 import { defaultScopeForRole, scopeChoicesForRole } from '@/modules/staff/role-scopes';
 import type { SettingsView } from '../contracts';
+import { STAFF_ROLE_HINTS } from '../staff-role-labels';
 import {
   checkInviteEmail,
   checkInviteName,
@@ -227,7 +228,7 @@ export function StaffInviteWizard({
         </WizardStep>
       ) : null}
       {step === 'role' ? (
-        <WizardStep wizard={wizard} title="What will they do?">
+        <WizardStep wizard={wizard} title="What will they do?" hint={STAFF_ROLE_HINTS[role]}>
           <Field id="inv-role" label="Role" required>
             <Select
               id="inv-role"

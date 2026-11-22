@@ -16,6 +16,7 @@ import {
 import type { RoleCode } from '@/modules/authorization';
 import { defaultScopeForRole, scopeChoicesForRole } from '@/modules/staff/role-scopes';
 import type { SettingsView } from '../contracts';
+import { STAFF_ROLE_HINTS } from '../staff-role-labels';
 import { checkInviteScope } from '../staff-invite-checks';
 import styles from './settings-workspace.module.css';
 
@@ -117,7 +118,7 @@ export function StaffAccessWizard({
         <WizardStep
           wizard={wizard}
           title={`What will ${name} do?`}
-          hint="This decides what they can see and do. It takes effect straight away."
+          hint={`${STAFF_ROLE_HINTS[role]} It takes effect straight away.`}
         >
           <Field id="access-role" label="Role" required>
             <Select
