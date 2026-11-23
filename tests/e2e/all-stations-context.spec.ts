@@ -86,7 +86,9 @@ for (const width of [390, 1280])
     await page.goto(`/stations/${station}/cash?tenantId=${tenant}&legalEntityId=${entity}`);
     await expect(trigger).toHaveAttribute('aria-label', /Alpha station/);
     const stationNavigation = page.locator(width < 700 ? '.shell-mobile-nav' : '.shell-sidebar');
-    await stationNavigation.getByRole('link', { name: width < 700 ? 'Operations' : 'Customers', exact: true }).click();
+    await stationNavigation
+      .getByRole('link', { name: width < 700 ? 'Operations' : 'Customers', exact: true })
+      .click();
     await expect(page).toHaveURL(new RegExp(`stationId=${station}`));
     await expect(trigger).toHaveAttribute('aria-label', /Alpha station/);
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -101,7 +103,9 @@ for (const width of [390, 1280])
     await expect(page).toHaveURL(new RegExp(`/cash\\?tenantId=${tenant}&allStations=true`));
     expect(posts.at(-1)?.pathname).toBe('/cash');
     const nav = page.locator(width < 700 ? '.shell-mobile-nav' : '.shell-sidebar');
-    await nav.getByRole('link', { name: width < 700 ? 'Operations' : 'Customers', exact: true }).click();
+    await nav
+      .getByRole('link', { name: width < 700 ? 'Operations' : 'Customers', exact: true })
+      .click();
     await expect(page).toHaveURL(/allStations=true/);
     await expect(page.locator('.shell-context-pill')).toHaveAttribute('aria-label', /All stations/);
     await page.goto(`/cash?tenantId=${tenant}&allStations=true`);

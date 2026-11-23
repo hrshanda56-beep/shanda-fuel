@@ -184,9 +184,7 @@ test('an approved zero is shown as zero, unlike a day with no approved report', 
   });
   await page.goto(TODAY);
   const figures = page.locator('.today-figures');
-  await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
-    '$0.00',
-  );
+  await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText('$0.00');
   await expect(figures).not.toContainText('No approved report yet');
   await expect(figures).not.toContainText('Stock variance');
 });

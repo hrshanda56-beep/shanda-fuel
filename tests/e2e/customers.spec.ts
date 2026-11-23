@@ -271,9 +271,7 @@ test.describe('customer accounts', () => {
       .selectOption({ label: 'Sandawana (SND)' });
     await page.getByRole('button', { name: 'Record payment' }).click();
 
-    await expect(
-      page.getByText('Payment of $120.50 from Acme Transport recorded.'),
-    ).toBeVisible();
+    await expect(page.getByText('Payment of $120.50 from Acme Transport recorded.')).toBeVisible();
     expect(commands[0]).toMatchObject({
       commandType: 'RecordCustomerPayment',
       accountId: 'account-1',
