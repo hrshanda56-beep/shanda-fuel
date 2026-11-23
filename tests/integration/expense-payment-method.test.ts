@@ -167,7 +167,7 @@ describe('how an expense was paid, and the cash left to collect', () => {
       });
     const tooMuch = await collect('1000.00', 'E7-COL-1');
     expect(tooMuch.status).toBe(409);
-    expect(String(tooMuch.json.message)).toMatch(/only USD 950 can be collected/);
+    expect(String(tooMuch.json.message)).toMatch(/only \$950\.00 can be collected/);
     expect((await collect('950.00', 'E7-COL-2')).status).toBe(201);
   });
 });
