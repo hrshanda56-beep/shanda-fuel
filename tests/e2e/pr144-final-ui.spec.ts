@@ -81,8 +81,10 @@ test.describe('console hygiene', () => {
     await expect(note).toHaveAttribute('aria-describedby', 'note-hint');
     await expect(page.locator('#reason')).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#reason')).toHaveAttribute('aria-describedby', 'reason-error');
-    // Let hydration finish before judging the console.
-    await page.waitForLoadState('networkidle');
+    // Let hydration finish before judging the console. The network never goes quiet while
+    // Clerk's scripts keep checking in, so wait for the page load and a short settle instead.
+    await page.waitForLoadState('load');
+    await page.waitForTimeout(2000);
     expect(reactProblems(messages)).toEqual([]);
   });
 
