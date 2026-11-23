@@ -1030,6 +1030,16 @@
   .income-card {
     padding: var(--space-3);
   }
+
+  .income tbody th,
+  .income tbody td,
+  .income thead th {
+    padding-inline: var(--space-1);
+  }
+
+  .income .income-detail th {
+    padding-left: calc(var(--space-1) + 1.5rem);
+  }
 }
 
 @media print {
