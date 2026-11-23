@@ -92,8 +92,8 @@ test.describe('Guides that replaced side panels', () => {
     await expect(
       page.getByText('Enter the monthly limit in US dollars', { exact: false }),
     ).toBeVisible();
+    // Picking the usual amount moves on by itself, so there is nothing to click.
     await page.getByRole('radio', { name: /The usual amount/ }).check();
-    await next(page).click();
 
     await expect(page.getByRole('heading', { name: 'Check the benefit' })).toBeVisible();
     await page.getByRole('button', { name: 'Add staff member' }).click();
