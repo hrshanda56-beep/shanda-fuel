@@ -35,6 +35,7 @@ import {
   cleanAmount,
   confirmDiffers,
 } from '../cash-sheet-checks';
+import { formatMoney } from '@/design-system/formatters';
 
 type Option = { value: string; label: string };
 
@@ -141,7 +142,7 @@ export function CollectCashWizard({
               placeholder="Choose a shift"
               options={sources.map((source) => ({
                 value: source.reconciliationId,
-                label: `${source.businessDate} · USD ${source.availableCash} available`,
+                label: `${source.businessDate} · ${formatMoney(source.availableCash)} available`,
               }))}
             />
           </Field>
@@ -311,7 +312,7 @@ export function ReceiveCashWizard({
               placeholder="Choose cash"
               options={collections.map((collection) => ({
                 value: collection.collectionId,
-                label: `${collection.collectionReference} · USD ${collection.amount}`,
+                label: `${collection.collectionReference} · ${formatMoney(collection.amount)}`,
               }))}
             />
           </Field>
@@ -512,7 +513,7 @@ export function BankCashWizard({
                 .filter((c) => !chosen.has(c.collectionId))
                 .map((c) => ({
                   value: c.collectionId,
-                  label: `${c.collectionReference} · USD ${c.availableAtStation}`,
+                  label: `${c.collectionReference} · ${formatMoney(c.availableAtStation)}`,
                 }))}
             />
           </Field>
@@ -751,7 +752,7 @@ export function ConfirmDepositWizard({
               placeholder="Choose a deposit"
               options={deposits.map((d) => ({
                 value: d.depositId,
-                label: `${d.depositReference} · USD ${d.amount} · ${d.bankAccountName}`,
+                label: `${d.depositReference} · ${formatMoney(d.amount)} · ${d.bankAccountName}`,
               }))}
             />
           </Field>

@@ -203,11 +203,11 @@ describe('small helpers', () => {
 
 describe('signed display', () => {
   it('puts the sign before the unit and leaves zero unsigned', () => {
-    expect(signedMoney('-30.85')).toBe('−USD 30.85');
-    expect(signedMoney('2')).toBe('+USD 2.00');
-    expect(signedMoney('0.00')).toBe('USD 0.00');
-    expect(signedLitres('-12.4')).toBe('−12 L');
-    expect(signedLitres('1284.5')).toBe('+1,285 L');
+    expect(signedMoney('-30.85')).toBe('($30.85)');
+    expect(signedMoney('2')).toBe('+$2.00');
+    expect(signedMoney('0.00')).toBe('$0.00');
+    expect(signedLitres('-12.4')).toBe('(12L)');
+    expect(signedLitres('1284.5')).toBe('+1,285L');
   });
 
   it('thins axis labels evenly', () => {
@@ -248,10 +248,10 @@ describe('configured products and unavailable stock variance', () => {
 
 describe('figureChars', () => {
   it('sizes figures by their longest word so numbers are never split', () => {
-    expect(figureChars('USD 2,096.72')).toBe(8);
-    expect(figureChars('−USD 12,345.67')).toBe(9);
-    expect(figureChars('USD 120,000.00')).toBe(10);
-    expect(figureChars('1,284 L')).toBe(6);
+    expect(figureChars('$2,096.72')).toBe(9);
+    expect(figureChars('($12,345.67)')).toBe(12);
+    expect(figureChars('$120,000.00')).toBe(11);
+    expect(figureChars('1,284L')).toBe(6);
     expect(figureChars('—')).toBe(6);
   });
 });

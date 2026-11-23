@@ -21,7 +21,7 @@ describe('cash facts on the all-stations overview', () => {
   it('shows money with a thousands separator and cents', () => {
     expect(cashFacts(totals, 'USD').map((fact) => fact.value)).toEqual([
       '$6,260.05',
-      '$0',
+      '$0.00',
       '$6,260.05',
       '$3,789.97',
     ]);
@@ -29,11 +29,11 @@ describe('cash facts on the all-stations overview', () => {
 
   it('keeps an unknown figure readable instead of dropping it', () => {
     expect(cashFacts({ somethingNew: '5' }, 'USD')).toEqual([
-      { label: 'Something new', value: '$5' },
+      { label: 'Something new', value: '$5.00' },
     ]);
   });
 
   it('names a currency other than USD', () => {
-    expect(cashFacts({ availableAtStation: '10.5' }, 'ZWG')[0]?.value).toBe('ZWG 10.5');
+    expect(cashFacts({ availableAtStation: '10.5' }, 'ZWG')[0]?.value).toBe('ZWG 10.50');
   });
 });

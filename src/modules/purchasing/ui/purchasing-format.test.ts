@@ -31,13 +31,13 @@ describe('order wording', () => {
 
 describe('number wording', () => {
   it('shows litres without trailing zeros', () => {
-    expect(litresText('12000.000')).toBe('12,000 L');
-    expect(litresText('1250.500')).toBe('1,250.5 L');
+    expect(litresText('12000.000')).toBe('12,000L');
+    expect(litresText('1250.500')).toBe('1,250.5L');
     expect(litresText(null)).toBe('—');
   });
   it('shows a per-litre price with at least two decimals', () => {
-    expect(pricePerLitreText('1.45000000')).toBe('USD 1.45 per litre');
-    expect(pricePerLitreText('1.4512500')).toBe('USD 1.4513 per litre');
+    expect(pricePerLitreText('1.45000000')).toBe('$1.45 per litre');
+    expect(pricePerLitreText('1.4512500')).toBe('$1.4513 per litre');
     expect(pricePerLitreText(null)).toBe('No price set');
   });
   it('totals only active lines exactly', () => {
@@ -50,8 +50,8 @@ describe('number wording', () => {
     ).toBe('0.300');
   });
   it('words differences', () => {
-    expect(differenceText('70.000', 'litres')).toBe('70 L more');
-    expect(differenceText('-0.070', 'price')).toBe('USD 0.07 less per litre');
+    expect(differenceText('70.000', 'litres')).toBe('70L more');
+    expect(differenceText('-0.070', 'price')).toBe('$0.07 less per litre');
     expect(differenceText('0.000', 'litres')).toBe('no difference');
   });
 });
@@ -72,7 +72,7 @@ describe('settings wording and validation', () => {
   it('describes allowances and VAT', () => {
     expect(litresAllowanceSentence(null, null)).toBe('No difference allowed');
     expect(litresAllowanceSentence('50.000', '0.5000')).toBe('Up to 50 L/kg or 0.5%');
-    expect(amountAllowanceSentence('10.0000')).toBe('Up to USD 10');
+    expect(amountAllowanceSentence('10.0000')).toBe('Up to $10.00');
     expect(vatModeText('NONE', null)).toBe('No VAT on supplier invoices');
     expect(vatModeText('EXCLUSIVE', '15')).toBe('Prices exclude VAT, 15% added on top');
   });

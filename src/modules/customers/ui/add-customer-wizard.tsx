@@ -18,6 +18,7 @@ import {
   type CustomerKind,
 } from '../new-customer-checks';
 import { isDuplicateCustomerName } from './customer-reference';
+import { formatMoney } from '@/design-system/formatters';
 
 type CustomerStep = 'kind' | 'who' | 'phone' | 'terms' | 'days' | 'review';
 
@@ -266,7 +267,7 @@ export function AddCustomerWizard({
                 label={staff ? 'Monthly limit' : 'Credit limit'}
                 onChange={() => wizard.change('terms')}
               >
-                USD {limit.trim()}
+                {formatMoney(limit.trim())}
                 {kind === 'CREDIT' && days.trim() ? ` · pays within ${days.trim()} days` : ''}
               </WizardSummaryRow>
             ) : null}

@@ -199,7 +199,7 @@ export function OpeningReadingsEntry({
                   label={`${pumpName(item)} · ${item.productName}`}
                   onChange={() => wizard.change('reading', index)}
                 >
-                  {values[item.nozzleId]?.trim() || '—'} L
+                  {values[item.nozzleId]?.trim() || '—'}L
                 </WizardSummaryRow>
               ))}
             </WizardSummary>

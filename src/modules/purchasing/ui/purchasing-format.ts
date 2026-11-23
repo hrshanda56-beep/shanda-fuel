@@ -1,7 +1,7 @@
 import { combineQuantityUnits } from '../../../design-system/formatters';
 import Decimal from 'decimal.js';
 import type { StatusTone } from '@/design-system/primitives';
-import { formatBusinessDate, formatDecimal } from '@/design-system/formatters';
+import { formatBusinessDate, formatDecimal, formatMoney } from '@/design-system/formatters';
 import { formatTileMoney } from '@/modules/reporting/format';
 
 /**
@@ -73,7 +73,7 @@ export function litresText(
 ): string {
   if (value === null || value === undefined || !/^-?\d+(?:\.\d+)?$/.test(value.trim())) return '—';
   const trimmed = new Decimal(value.trim()).toFixed().replace(/(\.\d*?)0+$/, '$1');
-  return formatDecimal(trimmed.replace(/\.$/, ''), unit === 'KILOGRAMS' ? ' kg' : ' L');
+  return formatDecimal(trimmed.replace(/\.$/, ''), unit === 'KILOGRAMS' ? 'kg' : 'L');
 }
 
 /** A per-litre price, e.g. "USD 1.45 per litre". Keeps up to four decimals, at least two. */
@@ -87,7 +87,7 @@ export function pricePerLitreText(
   const decimal = new Decimal(value.trim());
   const rounded = decimal.toDecimalPlaces(4, Decimal.ROUND_HALF_UP);
   const places = Math.max(2, rounded.decimalPlaces());
-  return `USD ${formatDecimal(rounded.toFixed(places))} per ${unit === 'KILOGRAMS' ? 'kilogram' : 'litre'}`;
+  return `$${formatDecimal(rounded.toFixed(places))} per ${unit === 'KILOGRAMS' ? 'kilogram' : 'litre'}`;
 }
 
 export function moneyText(value: string | null | undefined): string {
@@ -237,7 +237,7 @@ export function percentAllowanceSentence(percent: string | null): string {
 
 export function amountAllowanceSentence(amount: string | null): string {
   const text = allowanceText(amount, '');
-  return text ? `Up to USD ${text}` : 'No difference allowed';
+  return text ? `Up to ${formatMoney(text)}` : 'No difference allowed';
 }
 
 const EXACT_NUMBER = /^\d+(?:\.\d+)?$/;

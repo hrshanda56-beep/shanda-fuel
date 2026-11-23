@@ -71,7 +71,7 @@ describe('inventory domain', () => {
           { movementType: 'DELIVERY', quantityLitres: '4700', effectiveAt: at(7) },
           '5000',
         ),
-      ).toThrow('(5000 L)');
+      ).toThrow('(5000L)');
     });
 
     it('refuses a delivery that would only overfill the tank at a later point', () => {

@@ -19,6 +19,7 @@ import type { CashCommandContext } from './application';
 import { bankingStatusForDeposit, cashStatusLabelForCustody, depositProofFlags } from './status';
 import { businessToday, isValidDateOnly } from '../reporting/period';
 import type { ForecourtTransaction } from '../forecourt/application';
+import { formatMoney } from '@/design-system/formatters';
 
 type SourceRow = {
   reconciliation_id: string;
@@ -276,7 +277,7 @@ export async function recordCashCollectionInTransaction(
   if (decimal(amount).value.gt(decimal(position.cashToCollect).value)) {
     throw new AppError(
       'CONFLICT',
-      `The station paid out USD ${position.paidOut} in cash since the last collection, so only USD ${position.cashToCollect} can be collected now.`,
+      `The station paid out ${formatMoney(position.paidOut)} in cash since the last collection, so only ${formatMoney(position.cashToCollect)} can be collected now.`,
       { cashToCollect: position.cashToCollect, paidOut: position.paidOut },
     );
   }

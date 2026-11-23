@@ -132,7 +132,6 @@ function pageTitleForRoute(
     .flatMap((section) => section.items)
     .find((item) => isNavigationItemActive(item, pathname));
   if (!current) return titleFromPath(pathname);
-  if (current.key === 'today') return 'Dashboard';
   // The reports list is "All reports" in the menu, but the page is simply Reports.
   if (current.key === 'reports') return 'Reports';
   return current.label;

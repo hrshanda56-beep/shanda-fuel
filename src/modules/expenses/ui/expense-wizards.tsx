@@ -26,6 +26,7 @@ import {
   isOtherKind,
 } from '../new-expense-checks';
 import { formatFriendlyDate } from './expense-format';
+import { formatMoney } from '@/design-system/formatters';
 
 type Choice = { id: string; name: string };
 
@@ -402,7 +403,7 @@ export function ExpenseWizard({
               {form.description.trim()} ({kindName})
             </WizardSummaryRow>
             <WizardSummaryRow label="Amount" onChange={() => wizard.change('amount')}>
-              USD {form.amount.trim()} on {formatFriendlyDate(form.date)}
+              {formatMoney(form.amount.trim())} on {formatFriendlyDate(form.date)}
             </WizardSummaryRow>
             <WizardSummaryRow label="Paid" onChange={() => wizard.change('paid')}>
               {stations.length > 1 && stationName ? `${stationName} · ` : ''}
@@ -616,7 +617,7 @@ export function RegularCostWizard({
               {form.name.trim()} ({kindName}) · {stationName}
             </WizardSummaryRow>
             <WizardSummaryRow label="Amount" onChange={() => wizard.change('money')}>
-              USD {form.amount.trim()} a month from {formatFriendlyDate(form.start)}
+              {formatMoney(form.amount.trim())} a month from {formatFriendlyDate(form.start)}
               {form.end ? ` to ${formatFriendlyDate(form.end)}` : ', with no end date'}
             </WizardSummaryRow>
           </WizardSummary>

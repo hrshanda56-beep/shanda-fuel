@@ -74,14 +74,14 @@ export function moneyOrUnavailable(value: string | null | undefined): string {
   return text === '—' ? NOT_AVAILABLE : text;
 }
 
-/** Money per litre (or per kilogram) to three places, e.g. "USD 0.125 per litre". */
+/** Money per litre (or per kilogram) to three places, e.g. "$0.125 per litre". */
 export function formatPerLitre(value: string | null | undefined, unit?: CombinedUnit): string {
   if (unit === 'MIXED') return NOT_AVAILABLE;
   if (value === null || value === undefined || !/^-?\d+(?:\.\d+)?$/.test(value.trim())) {
     return NOT_AVAILABLE;
   }
   const fixed = exact(value.trim()).value.toDecimalPlaces(3).toFixed(3);
-  return `USD ${fixed} per ${unit === 'KILOGRAMS' ? 'kilogram' : 'litre'}`;
+  return `$${fixed} per ${unit === 'KILOGRAMS' ? 'kilogram' : 'litre'}`;
 }
 
 export function formatPercent(value: string | null | undefined): string {

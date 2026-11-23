@@ -48,7 +48,7 @@ export async function runInvariantChecks(
   add(
     'NO_NEGATIVE_STOCK',
     'No tank holds negative stock.',
-    negative.map((row) => `Tank ${row.code} holds ${row.litres} L`),
+    negative.map((row) => `Tank ${row.code} holds ${row.litres}L`),
   );
 
   // A collection cannot be put into more deposits than it contains.

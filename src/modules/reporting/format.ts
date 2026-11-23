@@ -1,8 +1,8 @@
 import { exact } from './domain';
-import { formatLitres } from '../../design-system/formatters';
+import { currencyPrefix, formatLitres } from '../../design-system/formatters';
 
 /**
- * Presentation only, for the Reports headline tiles: "USD 1,245.50". The value
+ * Presentation only, for the Reports headline tiles: "$1,245.50". The value
  * is rounded half-up to cents for display; the report and its CSV keep the full
  * authoritative precision. Missing or malformed values render "—". Pure; used
  * instead of the shared formatter so other financial screens are unaffected.
@@ -16,11 +16,12 @@ export function formatTileMoney(value: string | null | undefined, currency = 'US
   const negative = fixed.startsWith('-');
   const [whole = '0', cents = '00'] = (negative ? fixed.slice(1) : fixed).split('.');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${currency} ${negative && Number(fixed) !== 0 ? '-' : ''}${grouped}.${cents}`;
+  const text = `${currencyPrefix(currency)}${grouped}.${cents}`;
+  return negative && Number(fixed) !== 0 ? `(${text})` : text;
 }
 
 /**
- * Presentation only: whole litres with thousands separators, e.g. "1,284 L".
+ * Presentation only: whole litres with thousands separators, e.g. "1,284L".
  * Rounded half-up on the exact decimal; missing or malformed values render
  * "—" so an unknown quantity is never shown as zero.
  */
@@ -34,17 +35,18 @@ export function formatTileLitres(value: string | null | undefined): string {
     /\B(?=(\d{3})+(?!\d))/g,
     ',',
   );
-  return `${negative ? '−' : ''}${whole} L`;
+  return negative ? `(${whole}L)` : `${whole}L`;
 }
 
-/** Whole figures in the fuel's own unit: "1,284 L" or "480 kg". */
+/** Whole figures in the fuel's own unit: "1,284L" or "480kg". */
 export function formatTileQuantity(
   value: string | null | undefined,
   unit?: 'LITRES' | 'KILOGRAMS' | 'MIXED',
 ): string {
   if (unit === 'MIXED') return 'Mixed units';
   const litres = formatTileLitres(value);
-  return unit === 'KILOGRAMS' && litres.endsWith(' L') ? `${litres.slice(0, -2)} kg` : litres;
+  if (unit !== 'KILOGRAMS') return litres;
+  return litres.endsWith('L') ? `${litres.slice(0, -1)}kg` : litres.replace(/L\)$/, 'kg)');
 }
 
 export function formatReportLitres(value: string | null): string {

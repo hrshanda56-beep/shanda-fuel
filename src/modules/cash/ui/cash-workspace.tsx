@@ -18,7 +18,7 @@ import { Icon } from '../../../design-system/icons';
 import { Modal } from '../../../design-system/modal';
 import { Pagination, usePagination } from '../../../design-system/pagination';
 import { TableScrollRegion } from '../../../design-system/table';
-import { formatMoney } from '../../../design-system/formatters';
+import { currencyPrefix, formatMoney } from '../../../design-system/formatters';
 import { formatTileMoney } from '../../reporting/format';
 import { clientErrorMessage } from '../../../platform/errors/client';
 import { DocumentAttachments } from '../../documents/ui/document-attachments';
@@ -609,7 +609,7 @@ export function CashWorkspace({
     })) ?? [];
   const collectionOptions = depositableCollections.map((collection) => ({
     value: collection.collectionId,
-    label: `${collection.collectionReference} · USD ${collection.availableAtStation}`,
+    label: `${collection.collectionReference} · ${formatMoney(collection.availableAtStation)}`,
   }));
 
   const collectionsList = summary?.collections ?? [];
@@ -705,7 +705,7 @@ export function CashWorkspace({
   const locationName = (locationId: string) =>
     summary?.locations.find((location) => location.locationId === locationId)?.name ??
     'Unknown location';
-  const plain = (value: string) => (amountsHidden ? `${MASK} USD` : formatMoney(value));
+  const plain = (value: string) => (amountsHidden ? `$${MASK}` : formatMoney(value));
 
   const canBank =
     capabilities.recordDeposit &&
@@ -732,7 +732,7 @@ export function CashWorkspace({
     !summary || !hasAnyAction || canConfirm || canBank || canCollect
       ? null
       : !capabilities.viewDeposits && Number(summary.totals.availableAtStation) > 0
-        ? `${amountsHidden ? `${summary.currency} ${MASK}` : formatTileMoney(summary.totals.availableAtStation, summary.currency)} is at the station. Your role cannot see bank deposits, so this page cannot show whether it has been banked.`
+        ? `${amountsHidden ? `${currencyPrefix(summary.currency)}${MASK}` : formatTileMoney(summary.totals.availableAtStation, summary.currency)} is at the station. Your role cannot see bank deposits, so this page cannot show whether it has been banked.`
         : summary.collections.length === 0
           ? 'Nothing to do yet. Cash shows up here once a shift report is approved.'
           : 'All caught up. Nothing needs doing right now.';

@@ -57,7 +57,7 @@ describe('SupplierDueView', () => {
     expect(html).toContain('15 days late');
     expect(html).toContain('Credit, 7 days');
     expect(html).toContain('In 2 days');
-    expect(html).toContain('USD 1,250.50');
+    expect(html).toContain('$1,250.50');
     expect(html).toContain('href="/suppliers/s1');
     expect(html).toContain('href="/suppliers/s2');
   });

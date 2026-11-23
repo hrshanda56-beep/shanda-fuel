@@ -40,10 +40,10 @@ describe('tank list', () => {
     expect(effectiveProduct([], 'all')).toBe('all');
   });
 
-  it('shows a missing dip as "—" and an actual zero as 0 L', () => {
+  it('shows a missing dip as "—" and an actual zero as 0L', () => {
     expect(formatTileLitres(null)).toBe('—');
-    expect(formatTileLitres('0.0000')).toBe('0 L');
-    expect(formatTileLitres('-3.5')).toBe('−4 L');
+    expect(formatTileLitres('0.0000')).toBe('0L');
+    expect(formatTileLitres('-3.5')).toBe('(4L)');
   });
 });
 

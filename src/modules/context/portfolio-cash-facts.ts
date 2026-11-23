@@ -1,4 +1,4 @@
-import { formatUsd } from '@/design-system/formatters';
+import { formatMoney, formatUsd } from '@/design-system/formatters';
 import type { PortfolioFact } from './portfolio-data';
 
 const LABELS: Record<string, string> = {
@@ -21,6 +21,6 @@ export function cashFacts(
 ): PortfolioFact[] {
   return Object.entries(totals).map(([key, value]) => ({
     label: LABELS[key] ?? wordsFor(key),
-    value: currency === 'USD' ? formatUsd(String(value)) : `${currency} ${String(value)}`,
+    value: currency === 'USD' ? formatUsd(String(value)) : formatMoney(String(value), currency),
   }));
 }

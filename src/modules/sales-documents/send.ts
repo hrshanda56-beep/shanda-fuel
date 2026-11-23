@@ -6,6 +6,7 @@ import { createResendEmailSender, EmailError } from '../../platform/email';
 import type { AuthenticatedActorContext } from '../identity';
 import { recordSalesDocumentEvent, renderSalesDocumentPdf } from './download';
 import { DOC_LABELS, formatAmount, friendlyDate } from './format';
+import { formatMoney } from '@/design-system/formatters';
 
 export const sendSalesDocumentSchema = z.object({
   tenantId: z.string().uuid(),
@@ -46,7 +47,7 @@ export async function sendSalesDocumentEmailFromRequest(
     `Hello ${doc.recipientName.replace(PLAIN, ' ')},`,
     '',
     `Please find ${label.toLowerCase()} ${number} attached.`,
-    `Total: ${doc.currency} ${formatAmount(doc.total)}`,
+    `Total: ${formatMoney(doc.total, doc.currency)}`,
   ];
   if (doc.docType === 'INVOICE' && doc.dueDate) lines.push(`Due: ${friendlyDate(doc.dueDate)}`);
   if (doc.docType === 'QUOTATION' && doc.validUntil) {

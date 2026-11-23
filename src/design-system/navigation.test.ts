@@ -139,26 +139,30 @@ describe('navigation destinations', () => {
 });
 
 describe('mobile navigation projection', () => {
-  it('offers Today, Daily ops and Customers with short labels', () => {
+  it('mirrors the desktop groups: Today, Operations and Finance', () => {
     const items = selectMobileNavigationItems(resolveNavigation(syntheticNavigationProjection, {}));
 
     expect(items.map((entry) => [entry.key, entry.mobileLabel])).toEqual([
       ['today', 'Today'],
-      ['daily-operations', 'Daily ops'],
-      ['customers', 'Customers'],
+      ['operations', 'Operations'],
+      ['finance', 'Finance'],
     ]);
+    expect(items.map((entry) => entry.href)).toEqual(['/', '/operations/daily', '/finance']);
     expect(items.every((entry) => entry.state === 'link')).toBe(true);
   });
 
   it('never exposes restricted or hidden destinations and does not backfill', () => {
     const projection = syntheticNavigationProjection.map((entry) => {
-      if (entry.key === 'customers') return { ...entry, visible: true, enabled: false };
+      if (entry.key === 'finance-home') return { ...entry, visible: true, enabled: false };
       if (entry.key === 'daily-operations') return { ...entry, visible: false };
       return entry;
     });
     const items = selectMobileNavigationItems(resolveNavigation(projection, {}));
 
-    expect(items.map((entry) => entry.key)).toEqual(['today']);
+    // Operations opens its next usable page; Finance has no usable first page, so it opens Cash.
+    expect(items.map((entry) => entry.key)).toEqual(['today', 'operations', 'finance']);
+    expect(items.map((entry) => entry.href)).not.toContain('/operations/daily');
+    expect(items.map((entry) => entry.href)).not.toContain('/finance');
   });
 });
 

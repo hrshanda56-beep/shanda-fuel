@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { EmptyState } from '@/design-system/primitives';
-import { formatDecimal } from '@/design-system/formatters';
+import { formatDecimal, formatMoney } from '@/design-system/formatters';
 import {
   formatDailyReportText,
   plainAmount,
@@ -22,7 +22,7 @@ const note = { margin: 0, color: 'var(--text-secondary)' } as const;
 
 const amount = (value: string): string => formatDecimal(plainAmount(value));
 
-const money = (value: string) => `USD ${amount(value)}`;
+const money = (value: string) => formatMoney(plainAmount(value));
 const litres = (value: string, unit?: 'LITRES' | 'KILOGRAMS') =>
   `${amount(value)} ${unit === 'KILOGRAMS' ? 'kg' : 'L'}`;
 

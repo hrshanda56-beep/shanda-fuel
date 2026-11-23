@@ -180,8 +180,8 @@ describe('buildProfitView', () => {
 describe('formatting', () => {
   it('shows Not available instead of zero', () => {
     expect(moneyOrUnavailable(null)).toBe('Not available');
-    expect(moneyOrUnavailable('1245.5')).toBe('USD 1,245.50');
+    expect(moneyOrUnavailable('1245.5')).toBe('$1,245.50');
     expect(formatPerLitre(null)).toBe('Not available');
-    expect(formatPerLitre('0.12345')).toBe('USD 0.123 per litre');
+    expect(formatPerLitre('0.12345')).toBe('$0.123 per litre');
   });
 });

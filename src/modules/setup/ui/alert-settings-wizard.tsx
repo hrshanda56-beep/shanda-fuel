@@ -26,6 +26,7 @@ import {
   daysLabel,
   type ReminderSetting,
 } from '../alert-settings-checks';
+import { formatMoney } from '@/design-system/formatters';
 
 type ReminderStep = ReminderSetting | 'review';
 
@@ -75,7 +76,7 @@ const CHECKS: Record<ReminderSetting, (value: string) => WizardErrors> = {
 };
 
 function show(setting: ReminderSetting, value: string): string {
-  return setting === 'minimum' ? `US$${cleanMinimum(value)}` : daysLabel(value);
+  return setting === 'minimum' ? formatMoney(cleanMinimum(value)) : daysLabel(value);
 }
 
 /** Change the reminder settings one at a time, ending in a check screen. */
@@ -136,7 +137,7 @@ export function AlertSettingsWizard({
             options={[
               ...REMINDER_CHOICES[setting].map((choice) => ({
                 value: choice,
-                label: setting === 'minimum' ? `US$${choice}` : daysLabel(choice),
+                label: setting === 'minimum' ? formatMoney(choice) : daysLabel(choice),
               })),
               { value: OTHER, label: 'Another number' },
             ]}

@@ -1,5 +1,6 @@
 import { tankLabel } from '../inventory/ui/tank-overview-model';
 import { OPENING_BALANCE_CSV_HEADERS } from './domain';
+import { formatMoney } from '@/design-system/formatters';
 
 /**
  * The rules of the opening-balances wizard (#250): the figures a station starts with, asked one
@@ -194,8 +195,7 @@ export type OpeningLine = Readonly<{
   amount: string;
 }>;
 
-const money = (text: string) =>
-  `US$${Number(text.replace(/,/g, '')).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+const money = (text: string) => formatMoney(text.replace(/,/g, ''));
 
 /**
  * The same CSV the spreadsheet import reads, plus one plain label per data row (in order), so a

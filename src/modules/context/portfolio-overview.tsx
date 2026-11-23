@@ -11,7 +11,7 @@ import {
 import { withRequestAuthority } from '@/modules/tenancy/request-authority';
 import { AppError, isAccessRefusal } from '@/platform/errors';
 import { observeError } from '@/platform/observability';
-import { formatDecimal } from '@/design-system/formatters';
+import { formatDecimal, formatMoney } from '@/design-system/formatters';
 import { buildContextHref } from './routes';
 import type { ContextResolution } from './contracts';
 import { portfolioStations, readLimiter, type PortfolioArea } from './portfolio';
@@ -273,9 +273,7 @@ async function EntitySuppliers({
                   <strong>{row.legalName}</strong>
                 </span>
               </span>
-              <span className="list-cell">
-                {row.currency} {formatDecimal(row.total)}
-              </span>
+              <span className="list-cell">{formatMoney(row.total, row.currency)}</span>
             </Link>
           </li>
         ))}

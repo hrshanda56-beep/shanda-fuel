@@ -3,6 +3,7 @@
  * alone. Keys are element ids.
  */
 import { categoryCodeFromName, parseAmount } from './ui/expense-format';
+import { formatMoney } from '@/design-system/formatters';
 
 export type Errors = Record<string, string>;
 
@@ -32,17 +33,17 @@ export const LIMIT_CHOICES: Record<
   stepUp: {
     none: 'Always, whatever the amount',
     amounts: ['100', '500', '1000'],
-    sentence: (amount) => `Above US$${amount}`,
+    sentence: (amount) => `Above ${formatMoney(amount)}`,
   },
   second: {
     none: 'Never, whatever the amount',
     amounts: ['500', '1000', '5000'],
-    sentence: (amount) => `Above US$${amount}`,
+    sentence: (amount) => `Above ${formatMoney(amount)}`,
   },
   supervisor: {
     none: 'A supervisor cannot approve expenses',
     amounts: ['50', '100', '500'],
-    sentence: (amount) => `Up to US$${amount}`,
+    sentence: (amount) => `Up to ${formatMoney(amount)}`,
   },
 };
 
