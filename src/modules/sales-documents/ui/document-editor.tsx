@@ -23,6 +23,7 @@ import type {
 import { PrintPreview } from './print-preview';
 import styles from './sales-documents.module.css';
 import { useSalesCommand } from './use-sales-command';
+import { formatMoney } from '@/design-system/formatters';
 
 type Line = {
   key: number;
@@ -608,7 +609,7 @@ export function DocumentEditor({
             />
             {lineAmount(item) ? (
               <p className={styles.muted} aria-live="polite">
-                This item: {currency} {lineAmount(item)}
+                This item: {formatMoney(lineAmount(item), currency)}
               </p>
             ) : null}
             {nav()}
@@ -626,7 +627,7 @@ export function DocumentEditor({
                     <small className={styles.muted}>
                       {' '}
                       {line.quantity} {line.unitLabel} x {line.unitPrice || '?'}
-                      {lineAmount(line) ? ` = ${currency} ${lineAmount(line)}` : ''}
+                      {lineAmount(line) ? ` = ${formatMoney(lineAmount(line), currency)}` : ''}
                     </small>
                   </span>
                   <span className={styles.actions}>
@@ -833,7 +834,9 @@ export function DocumentEditor({
                   {lines.map((line, index) => (
                     <span key={line.key} className={styles.summaryLine}>
                       {line.description || `Item ${index + 1}`}
-                      <span>{lineAmount(line) ? `${currency} ${lineAmount(line)}` : '-'}</span>
+                      <span>
+                        {lineAmount(line) ? `${formatMoney(lineAmount(line), currency)}` : '-'}
+                      </span>
                     </span>
                   ))}
                 </span>

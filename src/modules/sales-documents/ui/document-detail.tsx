@@ -21,6 +21,7 @@ import styles from './sales-documents.module.css';
 import { SendDialog } from './send-dialog';
 import { statusView } from './status';
 import { useSalesCommand } from './use-sales-command';
+import { formatMoney } from '@/design-system/formatters';
 
 type Dialog = 'receipt' | 'void' | 'send' | null;
 
@@ -258,14 +259,12 @@ export function DocumentDetail({
               <div className={styles.totalRow}>
                 <span>Paid so far</span>
                 <strong>
-                  {doc.currency} {formatAmount(subtract(doc.total, doc.balance ?? doc.total))}
+                  {formatMoney(subtract(doc.total, doc.balance ?? doc.total), doc.currency)}
                 </strong>
               </div>
               <div className={styles.totalRow}>
                 <span>Still owed</span>
-                <strong>
-                  {doc.currency} {formatAmount(doc.balance ?? doc.total)}
-                </strong>
+                <strong>{formatMoney(doc.balance ?? doc.total, doc.currency)}</strong>
               </div>
             </Card>
           ) : null}
@@ -274,7 +273,7 @@ export function DocumentDetail({
             <h3 className={styles.sectionTitle}>Items</h3>
             {doc.docType === 'RECEIPT' ? (
               <p>
-                Payment of {doc.currency} {formatAmount(doc.total)}
+                Payment of {formatMoney(doc.total, doc.currency)}
                 {doc.paymentMethod ? ` by ${doc.paymentMethod}` : ''}
                 {doc.paymentReference ? ` (ref ${doc.paymentReference})` : ''}
                 {doc.paidOn ? ` on ${friendlyDate(doc.paidOn)}` : ''}.
@@ -417,7 +416,7 @@ export function DocumentDetail({
             id="sd-rc-amount"
             label="Amount received"
             required
-            hint={`Still owed: ${doc.currency} ${formatAmount(doc.balance ?? doc.total)}`}
+            hint={`Still owed: ${formatMoney(doc.balance ?? doc.total, doc.currency)}`}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />

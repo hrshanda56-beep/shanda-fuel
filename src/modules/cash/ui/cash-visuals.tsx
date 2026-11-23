@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { formatTileMoney } from '../../reporting/format';
+import { currencyPrefix } from '@/design-system/formatters';
 
 type WalletAccount = {
   bankAccountId: string;
@@ -200,7 +201,7 @@ export function CashWallet({
           </svg>
           <div className="cash-wallet-pocket">
             <strong className="cash-wallet-amount" aria-live="polite">
-              {hidden ? `${currency} ${MASK}` : formatTileMoney(amount, currency)}
+              {hidden ? `${currencyPrefix(currency)}${MASK}` : formatTileMoney(amount, currency)}
             </strong>
             <span className="cash-wallet-caption">Cash at station</span>
             <button
@@ -240,7 +241,7 @@ export function CashWallet({
               ? 'No deposits to this account yet'
               : `${forAccount.length} ${forAccount.length === 1 ? 'deposit' : 'deposits'} · ${
                   hidden
-                    ? `${currency} ${MASK}`
+                    ? `${currencyPrefix(currency)}${MASK}`
                     : formatTileMoney(
                         sumDecimals(forAccount.map((deposit) => deposit.amount)),
                         currency,
@@ -354,7 +355,9 @@ export function CashDonut({
                     </span>
                     <span className="cash-donut-value">
                       {slice.display ??
-                        (hidden ? `${currency} ${MASK}` : formatTileMoney(slice.total, currency))}
+                        (hidden
+                          ? `${currencyPrefix(currency)}${MASK}`
+                          : formatTileMoney(slice.total, currency))}
                     </span>
                   </>
                 );

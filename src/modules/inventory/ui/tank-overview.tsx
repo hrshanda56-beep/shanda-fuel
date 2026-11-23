@@ -160,8 +160,7 @@ export function TankOverview({
             {tanks.map((tank) => {
               const level = tankLevel(tank);
               const streamPath = `/inventory/tanks/${tank.tankId}`;
-              const compact = (value: string | null) =>
-                formatTileQuantity(value, tank.unit).replace(' L', 'L').replace(' kg', 'kg');
+              const compact = (value: string | null) => formatTileQuantity(value, tank.unit);
               return (
                 <li key={tank.tankId}>
                   <Link

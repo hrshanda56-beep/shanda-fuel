@@ -14,18 +14,27 @@ export function formatDecimal(value: string, suffix = ''): string {
   return `${groupedInteger}${fractionalPart ? `.${fractionalPart}` : ''}${suffix}`;
 }
 
-export function formatMoney(value: string, currency = 'USD'): string {
-  if (!DECIMAL_PATTERN.test(value.trim())) return '—';
-  return `${currency} ${new Decimal(value.trim()).toDecimalPlaces(2).toFixed(2)}`.replace(
-    /\d+(?=\.\d{2}$)/,
-    (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ','),
-  );
+/** What goes before a money figure: "$" for US dollars, otherwise the code and a space. */
+export function currencyPrefix(currency: string | null | undefined = 'USD'): string {
+  return !currency || currency === 'USD' ? '$' : `${currency} `;
 }
 
-/** A unit price split for display: "US$1.65" and "/L". Unit is "L" or "kg". */
+/** Money as a person reads it, always with cents: "$9,900.00" or "-$212.40". */
+export function formatMoney(
+  value: string | null | undefined,
+  currency: string | null | undefined = 'USD',
+): string {
+  if (value === null || value === undefined || !DECIMAL_PATTERN.test(value.trim())) return '—';
+  const cents = new Decimal(value.trim()).toDecimalPlaces(2);
+  const [whole = '0', fraction = '00'] = cents.abs().toFixed(2).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const text = `${currencyPrefix(currency)}${grouped}.${fraction}`;
+  return cents.isNegative() && !cents.isZero() ? `(${text})` : text;
+}
+
+/** A unit price split for display: "$1.65" and "/L". Unit is "L" or "kg". */
 export function formatUnitPrice(value: string, unit: 'L' | 'kg'): { amount: string; unit: string } {
-  const money = formatMoney(value);
-  return { amount: money === '—' ? money : money.replace(/^USD /, 'US$'), unit: `/${unit}` };
+  return { amount: formatMoney(value), unit: `/${unit}` };
 }
 
 /**
@@ -40,7 +49,7 @@ export function formatUnitPriceText(value: string, unit: string): string {
   const places = Math.max(2, exact.decimalPlaces());
   const [whole = '', fraction = ''] = exact.toFixed(places).split('.');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `US$${grouped}.${fraction}/${unit}`;
+  return `$${grouped}.${fraction}/${unit}`;
 }
 
 /**
@@ -57,18 +66,15 @@ export function moneyInputValue(value: string): string {
   return `${whole}.${significant.padEnd(2, '0')}`;
 }
 
-/** Compact USD for dashboards, e.g. "$7,460" or "−$212.40". */
+/** US dollars with cents everywhere, e.g. "$7,460.00" or "−$212.40". */
 export function formatUsd(value: string): string {
   const normalized = value.trim();
   if (!DECIMAL_PATTERN.test(normalized)) return '—';
-  // A whole number stays compact ("$7,460"). Anything with decimals is rounded to cents, however
-  // many decimals it is stored with, and a result that rounds to zero carries no minus sign.
-  if (!normalized.includes('.')) {
-    const negative = normalized.startsWith('-');
-    return `${negative ? '−' : ''}$${formatDecimal(negative ? normalized.slice(1) : normalized)}`;
-  }
+  // Always rounded to cents, however many decimals it is stored with, and a result that rounds to
+  // zero carries no minus sign.
   const cents = new Decimal(normalized).toDecimalPlaces(2);
-  return `${cents.isNegative() && !cents.isZero() ? '−' : ''}$${formatDecimal(cents.abs().toFixed(2))}`;
+  const text = `$${formatDecimal(cents.abs().toFixed(2))}`;
+  return cents.isNegative() && !cents.isZero() ? `(${text})` : text;
 }
 
 export function formatLitres(value: string): string {
@@ -76,7 +82,7 @@ export function formatLitres(value: string): string {
   const fixed = new Decimal(value.trim()).toDecimalPlaces(2).toFixed(2);
   const trimmed = fixed.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1');
   const [whole = '', fraction] = trimmed.split('.');
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction ? `.${fraction}` : ''} L`;
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction ? `.${fraction}` : ''}L`;
 }
 
 export type QuantityUnit = 'LITRES' | 'KILOGRAMS';
@@ -86,11 +92,11 @@ export function quantityUnitShort(unit: QuantityUnit | undefined): string {
   return unit === 'KILOGRAMS' ? 'kg' : 'L';
 }
 
-/** A quantity of fuel in its own unit: "1,250 L" or "480 kg". Litres is the default. */
+/** A quantity of fuel in its own unit: "1,250L" or "480kg". Litres is the default. */
 export function formatQuantity(value: string, unit?: QuantityUnit): string {
   if (unit !== 'KILOGRAMS') return formatLitres(value);
   const formatted = formatLitres(value);
-  return formatted === '—' ? formatted : `${formatted.slice(0, -2)} kg`;
+  return formatted === '—' ? formatted : `${formatted.slice(0, -1)}kg`;
 }
 
 /** The unit as a word for a table cell: "Litres", "Kilograms" or "Mixed units". */

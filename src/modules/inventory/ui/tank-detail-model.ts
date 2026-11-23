@@ -17,7 +17,7 @@ export function tankTabFrom(value: string | null | undefined, canManage: boolean
 }
 
 function litres(value: number, unit: 'LITRES' | 'KILOGRAMS' = 'LITRES'): string {
-  return `${new Intl.NumberFormat('en-GB', { maximumFractionDigits: 3 }).format(value)} ${unit === 'KILOGRAMS' ? 'kg' : 'L'}`;
+  return `${new Intl.NumberFormat('en-GB', { maximumFractionDigits: 3 }).format(value)}${unit === 'KILOGRAMS' ? 'kg' : 'L'}`;
 }
 
 /** One sentence a supervisor can act on: how far a dip was from the books, and what to do about it. */

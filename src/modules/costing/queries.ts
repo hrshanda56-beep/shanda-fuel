@@ -435,7 +435,7 @@ export async function getInventoryRevaluationReadModel(request: Request, input: 
             at: iso(sourceRows[0]?.effective_at),
             actor: null,
             detail: source
-              ? `${source.movementType} ${source.quantityLitres} L`
+              ? `${source.movementType} ${source.quantityLitres}L`
               : 'Source movement unavailable',
           },
           {

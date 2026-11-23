@@ -72,7 +72,7 @@ describe('delivery detail screens', () => {
     );
     expect(html).toContain('Delivery DN-001');
     expect(html).toContain('Partial delivery');
-    expect(html).toContain('Short by 9.5 L');
+    expect(html).toContain('Short by 9.5L');
     expect(html).toContain('Your owner needs a water test recorded');
     expect(html).toContain('Truck compartments');
     expect(html).toContain('Not confirmed by the driver');

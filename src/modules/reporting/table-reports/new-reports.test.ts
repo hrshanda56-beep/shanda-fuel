@@ -6,9 +6,9 @@ import { buildStationDailyRows } from './station-daily-report';
 import { stockVarianceRow, tankWithoutDipRow } from './stock-variance';
 
 describe('stock variances report', () => {
-  // 21/10 shift sheet: petrol dip 7394 L to 5794 L with 1579.68 L sold; diesel 8722 L to 6219 L
-  // with 2541.57 L sold.
-  it('shows the petrol sample as short and the diesel sample as over, both yellow at 20 L', () => {
+  // 21/10 shift sheet: petrol dip 7394L to 5794L with 1579.68L sold; diesel 8722L to 6219L
+  // with 2541.57L sold.
+  it('shows the petrol sample as short and the diesel sample as over, both yellow at 20L', () => {
     const petrol = stockVarianceRow({
       date: '2026-10-21',
       station: 'Bindura',
@@ -191,7 +191,7 @@ describe('station daily report rows', () => {
       dieselUnit: 'Litres',
       petrolLitres: '60.000',
       petrolUnit: 'Kilograms',
-      otherFuels: 'LPG 25 kg',
+      otherFuels: 'LPG 25kg',
     });
   });
 

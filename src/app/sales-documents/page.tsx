@@ -14,7 +14,7 @@ import {
   type SalesDocumentsInitial,
 } from '@/modules/sales-documents/ui/sales-documents-workspace';
 
-export const metadata = { title: 'Quotations and invoices' };
+export const metadata = { title: 'Quotes & invoices' };
 export const dynamic = 'force-dynamic';
 
 const first = (value: string | string[] | undefined): string | undefined =>

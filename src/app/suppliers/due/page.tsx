@@ -3,7 +3,7 @@ import { ContextRequiredState, EmptyState } from '@/design-system/primitives';
 import { getSupplierDueScheduleFromRequest } from '@/modules/creditors/due-schedule-queries';
 import { SupplierDueView } from '@/modules/creditors/ui/supplier-due-view';
 
-export const metadata = { title: 'Supplier payments due' };
+export const metadata = { title: 'Payments due' };
 
 export default async function Page({ searchParams }: { searchParams: Promise<PageSearch> }) {
   const search = await searchParams;

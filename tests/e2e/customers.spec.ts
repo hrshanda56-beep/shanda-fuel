@@ -145,7 +145,7 @@ test.describe('customer accounts', () => {
       page.locator('.shell-sidebar').getByRole('link', { name: 'Customers', exact: true }),
     ).toHaveAttribute('aria-current', 'page');
     await expect(page.getByText('Acme Transport')).toBeVisible();
-    await expect(page.getByText('USD 250.00 outstanding')).toBeVisible();
+    await expect(page.getByText('$250.00 outstanding')).toBeVisible();
 
     await page.getByLabel('Search customers').fill('does not exist');
     await expect(page.getByRole('heading', { name: 'No matching customers' })).toBeVisible();
@@ -271,9 +271,7 @@ test.describe('customer accounts', () => {
       .selectOption({ label: 'Sandawana (SND)' });
     await page.getByRole('button', { name: 'Record payment' }).click();
 
-    await expect(
-      page.getByText('Payment of USD 120.50 from Acme Transport recorded.'),
-    ).toBeVisible();
+    await expect(page.getByText('Payment of $120.50 from Acme Transport recorded.')).toBeVisible();
     expect(commands[0]).toMatchObject({
       commandType: 'RecordCustomerPayment',
       accountId: 'account-1',

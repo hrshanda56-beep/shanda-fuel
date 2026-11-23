@@ -2,7 +2,7 @@ import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { getPurchasingCapabilitiesFromRequest } from '@/modules/purchasing/capabilities';
 import { PurchasingWorkspace } from '@/modules/purchasing/ui/purchasing-workspace';
-export const metadata = { title: 'Purchasing' };
+export const metadata = { title: 'Purchase orders' };
 export default async function Page({ searchParams }: { searchParams: Promise<PageSearch> }) {
   const search = await searchParams;
   return (

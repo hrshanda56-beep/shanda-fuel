@@ -45,8 +45,8 @@ export function allowanceChoices(
   const usual =
     key === 'amount'
       ? [
-          { value: 'u1', label: 'Up to US$1' },
-          { value: 'u5', label: 'Up to US$5' },
+          { value: 'u1', label: 'Up to $1.00' },
+          { value: 'u5', label: 'Up to $5.00' },
         ]
       : [
           { value: 'p05', label: 'Up to 0.5%' },

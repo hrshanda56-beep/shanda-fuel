@@ -230,19 +230,21 @@ export function varianceTone(value: string): 'none' | 'over' | 'short' {
   return decimal.isNegative() ? 'short' : 'over';
 }
 
-/** "−USD 30.85" / "+USD 2.00" / "USD 0.00": the sign leads the currency. */
+/** "($30.85)" short / "+$2.00" over / "$0.00" none: a shortage is in brackets, never a minus. */
 export function signedMoney(value: string): string {
   const tone = varianceTone(value);
   const amount = formatTileMoney(exact(value).value.abs().toFixed());
-  return tone === 'none' ? amount : `${tone === 'short' ? '−' : '+'}${amount}`;
+  if (tone === 'none') return amount;
+  return tone === 'short' ? `(${amount})` : `+${amount}`;
 }
 
-/** "−12 L" / "+4 kg" / "0 L". A mix of litre and kilogram fuels has no single figure. */
+/** "(12L)" short / "+4kg" over / "0L" none. A mix of litre and kilogram fuels has no single figure. */
 export function signedLitres(value: string, unit?: CombinedUnit): string {
   if (unit === 'MIXED') return 'Mixed units';
   const tone = varianceTone(value);
   const amount = formatTileQuantity(exact(value).value.abs().toFixed(), unit);
-  return tone === 'none' ? amount : `${tone === 'short' ? '−' : '+'}${amount}`;
+  if (tone === 'none') return amount;
+  return tone === 'short' ? `(${amount})` : `+${amount}`;
 }
 
 /** Evenly spaced axis labels, always including the first and last. */
@@ -257,7 +259,7 @@ export function axisLabels(labels: readonly string[], count = 6): string[] {
 /**
  * Width, in characters, that a figure needs on one line: its longest word,
  * at least 6. The card sizes the figure from this so a value such as
- * "USD 2,096.72" may wrap at the space but the number itself is never split.
+ * "$2,096.72" may wrap at the space but the number itself is never split.
  */
 export function figureChars(value: string): number {
   return Math.max(6, ...value.split(/\s+/).map((word) => word.length));

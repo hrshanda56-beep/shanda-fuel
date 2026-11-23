@@ -17,6 +17,7 @@ import {
   checkSupplierCredit,
   checkSupplierName,
 } from '../new-supplier-checks';
+import { formatMoney } from '@/design-system/formatters';
 
 type SupplierStep = 'does' | 'who' | 'code' | 'reg' | 'contact' | 'credit' | 'review';
 
@@ -128,7 +129,7 @@ export function AddSupplierWizard({
     .join(' · ');
   const terms = [
     form.creditDays.trim() ? `${form.creditDays.trim()} days to pay` : '',
-    form.creditLimit.trim() ? `credit limit USD ${form.creditLimit.trim()}` : '',
+    form.creditLimit.trim() ? `credit limit ${formatMoney(form.creditLimit.trim())}` : '',
   ]
     .filter(Boolean)
     .join(' · ');

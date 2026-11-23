@@ -2,6 +2,8 @@
 
 **Updated 2026-11-01** for `main` at `6e4bb214`: 95 migrations, 0000 to 0110 (no 0104) (0098 to 0102 added 2026-11-02, 0103 on 2026-11-11, 0105 to 0108 on 2026-11-16/17, 0109 and 0110 on 2026-11-18 with the sales-documents module). Production's own count is not known from the repository: read it first (section 4, step 2).
 
+> **Update 2026-11-23: 0120 and 0121 are applied, production is at 106 migrations, ending at `0121_owner_self_approval` (see the 0120 to 0121 record in section 7).** Production's earlier count of 104 (through 0119) was read on 2026-11-23 from the production database before the run, and 106 after it.
+>
 > **Update 2026-11-19: 0111 is applied, production is at 96 migrations (see the 0111 record in section 7).**
 >
 > **Production state, reported 2026-11-18** by the project owner after running the migrations themselves (this repository has no connection to production, and the row count and hashes below were not read back by the assistant): **0106 to 0110 are applied, so production is at 95 migrations, ending at 0110**. Before that run it was at 90, ending at 0105 (read 2026-11-17, Neon console; ids 85 to 90 carried the hashes of 0099, 0100, 0101, 0102, 0103 and 0105). Release record: section 7 should hold the restore point, the times and the verified count and newest hash (`042ff5b6…`) once the owner fills them in. 0104 does not exist.
@@ -372,5 +374,36 @@ Verified after (read-only check, 10 rows, all OK): sales_doc_profiles.app_logo_p
 Merged to main:                #272 (the code for these migrations was already live before they were applied)
 Smoke test passed (time, who): (to fill in: logo upload, station Zera details save and reopen, Zera return report)
 Reopened to staff (time):      (to fill in)
+Problems found:                none during the migration (two harmless Drizzle NOTICEs: schema and table already exist)
+```
+
+### Record: migrations 0120 to 0121 past_day_entry, owner_self_approval (2026-11-23)
+
+Migrations only. The live smoke test of the new behaviour is still to be recorded. The code for both was already
+live before they were applied (merged to `main` as #288 and #290, which auto-deploy), so past-day entry and the
+owner exception for delivery loss claims could not work until now.
+
+```
+Migration date:                2026-11-23
+Migrations commit (full SHA):  e29868221c09860fce4baebed2559fc28c1bb212 (fresh clone, detached checkout of main at the #293 merge)
+  0120 sha256 5edd20e0...8d1b93, 0121 sha256 e8ddee88...cb78f (both checked against the repo before applying)
+Operator:                      Project owner (hidden-prompt DATABASE_DIRECT_URL, cleared afterwards)
+Production migration count before: 104 (newest id 104, read in the Neon SQL editor)   after: 106 (newest id 106)
+Last migration tag after:      0121_owner_self_approval
+Restore point identifier:      br-old-bonus-b2dsoe3f (Neon branch from production main, taken 2026-11-23; created
+  with Neon's default 1-day expiry, so it was due to delete itself on 2026-11-24 07:29 GMT+2 unless the owner
+  changed it. Whether the expiry was changed is not recorded here.)
+Verified after (read-only checks, all OK):
+  - go_live_date (text, nullable) on app.stations; entered_late (boolean, not null, default false),
+    entered_late_by (uuid, nullable) and entered_late_at (timestamptz, nullable) on app.station_business_days.
+  - Constraints present: stations_go_live_date_ck, station_business_days_entered_late_ck,
+    station_business_days_entered_late_by_fk. fuel_delivery_loss_claims_other_person_ck is gone (0121).
+  - RLS enabled and forced on app.stations and app.station_business_days, owner migration_owner;
+    app_runtime owns 0 objects in the app schema.
+  - Not re-run here: the full runtime-role proof (the "Runtime-role proof" CI job logic).
+Merged to main:                #288 (0120) and #290 (0121); the code was live before the migrations were applied
+Smoke test passed (time, who): (to fill in: record a past day on or after a station's go-live date; as owner,
+  approve a delivery loss claim you recorded yourself)
+Reopened to staff (time):      not applicable (no freeze was held for two additive migrations)
 Problems found:                none during the migration (two harmless Drizzle NOTICEs: schema and table already exist)
 ```

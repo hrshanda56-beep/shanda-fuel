@@ -1,10 +1,9 @@
 import { formatBusinessDate } from '../../../design-system/formatters';
 import { formatTileMoney, formatTileQuantity } from '../format';
-import { exact } from '../domain';
 import type { ManagementReport } from '../contracts';
 import type { Statement, StatementLine } from '../statements';
 
-/** Accounting style: plain digits with thousands separators and brackets for negatives. */
+/** Accounting style: dollars and cents with thousands separators, and brackets for negatives. */
 export function formatStatementAmount(line: StatementLine): string {
   if (line.value === null) return 'Unavailable';
   if (line.unit === 'litres') return formatTileQuantity(line.value, 'LITRES');
@@ -12,10 +11,8 @@ export function formatStatementAmount(line: StatementLine): string {
   if (line.unit === 'mixed') return 'Mixed units';
   const full = formatTileMoney(line.value);
   if (full === '—') return full;
-  const digits = full.replace(/^USD\s/, '');
-  return exact(line.value).value.isNegative() && !/^-?0\.00$/.test(digits)
-    ? `(${digits.replace('-', '')})`
-    : digits.replace(/^-0\.00$/, '0.00');
+  // The dollar sign stays on every figure, and a negative is in brackets, as everywhere else.
+  return full;
 }
 
 /** Title block for a statement: what it is, the period covered and the stations included. */

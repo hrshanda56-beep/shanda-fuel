@@ -180,7 +180,7 @@ export function assertMovementFitsTank(
     if (addedQuantity.value.gt(0) && running.value.gt(capacity.value)) {
       throw new AppError(
         'INVARIANT_VIOLATION',
-        `That would put more fuel in the tank than it can hold (${capacity.toString()} L). Check the litres and the date and time.`,
+        `That would put more fuel in the tank than it can hold (${capacity.toString()}L). Check the litres and the date and time.`,
       );
     }
   }

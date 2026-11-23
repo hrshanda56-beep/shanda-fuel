@@ -71,8 +71,8 @@ test.describe('supplier workflows', () => {
     await page.goto('/suppliers?tenantId=tenant-1&legalEntityId=entity-1');
     await expect(page.getByRole('link', { name: /SUP-0001/ })).toBeVisible();
     const summary = page.getByRole('list', { name: 'Supplier balances' });
-    await expect(summary).toContainText('USD 185,000.00');
-    await expect(summary).toContainText('USD 65,000.00');
+    await expect(summary).toContainText('$185,000.00');
+    await expect(summary).toContainText('$65,000.00');
     await expect(page.getByRole('button', { name: 'Add supplier' })).toHaveCount(1);
     await page.getByRole('button', { name: 'Add supplier' }).first().click();
     // The form is a short wizard. It starts with what the company does (fuel is the default).

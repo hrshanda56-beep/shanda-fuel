@@ -138,8 +138,8 @@ test.describe('shared shell consistency', () => {
     await prepareShell(page, { width: 390, height: 844 });
     const bottomNav = page.getByRole('navigation', { name: 'Mobile navigation' });
     await expect(bottomNav).toBeVisible();
-    await expect(bottomNav.getByRole('link')).toHaveText(['Today', 'Daily ops', 'Customers']);
-    await expect(bottomNav.getByRole('link', { name: 'Daily ops' })).toHaveAttribute(
+    await expect(bottomNav.getByRole('link')).toHaveText(['Today', 'Operations', 'Finance']);
+    await expect(bottomNav.getByRole('link', { name: 'Operations' })).toHaveAttribute(
       'href',
       '/operations/daily',
     );
@@ -268,7 +268,7 @@ test.describe('shared shell consistency', () => {
     test(`${viewport.name} keeps page headings in the shared header`, async ({ page }) => {
       await page.setViewportSize(viewport);
       for (const [path, title] of [
-        ['/', 'Dashboard'],
+        ['/', 'Today'],
         ['/operations/daily', 'Daily operations'],
         ['/reports', 'Reports'],
         ['/inventory', 'Inventory'],

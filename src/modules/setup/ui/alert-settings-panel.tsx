@@ -9,6 +9,7 @@ import { CardRow, CardRows, SectionCard } from '@/design-system/section-card';
 import { cleanMinimum, daysLabel } from '../alert-settings-checks';
 import { friendlySetupError } from '../guided-setup';
 import { AlertSettingsWizard, type ReminderValues } from './alert-settings-wizard';
+import { formatMoney } from '@/design-system/formatters';
 
 type Loaded = {
   settings: {
@@ -159,7 +160,7 @@ export function AlertSettingsPanel({
         />
         <CardRow
           title="Cash shortages"
-          detail={`Ignore shortages smaller than US$${settings.cashShortageMinimum}`}
+          detail={`Ignore shortages smaller than ${formatMoney(settings.cashShortageMinimum)}`}
         />
       </CardRows>
       <Modal

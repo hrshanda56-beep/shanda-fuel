@@ -36,6 +36,7 @@ import {
   toleranceActionText,
   vatModeText,
 } from './purchasing-format';
+import { formatMoney } from '@/design-system/formatters';
 
 type PolicyStep =
   AllowanceKey | 'action' | 'vat' | 'vatRate' | 'lines' | 'transport' | 'reason' | 'review';
@@ -254,7 +255,7 @@ export function PolicyWizard({
     const parts = [
       f.litres ? allowanceText(form[f.litres] || null, ' litres or kg') : null,
       f.percent ? allowanceText(form[f.percent] || null, '%') : null,
-      f.usd ? allowanceText(form[f.usd] || null, ' USD') : null,
+      f.usd && form[f.usd] ? formatMoney(form[f.usd]) : null,
     ].filter(Boolean);
     return parts.length > 0
       ? parts.join(' or ')

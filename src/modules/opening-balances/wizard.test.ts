@@ -222,10 +222,10 @@ describe('the import file', () => {
     const { lines } = buildOpeningCsv(options, everything);
     expect(lines.map((l) => [l.kind, l.label, l.amount])).toEqual([
       ['Fuel in tank', 'Tank 1 (Diesel)', '12,500.5 litres'],
-      ['Cash', 'Main safe', 'US$1,500.00'],
-      ['Bank', 'CBZ, main (CBZ)', 'US$0.00'],
-      ['Customer owes', 'Moyo Transport', 'US$320.50'],
-      ['Unpaid invoice', 'Zuva "Petroleum" Ltd, invoice INV-1, A', 'US$900.00'],
+      ['Cash', 'Main safe', '$1,500.00'],
+      ['Bank', 'CBZ, main (CBZ)', '$0.00'],
+      ['Customer owes', 'Moyo Transport', '$320.50'],
+      ['Unpaid invoice', 'Zuva "Petroleum" Ltd, invoice INV-1, A', '$900.00'],
     ]);
   });
 });

@@ -9,9 +9,9 @@ import {
 
 describe('dipSentence', () => {
   it('says what to do for each result', () => {
-    expect(dipSentence('-24', 'ok')).toBe('24 L under the books, within the limit.');
-    expect(dipSentence('60', 'watch')).toBe('60 L over the books. Please explain the difference.');
-    expect(dipSentence('-150', 'alert')).toBe('150 L under the books. Check this tank now.');
+    expect(dipSentence('-24', 'ok')).toBe('24L under the books, within the limit.');
+    expect(dipSentence('60', 'watch')).toBe('60L over the books. Please explain the difference.');
+    expect(dipSentence('-150', 'alert')).toBe('150L under the books. Check this tank now.');
     expect(dipSentence('5', 'unjudged')).toContain('No limit is set yet');
   });
 

@@ -1,6 +1,6 @@
 import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { EmptyState } from '@/design-system/primitives';
-export const metadata = { title: 'Settlements' };
+export const metadata = { title: 'Provider payouts' };
 export default async function Page({ searchParams }: { searchParams: Promise<PageSearch> }) {
   return (
     <ServerDataPage

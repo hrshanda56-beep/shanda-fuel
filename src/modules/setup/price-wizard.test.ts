@@ -72,10 +72,10 @@ describe('checking the typed price', () => {
 });
 
 describe('showing a price', () => {
-  it('writes US$ with the unit, and never the stored six decimals', () => {
-    expect(priceText('1.500000', 'litre')).toBe('US$1.50/L');
-    expect(priceText('1.575000', 'litre')).toBe('US$1.575/L');
-    expect(priceText('2.100000', 'kilogram')).toBe('US$2.10/kg');
+  it('writes $with the unit, and never the stored six decimals', () => {
+    expect(priceText('1.500000', 'litre')).toBe('$1.50/L');
+    expect(priceText('1.575000', 'litre')).toBe('$1.575/L');
+    expect(priceText('2.100000', 'kilogram')).toBe('$2.10/kg');
     expect(priceText(null, 'litre')).toBe('No price yet');
   });
 });
@@ -146,7 +146,7 @@ describe('the changes that save a new price', () => {
     const added = (shown.prices ?? []).find((p) => p.unitPrice === '1.65');
     expect(added?.id).toBe(staged[0]!.standIn);
     expect(added?.state).toBe('PENDING_APPROVAL');
-    expect(describeStaged(staged[0]!, shown).title).toBe('New price for Unleaded: US$1.65/L');
+    expect(describeStaged(staged[0]!, shown).title).toBe('New price for Unleaded: $1.65/L');
   });
 });
 

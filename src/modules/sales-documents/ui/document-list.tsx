@@ -10,6 +10,7 @@ import type { SalesDocumentListRow } from '../queries';
 import styles from './sales-documents.module.css';
 import { isOverdue, statusView } from './status';
 import { useSalesCommand } from './use-sales-command';
+import { formatMoney } from '@/design-system/formatters';
 
 type Filter = 'ALL' | 'QUOTATION' | 'INVOICE' | 'RECEIPT';
 type Show = 'ANY' | 'OPEN' | 'OVERDUE' | 'PAID' | 'DRAFT';
@@ -256,7 +257,7 @@ export function DocumentList({
               const detail = [
                 `${DOC_LABELS[row.docType].one} ${row.docNumber ?? '(draft)'}`,
                 row.balance && row.paymentState !== 'PAID'
-                  ? `${row.currency} ${formatAmount(row.balance)} owed`
+                  ? `${formatMoney(row.balance, row.currency)} owed`
                   : '',
                 isOverdue(row, today) && row.dueDate ? `was due ${friendlyDate(row.dueDate)}` : '',
               ]
@@ -276,7 +277,7 @@ export function DocumentList({
                         <small>{detail}</small>
                       </span>
                       <span className={`${styles.cell} ${styles.amount}`}>
-                        {row.currency} {formatAmount(row.total)}
+                        {formatMoney(row.total, row.currency)}
                       </span>
                       <span className={styles.cell}>
                         <StatusBadge tone={view.tone}>{view.text}</StatusBadge>

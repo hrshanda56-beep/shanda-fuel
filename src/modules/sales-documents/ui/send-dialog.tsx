@@ -6,6 +6,7 @@ import { Modal } from '@/design-system/modal';
 import { DOC_LABELS, formatAmount, friendlyDate } from '../format';
 import type { SalesDocumentDetail } from '../queries';
 import styles from './sales-documents.module.css';
+import { formatMoney } from '@/design-system/formatters';
 
 /** Sends an issued document to the customer: by email (with the PDF) or by a WhatsApp message. */
 export function SendDialog({
@@ -66,7 +67,7 @@ export function SendDialog({
 
   const lines = [
     `Hello ${doc.recipientName},`,
-    `${label} ${doc.docNumber ?? ''} from ${company}: ${doc.currency} ${formatAmount(doc.total)}.`,
+    `${label} ${doc.docNumber ?? ''} from ${company}: ${formatMoney(doc.total, doc.currency)}.`,
   ];
   if (doc.docType === 'INVOICE' && doc.dueDate) lines.push(`Due ${friendlyDate(doc.dueDate)}.`);
   if (note.trim()) lines.push(note.trim());

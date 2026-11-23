@@ -9,6 +9,7 @@ import { Pagination, usePagination } from '@/design-system/pagination';
 import { Button, Card, EmptyState, ErrorState, Field } from '@/design-system/primitives';
 import { formatTileMoney } from '@/modules/reporting/format';
 import type { StaffBenefitMonth } from '../staff-benefit-expense-read';
+import { formatMoney } from '@/design-system/formatters';
 
 export type StaffBenefitExpenseView = Omit<StaffBenefitMonth, 'reference'>;
 
@@ -153,7 +154,7 @@ export function StaffBenefitExpenseWorkspace({
                     </tbody>
                   </table>
                   <p>
-                    <strong>Expense to enter: US$ {row.cost.total}</strong>
+                    <strong>Expense to enter: {formatMoney(row.cost.total)}</strong>
                   </p>
                 </>
               ) : null}
@@ -173,8 +174,9 @@ export function StaffBenefitExpenseWorkspace({
                 confirming === row.accountId ? (
                   <div>
                     <p>
-                      Enter US$ {row.cost.total} as the staff fuel benefit for {row.staffName},{' '}
-                      {month}? It will wait for approval; you can still reverse it afterwards.
+                      Enter {formatMoney(row.cost.total)} as the staff fuel benefit for{' '}
+                      {row.staffName}, {month}? It will wait for approval; you can still reverse it
+                      afterwards.
                     </p>
                     <Button loading={busyAccount === row.accountId} onClick={() => void enter(row)}>
                       Yes, enter it

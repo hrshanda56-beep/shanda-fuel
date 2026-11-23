@@ -235,7 +235,7 @@ export function statementToCsv(input: {
       line(section.label, part, description, amount);
     add(
       'Sales',
-      `Expected sales (${section.nozzles} nozzles, ${section.litres} L)`,
+      `Expected sales (${section.nozzles} nozzles, ${section.litres}L)`,
       section.expectedSales,
     );
     for (const entry of section.paymentLines) add('Accounted by', entry.description, entry.amount);

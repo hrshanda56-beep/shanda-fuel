@@ -2,7 +2,7 @@ import { ServerDataPage, type PageSearch } from '@/modules/context/server-page';
 import { ContextRequiredState } from '@/design-system/primitives';
 import { getCashStationSummaryFromRequest } from '@/modules/cash/queries';
 import { CashWorkspace } from '@/modules/cash/ui/cash-workspace';
-export const metadata = { title: 'Cash' };
+export const metadata = { title: 'Cash & Banking' };
 export default async function Page({
   searchParams,
   params,

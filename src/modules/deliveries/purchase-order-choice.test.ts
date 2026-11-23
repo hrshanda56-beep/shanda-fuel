@@ -118,7 +118,7 @@ describe('linkableOrderOptions', () => {
     expect(options).toEqual([
       {
         value: linkChoiceValue(orderId, lineId),
-        label: 'Order PO-0007 · Diesel · 5,000 L still open',
+        label: 'Order PO-0007 · Diesel · 5,000L still open',
       },
     ]);
   });

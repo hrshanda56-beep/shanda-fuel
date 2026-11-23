@@ -493,14 +493,14 @@ export function resolveNavigation(
 }
 
 /**
- * The phone bottom bar holds the three everyday destinations; everything else
- * lives behind "More". Short labels keep each tab on a single line.
+ * The phone bottom bar mirrors the desktop top-level groups: Today, Operations and Finance, with
+ * My Shift first for staff who have one. Suppliers, Reports and Settings live behind "More".
  */
-const MOBILE_NAVIGATION_ITEMS: readonly { key: NavigationKey; label: string }[] = [
-  { key: 'my-shift', label: 'My Shift' },
-  { key: 'today', label: 'Today' },
-  { key: 'daily-operations', label: 'Daily ops' },
-  { key: 'customers', label: 'Customers' },
+const MOBILE_NAVIGATION_SECTIONS: readonly NavigationSectionKey[] = [
+  'my-shift',
+  'today',
+  'operations',
+  'finance',
 ];
 
 export type MobileNavigationItem = Extract<ResolvedNavigationItem, { state: 'link' }> & {
@@ -510,22 +510,27 @@ export type MobileNavigationItem = Extract<ResolvedNavigationItem, { state: 'lin
 /**
  * Selects the compact phone navigation from the already-authorized links.
  *
- * The bottom bar is a presentation of the resolved navigation projection: it
- * never turns a work-in-progress, restricted, or station-less destination
- * into a link, and it never promotes other destinations to fill a gap. Every
- * destination stays reachable from the More menu.
+ * Each tab is a desktop group: it opens the first destination the person may use in that group and
+ * is marked current for every page inside the group. It never turns a work-in-progress, restricted,
+ * or station-less destination into a link, and never promotes other destinations to fill a gap.
+ * Every destination stays reachable from the More menu.
  */
 export function selectMobileNavigationItems(
   sections: readonly ResolvedNavigationSection[],
 ): MobileNavigationItem[] {
-  const links = new Map(
-    sections
-      .flatMap((section) => section.items)
-      .flatMap((item) => (item.state === 'link' ? [[item.key, item] as const] : [])),
-  );
-  return MOBILE_NAVIGATION_ITEMS.flatMap(({ key, label }) => {
-    const item = links.get(key);
-    return item ? [{ ...item, mobileLabel: label }] : [];
+  return MOBILE_NAVIGATION_SECTIONS.flatMap((sectionKey) => {
+    const section = sections.find((entry) => entry.key === sectionKey);
+    const first = section?.items.find((item) => item.state === 'link');
+    if (!section || !first || first.state !== 'link') return [];
+    return [
+      {
+        ...first,
+        key: section.key as NavigationKey,
+        icon: section.icon,
+        match: section.items.flatMap((item) => item.match),
+        mobileLabel: section.label,
+      },
+    ];
   });
 }
 

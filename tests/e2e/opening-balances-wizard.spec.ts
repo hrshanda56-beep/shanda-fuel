@@ -162,9 +162,9 @@ test.describe('Opening balances wizard', () => {
     // Check: every figure in words, cash left out because of None.
     await expect(page.getByRole('heading', { name: /Check the 4 opening figures/i })).toBeVisible();
     await expect(page.getByText('Tank 1 (Diesel): 12,500.5 litres')).toBeVisible();
-    await expect(page.getByText('Operating account (CBZ Bank): US$0.00')).toBeVisible();
-    await expect(page.getByText('Moyo Transport: US$320.50')).toBeVisible();
-    await expect(page.getByText('Zuva Petroleum, invoice INV-1: US$900.00')).toBeVisible();
+    await expect(page.getByText('Operating account (CBZ Bank): $0.00')).toBeVisible();
+    await expect(page.getByText('Moyo Transport: $320.50')).toBeVisible();
+    await expect(page.getByText('Zuva Petroleum, invoice INV-1: $900.00')).toBeVisible();
     await expect(page.getByText('Station safe')).toHaveCount(0);
     // The tank has fuel but no value, so the check screen says the station cannot go live yet.
     await expect(page.getByText(/Tank 1 has fuel but no value/)).toBeVisible();

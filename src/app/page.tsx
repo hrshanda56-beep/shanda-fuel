@@ -30,7 +30,7 @@ import {
 } from './_overview/today-overview-model';
 
 export const metadata = {
-  title: { absolute: 'Dashboard · Shanda Fuel' },
+  title: { absolute: 'Today · Shanda Fuel' },
 };
 
 /** Today for the selected station: daily operations and anything needing attention. */

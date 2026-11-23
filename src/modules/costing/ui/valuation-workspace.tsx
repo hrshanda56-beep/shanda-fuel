@@ -420,7 +420,7 @@ export function ValuationOverview({
                               <Status status={item.status} />
                             </td>
                             <td data-label="Amount">
-                              {item.amount === null ? '—' : `${item.currency} ${item.amount}`}
+                              {item.amount === null ? '—' : formatMoney(item.amount, item.currency)}
                             </td>
                             <td data-label="Requested">
                               {date(item.requestedAt)}
@@ -989,13 +989,16 @@ export function RevaluationDetail({
             <dd>
               {data.revaluation.currentStreamProjection.inventoryValue === null
                 ? 'Not available'
-                : `${data.revaluation.currentStreamProjection.currency} ${data.revaluation.currentStreamProjection.inventoryValue}`}
+                : formatMoney(
+                    data.revaluation.currentStreamProjection.inventoryValue,
+                    data.revaluation.currentStreamProjection.currency,
+                  )}
             </dd>
             <dt>Average cost</dt>
             <dd>
               {data.revaluation.currentStreamProjection.weightedAverageCost === null
                 ? 'Not available'
-                : `${data.revaluation.currentStreamProjection.currency} ${data.revaluation.currentStreamProjection.weightedAverageCost}/${quantityUnitShort(item.product.unit)}`}
+                : `${formatMoney(data.revaluation.currentStreamProjection.weightedAverageCost, data.revaluation.currentStreamProjection.currency)}/${quantityUnitShort(item.product.unit)}`}
             </dd>
           </dl>
         </Card>
@@ -1009,16 +1012,12 @@ export function RevaluationDetail({
           {item.costAllocation ? (
             <dl className="detail-list">
               <dt>Late source cost</dt>
-              <dd>
-                {item.currency} {item.costAllocation.lateCostAmount}
-              </dd>
+              <dd>{formatMoney(item.costAllocation.lateCostAmount, item.currency)}</dd>
               <dt>Historical COGS delta</dt>
-              <dd>
-                {item.currency} {item.costAllocation.cogsDeltaTotal}
-              </dd>
+              <dd>{formatMoney(item.costAllocation.cogsDeltaTotal, item.currency)}</dd>
               <dt>Implied residual retained in ending inventory</dt>
               <dd>
-                {item.currency} {item.costAllocation.impliedEndingInventoryIncrease}
+                {formatMoney(item.costAllocation.impliedEndingInventoryIncrease, item.currency)}
               </dd>
             </dl>
           ) : (
@@ -1076,17 +1075,15 @@ export function RevaluationDetail({
                       </span>
                     </th>
                     <td data-label="Original COGS">
-                      {line.currency} {line.originalCogs}
+                      {formatMoney(line.originalCogs, line.currency)}
                     </td>
                     <td data-label="Prior restated COGS">
-                      {line.currency} {line.priorRestatedCogs}
+                      {formatMoney(line.priorRestatedCogs, line.currency)}
                     </td>
                     <td data-label="Recomputed COGS">
-                      {line.currency} {line.recomputedCogs}
+                      {formatMoney(line.recomputedCogs, line.currency)}
                     </td>
-                    <td data-label="Signed delta">
-                      {line.currency} {line.cogsDelta}
-                    </td>
+                    <td data-label="Signed delta">{formatMoney(line.cogsDelta, line.currency)}</td>
                     <td data-label="Event">
                       <span className="table-secondary">COGS_REVALUATION</span>
                       <code>{line.cogsRevaluationEventId}</code>

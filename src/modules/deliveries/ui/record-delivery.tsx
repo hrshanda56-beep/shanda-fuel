@@ -1638,7 +1638,7 @@ export function RecordDelivery({
           <div className="rd-saved-head">
             <h3 id="rd-saved-title">Delivery saved. One step left</h3>
             <p className="rd-saved-summary">
-              {deliveryNote.trim()} · {receivedLitres.trim()} L
+              {deliveryNote.trim()} · {receivedLitres.trim()}L
               {tank ? ` of ${tank.productName} into tank ${tank.code}` : ''}
             </p>
             <InfoTip>
