@@ -152,13 +152,13 @@ test('key figures show the approved totals', async ({ page }) => {
   await page.goto(TODAY);
   const figures = page.locator('.today-figures');
   await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
-    'USD 2,484.12',
+    '$2,484.12',
   );
   await expect(figures.locator('.today-figure', { hasText: 'Litres sold' })).toContainText(
-    '1,284 L',
+    '1,284L',
   );
   await expect(figures.locator('.today-figure', { hasText: 'Account sales' })).toContainText(
-    'USD 100.00',
+    '$100.00',
   );
 });
 
@@ -185,7 +185,7 @@ test('an approved zero is shown as zero, unlike a day with no approved report', 
   await page.goto(TODAY);
   const figures = page.locator('.today-figures');
   await expect(figures.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
-    'USD 0.00',
+    '$0.00',
   );
   await expect(figures).not.toContainText('No approved report yet');
   await expect(figures).not.toContainText('Stock variance');
@@ -199,7 +199,7 @@ test('figures fit their cards without splitting a number, at every width', async
     await page.setViewportSize({ width, height: 900 });
     await page.goto(TODAY);
     await expect(page.locator('.today-figure', { hasText: 'Sales today' })).toContainText(
-      'USD 120,000.00',
+      '$120,000.00',
     );
     const overflow = await page.locator('.today-figure-value').evaluateAll((values) =>
       values
@@ -248,13 +248,13 @@ test('the sales chart is also available as a keyboard-operable table', async ({ 
   await expect(rows).toHaveCount(7);
   // Oldest day: no approved report, said in words rather than shown as 0.
   await expect(rows.first()).toContainText('No approved report');
-  await expect(rows.first()).not.toContainText('0 L');
+  await expect(rows.first()).not.toContainText('0L');
   // Yesterday: exact totals per configured product.
-  await expect(rows.nth(5)).toContainText('1,284 L');
-  await expect(rows.nth(5)).toContainText('578 L');
-  await expect(rows.nth(5)).toContainText('706 L');
+  await expect(rows.nth(5)).toContainText('1,284L');
+  await expect(rows.nth(5)).toContainText('578L');
+  await expect(rows.nth(5)).toContainText('706L');
   // Today: a product without an approved row is unavailable, not zero.
-  await expect(rows.nth(6)).toContainText('10 L');
+  await expect(rows.nth(6)).toContainText('10L');
   await expect(rows.nth(6).locator('td').last()).toContainText('No approved figure');
 
   const results = await new AxeBuilder({ page }).include('.today-chart-table').analyze();
@@ -291,7 +291,7 @@ test('a loss stays readable on its pastel card in dark mode', async ({ page }) =
     await page.setViewportSize({ width, height: 900 });
     await page.goto(TODAY);
     const value = page.locator('.today-figure[data-tone="short"] .today-figure-value');
-    await expect(value).toHaveText('USD -30.85');
+    await expect(value).toHaveText('($30.85)');
     await expect(value).toHaveCSS('color', 'rgb(143, 29, 29)');
   }
 });

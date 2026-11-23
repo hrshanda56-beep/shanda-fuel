@@ -142,11 +142,11 @@ test.describe('Cash workspace', () => {
     await expect(page.getByRole('tab', { name: 'Collections', exact: true })).toBeVisible();
     await expect(page.getByRole('table', { name: 'Station cash collections' })).toBeVisible();
     const collection = page.getByRole('row', { name: /COL-001/ });
-    await expect(collection.locator('[data-label="Amount"]')).toHaveText('USD 800.00');
-    await expect(collection.locator('[data-label="Still to bank"]')).toHaveText('USD 800.00');
+    await expect(collection.locator('[data-label="Amount"]')).toHaveText('$800.00');
+    await expect(collection.locator('[data-label="Still to bank"]')).toHaveText('$800.00');
     await page.getByRole('tab', { name: 'Bank Deposits' }).click();
     const deposit = page.getByRole('row', { name: /DEP-001/ });
-    await expect(deposit).toContainText('USD 100.00');
+    await expect(deposit).toContainText('$100.00');
     await expect(deposit).toContainText('On its way to the bank');
 
     // Each cash job is a page guide opened from the action bar: one question per screen.
@@ -173,9 +173,9 @@ test.describe('Cash workspace', () => {
       const position = page.getByRole('region', { name: 'Cash Position' });
       // Three parts that never overlap, so they add up to everything collected.
       await expect(position).toContainText('At the station');
-      await expect(position).toContainText('USD 700.00');
+      await expect(position).toContainText('$700.00');
       await expect(position).toContainText('Waiting for the bank');
-      await expect(position).toContainText('USD 100.00');
+      await expect(position).toContainText('$100.00');
       await expect(position).toContainText('Banked');
       const results = await new AxeBuilder({ page }).include('.cash-panel').analyze();
       expect(results.violations, `width ${width}`).toEqual([]);

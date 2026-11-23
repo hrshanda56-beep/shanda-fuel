@@ -140,10 +140,10 @@ test.describe('data-filled screens', () => {
       await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
       const waiting = page.getByRole('list', { name: 'Payments waiting to match' });
       const eco = waiting.getByRole('listitem').first();
-      await expect(eco, `width ${width}`).toContainText('USD 25.50');
+      await expect(eco, `width ${width}`).toContainText('$25.50');
       await expect(eco).toContainText('1 payment');
       const pos = waiting.getByRole('listitem').nth(1);
-      await expect(pos).toContainText('USD 50.00');
+      await expect(pos).toContainText('$50.00');
       await expect(pos).toContainText('2 payments');
       const summary = page.getByLabel('Payout summary');
       await expect(
@@ -156,9 +156,9 @@ test.describe('data-filled screens', () => {
       const chart = page.locator('section[aria-labelledby="settled-by-provider-title"]');
       await expect(chart.getByRole('heading', { name: 'Settled By Provider' })).toBeVisible();
       await expect(chart).toContainText('EcoCash merchant');
-      await expect(chart).toContainText('USD 75.00');
+      await expect(chart).toContainText('$75.00');
       await expect(chart).toContainText('Zimswitch POS');
-      await expect(chart).toContainText('USD 25.00');
+      await expect(chart).toContainText('$25.00');
 
       await expectNoSidewaysScroll(page, `width ${width}`);
       const results = await new AxeBuilder({ page }).analyze();
@@ -184,7 +184,7 @@ test.describe('data-filled screens', () => {
       await page.goto(`/stations/${STATION}/settlements?tenantId=${TENANT}`);
       await expect(
         page.getByRole('list', { name: 'Payments waiting to match' }).getByRole('listitem').first(),
-      ).toContainText('USD 25.50');
+      ).toContainText('$25.50');
       await expect(page.locator('.settlement-row [data-label="Settled"]').first()).toBeVisible();
       expect(
         await wordsSplitAcrossLines(
