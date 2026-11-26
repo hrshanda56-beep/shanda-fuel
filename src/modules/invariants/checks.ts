@@ -33,15 +33,17 @@ export async function runInvariantChecks(
   const add = (code: string, rule: string, violations: readonly string[]) =>
     results.push({ code, rule, violations });
 
-  // No tank ever holds less than nothing.
+  // No tank ever holds less than nothing. Tanks of one fuel that share a cost pool are one stock
+  // (DEC-058), because a sale is not taken from a named tank, so the pool is what is checked. A tank
+  // on its own is a pool of one.
   const negative = await rows<{ code: string; litres: string }>(
     transaction,
     sql`
-      select t.code, sum(m.quantity_litres)::text as litres
+      select string_agg(distinct t.code, ' + ') as code, sum(m.quantity_litres)::text as litres
       from app.inventory_movements m
-      join app.tanks t on t.tenant_id = m.tenant_id and t.id = m.tank_id
+      join app.tanks t on t.tenant_id = m.tenant_id and t.station_id = m.station_id and t.id = m.tank_id
       where true ${forTenant('m', scope)}
-      group by t.tenant_id, t.id, t.code
+      group by t.tenant_id, t.station_id, t.cost_pool_tank_id
       having sum(m.quantity_litres) < 0
     `,
   );

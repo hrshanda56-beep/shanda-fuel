@@ -1,4 +1,10 @@
 import type { TankRow } from '../inventory/tank-read-model';
+import {
+  isPoolRepresentativeSql,
+  poolSumSql,
+  poolTankCodesSql,
+  poolTankIdsSql,
+} from '../inventory/tank-pool-sql';
 import { asQuantityUnit } from '../../design-system/formatters';
 import { profileDatabaseRead } from '../../platform/observability/read-timing';
 import type { AuthenticatedActorContext } from '../identity';
@@ -142,7 +148,11 @@ const sourceMovementSelect = sql`
     from app.inventory_movements m
     where m.tenant_id = s.tenant_id
       and m.station_id = s.station_id
-      and m.tank_id = s.tank_id
+      -- The stream is the whole pool of tanks (DEC-058): s.tank_id is the tank the pool is kept on.
+      and m.tank_id in (
+        select pt.id from app.tanks pt
+        where pt.tenant_id = s.tenant_id and pt.station_id = s.station_id
+          and pt.cost_pool_tank_id = s.tank_id)
       and m.product_id = s.product_id
       and m.quantity_litres > 0
       and not exists (
@@ -285,11 +295,14 @@ export async function getInventoryValuationReadModel(
         sql`
       with streams as (${streamQuery}), revaluations as (${revaluationQuery}),
       tanks as (
+        -- Tanks that share a cost pool are one stock (DEC-058), so they are one card: the books are
+        -- kept for the pool and the dips of all its tanks are added together. A tank on its own is a
+        -- pool of one, so its card is the same as ever.
         select t.station_id::text as "stationId", t.id::text as "tankId",
-          t.code as "tankCode", t.product_id::text as "productId",
+          ${poolTankCodesSql('t', 'NOT_RETIRED')} as "tankCode", t.product_id::text as "productId",
           p.code as "productCode", p.name as "productName",
-          t.capacity_litres::text as "capacityLitres",
-          t.reorder_level_litres::text as "reorderLevelLitres",
+          ${poolSumSql('t', 'capacity_litres', 'NOT_RETIRED')}::text as "capacityLitres",
+          ${poolSumSql('t', 'reorder_level_litres', 'NOT_RETIRED')}::text as "reorderLevelLitres",
           coalesce(m.expected, 0)::text as "expectedLitres",
           d.physical_litres::text as "physicalLitres",
           d.business_date as "physicalDate",
@@ -299,19 +312,30 @@ export async function getInventoryValuationReadModel(
         left join lateral (
           select sum(quantity_litres) as expected from app.inventory_movements m
           where m.tenant_id = t.tenant_id and m.station_id = t.station_id
-            and m.tank_id = t.id and m.product_id = t.product_id
+            and m.tank_id in ${poolTankIdsSql('t')} and m.product_id = t.product_id
             and m.business_date <= (now() at time zone ${context.stationTimezone})::date::text
         ) m on true
         left join lateral (
-          select physical_litres, business_date from app.tank_dips d
-          where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id
-            and d.voided_at is null
-            and d.measured_at < (((now() at time zone ${context.stationTimezone})::date + 1)::timestamp
-              at time zone ${context.stationTimezone})
-          order by d.measured_at desc, d.id desc limit 1
+          select case when count(*) = (
+                   select count(*) from app.tanks ot
+                   where ot.tenant_id = t.tenant_id and ot.station_id = t.station_id
+                     and ot.cost_pool_tank_id = t.cost_pool_tank_id and ot.status <> 'RETIRED')
+                 then sum(ld.physical_litres) end as physical_litres,
+                 max(ld.business_date) as business_date
+          from app.tanks pt
+          cross join lateral (
+            select d2.physical_litres, d2.business_date from app.tank_dips d2
+            where d2.tenant_id = pt.tenant_id and d2.station_id = pt.station_id and d2.tank_id = pt.id
+              and d2.voided_at is null
+              and d2.measured_at < (((now() at time zone ${context.stationTimezone})::date + 1)::timestamp
+                at time zone ${context.stationTimezone})
+            order by d2.measured_at desc, d2.id desc limit 1
+          ) ld
+          where pt.tenant_id = t.tenant_id and pt.station_id = t.station_id
+            and pt.cost_pool_tank_id = t.cost_pool_tank_id and pt.status <> 'RETIRED'
         ) d on true
         where t.tenant_id = ${context.tenantId}::uuid and t.station_id = ${context.stationId}::uuid
-          and t.status <> 'RETIRED'
+          and t.status <> 'RETIRED' and ${isPoolRepresentativeSql('t', 'NOT_RETIRED')}
         order by t.code
       )
       select coalesce((select json_agg(streams) from streams), '[]'::json) as streams,
@@ -375,7 +399,10 @@ export async function getInventoryRevaluationReadModel(request: Request, input: 
           from app.inventory_movements
           where tenant_id = ${context.tenantId}::uuid
             and station_id = ${context.stationId}::uuid
-            and tank_id = ${String(row.tank_id)}::uuid
+            and tank_id in (
+              select id from app.tanks
+              where tenant_id = ${context.tenantId}::uuid and station_id = ${context.stationId}::uuid
+                and cost_pool_tank_id = ${String(row.tank_id)}::uuid)
             and product_id = ${String(row.product_id)}::uuid
             and source_type = ${String(row.source_type)}
             and source_id = ${String(row.source_id)}::uuid

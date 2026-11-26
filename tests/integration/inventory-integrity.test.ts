@@ -249,7 +249,7 @@ describe('inventory integrity (PostgreSQL)', { timeout: 120_000 }, () => {
     expect(JSON.stringify(cancelled.body)).toContain('was cancelled');
   });
 
-  it('refuses a second active tank for a fuel the station already has a tank for', async () => {
+  it('lets a station add a second tank for a fuel and puts it in the same cost pool', async () => {
     const ctx = await createQa1ScenarioContext(client, 'inv-two-tanks');
     const productRows = await client`
       select product_id from app.tanks where id = ${ctx.tankId}`;
@@ -265,7 +265,11 @@ describe('inventory integrity (PostgreSQL)', { timeout: 120_000 }, () => {
       },
       'inv-two-tanks-create',
     );
-    expect(second.response.status, JSON.stringify(second.body)).toBe(409);
-    expect(JSON.stringify(second.body)).toContain('can only track one tank for each fuel for now');
+    expect(second.response.status, JSON.stringify(second.body)).toBe(200);
+    const pools = await client`
+      select id, cost_pool_tank_id from app.tanks
+      where station_id = ${ctx.stationId} and product_id = ${productRows[0]!.product_id}`;
+    expect(pools).toHaveLength(2);
+    expect(new Set(pools.map((r) => r.cost_pool_tank_id)).size).toBe(1);
   });
 });

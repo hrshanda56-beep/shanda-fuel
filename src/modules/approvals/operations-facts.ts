@@ -1,6 +1,12 @@
 import 'server-only';
 import { asQuantityUnit } from '../../design-system/formatters';
 import { sql } from 'drizzle-orm';
+import {
+  isPoolRepresentativeSql,
+  poolSumSql,
+  poolTankCodesSql,
+  poolTankIdsSql,
+} from '../inventory/tank-pool-sql';
 import type { InventoryCommandContext, InventoryTransaction } from '../inventory/application';
 import { isPermissionGranted } from '../../platform/security/permissions';
 import {
@@ -107,7 +113,7 @@ export async function loadOperationsFacts(
       reorder: string | null;
       opening_recorded: boolean;
     }>(sql`
-      select t.id as tank_id, t.code as tank_code, p.name as product_name, p.unit as unit,
+      select t.id as tank_id, ${poolTankCodesSql('t')} as tank_code, p.name as product_name, p.unit as unit,
         coalesce(now_stock.expected, 0)::text as expected,
         d.physical_litres::text as physical,
         -- A day's sales reach the books when its report is approved. Until then the dip is ahead of
@@ -120,45 +126,59 @@ export async function loadOperationsFacts(
             and r.state = 'SUBMITTED' and bd.business_date <= d.business_date
         ) then null
         else (d.physical_litres - coalesce(at_dip.expected, 0))::text end as variance,
-        t.acceptable_variance_litres::text as tolerance,
-        t.variance_red_litres::text as red,
+        ${poolSumSql('t', 'acceptable_variance_litres')}::text as tolerance,
+        ${poolSumSql('t', 'variance_red_litres')}::text as red,
         sold.litres::text as sold,
-        t.reorder_level_litres::text as reorder,
+        ${poolSumSql('t', 'reorder_level_litres')}::text as reorder,
         exists (select 1 from app.inventory_movements o
           where o.tenant_id = t.tenant_id and o.station_id = t.station_id
-            and o.tank_id = t.id and o.movement_type = 'OPENING_BALANCE') as opening_recorded
+            and o.tank_id in ${poolTankIdsSql('t')} and o.movement_type = 'OPENING_BALANCE') as opening_recorded
       from app.tanks t
       join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
       left join lateral (
         select sum(m.quantity_litres) as expected from app.inventory_movements m
         where m.tenant_id = t.tenant_id and m.station_id = t.station_id
-          and m.tank_id = t.id and m.product_id = t.product_id
+          and m.tank_id in ${poolTankIdsSql('t')} and m.product_id = t.product_id
       ) now_stock on true
+      -- The latest dip of every active tank of the pool, added together. A pool with a tank that
+      -- has not been dipped has no honest total, so it has none. A tank on its own is its own dip.
       left join lateral (
-        select physical_litres, measured_at, business_date from app.tank_dips d
-        where d.tenant_id = t.tenant_id and d.station_id = t.station_id and d.tank_id = t.id and d.voided_at is null
-        order by d.measured_at desc, d.id desc limit 1
+        select case when count(*) = (
+                 select count(*) from app.tanks ac
+                 where ac.tenant_id = t.tenant_id and ac.station_id = t.station_id
+                   and ac.cost_pool_tank_id = t.cost_pool_tank_id and ac.status = 'ACTIVE')
+               then sum(ld.physical_litres) end as physical_litres,
+               max(ld.measured_at) as measured_at, max(ld.business_date) as business_date
+        from app.tanks pt
+        cross join lateral (
+          select d2.physical_litres, d2.measured_at, d2.business_date from app.tank_dips d2
+          where d2.tenant_id = pt.tenant_id and d2.station_id = pt.station_id and d2.tank_id = pt.id
+            and d2.voided_at is null
+          order by d2.measured_at desc, d2.id desc limit 1
+        ) ld
+        where pt.tenant_id = t.tenant_id and pt.station_id = t.station_id
+          and pt.cost_pool_tank_id = t.cost_pool_tank_id and pt.status = 'ACTIVE'
       ) d on true
       left join lateral (
         select sum(m.quantity_litres) as expected from app.inventory_movements m
         where m.tenant_id = t.tenant_id and m.station_id = t.station_id
-          and m.tank_id = t.id and m.product_id = t.product_id
+          and m.tank_id in ${poolTankIdsSql('t')} and m.product_id = t.product_id
           and m.business_date <= d.business_date
       ) at_dip on true
       left join lateral (
         select -sum(m.quantity_litres) as litres from app.inventory_movements m
         where m.tenant_id = t.tenant_id and m.station_id = t.station_id
-          and m.tank_id = t.id and m.product_id = t.product_id
+          and m.tank_id in ${poolTankIdsSql('t')} and m.product_id = t.product_id
           and m.movement_type = 'SALE'
           and m.business_date <= d.business_date
           and m.effective_at > coalesce((
             select p.measured_at from app.tank_dips p
             where p.tenant_id = t.tenant_id and p.station_id = t.station_id
-              and p.tank_id = t.id and p.voided_at is null and p.measured_at < d.measured_at
+              and p.tank_id in ${poolTankIdsSql('t')} and p.voided_at is null and p.measured_at < d.measured_at
             order by p.measured_at desc, p.id desc limit 1), '-infinity'::timestamptz)
       ) sold on true
       where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}
-        and t.status = 'ACTIVE'
+        and t.status = 'ACTIVE' and ${isPoolRepresentativeSql('t')}
       order by t.code`);
     tanks = rows.map((row) => ({
       tankId: row.tank_id,

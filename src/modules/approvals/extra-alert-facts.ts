@@ -162,15 +162,18 @@ export async function loadExtraAlertFacts(
           litres: string;
           unit: string;
         }>(sql`
-      select t.id as tank_id, t.code as tank_code, p.name as product, p.unit as unit,
+      -- Tanks of one fuel that share a cost pool are one stock (DEC-058), so the pool is what is
+      -- checked. A tank on its own is a pool of one.
+      select (array_agg(t.id order by t.created_at, t.id))[1] as tank_id,
+        string_agg(distinct t.code, ' + ') as tank_code, p.name as product, p.unit as unit,
         sum(m.quantity_litres)::text as litres
       from app.inventory_movements m
       join app.tanks t on t.tenant_id = m.tenant_id and t.station_id = m.station_id and t.id = m.tank_id
       join app.products p on p.tenant_id = m.tenant_id and p.id = m.product_id
       where m.tenant_id = ${tenantId} and m.station_id = ${stationId}
-      group by t.id, t.code, p.name, p.unit
+      group by t.cost_pool_tank_id, p.name, p.unit
       having sum(m.quantity_litres) < 0
-      order by sum(m.quantity_litres), t.code
+      order by sum(m.quantity_litres), string_agg(distinct t.code, ' + ')
       limit 20`)
       ).map((row) => ({
         tankId: row.tank_id,

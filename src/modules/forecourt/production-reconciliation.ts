@@ -945,6 +945,7 @@ async function loadMetrics(
     : null;
   const stock = await transaction.execute<{
     tank_id: string;
+    pool_tank_id: string;
     product_id: string;
     physical: string;
     yellow: string | null;
@@ -954,16 +955,21 @@ async function loadMetrics(
     adjustments: string;
     sold: string;
   }>(sql`
-    select r.tank_id, r.product_id, d.physical_litres as physical,
+    -- The books are kept for the whole pool (DEC-058): the tanks of one fuel are one stock, because a
+    -- sale is not taken from a named tank. A tank on its own is a pool of one, as before.
+    select r.tank_id, t.cost_pool_tank_id as pool_tank_id, r.product_id, d.physical_litres as physical,
       t.acceptable_variance_litres as yellow, t.variance_red_litres as red,
       coalesce((select sum(m.quantity_litres) from app.inventory_movements m
-        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id
+        join app.tanks mt on mt.tenant_id=m.tenant_id and mt.station_id=m.station_id and mt.id=m.tank_id
+        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and mt.cost_pool_tank_id=t.cost_pool_tank_id
           and m.business_date <= bd.business_date and m.movement_type = 'OPENING_BALANCE'), 0) as opening,
       coalesce((select sum(m.quantity_litres) from app.inventory_movements m
-        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id
+        join app.tanks mt on mt.tenant_id=m.tenant_id and mt.station_id=m.station_id and mt.id=m.tank_id
+        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and mt.cost_pool_tank_id=t.cost_pool_tank_id
           and m.business_date <= bd.business_date and m.movement_type in ('DELIVERY', 'TRANSFER_IN')), 0) as deliveries,
       coalesce((select sum(m.quantity_litres) from app.inventory_movements m
-        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and m.tank_id=r.tank_id
+        join app.tanks mt on mt.tenant_id=m.tenant_id and mt.station_id=m.station_id and mt.id=m.tank_id
+        where m.tenant_id=r.tenant_id and m.station_id=r.station_id and mt.cost_pool_tank_id=t.cost_pool_tank_id
           and m.business_date <= bd.business_date and m.movement_type in ('POSITIVE_ADJUSTMENT', 'NEGATIVE_ADJUSTMENT', 'TRANSFER_OUT')), 0) as adjustments,
       coalesce((select sum(m.litres_sold) from app.reconciliation_meter_readings m
         join app.reconciliations rec2 on rec2.tenant_id=m.tenant_id and rec2.station_id=m.station_id and rec2.id=m.reconciliation_id
@@ -979,30 +985,60 @@ async function loadMetrics(
   `);
   const stockVariance: Record<string, string> = {};
   let redVariance = false;
+  // One check per pool of tanks (DEC-058): the dips of all the pool's tanks together against the
+  // books for the whole pool. A tank on its own is a pool of one, so its check is the same as ever.
+  const pools = new Map<string, Array<(typeof stock)[number]>>();
   for (const row of stock) {
-    const tankCount = await transaction.execute<{ count: number }>(sql`
-      select count(*)::int as count from app.tanks where tenant_id=${context.tenantId} and station_id=${context.stationId} and product_id=${row.product_id} and status='ACTIVE'
+    pools.set(row.pool_tank_id, [...(pools.get(row.pool_tank_id) ?? []), row]);
+  }
+  for (const [poolTankId, rows] of pools) {
+    const first = rows[0]!;
+    const activeTanks = await transaction.execute<{ pool: string }>(sql`
+      select cost_pool_tank_id as pool from app.tanks
+      where tenant_id=${context.tenantId} and station_id=${context.stationId} and product_id=${first.product_id} and status='ACTIVE'
     `);
-    if (Number(tankCount[0]?.count) !== 1)
+    const activePools = new Set(activeTanks.map((tank) => tank.pool));
+    if (activePools.size !== 1 || !activePools.has(poolTankId))
       throw new AppError(
         'CONFLICT',
         'A reconciliation sale requires an explicit pump-to-tank mapping when a product has multiple active tanks',
       );
+    const inPool = activeTanks.filter((tank) => tank.pool === poolTankId).length;
+    if (rows.length !== inPool)
+      throw new AppError(
+        'CONFLICT',
+        'Every tank of this fuel needs a dip before the day can be reconciled',
+      );
     const expected = expectedClosingStock({
-      openingLitres: row.opening,
-      deliveriesLitres: row.deliveries,
-      litresSold: row.sold,
-      approvedAdjustmentsLitres: row.adjustments,
+      openingLitres: first.opening,
+      deliveriesLitres: first.deliveries,
+      litresSold: first.sold,
+      approvedAdjustmentsLitres: first.adjustments,
     });
-    const variance = new ExactDecimal(row.physical)
+    const physical =
+      rows.length === 1
+        ? new ExactDecimal(first.physical)
+        : rows.reduce(
+            (total, row) => total.add(new ExactDecimal(row.physical)),
+            new ExactDecimal('0'),
+          );
+    const variance = physical
       .subtract(new ExactDecimal(expected))
       .quantize({ name: 'Litres', precision: 18, scale: 3 })
       .toString();
-    stockVariance[row.tank_id] = variance;
-    const redLimit =
-      row.red ??
-      (row.yellow ? new ExactDecimal(row.yellow).multiply(new ExactDecimal('2')).toString() : null);
-    if (redLimit && new ExactDecimal(variance).value.abs().gt(new ExactDecimal(redLimit).value)) {
+    stockVariance[poolTankId] = variance;
+    // The limits of the pool's tanks add up: a bigger pool is allowed a bigger difference.
+    const limits = rows.map(
+      (row) =>
+        row.red ??
+        (row.yellow
+          ? new ExactDecimal(row.yellow).multiply(new ExactDecimal('2')).toString()
+          : null),
+    );
+    const redLimit = limits.every((limit): limit is string => limit !== null)
+      ? limits.reduce((total, limit) => total.add(new ExactDecimal(limit)), new ExactDecimal('0'))
+      : null;
+    if (redLimit && new ExactDecimal(variance).value.abs().gt(redLimit.value)) {
       redVariance = true;
     }
   }
@@ -1275,11 +1311,17 @@ export async function approveProductionReconciliationFromRequest(request: Reques
         );
         let tankId: string | undefined;
         if (positiveAllocations.length > 0) {
-          const tanksForProduct = await transaction.execute<{ id: string }>(sql`
-            select id from app.tanks where tenant_id=${context.tenantId} and station_id=${context.stationId} and product_id=${reading.product_id} and status='ACTIVE'
-            order by id
+          // A sale is not taken from a named tank (DEC-058). It draws on the fuel's pool, so all the
+          // fuel's active tanks must share one pool, and the sale is filed on the pool's first
+          // active tank. A fuel with one tank files it on that tank, as before.
+          const tanksForProduct = await transaction.execute<{ id: string; pool: string }>(sql`
+            select id, cost_pool_tank_id as pool from app.tanks where tenant_id=${context.tenantId} and station_id=${context.stationId} and product_id=${reading.product_id} and status='ACTIVE'
+            order by created_at, id
           `);
-          if (tanksForProduct.length !== 1)
+          if (
+            tanksForProduct.length === 0 ||
+            new Set(tanksForProduct.map((tank) => tank.pool)).size !== 1
+          )
             throw new AppError('CONFLICT', 'Cannot post a sale without an unambiguous source tank');
           tankId = tanksForProduct[0]!.id;
         }
@@ -1692,14 +1734,14 @@ export async function getProductionReconciliationFromRequest(
         -- no opening balance or shares its fuel with another tank, because then it cannot be told.
         case
           when exists (select 1 from app.inventory_movements m
-              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.tank_id=t.id
+              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.tank_id in (select pt.id from app.tanks pt where pt.tenant_id=t.tenant_id and pt.station_id=t.station_id and pt.cost_pool_tank_id=t.cost_pool_tank_id)
                 and m.movement_type = 'OPENING_BALANCE' and m.business_date <= bd.business_date)
             and (select count(*) from app.tanks o
               where o.tenant_id=t.tenant_id and o.station_id=t.station_id
                 and o.product_id=t.product_id and o.status='ACTIVE') = 1
           then (
             coalesce((select sum(m.quantity_litres) from app.inventory_movements m
-              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.tank_id=t.id
+              where m.tenant_id=t.tenant_id and m.station_id=t.station_id and m.tank_id in (select pt.id from app.tanks pt where pt.tenant_id=t.tenant_id and pt.station_id=t.station_id and pt.cost_pool_tank_id=t.cost_pool_tank_id)
                 and m.business_date <= bd.business_date
                 and m.movement_type in ('OPENING_BALANCE', 'DELIVERY', 'TRANSFER_IN',
                   'POSITIVE_ADJUSTMENT', 'NEGATIVE_ADJUSTMENT', 'TRANSFER_OUT')), 0)

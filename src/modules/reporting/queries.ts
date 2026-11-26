@@ -800,14 +800,18 @@ async function readInventory(
     movement_ids: string[] | null;
     delivery_ids: string[] | null;
   }>(sql`
+    -- Tanks of one fuel that share a cost pool are one stock (DEC-058), so they are one row here: the
+    -- books are kept for the pool, and the dips of all its tanks are added together. A tank on its
+    -- own is a pool of one, so its row is the same as ever.
     with movement_totals as (
-      select station_id, tank_id, product_id, coalesce(sum(quantity_litres), 0)::text as expected,
-        coalesce(array_agg(id order by effective_at, id), ARRAY[]::uuid[]) as movement_ids
-      from app.inventory_movements
-      where tenant_id = ${filters.tenantId} and business_date <= ${filters.toDate}
-      group by station_id, tank_id, product_id
+      select m.station_id, tk.cost_pool_tank_id as pool_id, coalesce(sum(m.quantity_litres), 0)::text as expected,
+        coalesce(array_agg(m.id order by m.effective_at, m.id), ARRAY[]::uuid[]) as movement_ids
+      from app.inventory_movements m
+      join app.tanks tk on tk.tenant_id = m.tenant_id and tk.station_id = m.station_id and tk.id = m.tank_id
+      where m.tenant_id = ${filters.tenantId} and m.business_date <= ${filters.toDate}
+      group by m.station_id, tk.cost_pool_tank_id
     ), latest_dips as (
-      select distinct on (station_id, tank_id) station_id, tank_id, physical_litres::text as physical,
+      select distinct on (station_id, tank_id) station_id, tank_id, physical_litres as physical,
         business_date as dip_date
       from app.tank_dips
       where tenant_id = ${filters.tenantId}
@@ -822,26 +826,36 @@ async function readInventory(
       where tenant_id = ${filters.tenantId} and status = 'CONFIRMED'
         and business_date between ${filters.fromDate} and ${filters.toDate}
       group by station_id, product_id
+    ), pools as (
+      select t.station_id, t.cost_pool_tank_id as pool_id, t.product_id,
+        (array_agg(t.id order by t.created_at, t.id))[1] as tank_id,
+        string_agg(t.code, ' + ' order by t.created_at, t.id) as tank_code,
+        sum(t.capacity_litres)::text as capacity,
+        case when count(t.reorder_level_litres) = count(*) then sum(t.reorder_level_litres)::text end as reorder_level,
+        case when count(t.acceptable_variance_litres) = count(*) then sum(t.acceptable_variance_litres)::text end as acceptable_variance,
+        case when count(t.variance_red_litres) = count(*) then sum(t.variance_red_litres)::text end as variance_red,
+        case when count(d.physical) = count(*) then sum(d.physical)::text end as physical,
+        max(d.dip_date) as dip_date
+      from app.tanks t
+      left join latest_dips d on d.station_id = t.station_id and d.tank_id = t.id
+      where t.tenant_id = ${filters.tenantId} and t.status <> 'RETIRED'
+        ${stationClause('t', filters.stationIds)}
+      group by t.station_id, t.cost_pool_tank_id, t.product_id
     )
-    select t.station_id, t.id as tank_id, t.code as tank_code, t.product_id,
+    select pl.station_id, pl.tank_id, pl.tank_code, pl.product_id,
       p.code as product_code, p.name as product_name, p.unit as unit,
-      t.capacity_litres::text as capacity, t.reorder_level_litres::text as reorder_level,
-      t.acceptable_variance_litres::text as acceptable_variance,
-      t.variance_red_litres::text as variance_red,
-      coalesce(m.expected, '0') as expected, d.physical, d.dip_date,
-      case when d.physical is null then null else (d.physical::numeric - coalesce(m.expected, '0')::numeric)::text end as variance,
+      pl.capacity, pl.reorder_level, pl.acceptable_variance, pl.variance_red,
+      coalesce(m.expected, '0') as expected, pl.physical, pl.dip_date,
+      case when pl.physical is null then null else (pl.physical::numeric - coalesce(m.expected, '0')::numeric)::text end as variance,
       coalesce(del.delivery_litres, '0') as delivery_litres,
       coalesce(del.delivery_value, '0') as delivery_value,
       coalesce(m.movement_ids, ARRAY[]::uuid[]) as movement_ids,
       coalesce(del.delivery_ids, ARRAY[]::uuid[]) as delivery_ids
-    from app.tanks t
-    join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
-    left join movement_totals m on m.station_id = t.station_id and m.tank_id = t.id and m.product_id = t.product_id
-    left join latest_dips d on d.station_id = t.station_id and d.tank_id = t.id
-    left join deliveries del on del.station_id = t.station_id and del.product_id = t.product_id
-    where t.tenant_id = ${filters.tenantId} and t.status <> 'RETIRED'
-      ${stationClause('t', filters.stationIds)}
-    order by t.station_id, t.code
+    from pools pl
+    join app.products p on p.tenant_id = ${filters.tenantId} and p.id = pl.product_id
+    left join movement_totals m on m.station_id = pl.station_id and m.pool_id = pl.pool_id
+    left join deliveries del on del.station_id = pl.station_id and del.product_id = pl.product_id
+    order by pl.station_id, pl.tank_code
   `);
   const mapped = rows.map((row) => ({
     stationId: row.station_id,

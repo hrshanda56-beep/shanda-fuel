@@ -1289,7 +1289,7 @@ Date: 2026-11-21. Source: the owner's feedback round (issue #258) and the owner'
 ## DEC-058 — More than one tank of the same fuel at a station: check stock per fuel (option B) (#314, 2026-11-26)
 
 Date: 2026-11-26. Source: the client's feedback round (issue #314) and the owner's instruction in chat ("option B").
-**Status:** direction and cost method ACCEPTED; **not built**. The build touches the cost core and needs a migration, so it is a separate, reviewed piece of work.
+**Status:** direction and cost method ACCEPTED; **BUILT on branch `feat/one-cost-pool-314` (migration 0124), pending review and merge**. Items 1 and 5 describe the behaviour before this build.
 
 1. **Today.** A station can have one active tank per fuel. Adding a second is refused with a plain message (reworded in this change). Pumps and nozzles are not linked to tanks, so a day's sales of a fuel cannot be split between two tanks.
 2. **Direction (option B).** Keep the stock check per fuel, not per tank: add up the tanks' opening stock, deliveries, adjustments and closing dips for a fuel and compare the total with that fuel's sales. Nozzles are **not** linked to tanks.
