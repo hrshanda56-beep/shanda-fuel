@@ -115,7 +115,7 @@ test.describe('Station page and setup wizards', () => {
     await page.getByRole('listitem', { name: /Open Unleaded 95/ }).click();
     await expect(page.getByText('Still to do: a price, a tank, a nozzle.')).toBeVisible();
     await page.getByRole('button', { name: 'Yes, change it' }).click();
-    await page.getByText('The price', { exact: true }).click();
+    await page.getByText('The price of Unleaded 95', { exact: true }).click();
     await next(page).click();
     await expect(
       page.getByRole('heading', { name: /new price per litre of Unleaded 95/i }),
