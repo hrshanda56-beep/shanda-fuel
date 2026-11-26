@@ -391,7 +391,7 @@
     "src/modules/setup/ui/station-setup-wizard.tsx": "a68778733f6ad19315bb76f6668b3ee5e67a03bd703297c27080de23bcccbb64",
     "src/modules/setup/ui/station-wizards.tsx": "95032a333d9f23bef0d8b137d74dce24cd2d0c2c1dd7b08e2d9cba28bcbb8d07",
     "src/modules/setup/ui/step-up-dialog.tsx": "f2183af9783667b16704927afb81478d623b9e9e543299914245658d16a14b2f",
-    "src/modules/setup/ui/tank-wizard.tsx": "71d5a27de73695bfb7d377d207617071401dd6576d47f9e00fba51921365e17f",
+    "src/modules/setup/ui/tank-wizard.tsx": "547391ce05a1dc99b248c96bc45439d4ccc25638f041160de4c55026fe6d3c85",
     "src/modules/setup/ui/use-setup-overview.ts": "bba2c1517f0588de9c8591c39bf91805256799db34d1e92c3ac1055094b3ce5a"
   }
 }

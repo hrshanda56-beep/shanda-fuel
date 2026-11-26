@@ -102,6 +102,7 @@ const deactivateTankPayload = authorityPayload.extend({
 });
 
 const deleteTankPayload = authorityPayload.extend({ tankId: uuid });
+const retireTankPayload = authorityPayload.extend({ tankId: uuid });
 
 const dipPayload = authorityPayload.extend({
   tankId: uuid,
@@ -776,6 +777,113 @@ export async function deactivateTankFromRequest(request: Request, input: unknown
           ),
         );
       return { tankId: tank.id, status: payload.status };
+    },
+  });
+}
+
+const TANK_HOLDS_FUEL_REFUSAL =
+  'This tank still holds fuel. Settle it first: move the fuel to another tank, or record a closing dip and clear any difference, then try again.';
+
+/**
+ * Stops using a tank that has history (#316): it leaves new entries and the setup lists, and every
+ * past record keeps it. A tank with nothing recorded is deleted instead (DeleteTank).
+ *
+ * Refused while it could still hold fuel, because retiring would hide stock that is really there:
+ *  - the last tank in use for its fuel while the fuel has stock on the books,
+ *  - any tank whose latest dip reads fuel,
+ *  - while a shift is open (sales would have nowhere to be filed).
+ * The settle-first process for a tank that holds fuel is for the client to agree; until then it is
+ * refused in plain words rather than guessed.
+ */
+export async function retireTankFromRequest(request: Request, input: unknown) {
+  const payload = retireTankPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  return executeInventoryCommand({
+    context,
+    commandType: 'RetireTank',
+    permissionCode: 'inventory.tank.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.TANK_RETIRED',
+      subjectType: 'Tank',
+      subjectId: payload.tankId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ status: string }>(sql`
+          select status from app.tanks
+          where tenant_id = ${context.tenantId} and id = ${payload.tankId}
+        `);
+        return rows[0] ? { status: rows[0].status } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      const tank = await loadTankForUpdate(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: payload.tankId,
+      });
+      if (tank.status === 'RETIRED') {
+        throw new AppError('CONFLICT', 'This tank is already no longer in use');
+      }
+      const openShift = await transaction.execute<{ id: string }>(sql`
+        select id from app.shifts
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and state = 'OPEN'
+        limit 1
+      `);
+      if (openShift.length > 0) {
+        throw new AppError(
+          'CONFLICT',
+          'A shift is open at this station. Close it first so its readings are kept, then stop using the tank.',
+        );
+      }
+      // The latest dip that was not voided: a reading above zero means fuel is in the tank.
+      const dip = await transaction.execute<{ physical_litres: string }>(sql`
+        select physical_litres::text from app.tank_dips
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and tank_id = ${tank.id} and voided_at is null
+        order by measured_at desc, created_at desc
+        limit 1
+      `);
+      if (dip[0] && litres(dip[0].physical_litres).value.gt(0)) {
+        throw new AppError('CONFLICT', TANK_HOLDS_FUEL_REFUSAL);
+      }
+      // The last tank in use for this fuel: the fuel's stock on the books must be nil.
+      const others = await transaction.execute<{ id: string }>(sql`
+        select id from app.tanks
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and product_id = ${tank.productId} and status = 'ACTIVE' and id <> ${tank.id}
+        limit 1
+      `);
+      if (others.length === 0) {
+        const stock = await transaction.execute<{ litres: string }>(sql`
+          select coalesce(sum(m.quantity_litres), 0)::text as litres
+          from app.inventory_movements m
+          join app.tanks mt on mt.tenant_id = m.tenant_id and mt.id = m.tank_id
+          where m.tenant_id = ${context.tenantId} and m.station_id = ${context.stationId}
+            and mt.product_id = ${tank.productId}
+        `);
+        if (litres(stock[0]?.litres ?? '0').value.gt(0)) {
+          throw new AppError('CONFLICT', TANK_HOLDS_FUEL_REFUSAL);
+        }
+      }
+      await transaction
+        .update(tanks)
+        .set({
+          status: 'RETIRED',
+          updatedBy: context.authority.membership.membershipId,
+          version: tank.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(tanks.tenantId, context.tenantId),
+            eq(tanks.stationId, context.stationId),
+            eq(tanks.id, tank.id),
+          ),
+        );
+      return { tankId: tank.id, status: 'RETIRED' };
     },
   });
 }

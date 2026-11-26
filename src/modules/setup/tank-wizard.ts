@@ -15,7 +15,7 @@ export const MAX_TANK_NAME = 32;
 
 export type TankStep = 'name' | 'size' | 'reminder' | 'check' | 'review';
 /** Screens outside the numbered steps: choosing the fuel (#315) and confirming a delete. */
-export type TankExtraScreen = 'fuel' | 'delete';
+export type TankExtraScreen = 'fuel' | 'delete' | 'retire';
 export type ReorderChoice = 'p25' | 'p20' | 'p10' | 'own';
 export type LimitMode = 'usual' | 'own';
 
@@ -269,6 +269,15 @@ export function deleteTankCommand(input: {
   tankId: string;
 }): Record<string, unknown> {
   return { commandType: 'DeleteTank', ...input };
+}
+
+/** The command that stops using a tank that has history (#316). Past records keep it. */
+export function retireTankCommand(input: {
+  tenantId: string;
+  stationId: string;
+  tankId: string;
+}): Record<string, unknown> {
+  return { commandType: 'RetireTank', ...input };
 }
 
 /** The command that saves these answers: a new tank, or a change to one that exists. */

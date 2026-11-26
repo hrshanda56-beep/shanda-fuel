@@ -1305,3 +1305,13 @@ Date: 2026-11-26. Source: the client's feedback ("History is good") and the owne
 2. **Safety.** Refused while any shift is open at the station, because that shift could not then be closed with a reading for it.
 3. **Fuels** already can be hidden once nothing active uses them (DEC-052). **Tanks** already have an inactive and retired state; the settle-first rules for a tank that still holds fuel need the client's agreement and are **not** built.
 4. **Not built yet:** bringing a retired pump or nozzle back, and a "No longer in use" badge on past-record screens.
+
+## Addendum to DEC-058 — Stop using a tank that has history (#316, 2026-11-26)
+
+Date: 2026-11-26. Source: the client's feedback ("History is good") and the owner's go-ahead. **Status:** built on branch `feat/retire-tank-316`, stacked on #314; PROPOSED until merged. No migration.
+
+1. **Rule.** A tank with stock records cannot be deleted (#315). It can be set to "no longer in use" (status RETIRED): it leaves new entries and the setup lists, and every past record keeps it. Retired is final; a tank is added again instead.
+2. **Refused while it could still hold fuel**, in plain words ("This tank still holds fuel. Settle it first…"): (a) the tank's latest dip that was not voided reads above zero; (b) it is the last tank in use for its fuel and the fuel still has stock on the books. Also refused while any shift is open at the station.
+3. **Pools.** Retiring one of several tanks of a fuel is allowed when its latest dip is nil or missing: the fuel's stock and cost stay on the pool and the other tanks keep selling. A tank added later joins the first tank not retired.
+4. **Not built, for the client to agree:** the settle-first process itself (move the fuel to another tank, or record a closing dip and clear the difference). Until then a tank that holds fuel is refused, not guessed.
+5. **Fuels** were already able to be hidden once nothing active uses them (DEC-052); with this, a fuel whose tanks have history can now be hidden too.

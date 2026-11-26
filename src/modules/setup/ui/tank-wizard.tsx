@@ -31,6 +31,7 @@ import {
   checkSentence,
   checkSize,
   deleteTankCommand,
+  retireTankCommand,
   reminderSentence,
   reorderSuggestions,
   tankCommand,
@@ -159,6 +160,15 @@ export function TankWizard({
     const saved = await save(
       deleteTankCommand({ tenantId, stationId, tankId: editing.id }),
       `${editing.code} was deleted.`,
+    );
+    if (saved) wizard.go('done');
+  }
+
+  async function retire() {
+    if (!editing) return;
+    const saved = await save(
+      retireTankCommand({ tenantId, stationId, tankId: editing.id }),
+      `${editing.code} is no longer in use.`,
     );
     if (saved) wizard.go('done');
   }
@@ -411,6 +421,24 @@ export function TankWizard({
     );
   }
 
+  if (wizard.step === 'retire' && editing) {
+    return (
+      <WizardStep wizard={alone} title={`Stop using ${editing.code}?`}>
+        <WizardNotice>
+          {editing.code} has stock records, so it cannot be deleted. Stopping use of it hides it
+          from new entries and from this list. Everything already recorded is kept, and past reports
+          still show it. It can only be done when the tank holds no fuel and no shift is open.
+        </WizardNotice>
+        <WizardActions
+          wizard={wizard}
+          busy={busy}
+          continueLabel="Stop using the tank"
+          onContinue={() => void retire()}
+        />
+      </WizardStep>
+    );
+  }
+
   if (wizard.step === 'review') {
     const mismatch = tankFuelMismatch(answers.name, chosenFuel, fuels);
     return (
@@ -467,6 +495,10 @@ export function TankWizard({
         {editing?.unused ? (
           <Button variant="quiet" onClick={() => wizard.go('delete')}>
             Delete this tank
+          </Button>
+        ) : editing ? (
+          <Button variant="quiet" onClick={() => wizard.go('retire')}>
+            Stop using this tank
           </Button>
         ) : null}
       </WizardStep>

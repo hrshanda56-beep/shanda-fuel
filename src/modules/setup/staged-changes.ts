@@ -49,6 +49,7 @@ export const createdIdField = (commandType: string): string | undefined =>
 /** The field of a delete command that names the thing it removes. */
 const DELETE_TARGET: Record<string, string> = {
   DeleteTank: 'tankId',
+  RetireTank: 'tankId',
   DeletePump: 'pumpId',
   DeleteNozzle: 'nozzleId',
 };
@@ -367,6 +368,9 @@ export function applyStaged(
       case 'DeleteTank':
         tanks = tanks.filter((t) => t.id !== str(b.tankId));
         break;
+      case 'RetireTank':
+        tanks = patch(tanks, str(b.tankId), { status: 'RETIRED' });
+        break;
       case 'CreatePump':
         pumps.push({
           id: change.standIn!,
@@ -527,6 +531,13 @@ export function describeStaged(
       return {
         title: `Delete tank: ${tank?.code ?? 'a tank'}`,
         detail: tank ? fuel(tank.productId) : undefined,
+      };
+    }
+    case 'RetireTank': {
+      const tank = saved.tanks?.find((t) => t.id === b.tankId);
+      return {
+        title: `Stop using tank: ${tank?.code ?? 'a tank'}`,
+        detail: tank ? `${fuel(tank.productId)}. Past records are kept.` : undefined,
       };
     }
     case 'DeletePump': {
