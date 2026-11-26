@@ -15,6 +15,14 @@ import { todayInBusinessTime } from '@/modules/expenses/ui/expense-format';
 import { MAX_DOCUMENT_LINES } from '../contracts';
 import { computeDocumentTotals, lineGross } from '../domain';
 import { DOC_LABELS, addDays, formatAmount, friendlyDate } from '../format';
+import {
+  UNIT_OPTIONS,
+  buildFuelChoices,
+  fuelUnit,
+  isListedUnit,
+  matchFuelChoice,
+  trimZeros,
+} from '../item-choices';
 import type {
   SalesDocumentDetail,
   SalesDocumentFuelOption,
@@ -61,9 +69,6 @@ const lineAmount = (line: Line): string => {
     return '';
   }
 };
-
-const trimZeros = (value: string): string =>
-  value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value;
 
 export function DocumentEditor({
   tenantId,
@@ -173,30 +178,7 @@ export function DocumentEditor({
     [lines, discountOn, taxOn, taxRate, mixedTax],
   );
 
-  const fuelChoices = useMemo(
-    () =>
-      fuels.flatMap((fuel) => {
-        const here = stationId ? fuel.prices.filter((price) => price.stationId === stationId) : [];
-        const prices = here.length > 0 ? here : fuel.prices;
-        const scoped = here.length > 0;
-        if (prices.length === 0) {
-          return [{ value: `${fuel.productId}|`, label: fuel.name, fuel, price: '', suffix: '' }];
-        }
-        return prices.map((price) => {
-          const many = !scoped && prices.length > 1;
-          return {
-            value: `${fuel.productId}|${price.stationId}`,
-            label: many
-              ? `${fuel.name} - ${price.stationName} (${formatAmount(price.unitPrice, 4, 2)})`
-              : `${fuel.name} (${formatAmount(price.unitPrice, 4, 2)})`,
-            fuel,
-            price: price.unitPrice,
-            suffix: many ? ` - ${price.stationName}` : '',
-          };
-        });
-      }),
-    [fuels, stationId],
-  );
+  const fuelChoices = useMemo(() => buildFuelChoices(fuels, stationId), [fuels, stationId]);
 
   const totals = useMemo(() => {
     try {
@@ -220,6 +202,9 @@ export function DocumentEditor({
     );
   }
 
+  /** Items whose unit is typed in rather than picked from the list. */
+  const [unitTyped, setUnitTyped] = useState<Record<number, boolean>>({});
+
   /** Which option each item uses: a fuel's value, or OTHER_VALUE for something typed. */
   const [itemChoices, setItemChoices] = useState<Record<number, string>>({});
   const currentItem = lines[itemIndex];
@@ -227,7 +212,7 @@ export function DocumentEditor({
     ? ''
     : (itemChoices[currentItem.key] ??
       (currentItem.productId
-        ? (fuelChoices.find((c) => c.fuel.productId === currentItem.productId)?.value ?? '')
+        ? matchFuelChoice(fuelChoices, currentItem)
         : currentItem.description
           ? OTHER_VALUE
           : ''));
@@ -238,6 +223,7 @@ export function DocumentEditor({
     setItemChoices((current) => ({ ...current, [line.key]: value }));
     if (value === OTHER_VALUE) {
       patch(line.key, { productId: null, description: '', unitLabel: '', unitPrice: '' });
+      setUnitTyped((current) => ({ ...current, [line.key]: false }));
       setFocusId(`sd-desc-${line.key}-other`);
     } else {
       applyFuel(value);
@@ -251,10 +237,23 @@ export function DocumentEditor({
     patch(line.key, {
       productId: choice.fuel.productId,
       description: `${choice.fuel.name}${choice.suffix}`,
-      unitLabel: choice.fuel.unit === 'KILOGRAMS' ? 'kg' : 'L',
+      unitLabel: fuelUnit(choice.fuel),
       unitPrice: trimZeros(choice.price),
       quantity: '',
     });
+    setUnitTyped((current) => ({ ...current, [line.key]: false }));
+    // A plain fuel has no price yet, so the price is the next thing to fill in.
+    if (choice.price === '') setFocusId(`sd-price-${line.key}`);
+  }
+
+  const unitChoiceFor = (line: Line): string =>
+    (unitTyped[line.key] ?? !isListedUnit(line.unitLabel)) ? OTHER_VALUE : line.unitLabel;
+
+  function chooseUnit(line: Line, value: string) {
+    const typed = value === OTHER_VALUE;
+    setUnitTyped((current) => ({ ...current, [line.key]: typed }));
+    patch(line.key, { unitLabel: typed ? '' : value });
+    if (typed) setFocusId(`sd-unit-${line.key}-other`);
   }
 
   function pickCustomer(id: string) {
@@ -590,12 +589,17 @@ export function DocumentEditor({
                 onChange={(e) => patch(item.key, { quantity: e.target.value })}
               />
               <Field id={`sd-unit-${item.key}`} label="Unit" optional>
-                <input
+                <SelectWithOther
                   id={`sd-unit-${item.key}`}
-                  value={item.unitLabel}
-                  maxLength={20}
-                  placeholder="L, kg, each"
-                  onChange={(e) => patch(item.key, { unitLabel: e.target.value })}
+                  options={UNIT_OPTIONS}
+                  otherLabel="Other (type it)"
+                  detailLabel="Which unit?"
+                  detailPlaceholder="For example: load"
+                  detailMaxLength={20}
+                  choice={unitChoiceFor(item)}
+                  onChoice={(value) => chooseUnit(item, value)}
+                  detail={item.unitLabel}
+                  onDetail={(value) => patch(item.key, { unitLabel: value })}
                 />
               </Field>
             </div>

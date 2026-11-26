@@ -321,7 +321,8 @@ function drawLines(p: Pages, doc: SalesDocumentDetail): void {
   const showDiscount = doc.lines.some((l) => !isZero(l.discountAmount));
   const showTax = doc.lines.some((l) => !isZero(l.taxRate));
   const cols = {
-    qty: 52,
+    // Wide enough for a quantity with its unit, e.g. "12,500 L" or "3 trip".
+    qty: 62,
     price: 66,
     disc: showDiscount ? 56 : 0,
     tax: showTax ? 40 : 0,
