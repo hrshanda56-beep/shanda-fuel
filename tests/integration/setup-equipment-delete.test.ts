@@ -282,6 +282,144 @@ describe('deleting unused tanks, pumps and nozzles (#315)', { timeout: 60_000 },
   });
 });
 
+describe('stopping use of equipment that has history (#316)', { timeout: 60_000 }, () => {
+  const state: Record<string, string> = {};
+  const tokenR = `equip-ret-owner-${run}`;
+  const r = {
+    tenant: randomUUID(),
+    legal: randomUUID(),
+    station: randomUUID(),
+    user: randomUUID(),
+    member: randomUUID(),
+    session: randomUUID(),
+  };
+  const AR = () => ({ tenantId: r.tenant, stationId: r.station });
+  let c: Sql;
+  let n = 0;
+  async function postR(body: Record<string, unknown>) {
+    n += 1;
+    const res = await setupPost(
+      new Request('http://127.0.0.1:3000/api/x', {
+        method: 'POST',
+        headers: {
+          ...clerkHeaders(tokenR),
+          'content-type': 'application/json',
+          'idempotency-key': `equip-ret-${run}-${n}`,
+        },
+        body: JSON.stringify(body),
+      }),
+    );
+    return { status: res.status, body: (await res.json()) as Record<string, any> };
+  }
+
+  beforeAll(async () => {
+    process.env.APP_ENV ??= 'test';
+    process.env.APP_URL ??= 'http://127.0.0.1:3000';
+    process.env.AUDIT_SIGNING_KEY_ID ??= 'integration-setup-key';
+    process.env.AUDIT_SIGNING_KEY ??= 'integration-setup-secret';
+    c = postgres(databaseUrl!, { max: 1, prepare: false });
+    await c.unsafe(`
+      insert into app.tenants (id, name, slug) values ('${r.tenant}', 'Retire Tenant', 'equip-ret-${run}');
+      insert into app.users (id, name, email) values ('${r.user}', 'Retire Owner', 'equip-ret-${run}@example.test');
+      insert into app.memberships (id, tenant_id, identity_id, status) values ('${r.member}', '${r.tenant}', '${r.user}', 'ACTIVE');
+      insert into app.legal_entities (id, tenant_id, legal_name) values ('${r.legal}', '${r.tenant}', 'Retire Legal');
+      insert into app.stations (id, tenant_id, legal_entity_id, code, name, status) values
+        ('${r.station}', '${r.tenant}', '${r.legal}', 'X${run}', 'Retire Station', 'ONBOARDING');
+      insert into app.membership_role_assignments (tenant_id, membership_id, role_code, scope_type, legal_entity_id, station_id) values
+        ('${r.tenant}', '${r.member}', 'OWNER', 'TENANT', null, null);
+    `);
+    await seedClerkSession(c, r.session, tokenR, r.user, true);
+    await seedActiveStepUp(c, r.session, r.tenant);
+    const fuel = await postR({
+      commandType: 'CreateProduct',
+      ...AR(),
+      code: 'DSL',
+      name: 'Diesel',
+    });
+    state.fuel = fuel.body.productId;
+    const pump = await postR({ commandType: 'CreatePump', ...AR(), number: '1' });
+    state.pump = pump.body.pumpId;
+    for (const number of ['1', '2']) {
+      const nozzle = await postR({
+        commandType: 'CreateNozzle',
+        ...AR(),
+        pumpId: state.pump,
+        number,
+        productId: state.fuel,
+        meterSerialNumber: `M-${run}-r${number}`,
+      });
+      expect(nozzle.status).toBe(200);
+      state[`nozzle${number}`] = nozzle.body.nozzleId;
+    }
+  });
+
+  afterAll(async () => {
+    await c?.end();
+  });
+
+  it('refuses while a shift is open at that station, and changes nothing', async () => {
+    const station2 = randomUUID();
+    await c`insert into app.stations (id, tenant_id, legal_entity_id, code, name, status)
+      values (${station2}, ${r.tenant}, ${r.legal}, ${'Y' + run}, 'Second Station', 'ONBOARDING')`;
+    const where = { tenantId: r.tenant, stationId: station2 };
+    const pump = await postR({ commandType: 'CreatePump', ...where, number: '1' });
+    expect(pump.status, JSON.stringify(pump.body)).toBe(200);
+    const nozzle = await postR({
+      commandType: 'CreateNozzle',
+      ...where,
+      pumpId: pump.body.pumpId,
+      number: '1',
+      productId: state.fuel,
+      meterSerialNumber: `M-${run}-s2`,
+    });
+    expect(nozzle.status, JSON.stringify(nozzle.body)).toBe(200);
+    const day = randomUUID();
+    const shift = randomUUID();
+    await c`insert into app.station_business_days (id, tenant_id, station_id, business_date)
+      values (${day}, ${r.tenant}, ${station2}, '2026-11-26')`;
+    await c`insert into app.shifts (id, tenant_id, station_id, business_day_id, planned_start_at, planned_end_at, business_date)
+      values (${shift}, ${r.tenant}, ${station2}, ${day}, now(), now() + interval '8 hours', '2026-11-26')`;
+    await c`update app.shifts set state = 'OPEN', opened_at = now() where id = ${shift}`;
+    for (const body of [
+      { commandType: 'RetireNozzle', nozzleId: nozzle.body.nozzleId },
+      { commandType: 'RetirePump', pumpId: pump.body.pumpId },
+    ]) {
+      const refused = await postR({ ...body, ...where });
+      expect(refused.status).toBe(409);
+      expect(JSON.stringify(refused.body)).toContain('A shift is open');
+    }
+    const [row] = await c`select status from app.nozzles where id = ${nozzle.body.nozzleId}`;
+    expect(row?.status).toBe('ACTIVE');
+  });
+
+  it('stops using one nozzle and keeps the rest and the history', async () => {
+    const done = await postR({ commandType: 'RetireNozzle', ...AR(), nozzleId: state.nozzle1 });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    const rows = await c`select id, status from app.nozzles where pump_id = ${state.pump!}`;
+    expect(rows.find((x) => x.id === state.nozzle1)?.status).toBe('INACTIVE');
+    expect(rows.find((x) => x.id === state.nozzle2)?.status).toBe('ACTIVE');
+    expect(
+      await c`select 1 from app.meter_installations where nozzle_id = ${state.nozzle1!}`,
+    ).toHaveLength(1);
+    const again = await postR({ commandType: 'RetireNozzle', ...AR(), nozzleId: state.nozzle1 });
+    expect(again.status).toBe(404);
+  });
+
+  it('stops using a pump with all its nozzles, and audits it', async () => {
+    const done = await postR({ commandType: 'RetirePump', ...AR(), pumpId: state.pump });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    const nozzles = await c`select status from app.nozzles where pump_id = ${state.pump!}`;
+    expect(nozzles.every((x) => x.status === 'INACTIVE')).toBe(true);
+    const [pump] = await c`select status from app.pumps where id = ${state.pump!}`;
+    expect(pump?.status).toBe('INACTIVE');
+    const audit = await c`
+      select event_code from platform.security_events
+      where tenant_id = ${r.tenant} and details->>'subjectId' = ${state.pump!}
+    `;
+    expect(audit.map((x) => x.event_code)).toContain('SETUP.PUMP_RETIRED');
+  });
+});
+
 describe('the delete statements, as the application role (#315)', { timeout: 60_000 }, () => {
   let runtime: Sql;
   const t = {

@@ -357,3 +357,42 @@ describe('deleting tanks, pumps and nozzles (#315)', () => {
     expect(view.nozzles?.[0]?.unused).toBe(true);
   });
 });
+
+describe('stopping use of a pump or nozzle with history (#316)', () => {
+  const saved = {
+    ...empty,
+    pumps: [{ id: 'pump-1', number: '1', name: null, status: 'ACTIVE', unused: false }],
+    nozzles: [
+      {
+        id: 'nozzle-1',
+        pumpId: 'pump-1',
+        number: '1',
+        productId: 'p1',
+        status: 'ACTIVE',
+        meterSerialNumber: 'M1',
+        meterWorkingSince: null,
+        meterWorkingSinceEditable: false,
+        unused: false,
+      },
+    ],
+  } as unknown as ConfigurationSetupOverview;
+
+  it('marks a retired nozzle as no longer in use and says what is kept', () => {
+    const q = addStaged([], SETUP, { ...base, commandType: 'RetireNozzle', nozzleId: 'nozzle-1' });
+    const view = applyStaged(saved, q);
+    expect(view.nozzles?.[0]?.status).toBe('INACTIVE');
+    expect(view.pumps?.[0]?.status).toBe('ACTIVE');
+    expect(describeStaged(q[0]!, view, saved)).toEqual({
+      title: 'Stop using nozzle 1',
+      detail: 'Diesel, on pump 1. Past records are kept.',
+    });
+  });
+
+  it('retires a pump together with its nozzles', () => {
+    const q = addStaged([], SETUP, { ...base, commandType: 'RetirePump', pumpId: 'pump-1' });
+    const view = applyStaged(saved, q);
+    expect(view.pumps?.[0]?.status).toBe('INACTIVE');
+    expect(view.nozzles?.[0]?.status).toBe('INACTIVE');
+    expect(describeStaged(q[0]!, view, saved).title).toBe('Stop using pump 1');
+  });
+});

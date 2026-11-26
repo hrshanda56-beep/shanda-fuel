@@ -36,6 +36,8 @@ import {
   planAddNozzle,
   planDeleteNozzle,
   planDeletePump,
+  planRetireNozzle,
+  planRetirePump,
   planRenumber,
   planSince,
   pumpLabel,
@@ -546,6 +548,54 @@ export function PumpWizard({
     );
   }
 
+  if (wizard.step === 'retirePump') {
+    const pump = pumpOf(renumber.pumpId);
+    return (
+      <WizardStep
+        wizard={alone}
+        title={pump ? `Stop using ${pumpLabel(pump)}?` : 'Stop using the pump?'}
+      >
+        <WizardNotice>
+          This pump has readings or sales, so it cannot be deleted. Stopping use of it, and its
+          nozzles, hides it from new readings and from this list. Everything already recorded is
+          kept, and past reports still show it. A shift must not be open when you do this.
+        </WizardNotice>
+        <WizardActions
+          wizard={wizard}
+          continueLabel="Stop using the pump"
+          onContinue={() => {
+            if (renumber.pumpId) onStage(planRetirePump({ ...where, pumpId: renumber.pumpId }));
+            wizard.go('done');
+          }}
+        />
+      </WizardStep>
+    );
+  }
+
+  if (wizard.step === 'retireNozzle') {
+    const nozzle = nozzles.find((n) => n.id === removeNozzleId);
+    return (
+      <WizardStep
+        wizard={alone}
+        title={nozzle ? `Stop using ${nozzleLabel(nozzle)}?` : 'Stop using the nozzle?'}
+      >
+        <WizardNotice>
+          This nozzle has readings or sales, so it cannot be deleted. Stopping use of it hides it
+          from new readings and from this list. Everything already recorded is kept, and past
+          reports still show it. A shift must not be open when you do this.
+        </WizardNotice>
+        <WizardActions
+          wizard={wizard}
+          continueLabel="Stop using the nozzle"
+          onContinue={() => {
+            if (removeNozzleId) onStage(planRetireNozzle({ ...where, nozzleId: removeNozzleId }));
+            wizard.go('done');
+          }}
+        />
+      </WizardStep>
+    );
+  }
+
   if (wizard.step === 'removeNozzle') {
     const nozzle = nozzles.find((n) => n.id === removeNozzleId);
     return (
@@ -678,12 +728,27 @@ export function PumpWizard({
               >
                 Delete nozzle {n.number}
               </Button>
-            ) : null}
+            ) : (
+              <Button
+                variant="quiet"
+                size="sm"
+                onClick={() => {
+                  setRemoveNozzleId(n.id);
+                  wizard.go('retireNozzle');
+                }}
+              >
+                Stop using nozzle {n.number}
+              </Button>
+            )}
           </div>
         ))}
         {pump?.unused ? (
           <Button variant="quiet" onClick={() => wizard.go('removePump')}>
             Delete {pumpLabel(pump)}
+          </Button>
+        ) : pump ? (
+          <Button variant="quiet" onClick={() => wizard.go('retirePump')}>
+            Stop using {pumpLabel(pump)}
           </Button>
         ) : null}
         <WizardActions

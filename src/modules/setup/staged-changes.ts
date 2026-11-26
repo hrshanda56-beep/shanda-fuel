@@ -383,6 +383,15 @@ export function applyStaged(
       case 'DeleteNozzle':
         nozzles = nozzles.filter((n) => n.id !== str(b.nozzleId));
         break;
+      case 'RetirePump':
+        pumps = patch(pumps, str(b.pumpId), { status: 'INACTIVE' });
+        nozzles = nozzles.map((n) =>
+          n.pumpId === str(b.pumpId) ? { ...n, status: 'INACTIVE' } : n,
+        );
+        break;
+      case 'RetireNozzle':
+        nozzles = patch(nozzles, str(b.nozzleId), { status: 'INACTIVE' });
+        break;
       case 'UpdatePump':
         pumps = patch(pumps, str(b.pumpId), {
           number: str(b.number),
@@ -534,6 +543,27 @@ export function describeStaged(
         title: `Delete nozzle ${nozzle?.number ?? ''}`.trim(),
         detail: nozzle
           ? `${fuel(nozzle.productId)}${onPump ? `, on pump ${onPump}` : ''}`
+          : undefined,
+      };
+    }
+    case 'RetirePump': {
+      const count = saved.nozzles?.filter((n) => n.pumpId === b.pumpId).length ?? 0;
+      return {
+        title:
+          `Stop using pump ${saved.pumps?.find((p) => p.id === b.pumpId)?.number ?? ''}`.trim(),
+        detail:
+          count > 0
+            ? `And its ${count === 1 ? 'nozzle' : `${count} nozzles`}. Past records are kept.`
+            : 'Past records are kept.',
+      };
+    }
+    case 'RetireNozzle': {
+      const nozzle = saved.nozzles?.find((n) => n.id === b.nozzleId);
+      const onPump = saved.pumps?.find((p) => p.id === nozzle?.pumpId)?.number;
+      return {
+        title: `Stop using nozzle ${nozzle?.number ?? ''}`.trim(),
+        detail: nozzle
+          ? `${fuel(nozzle.productId)}${onPump ? `, on pump ${onPump}` : ''}. Past records are kept.`
           : undefined,
       };
     }

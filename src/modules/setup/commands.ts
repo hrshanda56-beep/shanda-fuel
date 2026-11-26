@@ -45,6 +45,8 @@ export const SETUP_COMMAND_TYPES = [
   'UpdateNozzle',
   'DeletePump',
   'DeleteNozzle',
+  'RetirePump',
+  'RetireNozzle',
   'SetMeterWorkingSince',
   'DraftPriceChange',
   'UpdateSupplier',
@@ -1172,6 +1174,113 @@ export async function updateNozzleFromRequest(request: Request, input: unknown) 
   return updateNozzleCommand(await contextFor(request, payload), payload, keyOf(request));
 }
 
+const OPEN_SHIFT_REFUSAL =
+  'A shift is open at this station. Close it first so its readings are kept, then stop using the equipment.';
+
+type RetireTransaction = Parameters<Parameters<typeof executeInventoryCommand>[0]['execute']>[0];
+
+async function assertNoOpenShift(
+  transaction: RetireTransaction,
+  context: InventoryCommandContext,
+): Promise<void> {
+  const open = await transaction.execute<{ id: string }>(sql`
+    select id from app.shifts
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+      and state = 'OPEN'
+    limit 1
+  `);
+  if (open.length > 0) throw new AppError('CONFLICT', OPEN_SHIFT_REFUSAL);
+}
+
+/**
+ * Stops using a nozzle that has history (#316): it disappears from new readings, prices and the
+ * setup lists, and stays in every past record. Refused while a shift is open, because that shift
+ * could not then be closed with a reading for it.
+ */
+export function retireNozzleCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof nozzleRef>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.RetireNozzle',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.NOZZLE_RETIRED',
+      subjectType: 'Nozzle',
+      subjectId: payload.nozzleId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ status: string }>(sql`
+          select status from app.nozzles
+          where tenant_id = ${context.tenantId} and id = ${payload.nozzleId}
+        `);
+        return rows[0] ? { status: rows[0].status } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      await assertNoOpenShift(transaction, context);
+      const updated = await transaction.execute<{ id: string }>(sql`
+        update app.nozzles set status = 'INACTIVE'
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.nozzleId} and status = 'ACTIVE'
+        returning id
+      `);
+      if (updated.length !== 1) {
+        throw new AppError('NOT_FOUND', 'The nozzle was not found at this station');
+      }
+      return { nozzleId: payload.nozzleId, status: 'INACTIVE' };
+    },
+  });
+}
+
+/** Stops using a pump and all its nozzles (#316). Same rules as for a nozzle. */
+export function retirePumpCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof pumpRef>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.RetirePump',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PUMP_RETIRED',
+      subjectType: 'Pump',
+      subjectId: payload.pumpId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ status: string }>(sql`
+          select status from app.pumps
+          where tenant_id = ${context.tenantId} and id = ${payload.pumpId}
+        `);
+        return rows[0] ? { status: rows[0].status } : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      await assertNoOpenShift(transaction, context);
+      const updated = await transaction.execute<{ id: string }>(sql`
+        update app.pumps set status = 'INACTIVE'
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.pumpId} and status = 'ACTIVE'
+        returning id
+      `);
+      if (updated.length !== 1) {
+        throw new AppError('NOT_FOUND', 'The pump was not found at this station');
+      }
+      await transaction.execute(sql`
+        update app.nozzles set status = 'INACTIVE'
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and pump_id = ${payload.pumpId} and status = 'ACTIVE'
+      `);
+      return { pumpId: payload.pumpId, status: 'INACTIVE' };
+    },
+  });
+}
+
 export async function deletePumpFromRequest(request: Request, input: unknown) {
   const payload = pumpRef.parse(input);
   return deletePumpCommand(await contextFor(request, payload), payload, keyOf(request));
@@ -1449,4 +1558,14 @@ export function recordBankBalanceCommand(
 export async function recordBankBalanceFromRequest(request: Request, input: unknown) {
   const payload = recordBankBalancePayload.parse(input);
   return recordBankBalanceCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function retirePumpFromRequest(request: Request, input: unknown) {
+  const payload = pumpRef.parse(input);
+  return retirePumpCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function retireNozzleFromRequest(request: Request, input: unknown) {
+  const payload = nozzleRef.parse(input);
+  return retireNozzleCommand(await contextFor(request, payload), payload, keyOf(request));
 }
