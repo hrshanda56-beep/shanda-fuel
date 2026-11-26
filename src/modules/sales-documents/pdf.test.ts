@@ -165,3 +165,93 @@ describe('logo and brand colour', () => {
     expect(buildSalesDocumentPdf(base).toString('latin1')).not.toContain('/Subtype /Image');
   });
 });
+
+describe('page balance', () => {
+  /** The y position of the first text drawn with this exact string. */
+  const yOf = (text: string, label: string): number => {
+    const m = new RegExp(`([\\d.]+) ([\\d.]+) Td \\(${label}\\) Tj`).exec(text);
+    if (!m) throw new Error(`${label} not found`);
+    return Number(m[2]);
+  };
+
+  it('puts terms and payment details low on the page, with the closing note last', () => {
+    const text = buildSalesDocumentPdf(base).toString('latin1');
+    const notes = yOf(text, 'Notes');
+    const terms = yOf(text, 'Terms');
+    const bank = yOf(text, 'Payment details');
+    const closing = yOf(text, 'Thank you');
+    expect(terms).toBeLessThan(notes);
+    expect(bank).toBeLessThan(terms);
+    expect(closing).toBeLessThan(bank);
+    expect(terms).toBeLessThan(250);
+  });
+
+  it('keeps the same order on a quotation and still on one page', () => {
+    const text = buildSalesDocumentPdf({
+      ...base,
+      docType: 'QUOTATION',
+      docNumber: 'QT-2026-0001',
+    }).toString('latin1');
+    expect(Number(/\/Count (\d+)/.exec(text)![1])).toBe(1);
+    expect(yOf(text, 'Thank you')).toBeLessThan(yOf(text, 'Terms'));
+  });
+
+  it('lets the foot flow on when the body leaves no room for it', () => {
+    const many = {
+      ...base,
+      lines: Array.from({ length: 22 }, (_, i) => ({ ...base.lines[0]!, lineNo: i + 1 })),
+    };
+    const text = buildSalesDocumentPdf(many).toString('latin1');
+    expect(text).toContain('(Terms)');
+    expect(text).toContain('(Thank you)');
+  });
+});
+
+describe('logo box', () => {
+  /** A header-only JPEG of the given size: enough for the PDF writer, which embeds it as-is. */
+  const jpeg = (w: number, h: number): string =>
+    Buffer.from([
+      0xff,
+      0xd8,
+      0xff,
+      0xc0,
+      0x00,
+      0x11,
+      0x08,
+      h >> 8,
+      h & 255,
+      w >> 8,
+      w & 255,
+      0x03,
+      0x01,
+      0x22,
+      0x00,
+      0x02,
+      0x11,
+      0x01,
+      0x03,
+      0x11,
+      0x01,
+      0xff,
+      0xd9,
+    ]).toString('base64');
+
+  it.each([
+    ['very wide', 3000, 200],
+    ['very tall', 200, 3000],
+    ['square', 500, 500],
+    ['tiny', 20, 10],
+  ])('fits a %s logo in the box without stretching', (_name, w, h) => {
+    const text = buildSalesDocumentPdf({
+      ...base,
+      letterhead: { ...base.letterhead!, logoJpegBase64: jpeg(w, h) },
+    } as SalesDocumentDetail).toString('latin1');
+    const m = /q ([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm \/Im1 Do Q/.exec(text);
+    expect(m).not.toBeNull();
+    const dw = Number(m![1]);
+    const dh = Number(m![2]);
+    expect(dw).toBeLessThanOrEqual(140.01);
+    expect(dh).toBeLessThanOrEqual(56.01);
+    expect(dw / dh).toBeCloseTo(w / h, 1);
+  });
+});

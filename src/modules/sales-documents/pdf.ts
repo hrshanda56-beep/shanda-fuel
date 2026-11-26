@@ -19,6 +19,11 @@ const M = 40;
 const USABLE = W - 2 * M;
 const INK = '0.1 0.16 0.18';
 const MUTED = '0.35 0.4 0.42';
+/** The lowest y a body line may use; the page footer sits below it. */
+const FLOOR = M + 24;
+/** Every logo is scaled to fit this box, keeping its shape. */
+const LOGO_W = 140;
+const LOGO_H = 56;
 
 const round = (n: number): number => Math.round(n * 100) / 100;
 const width = (text: string, size: number, bold = false): number =>
@@ -168,7 +173,7 @@ class Pages {
 
   /** Makes sure `need` points are free, otherwise starts a new page. Returns true if it did. */
   ensure(need: number): boolean {
-    if (this.y - need >= M + 24) return false;
+    if (this.y - need >= FLOOR) return false;
     this.newPage();
     return true;
   }
@@ -189,7 +194,7 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
   let textX = M;
   let logoBottom = top;
   if (logo) {
-    const scale = Math.min(150 / logo.width, 50 / logo.height);
+    const scale = Math.min(LOGO_W / logo.width, LOGO_H / logo.height);
     const lw = logo.width * scale;
     const lhh = logo.height * scale;
     p.image(M, top - lhh, lw, lhh);
@@ -283,15 +288,8 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
     drawTotals(p, doc);
   }
 
-  // ---- Notes / terms / bank / footer ----
-  const blocks: [string, string | null | undefined][] = [
-    ['Notes', doc.notes],
-    ['Terms', doc.terms],
-    ['Payment details', doc.docType === 'RECEIPT' ? null : lh?.bankDetails],
-    ['Reason voided', doc.status === 'VOIDED' ? doc.voidReason : null],
-  ];
-  for (const [label, text] of blocks) {
-    if (!text) continue;
+  // ---- Notes follow the totals; terms, payment details and the closing note sit at the foot ----
+  const drawBlock = (label: string, text: string): void => {
     const lines = wrap(text, USABLE, 9);
     p.ensure(20 + lines.length * 12);
     p.text(M, p.y, label, 8, { color: MUTED, bold: true });
@@ -301,14 +299,30 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
       p.y -= 12;
     }
     p.y -= 6;
-  }
-  if (lh?.footer) {
-    const lines = wrap(lh.footer, USABLE, 8);
-    p.ensure(lines.length * 11 + 8);
+  };
+  if (doc.notes) drawBlock('Notes', doc.notes);
+
+  const footBlocks: [string, string][] = (
+    [
+      ['Reason voided', doc.status === 'VOIDED' ? doc.voidReason : null],
+      ['Terms', doc.terms],
+      ['Payment details', doc.docType === 'RECEIPT' ? null : lh?.bankDetails],
+    ] as [string, string | null | undefined][]
+  ).filter((b): b is [string, string] => Boolean(b[1]));
+  const closing = lh?.footer ? wrap(lh.footer, USABLE, 8) : [];
+  const footHeight =
+    footBlocks.reduce((sum, [, text]) => sum + 18 + wrap(text, USABLE, 9).length * 12, 0) +
+    (closing.length ? closing.length * 11 + 16 : 0);
+  // When the whole foot fits on this page, sit it at the bottom; otherwise let it flow on.
+  const footTop = FLOOR + footHeight;
+  if (footHeight > 0 && p.y - 8 >= footTop) p.y = footTop;
+  for (const [label, text] of footBlocks) drawBlock(label, text);
+  if (closing.length) {
+    p.ensure(closing.length * 11 + 8);
     p.y -= 4;
     p.line(M, p.y, W - M, '0.85 0.88 0.89');
     p.y -= 12;
-    for (const line of lines) {
+    for (const line of closing) {
       p.text(M, p.y, line, 8, { color: MUTED });
       p.y -= 11;
     }
