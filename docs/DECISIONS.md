@@ -1289,10 +1289,10 @@ Date: 2026-11-21. Source: the owner's feedback round (issue #258) and the owner'
 ## DEC-058 — More than one tank of the same fuel at a station: check stock per fuel (option B) (#314, 2026-11-26)
 
 Date: 2026-11-26. Source: the client's feedback round (issue #314) and the owner's instruction in chat ("option B").
-**Status:** direction ACCEPTED; **not built**. The build waits on the open point in item 4 and needs the owner's answer.
+**Status:** direction and cost method ACCEPTED; **not built**. The build touches the cost core and needs a migration, so it is a separate, reviewed piece of work.
 
 1. **Today.** A station can have one active tank per fuel. Adding a second is refused with a plain message (reworded in this change). Pumps and nozzles are not linked to tanks, so a day's sales of a fuel cannot be split between two tanks.
 2. **Direction (option B).** Keep the stock check per fuel, not per tank: add up the tanks' opening stock, deliveries, adjustments and closing dips for a fuel and compare the total with that fuel's sales. Nozzles are **not** linked to tanks.
 3. **What this touches.** The day's stock check (`daily-reconciliation.ts`, which now subtracts all of a fuel's sales from each tank), the production reconciliation (it refuses a sale whose fuel has more than one active tank, and leaves a tank's expected stock empty when it shares its fuel), tank dips and deliveries (still recorded per tank), variance and alerts, and reports that show a tank's gap. A per-tank gap cannot be told under option B, so screens show the gap for the fuel and each tank's dip separately.
-4. **Open point, needs the owner.** Fuel cost is tracked per tank (cost streams, sale cost attribution). With two tanks of one fuel, a sale has no single source tank. Choose before building: (a) cost the fuel as one pool across its tanks, or (b) assign each sale to the tank with the oldest stock first. This changes cost of sales and profit, so it must not be guessed.
-5. **Until then.** The one-tank limit stays and its message says so in plain words.
+4. **Cost: one pool per fuel (owner's answer, 2026-11-26).** Tanks of the same fuel are treated as one for cost. The fuel has one cost pool across its tanks, and the tanks are shown separately only so stock can be dipped and delivered into each one. A tank may be empty while another holds the fuel. The selling price is per fuel, so every tank of a fuel has the same price. A sale has no source tank. It draws on the fuel's pool. This changes cost of sales and profit, so the build must prove old single-tank figures do not change.
+5. **Until it is built.** The one-tank limit stays and its message says so in plain words.
