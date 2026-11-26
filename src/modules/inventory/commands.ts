@@ -362,7 +362,7 @@ async function insertTank(
   if (sameFuel[0]) {
     throw new AppError(
       'CONFLICT',
-      `This station already has an active tank for this fuel (${sameFuel[0].code}). Two tanks of the same fuel cannot be tracked yet. Ask the owner before adding another.`,
+      `This station can only track one tank for each fuel for now, and ${sameFuel[0].code} is already in use for this fuel. Support for more than one tank of the same fuel is planned.`,
     );
   }
   const tankId = randomUUID();
