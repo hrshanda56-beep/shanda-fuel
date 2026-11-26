@@ -2,6 +2,8 @@
 
 **Updated 2026-11-01** for `main` at `6e4bb214`: 95 migrations, 0000 to 0110 (no 0104) (0098 to 0102 added 2026-11-02, 0103 on 2026-11-11, 0105 to 0108 on 2026-11-16/17, 0109 and 0110 on 2026-11-18 with the sales-documents module). Production's own count is not known from the repository: read it first (section 4, step 2).
 
+> **Pending 2026-11-26: `0122_unused_equipment_delete` (branch `fix/setup-equipment-edit-315`, not applied anywhere but local test databases).** Grants `DELETE` to `app_runtime` on `products`, `tanks`, `tank_calibration_points`, `pumps`, `nozzles`, `meters` and `meter_installations` only, so setup can delete a fuel, tank, pump or nozzle that was never used (#315). No schema change. Every history table refers to these through NO ACTION foreign keys and tanks keep `tanks_history_delete_guard`, so a used row still cannot be deleted. Without it, "Delete this fuel" (existing since #233) fails for real users, because migration 0020 removed `DELETE` from `app_runtime`. CI's `assert-ci-runtime-role.sh` and `db.smoke.test.ts` list the new measured set.
+>
 > **Update 2026-11-23: 0120 and 0121 are applied, production is at 106 migrations, ending at `0121_owner_self_approval` (see the 0120 to 0121 record in section 7).** Production's earlier count of 104 (through 0119) was read on 2026-11-23 from the production database before the run, and 106 after it.
 >
 > **Update 2026-11-19: 0111 is applied, production is at 96 migrations (see the 0111 record in section 7).**

@@ -65,9 +65,11 @@ app_delete_tables="$(psql "${DATABASE_URL}" --tuples-only --no-align --command \
 printf 'app_delete_tables=%s\n' "${app_delete_tables}"
 # The delivery compartment and seal tables are draft replacement tables too: migration 0065 grants
 # DELETE, and the delivery_detail_status_guard trigger refuses any change unless the delivery is a draft.
+# Migration 0122 adds the station equipment tables: setup may delete a fuel, tank, pump or nozzle
+# only while nothing refers to it, which NO ACTION foreign keys and the tank history trigger enforce.
 test "${app_delete_tables}" = \
-  'fuel_delivery_compartment_seals,fuel_delivery_compartments,reconciliation_attendants,reconciliation_delivery_refs,reconciliation_dip_refs,reconciliation_expenses,reconciliation_meter_readings,reconciliation_payments,reconciliation_variance_explanations'
-echo 'Measured DELETE capability: app_runtime retains only draft replacement tables (reconciliation and delivery compartments)'
+  'fuel_delivery_compartment_seals,fuel_delivery_compartments,meter_installations,meters,nozzles,products,pumps,reconciliation_attendants,reconciliation_delivery_refs,reconciliation_dip_refs,reconciliation_expenses,reconciliation_meter_readings,reconciliation_payments,reconciliation_variance_explanations,tank_calibration_points,tanks'
+echo 'Measured DELETE capability: app_runtime retains only draft replacement tables (reconciliation and delivery compartments) and never-used station equipment'
 
 rate_limit_public_execute="$(psql "${DATABASE_URL}" --tuples-only --no-align --command \
   "select coalesce(bool_or(acl.grantee = 0 and acl.privilege_type = 'EXECUTE'), false)

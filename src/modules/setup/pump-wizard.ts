@@ -2,12 +2,12 @@ import { planNozzleRenumbering } from './nozzle-renumber';
 import { STAND_IN_PREFIX, type StagedChange } from './staged-changes';
 
 /**
- * The rules of the pumps and nozzles wizard (#249): add a nozzle (on a pump that exists or on a new
- * one), change the numbers of a pump and its nozzles, or correct the day a meter started working.
- * One question per screen. Pure, so the screen only draws what these decide; nothing is saved here,
- * the changes join the list of waiting changes.
+ * The rules of the pumps and nozzles wizard (#249, #317): add a pump and then its nozzles, add
+ * nozzles to a pump you have, change or remove a pump and its nozzles, or correct the day a meter
+ * started working. One question per screen. Pure, so the screen only draws what these decide;
+ * nothing is saved here, the changes join the list of waiting changes.
  */
-export type PumpFlow = 'add' | 'renumber' | 'since';
+export type PumpFlow = 'addPump' | 'add' | 'renumber' | 'since';
 
 export const NEW_PUMP = 'new';
 export const MAX_NUMBER = 16;
@@ -54,11 +54,15 @@ export const BLANK_ADD: AddAnswers = {
   sinceDate: '',
 };
 
-/** The steps that apply to these answers, in order, for "Step 2 of 5". */
-export function addSteps(answers: AddAnswers, hasPumps: boolean): readonly AddStep[] {
-  const newPump = !hasPumps || answers.pump === NEW_PUMP;
+/**
+ * The steps that apply to these answers, in order, for "Step 2 of 5". `pickPump` is true when the
+ * person is adding nozzles to a pump they already have, so the first question is which one; when
+ * adding a new pump it starts with the pump itself (#317).
+ */
+export function addSteps(answers: AddAnswers, pickPump: boolean): readonly AddStep[] {
+  const newPump = !pickPump || answers.pump === NEW_PUMP;
   return [
-    ...(hasPumps ? (['pump'] as const) : []),
+    ...(pickPump ? (['pump'] as const) : []),
     ...(newPump ? (['newPump'] as const) : []),
     'nozzle',
     'meter',
@@ -183,7 +187,7 @@ export function planAddNozzle(input: {
 
 /* --------------------------- change numbers --------------------------- */
 
-export type RenumberStep = 'pickPump' | 'numbers' | 'reviewNumbers';
+export type RenumberStep = 'pickPump' | 'numbers' | 'reviewNumbers' | 'removePump' | 'removeNozzle';
 
 export type RenumberAnswers = {
   pumpId: string | null;
@@ -292,6 +296,38 @@ export function renumberIsUnchanged(input: {
   answers: RenumberAnswers;
 }): boolean {
   return planRenumber({ tenantId: '', stationId: '', ...input }).length === 0;
+}
+
+/* --------------------------- remove (#315) --------------------------- */
+
+/** Deletes a pump that was never used, with its nozzles. Only offered while `pump.unused`. */
+export function planDeletePump(input: {
+  tenantId: string;
+  stationId: string;
+  pumpId: string;
+}): StagedChange[] {
+  return [
+    {
+      id: `staged-${nextId()}`,
+      url: '/api/setup/commands',
+      body: { commandType: 'DeletePump', ...input },
+    },
+  ];
+}
+
+/** Deletes a nozzle that was never used, with its meter. Only offered while `nozzle.unused`. */
+export function planDeleteNozzle(input: {
+  tenantId: string;
+  stationId: string;
+  nozzleId: string;
+}): StagedChange[] {
+  return [
+    {
+      id: `staged-${nextId()}`,
+      url: '/api/setup/commands',
+      body: { commandType: 'DeleteNozzle', ...input },
+    },
+  ];
 }
 
 /* ------------------------ when a meter started working ------------------------ */

@@ -8,12 +8,14 @@ import {
   checkReminder,
   checkSentence,
   checkSize,
+  deleteTankCommand,
   limitValues,
   plainNumber,
   reminderSentence,
   reorderLevel,
   reorderSuggestions,
   tankCommand,
+  tankFuelMismatch,
   withSeparators,
   type TankAnswers,
 } from './tank-wizard';
@@ -218,5 +220,74 @@ describe('the check screen wording', () => {
       ),
     ).toBe('Remind me when it falls to 10,000 litres');
     expect(reminderSentence(answers({ remind: false }), 'litres')).toBe('No reminder');
+  });
+});
+
+describe('a tank put under the wrong fuel (#315)', () => {
+  const diesel = { id: 'd', name: 'Diesel', kind: 'DIESEL' };
+  const petrol = { id: 'p', name: 'Petrol', kind: 'PETROL' };
+  const fuels = [diesel, petrol];
+
+  it('warns when the name points to another fuel at the station', () => {
+    expect(tankFuelMismatch('PETROL1', diesel, fuels)).toEqual({ id: 'p', name: 'Petrol' });
+    expect(tankFuelMismatch('ULP tank', diesel, fuels)).toEqual({ id: 'p', name: 'Petrol' });
+    expect(tankFuelMismatch('Unleaded 2', diesel, fuels)).toEqual({ id: 'p', name: 'Petrol' });
+  });
+
+  it('warns about a common fuel word before that fuel has been added', () => {
+    expect(tankFuelMismatch('PETROL1', diesel, [diesel])).toEqual({ id: null, name: 'Petrol' });
+  });
+
+  it('says nothing when the name fits the fuel or names no fuel', () => {
+    expect(tankFuelMismatch('DIESEL1', diesel, fuels)).toBeNull();
+    expect(tankFuelMismatch('DSL main', diesel, fuels)).toBeNull();
+    expect(tankFuelMismatch('Tank 1', diesel, fuels)).toBeNull();
+    expect(tankFuelMismatch('T1', diesel, fuels)).toBeNull();
+  });
+
+  it('matches a fuel by its own name, not only common words', () => {
+    const premium = { id: 'x', name: 'Premium', kind: 'PETROL' };
+    expect(tankFuelMismatch('PREMIUM-A', diesel, [diesel, premium])).toEqual({
+      id: 'x',
+      name: 'Premium',
+    });
+  });
+});
+
+describe('moving or deleting an unused tank (#315)', () => {
+  const finished = answers({
+    name: 'PETROL1',
+    capacity: '10000',
+    remind: false,
+    limitMode: 'usual',
+  });
+  const where = { tenantId: 't', stationId: 's', existingCodes: [] };
+
+  it('sends the new fuel only when it changes', () => {
+    const moved = tankCommand({
+      answers: finished,
+      ...where,
+      tankId: 'tank-1',
+      productId: 'petrol',
+      currentProductId: 'diesel',
+    });
+    expect(moved).toMatchObject({ commandType: 'UpdateTank', productId: 'petrol' });
+    const kept = tankCommand({
+      answers: finished,
+      ...where,
+      tankId: 'tank-1',
+      productId: 'diesel',
+      currentProductId: 'diesel',
+    });
+    expect(kept).not.toHaveProperty('productId');
+  });
+
+  it('builds the delete command', () => {
+    expect(deleteTankCommand({ tenantId: 't', stationId: 's', tankId: 'tank-1' })).toEqual({
+      commandType: 'DeleteTank',
+      tenantId: 't',
+      stationId: 's',
+      tankId: 'tank-1',
+    });
   });
 });

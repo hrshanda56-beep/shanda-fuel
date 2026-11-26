@@ -9,6 +9,7 @@ import {
   setTankVarianceLimitsFromRequest,
   updateTankFromRequest,
   deactivateTankFromRequest,
+  deleteTankFromRequest,
   approveInventoryCostRevaluationFromRequest,
   postInventoryAdjustmentFromRequest,
   postInventoryCostRevaluationFromRequest,
@@ -28,6 +29,7 @@ const COMMANDS = [
   'CreateTank',
   'UpdateTank',
   'DeactivateTank',
+  'DeleteTank',
   'SetTankVarianceLimits',
   'RecordTankDip',
   'VoidTankDip',
@@ -76,6 +78,9 @@ export const POST = withRequestObservability(
           break;
         case 'DeactivateTank':
           result = await deactivateTankFromRequest(request, body);
+          break;
+        case 'DeleteTank':
+          result = await deleteTankFromRequest(request, body);
           break;
         case 'RecordTankDip':
           result = await recordTankDipFromRequest(request, body);

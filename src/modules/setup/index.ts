@@ -5,6 +5,8 @@ export {
   createNozzleFromRequest,
   createProductFromRequest,
   deleteProductFromRequest,
+  deletePumpFromRequest,
+  deleteNozzleFromRequest,
   renameProductFromRequest,
   setProductUnitFromRequest,
   setProductStatusFromRequest,

@@ -30,10 +30,11 @@ function data(over: Partial<ConfigurationSetupOverview> = {}): ConfigurationSetu
         reorderLevelLitres: null,
         acceptableVarianceLitres: '50.000',
         varianceRedLitres: null,
+        unused: true,
         status: 'ACTIVE',
       },
     ],
-    pumps: [{ id: 'u1', number: '1', name: null, status: 'ACTIVE' }],
+    pumps: [{ id: 'u1', number: '1', name: null, status: 'ACTIVE', unused: true }],
     nozzles: [
       {
         id: 'n1',
@@ -44,6 +45,7 @@ function data(over: Partial<ConfigurationSetupOverview> = {}): ConfigurationSetu
         meterSerialNumber: null,
         meterWorkingSince: null,
         meterWorkingSinceEditable: false,
+        unused: true,
       },
     ],
     shiftTemplates: [

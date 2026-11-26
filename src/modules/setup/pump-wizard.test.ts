@@ -17,6 +17,8 @@ import {
   isCalendarDay,
   nextNumber,
   planAddNozzle,
+  planDeleteNozzle,
+  planDeletePump,
   planRenumber,
   planSince,
   pumpLabel,
@@ -288,6 +290,52 @@ describe('when a meter started working', () => {
       ...where,
       nozzleId: 'n',
       meterWorkingSinceDate: '2026-11-01',
+    });
+  });
+});
+
+describe('adding a pump first, then its nozzles (#317)', () => {
+  it('starts with the pump itself, with no "which pump" question', () => {
+    expect(addSteps(add({ pump: NEW_PUMP }), false)).toEqual([
+      'newPump',
+      'nozzle',
+      'meter',
+      'when',
+      'review',
+    ]);
+  });
+
+  it('creates the pump before the nozzle on it, linked by a stand-in', () => {
+    const plan = planAddNozzle({
+      tenantId: 't',
+      stationId: 's',
+      productId: 'p',
+      answers: add({
+        pump: NEW_PUMP,
+        pumpNumber: '3',
+        nozzleNumber: '1',
+        meter: 'M',
+        since: 'today',
+      }),
+    });
+    expect(plan.map((c) => c.body.commandType)).toEqual(['CreatePump', 'CreateNozzle']);
+    expect(plan[1]!.body.pumpId).toBe(plan[0]!.standIn);
+  });
+});
+
+describe('removing a pump or nozzle (#315)', () => {
+  it('plans the deletes', () => {
+    expect(planDeletePump({ tenantId: 't', stationId: 's', pumpId: 'u1' })[0]!.body).toEqual({
+      commandType: 'DeletePump',
+      tenantId: 't',
+      stationId: 's',
+      pumpId: 'u1',
+    });
+    expect(planDeleteNozzle({ tenantId: 't', stationId: 's', nozzleId: 'n1' })[0]!.body).toEqual({
+      commandType: 'DeleteNozzle',
+      tenantId: 't',
+      stationId: 's',
+      nozzleId: 'n1',
     });
   });
 });

@@ -45,6 +45,7 @@ import {
   loadTankForUpdate,
   postInventoryMovementInTransaction,
 } from './persistence';
+import { tankInUseSql } from './equipment-usage';
 import {
   approveInventoryCostRevaluationInTransaction,
   persistInventoryCostProjectionInTransaction,
@@ -91,12 +92,16 @@ const updateTankPayload = authorityPayload.extend({
   reorderLevelLitres: decimalText.nullable(),
   acceptableVarianceLitres: decimalText.nullable(),
   varianceRedLitres: decimalText.nullable(),
+  /** Moves the tank to another fuel. Only allowed while nothing has been recorded against it. */
+  productId: uuid.optional(),
 });
 
 const deactivateTankPayload = authorityPayload.extend({
   tankId: uuid,
   status: z.enum(['INACTIVE', 'RETIRED']),
 });
+
+const deleteTankPayload = authorityPayload.extend({ tankId: uuid });
 
 const dipPayload = authorityPayload.extend({
   tankId: uuid,
@@ -323,6 +328,55 @@ function assertVarianceLimits(
   }
 }
 
+/**
+ * Pumps are not linked to individual tanks, so the day's stock check cannot tell two tanks of one
+ * fuel apart and would refuse to close the day. Refuse the second tank up front instead.
+ */
+async function assertNoOtherActiveTankForFuel(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  productId: string,
+  exceptTankId?: string,
+): Promise<void> {
+  const sameFuel = await transaction.execute<{ code: string }>(sql`
+    select code from app.tanks
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+      and product_id = ${productId} and status = 'ACTIVE'
+      and (${exceptTankId ?? null}::uuid is null or id <> ${exceptTankId ?? null}::uuid)
+    limit 1
+  `);
+  if (sameFuel[0]) {
+    throw new AppError(
+      'CONFLICT',
+      `This station already has an active tank for this fuel (${sameFuel[0].code}). Two tanks of the same fuel cannot be tracked yet. Ask the owner before adding another.`,
+    );
+  }
+}
+
+/** Refuses a change that only an unused tank may have (#315): a new fuel, or being deleted. */
+async function assertTankUnused(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  tankId: string,
+  refusal: string,
+): Promise<void> {
+  const rows = await transaction.execute<{ used: boolean }>(sql`
+    select ${tankInUseSql('t')} as used from app.tanks t
+    where t.tenant_id = ${context.tenantId} and t.station_id = ${context.stationId}
+      and t.id = ${tankId}
+  `);
+  if (rows[0]?.used) throw new AppError('CONFLICT', refusal);
+}
+
+/** A foreign key (23503) or the tank history trigger refused a delete: the row has history. */
+function isHistoryRefusal(error: unknown): boolean {
+  const codes = [
+    (error as { code?: string })?.code,
+    (error as { cause?: { code?: string } })?.cause?.code,
+  ];
+  return codes.includes('23503') || codes.includes('P0001');
+}
+
 async function insertTank(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
@@ -345,26 +399,7 @@ async function insertTank(
     throw new AppError('VALIDATION_FAILED', 'Acceptable variance cannot be negative');
   }
   assertVarianceLimits(payload.acceptableVarianceLitres, payload.varianceRedLitres);
-  // Pumps are not linked to individual tanks, so the day's stock check cannot tell two tanks of one
-  // fuel apart and would refuse to close the day. Refuse the second tank up front instead.
-  const sameFuel = await transaction
-    .select({ code: tanks.code })
-    .from(tanks)
-    .where(
-      and(
-        eq(tanks.tenantId, context.tenantId),
-        eq(tanks.stationId, context.stationId),
-        eq(tanks.productId, payload.productId),
-        eq(tanks.status, 'ACTIVE'),
-      ),
-    )
-    .limit(1);
-  if (sameFuel[0]) {
-    throw new AppError(
-      'CONFLICT',
-      `This station already has an active tank for this fuel (${sameFuel[0].code}). Two tanks of the same fuel cannot be tracked yet. Ask the owner before adding another.`,
-    );
-  }
+  await assertNoOtherActiveTankForFuel(transaction, context, payload.productId);
   const tankId = randomUUID();
   try {
     await transaction.insert(tanks).values({
@@ -452,14 +487,17 @@ export async function updateTankFromRequest(request: Request, input: unknown) {
           reorder: string | null;
           acceptable: string | null;
           red: string | null;
+          product_id: string;
         }>(sql`
           select code, capacity_litres::text as capacity, reorder_level_litres::text as reorder,
-            acceptable_variance_litres::text as acceptable, variance_red_litres::text as red
+            acceptable_variance_litres::text as acceptable, variance_red_litres::text as red,
+            product_id
           from app.tanks where tenant_id = ${context.tenantId} and id = ${payload.tankId}
         `);
         return rows[0]
           ? {
               code: rows[0].code,
+              productId: rows[0].product_id,
               capacityLitres: rows[0].capacity,
               reorderLevelLitres: rows[0].reorder,
               acceptableVarianceLitres: rows[0].acceptable,
@@ -477,10 +515,25 @@ export async function updateTankFromRequest(request: Request, input: unknown) {
       if (tank.status === 'RETIRED') {
         throw new AppError('CONFLICT', 'A retired tank cannot be changed');
       }
+      const newFuel =
+        payload.productId && payload.productId !== tank.productId ? payload.productId : null;
+      if (newFuel) {
+        await assertProductBelongsToTenant(transaction, context.tenantId, newFuel);
+        await assertTankUnused(
+          transaction,
+          context,
+          tank.id,
+          'This tank already has stock records, so its fuel cannot be changed. Retire it and add a new tank for the other fuel.',
+        );
+        if (tank.status === 'ACTIVE') {
+          await assertNoOtherActiveTankForFuel(transaction, context, newFuel, tank.id);
+        }
+      }
       try {
         await transaction
           .update(tanks)
           .set({
+            ...(newFuel ? { productId: newFuel } : {}),
             code: payload.code,
             capacityLitres: capacity.toString(),
             reorderLevelLitres: payload.reorderLevelLitres
@@ -511,7 +564,76 @@ export async function updateTankFromRequest(request: Request, input: unknown) {
         }
         throw error;
       }
-      return { tankId: tank.id, code: payload.code };
+      return { tankId: tank.id, code: payload.code, productId: newFuel ?? tank.productId };
+    },
+  });
+}
+
+/**
+ * Deletes a tank that was set up by mistake (#315), with its calibration chart. Only a tank with
+ * nothing recorded against it may go; one with history is retired instead (DeactivateTank).
+ */
+export async function deleteTankFromRequest(request: Request, input: unknown) {
+  const payload = deleteTankPayload.parse(input);
+  const context = await contextFor(request, payload);
+  const key = requireIdempotency(request);
+  const refusal =
+    'This tank already has stock records, so it cannot be deleted. Retire it instead.';
+  return executeInventoryCommand({
+    context,
+    commandType: 'DeleteTank',
+    permissionCode: 'inventory.tank.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'INVENTORY.TANK_DELETED',
+      subjectType: 'Tank',
+      subjectId: payload.tankId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{
+          code: string;
+          product_id: string;
+          capacity: string;
+          status: string;
+        }>(sql`
+          select code, product_id, capacity_litres::text as capacity, status
+          from app.tanks where tenant_id = ${context.tenantId} and id = ${payload.tankId}
+        `);
+        return rows[0]
+          ? {
+              code: rows[0].code,
+              productId: rows[0].product_id,
+              capacityLitres: rows[0].capacity,
+              status: rows[0].status,
+            }
+          : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      const tank = await loadTankForUpdate(transaction, {
+        tenantId: context.tenantId,
+        stationId: context.stationId,
+        tankId: payload.tankId,
+      });
+      await assertTankUnused(transaction, context, tank.id, refusal);
+      try {
+        await transaction.execute(sql`
+          delete from app.tank_calibration_points
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and tank_id = ${tank.id}
+        `);
+        const deleted = await transaction.execute<{ id: string }>(sql`
+          delete from app.tanks
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${tank.id}
+          returning id
+        `);
+        if (deleted.length !== 1) throw new AppError('NOT_FOUND', 'The tank was not found');
+      } catch (error) {
+        if (isHistoryRefusal(error)) throw new AppError('CONFLICT', refusal);
+        throw error;
+      }
+      return { tankId: tank.id, code: tank.code };
     },
   });
 }

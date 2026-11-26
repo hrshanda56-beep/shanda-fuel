@@ -12,6 +12,7 @@ import {
   type PermissionCode,
 } from '../../platform/security/permissions';
 import { resolveInventoryCommandContext } from '../inventory/application';
+import { nozzleInUseSql, pumpInUseSql, tankInUseSql } from '../inventory/equipment-usage';
 import { computeSetupBlockers } from './blockers';
 import { resolveSetupCapabilities } from './capabilities';
 import type { ConfigurationSetupOverview } from './contracts';
@@ -81,16 +82,25 @@ export async function getSetupOverview(args: {
           acceptable_variance_litres: string | null;
           variance_red_litres: string | null;
           status: string;
+          in_use: boolean;
         }>(sql`
-          select id, code, product_id, capacity_litres::text, reorder_level_litres::text,
-            acceptable_variance_litres::text, variance_red_litres::text, status
-          from app.tanks where tenant_id = ${tenantId} and station_id = ${stationId}
-          order by code`)
+          select t.id, t.code, t.product_id, t.capacity_litres::text, t.reorder_level_litres::text,
+            t.acceptable_variance_litres::text, t.variance_red_litres::text, t.status,
+            ${tankInUseSql('t')} as in_use
+          from app.tanks t where t.tenant_id = ${tenantId} and t.station_id = ${stationId}
+          order by t.code`)
       : null;
     const pumps = view.stationView
-      ? await tx.execute<{ id: string; number: string; name: string | null; status: string }>(sql`
-          select id, number, name, status from app.pumps
-          where tenant_id = ${tenantId} and station_id = ${stationId} order by number`)
+      ? await tx.execute<{
+          id: string;
+          number: string;
+          name: string | null;
+          status: string;
+          in_use: boolean;
+        }>(sql`
+          select p.id, p.number, p.name, p.status, ${pumpInUseSql('p')} as in_use
+          from app.pumps p
+          where p.tenant_id = ${tenantId} and p.station_id = ${stationId} order by p.number`)
       : null;
     const nozzles = view.stationView
       ? await tx.execute<{
@@ -102,8 +112,10 @@ export async function getSetupOverview(args: {
           meter_serial_number: string | null;
           meter_working_since: string | null;
           meter_working_since_editable: boolean;
+          in_use: boolean;
         }>(sql`
           select n.id, n.pump_id, n.number, n.product_id, n.status,
+            ${nozzleInUseSql('n')} as in_use,
             (select m.serial_number from app.meter_installations i
                join app.meters m on m.tenant_id = i.tenant_id and m.id = i.meter_id
               where i.tenant_id = n.tenant_id and i.station_id = n.station_id
@@ -217,9 +229,16 @@ export async function getSetupOverview(args: {
           acceptableVarianceLitres: r.acceptable_variance_litres,
           varianceRedLitres: r.variance_red_litres,
           status: r.status,
+          unused: r.in_use !== true,
         })) ?? null,
       pumps:
-        pumps?.map((r) => ({ id: r.id, number: r.number, name: r.name, status: r.status })) ?? null,
+        pumps?.map((r) => ({
+          id: r.id,
+          number: r.number,
+          name: r.name,
+          status: r.status,
+          unused: r.in_use !== true,
+        })) ?? null,
       nozzles:
         nozzles?.map((r) => ({
           id: r.id,
@@ -230,6 +249,7 @@ export async function getSetupOverview(args: {
           meterSerialNumber: r.meter_serial_number,
           meterWorkingSince: r.meter_working_since,
           meterWorkingSinceEditable: r.meter_working_since_editable === true,
+          unused: r.in_use !== true,
         })) ?? null,
       shiftTemplates:
         shiftTemplates?.map((r) => ({

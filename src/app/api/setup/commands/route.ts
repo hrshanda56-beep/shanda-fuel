@@ -6,6 +6,8 @@ import {
   createNozzleFromRequest,
   createProductFromRequest,
   deleteProductFromRequest,
+  deleteNozzleFromRequest,
+  deletePumpFromRequest,
   renameProductFromRequest,
   setProductUnitFromRequest,
   setProductStatusFromRequest,
@@ -66,6 +68,12 @@ export const POST = withRequestObservability(
           break;
         case 'UpdateNozzle':
           result = await updateNozzleFromRequest(request, body);
+          break;
+        case 'DeletePump':
+          result = await deletePumpFromRequest(request, body);
+          break;
+        case 'DeleteNozzle':
+          result = await deleteNozzleFromRequest(request, body);
           break;
         case 'SetMeterWorkingSince':
           result = await setMeterWorkingSinceFromRequest(request, body);

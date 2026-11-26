@@ -246,3 +246,114 @@ describe('staged setup changes', () => {
     }
   });
 });
+
+describe('deleting tanks, pumps and nozzles (#315)', () => {
+  const saved = {
+    ...empty,
+    tanks: [
+      {
+        id: 'tank-1',
+        code: 'PETROL1',
+        productId: 'p1',
+        capacityLitres: '10000',
+        reorderLevelLitres: null,
+        acceptableVarianceLitres: null,
+        varianceRedLitres: null,
+        status: 'ACTIVE',
+        unused: true,
+      },
+    ],
+    pumps: [{ id: 'pump-1', number: '1', name: null, status: 'ACTIVE', unused: true }],
+    nozzles: [
+      {
+        id: 'nozzle-1',
+        pumpId: 'pump-1',
+        number: '1',
+        productId: 'p1',
+        status: 'ACTIVE',
+        meterSerialNumber: 'M1',
+        meterWorkingSince: null,
+        meterWorkingSinceEditable: true,
+        unused: true,
+      },
+    ],
+  } as unknown as ConfigurationSetupOverview;
+
+  it('drops a waiting pump, and the nozzles on it, instead of deleting it', () => {
+    let q = addStaged([], SETUP, { ...base, commandType: 'CreatePump', number: '2', name: null });
+    const pump = q[0]!.standIn!;
+    q = addStaged(q, SETUP, {
+      ...base,
+      commandType: 'CreateNozzle',
+      pumpId: pump,
+      number: '1',
+      productId: 'p1',
+      meterSerialNumber: 'M2',
+    });
+    expect(addStaged(q, SETUP, { ...base, commandType: 'DeletePump', pumpId: pump })).toEqual([]);
+  });
+
+  it('replaces waiting changes to a saved tank with its delete, and hides it', () => {
+    let q = addStaged([], '/api/inventory/commands', {
+      ...base,
+      commandType: 'UpdateTank',
+      tankId: 'tank-1',
+      code: 'P1',
+      capacityLitres: '10000',
+    });
+    q = addStaged(q, '/api/inventory/commands', {
+      ...base,
+      commandType: 'DeleteTank',
+      tankId: 'tank-1',
+    });
+    expect(q.map((c) => c.body.commandType)).toEqual(['DeleteTank']);
+    expect(applyStaged(saved, q).tanks).toEqual([]);
+    expect(describeStaged(q[0]!, applyStaged(saved, q), saved).title).toBe('Delete tank: PETROL1');
+  });
+
+  it('hides a deleted pump with its nozzles, and says so', () => {
+    const q = addStaged([], SETUP, { ...base, commandType: 'DeletePump', pumpId: 'pump-1' });
+    const view = applyStaged(saved, q);
+    expect(view.pumps).toEqual([]);
+    expect(view.nozzles).toEqual([]);
+    expect(describeStaged(q[0]!, view, saved)).toEqual({
+      title: 'Delete pump 1',
+      detail: 'And its nozzle',
+    });
+  });
+
+  it('shows a tank moved to another fuel', () => {
+    const withPetrol = {
+      ...saved,
+      products: [
+        ...(saved.products ?? []),
+        { id: 'p2', code: 'P', name: 'Petrol', status: 'ACTIVE', unit: 'LITRES', kind: 'PETROL' },
+      ],
+    } as unknown as ConfigurationSetupOverview;
+    const q = addStaged([], '/api/inventory/commands', {
+      ...base,
+      commandType: 'UpdateTank',
+      tankId: 'tank-1',
+      code: 'PETROL1',
+      capacityLitres: '10000',
+      productId: 'p2',
+    });
+    expect(applyStaged(withPetrol, q).tanks?.[0]?.productId).toBe('p2');
+    expect(describeStaged(q[0]!, withPetrol).detail).toBe('Now holds Petrol (was Diesel), 10,000');
+  });
+
+  it('marks a waiting tank, pump and nozzle as unused', () => {
+    let q = addStaged([], SETUP, { ...base, commandType: 'CreatePump', number: '2', name: null });
+    q = addStaged(q, SETUP, {
+      ...base,
+      commandType: 'CreateNozzle',
+      pumpId: q[0]!.standIn!,
+      number: '1',
+      productId: 'p1',
+      meterSerialNumber: 'M2',
+    });
+    const view = applyStaged(empty, q);
+    expect(view.pumps?.[0]?.unused).toBe(true);
+    expect(view.nozzles?.[0]?.unused).toBe(true);
+  });
+});

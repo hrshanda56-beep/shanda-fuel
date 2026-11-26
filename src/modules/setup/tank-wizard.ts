@@ -14,6 +14,8 @@ export const STANDARD_ALERT_PERCENT = '1';
 export const MAX_TANK_NAME = 32;
 
 export type TankStep = 'name' | 'size' | 'reminder' | 'check' | 'review';
+/** Screens outside the numbered steps: choosing the fuel (#315) and confirming a delete. */
+export type TankExtraScreen = 'fuel' | 'delete';
 export type ReorderChoice = 'p25' | 'p20' | 'p10' | 'own';
 export type LimitMode = 'usual' | 'own';
 
@@ -177,14 +179,109 @@ export function answersFromTank(tank: {
   };
 }
 
+/**
+ * Words that name a fuel in a tank name, beyond the fuels' own names: what people write on tanks.
+ * Each maps to the word a fuel's name or type would contain.
+ */
+const FUEL_WORDS: Readonly<Record<string, string>> = {
+  petrol: 'petrol',
+  unleaded: 'petrol',
+  ulp: 'petrol',
+  blend: 'petrol',
+  gasoline: 'petrol',
+  mogas: 'petrol',
+  diesel: 'diesel',
+  dsl: 'diesel',
+  gasoil: 'diesel',
+  ago: 'diesel',
+  paraffin: 'paraffin',
+  kerosene: 'paraffin',
+  lpg: 'lpg',
+  gas: 'lpg',
+};
+
+/** The words in a name, lower case, with digits split off ("PETROL1" gives "petrol"). */
+function words(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean);
+}
+
+/** Words too general to tell fuels apart. */
+const GENERAL = new Set([
+  'tank',
+  'fuel',
+  'the',
+  'and',
+  'for',
+  'new',
+  'old',
+  'main',
+  'big',
+  'small',
+]);
+
+/** Drops general words and very short ones ("a", "no"), which say nothing about the fuel. */
+function significant(found: Set<string>): Set<string> {
+  return new Set([...found].filter((word) => word.length >= 3 && !GENERAL.has(word)));
+}
+
+/** The fuel words a name or a fuel's description contains, as their common form. */
+function fuelWordsIn(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const word of words(text)) out.add(FUEL_WORDS[word] ?? word);
+  return out;
+}
+
+/**
+ * Catches a tank added under the wrong fuel (#315): when the tank's name mentions another fuel at
+ * the station (by its name, or a common word for it such as "ULP" or "unleaded") and not the fuel
+ * it is being put under, the other fuel is returned so the check screen can warn. Null otherwise.
+ */
+export function tankFuelMismatch(
+  tankName: string,
+  chosen: { id: string; name: string; kind?: string | null },
+  fuels: readonly { id: string; name: string; kind?: string | null }[],
+): { id: string | null; name: string } | null {
+  const named = significant(fuelWordsIn(tankName));
+  if (named.size === 0) return null;
+  const mentions = (fuel: { name: string; kind?: string | null }) =>
+    [...significant(fuelWordsIn(`${fuel.name} ${fuel.kind ?? ''}`))].some((word) =>
+      named.has(word),
+    );
+  if (mentions(chosen)) return null;
+  const other = fuels.find((fuel) => fuel.id !== chosen.id && mentions(fuel));
+  if (other) return { id: other.id, name: other.name };
+  // A common fuel word for a fuel the station has not added yet ("PETROL1" while setting up
+  // Diesel, before Petrol exists).
+  const common = [...named].find((word) => COMMON_FUELS.has(word));
+  return common ? { id: null, name: common.charAt(0).toUpperCase() + common.slice(1) } : null;
+}
+
+/** The fuels a common word can name even before the station has added them. */
+const COMMON_FUELS = new Set(Object.values(FUEL_WORDS));
+
+/** The command that deletes an unused tank (#315). */
+export function deleteTankCommand(input: {
+  tenantId: string;
+  stationId: string;
+  tankId: string;
+}): Record<string, unknown> {
+  return { commandType: 'DeleteTank', ...input };
+}
+
 /** The command that saves these answers: a new tank, or a change to one that exists. */
 export function tankCommand(input: {
   answers: TankAnswers;
   tenantId: string;
   stationId: string;
-  /** Set when changing a tank; the fuel of an existing tank cannot be changed. */
+  /** Set when changing a tank. */
   tankId?: string;
+  /** The fuel the tank holds. For an existing tank, sent only when it changes (unused tanks only). */
   productId: string;
+  /** The fuel an existing tank holds now, so a change of fuel can be told apart. */
+  currentProductId?: string;
   existingCodes: readonly string[];
 }): Record<string, unknown> {
   const { answers } = input;
@@ -203,6 +300,9 @@ export function tankCommand(input: {
       ...shared,
       tankId: input.tankId,
       code: answers.name.trim(),
+      ...(input.currentProductId && input.productId !== input.currentProductId
+        ? { productId: input.productId }
+        : {}),
     };
   }
   return {

@@ -13,6 +13,7 @@ import {
   type InventoryCommandContext,
 } from '../inventory/application';
 import { assertProductBelongsToTenant } from '../inventory/persistence';
+import { nozzleInUseSql } from '../inventory/equipment-usage';
 import { checkMeterWorkingSinceDate } from './meter-working-since';
 import { createProductPayload, setProductKindPayload } from './product-contract';
 
@@ -42,6 +43,8 @@ export const SETUP_COMMAND_TYPES = [
   'CreateCashLocation',
   'UpdatePump',
   'UpdateNozzle',
+  'DeletePump',
+  'DeleteNozzle',
   'SetMeterWorkingSince',
   'DraftPriceChange',
   'UpdateSupplier',
@@ -93,6 +96,8 @@ const updateNozzlePayload = authority.extend({
   nozzleId: uuid,
   number: z.string().trim().min(1).max(16),
 });
+const pumpRef = authority.extend({ pumpId: uuid });
+const nozzleRef = authority.extend({ nozzleId: uuid });
 const draftPricePayload = authority.extend({
   productId: uuid,
   unitPrice: z
@@ -895,6 +900,179 @@ export function updateNozzleCommand(
   });
 }
 
+const NOZZLE_REFUSAL =
+  'Readings or sales have already been recorded for this nozzle, so it cannot be deleted.';
+const PUMP_REFUSAL =
+  'Readings or sales have already been recorded on a nozzle of this pump, so it cannot be deleted.';
+
+/**
+ * Removes nozzles that were never used, with the meter each was set up with. The caller has
+ * already checked they are unused; the NO ACTION foreign keys refuse the delete if one was not.
+ */
+async function deleteUnusedNozzles(
+  transaction: Parameters<Parameters<typeof executeInventoryCommand>[0]['execute']>[0],
+  context: InventoryCommandContext,
+  nozzleIds: readonly string[],
+): Promise<void> {
+  if (nozzleIds.length === 0) return;
+  const ids = sql.join(
+    nozzleIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const installations = await transaction.execute<{ meter_id: string }>(sql`
+    delete from app.meter_installations
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+      and nozzle_id in (${ids})
+    returning meter_id
+  `);
+  await transaction.execute(sql`
+    delete from app.nozzles
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+      and id in (${ids})
+  `);
+  const meters = [...new Set(installations.map((row) => row.meter_id))];
+  if (meters.length === 0) return;
+  // A meter that was ever fitted elsewhere keeps that record, so it stays.
+  await transaction.execute(sql`
+    delete from app.meters m
+    where m.tenant_id = ${context.tenantId}
+      and m.id in (${sql.join(
+        meters.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+      and not exists (
+        select 1 from app.meter_installations i
+        where i.tenant_id = m.tenant_id and i.meter_id = m.id)
+  `);
+}
+
+/**
+ * Deletes a nozzle that was set up by mistake (#315), with its meter. Only a nozzle with no
+ * readings, sales or meter changes may go; a used one keeps its history.
+ */
+export function deleteNozzleCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof nozzleRef>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.DeleteNozzle',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.NOZZLE_DELETED',
+      subjectType: 'Nozzle',
+      subjectId: payload.nozzleId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{
+          number: string;
+          pump_id: string;
+          product_id: string;
+        }>(sql`
+          select number, pump_id, product_id from app.nozzles
+          where tenant_id = ${context.tenantId} and id = ${payload.nozzleId}
+        `);
+        return rows[0]
+          ? { number: rows[0].number, pumpId: rows[0].pump_id, productId: rows[0].product_id }
+          : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      const rows = await transaction.execute<{ id: string; number: string; used: boolean }>(sql`
+        select n.id, n.number, ${nozzleInUseSql('n')} as used from app.nozzles n
+        where n.tenant_id = ${context.tenantId} and n.station_id = ${context.stationId}
+          and n.id = ${payload.nozzleId}
+        for update of n
+      `);
+      const nozzle = rows[0];
+      if (!nozzle) throw new AppError('NOT_FOUND', 'The nozzle was not found at this station');
+      if (nozzle.used) throw new AppError('CONFLICT', NOZZLE_REFUSAL);
+      try {
+        await deleteUnusedNozzles(transaction, context, [nozzle.id]);
+      } catch (error) {
+        if (isForeignKeyViolation(error)) throw new AppError('CONFLICT', NOZZLE_REFUSAL);
+        throw error;
+      }
+      return { nozzleId: nozzle.id, number: nozzle.number };
+    },
+  });
+}
+
+/**
+ * Deletes a pump that was set up by mistake (#315), with its nozzles and their meters. Only a pump
+ * none of whose nozzles has been used may go.
+ */
+export function deletePumpCommand(
+  context: InventoryCommandContext,
+  payload: Payload<typeof pumpRef>,
+  key: string,
+) {
+  return executeInventoryCommand({
+    context,
+    commandType: 'Setup.DeletePump',
+    permissionCode: 'station.manage',
+    idempotencyKey: key,
+    requestHash: requestHash(payload),
+    audit: {
+      actionCode: 'SETUP.PUMP_DELETED',
+      subjectType: 'Pump',
+      subjectId: payload.pumpId,
+      readBefore: async (transaction) => {
+        const rows = await transaction.execute<{ number: string; name: string | null }>(sql`
+          select number, name from app.pumps
+          where tenant_id = ${context.tenantId} and id = ${payload.pumpId}
+        `);
+        const nozzles = await transaction.execute<{ number: string }>(sql`
+          select number from app.nozzles
+          where tenant_id = ${context.tenantId} and pump_id = ${payload.pumpId} order by number
+        `);
+        return rows[0]
+          ? {
+              number: rows[0].number,
+              name: rows[0].name,
+              nozzles: nozzles.map((n) => n.number),
+            }
+          : undefined;
+      },
+    },
+    execute: async (transaction) => {
+      const pumps = await transaction.execute<{ id: string; number: string }>(sql`
+        select id, number from app.pumps
+        where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+          and id = ${payload.pumpId}
+        for update
+      `);
+      const pump = pumps[0];
+      if (!pump) throw new AppError('NOT_FOUND', 'The pump was not found at this station');
+      const nozzles = await transaction.execute<{ id: string; used: boolean }>(sql`
+        select n.id, ${nozzleInUseSql('n')} as used from app.nozzles n
+        where n.tenant_id = ${context.tenantId} and n.station_id = ${context.stationId}
+          and n.pump_id = ${pump.id}
+        for update of n
+      `);
+      if (nozzles.some((n) => n.used)) throw new AppError('CONFLICT', PUMP_REFUSAL);
+      try {
+        await deleteUnusedNozzles(
+          transaction,
+          context,
+          nozzles.map((n) => n.id),
+        );
+        await transaction.execute(sql`
+          delete from app.pumps
+          where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+            and id = ${pump.id}
+        `);
+      } catch (error) {
+        if (isForeignKeyViolation(error)) throw new AppError('CONFLICT', PUMP_REFUSAL);
+        throw error;
+      }
+      return { pumpId: pump.id, number: pump.number, nozzlesDeleted: nozzles.length };
+    },
+  });
+}
+
 /**
  * Creates the DRAFT selling price that the existing RequestPriceChange ->
  * ApprovePriceChange -> PreparePriceActivation -> ActivatePriceChange flow then
@@ -992,6 +1170,16 @@ export async function updatePumpFromRequest(request: Request, input: unknown) {
 export async function updateNozzleFromRequest(request: Request, input: unknown) {
   const payload = updateNozzlePayload.parse(input);
   return updateNozzleCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function deletePumpFromRequest(request: Request, input: unknown) {
+  const payload = pumpRef.parse(input);
+  return deletePumpCommand(await contextFor(request, payload), payload, keyOf(request));
+}
+
+export async function deleteNozzleFromRequest(request: Request, input: unknown) {
+  const payload = nozzleRef.parse(input);
+  return deleteNozzleCommand(await contextFor(request, payload), payload, keyOf(request));
 }
 
 export async function setMeterWorkingSinceFromRequest(request: Request, input: unknown) {
