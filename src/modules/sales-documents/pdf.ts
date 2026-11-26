@@ -203,6 +203,8 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
     ...(lh?.address ? wrap(lh.address, textWidth, 9) : []),
     lh?.phone ? `Tel: ${lh.phone}` : '',
     lh?.email ?? '',
+    lh?.tin ? `TIN: ${lh.tin}` : '',
+    lh?.registrationNumber ? `Company reg. no.: ${lh.registrationNumber}` : '',
     lh?.taxNumber ? `${lh.taxLabel ?? 'Tax no.'}: ${lh.taxNumber}` : '',
   ].filter(Boolean);
   for (const text of companyLines) {

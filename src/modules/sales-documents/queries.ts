@@ -325,6 +325,8 @@ export type SalesDocumentProfileView = {
   email: string | null;
   taxLabel: string;
   taxNumber: string | null;
+  tin: string | null;
+  registrationNumber: string | null;
   defaultTaxRate: string;
   bankDetails: string | null;
   defaultTerms: string | null;
@@ -357,6 +359,8 @@ export async function getSalesDocumentProfileFromRequest(
       email: string | null;
       tax_label: string;
       tax_number: string | null;
+      tin: string | null;
+      registration_number: string | null;
       default_tax_rate: string;
       bank_details: string | null;
       default_terms: string | null;
@@ -370,7 +374,7 @@ export async function getSalesDocumentProfileFromRequest(
       default_valid_days: number;
       default_due_days: number;
     }>(sql`
-      select id, version, display_name, address, phone, email, tax_label, tax_number,
+      select id, version, display_name, address, phone, email, tax_label, tax_number, tin, registration_number,
              default_tax_rate::text as default_tax_rate, bank_details, default_terms, footer,
              logo_jpeg_base64, app_logo_png_base64, brand_colour, quotation_prefix, invoice_prefix, receipt_prefix, default_valid_days, default_due_days
       from app.sales_doc_profiles
@@ -387,6 +391,8 @@ export async function getSalesDocumentProfileFromRequest(
       email: row.email,
       taxLabel: row.tax_label,
       taxNumber: row.tax_number,
+      tin: row.tin,
+      registrationNumber: row.registration_number,
       defaultTaxRate: row.default_tax_rate,
       bankDetails: row.bank_details,
       defaultTerms: row.default_terms,

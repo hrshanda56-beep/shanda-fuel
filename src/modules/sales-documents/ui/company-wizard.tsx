@@ -27,6 +27,9 @@ export type CompanyValue = {
   colour: string | null;
   taxLabel: string;
   taxNumber: string;
+  /** The company's taxpayer identification number, printed on the letterhead. */
+  tin: string;
+  registrationNumber: string;
   taxRate: string;
   bank: string;
   terms: string;
@@ -93,7 +96,11 @@ export function CompanyWizard({
     }
     if (step === 'look') return wizard.advance({}, 'tax', 'review');
     if (step === 'tax') {
-      return wizard.advance(checkCompanyTax(form.taxLabel, form.taxRate), 'payment', 'review');
+      return wizard.advance(
+        checkCompanyTax(form.taxLabel, form.taxRate, form.tin, form.registrationNumber),
+        'payment',
+        'review',
+      );
     }
     if (step === 'payment') return wizard.advance({}, 'numbers', 'review');
     if (step === 'numbers') {
@@ -112,6 +119,8 @@ export function CompanyWizard({
   const tax = [
     `${form.taxLabel.trim()} ${form.taxRate.trim() || '0'}%`,
     form.taxNumber.trim() ? `number ${form.taxNumber.trim()}` : '',
+    form.tin.trim() ? `TIN ${form.tin.trim()}` : '',
+    form.registrationNumber.trim() ? `reg. no. ${form.registrationNumber.trim()}` : '',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -236,8 +245,8 @@ export function CompanyWizard({
       {step === 'tax' ? (
         <WizardStep
           wizard={wizard}
-          title="Do you charge tax?"
-          hint="Use 0 if you do not. You can change the percentage on any item."
+          title="Tax and company numbers"
+          hint="Use 0 as the tax percentage if you do not charge tax. You can change it on any item."
         >
           <Field
             id="sd-c-taxlabel"
@@ -259,6 +268,34 @@ export function CompanyWizard({
               value={form.taxNumber}
               maxLength={60}
               onChange={(e) => set({ taxNumber: e.target.value })}
+            />
+          </Field>
+          <Field
+            id="sd-c-tin"
+            label="TIN"
+            hint="Your taxpayer identification number. Printed at the top of your documents."
+            error={errors['sd-c-tin']}
+            optional
+          >
+            <input
+              id="sd-c-tin"
+              value={form.tin}
+              maxLength={60}
+              onChange={(e) => set({ tin: e.target.value })}
+            />
+          </Field>
+          <Field
+            id="sd-c-regno"
+            label="Company registration number"
+            hint="Printed at the top of your documents."
+            error={errors['sd-c-regno']}
+            optional
+          >
+            <input
+              id="sd-c-regno"
+              value={form.registrationNumber}
+              maxLength={60}
+              onChange={(e) => set({ registrationNumber: e.target.value })}
             />
           </Field>
           <NumericInput

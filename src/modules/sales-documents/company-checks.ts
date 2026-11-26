@@ -12,8 +12,15 @@ export function checkCompanyName(name: string, email: string): Errors {
   return errors;
 }
 
-export function checkCompanyTax(label: string, rate: string): Errors {
+export function checkCompanyTax(
+  label: string,
+  rate: string,
+  tin = '',
+  registrationNumber = '',
+): Errors {
   const errors: Errors = {};
+  if (tin.trim().length > 60) errors['sd-c-tin'] = 'Use 60 characters or fewer.';
+  if (registrationNumber.trim().length > 60) errors['sd-c-regno'] = 'Use 60 characters or fewer.';
   if (!label.trim()) errors['sd-c-taxlabel'] = 'Name your tax, for example VAT.';
   const value = rate.trim().replace(/,/g, '');
   if (value) {

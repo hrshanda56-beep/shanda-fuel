@@ -102,6 +102,8 @@ const profile = {
   address: '1 Main Road, Harare',
   taxLabel: 'VAT',
   taxNumber: 'TIN-123',
+  tin: '1234567890',
+  registrationNumber: '1234/2020',
   defaultTaxRate: '15',
   quotationPrefix: 'QT',
   invoicePrefix: 'INV',
@@ -221,7 +223,12 @@ describe('sales documents PostgreSQL persistence (DEC-045)', () => {
     });
     expect(saved.status).toBe(200);
     const stored = await getSalesDocumentProfileFromRequest(readRequest(tokens.finance), entity);
-    expect(stored).toMatchObject({ displayName: 'Shanda Fuel (Pvt) Ltd', invoicePrefix: 'INV' });
+    expect(stored).toMatchObject({
+      displayName: 'Shanda Fuel (Pvt) Ltd',
+      invoicePrefix: 'INV',
+      tin: '1234567890',
+      registrationNumber: '1234/2020',
+    });
     const stale = await command(tokens.admin, {
       ...profile,
       displayName: 'Changed',

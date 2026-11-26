@@ -12,6 +12,9 @@ describe('company details checks', () => {
   it('needs a tax name and a percentage up to 100', () => {
     expect(checkCompanyTax('', '0')).toHaveProperty('sd-c-taxlabel');
     expect(checkCompanyTax('VAT', '101')).toHaveProperty('sd-c-rate');
+    expect(checkCompanyTax('VAT', '15', 'x'.repeat(61), '')).toHaveProperty('sd-c-tin');
+    expect(checkCompanyTax('VAT', '15', '', 'x'.repeat(61))).toHaveProperty('sd-c-regno');
+    expect(checkCompanyTax('VAT', '15', '123', '456')).toEqual({});
     expect(checkCompanyTax('VAT', 'abc')).toHaveProperty('sd-c-rate');
     expect(checkCompanyTax('VAT', '15.5')).toEqual({});
     expect(checkCompanyTax('VAT', '')).toEqual({});
