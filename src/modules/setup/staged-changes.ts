@@ -46,6 +46,13 @@ const CREATED_ID_FIELD: Record<string, string> = {
 export const createdIdField = (commandType: string): string | undefined =>
   CREATED_ID_FIELD[commandType];
 
+/** The field of a delete command that names the thing it removes. */
+const DELETE_TARGET: Record<string, string> = {
+  DeleteTank: 'tankId',
+  DeletePump: 'pumpId',
+  DeleteNozzle: 'nozzleId',
+};
+
 /** Which earlier waiting change a new one replaces, so editing twice never queues twice. */
 function replaceKey(change: { body: Body }): string | null {
   const body = change.body;
@@ -185,6 +192,22 @@ export function addStaged(
   if (commandType === 'DeleteProduct' && isStandIn(str(body.productId))) {
     const index = next.findIndex((c) => c.standIn === body.productId);
     return index >= 0 ? discardStaged(next, next[index]!.id) : next;
+  }
+  // Deleting a tank, pump or nozzle (#315). One that is only waiting to be created is simply never
+  // created; for a saved one, waiting changes to it are dropped, since it is going anyway.
+  const deleted = DELETE_TARGET[commandType];
+  if (deleted) {
+    const target = str(body[deleted]);
+    if (isStandIn(target)) {
+      const index = next.findIndex((c) => c.standIn === target);
+      return index >= 0 ? discardStaged(next, next[index]!.id) : next;
+    }
+    const kept = next.filter((c) => !mentions(c.body, target));
+    if (kept.some((c) => c.url === url && JSON.stringify(c.body) === JSON.stringify(body))) {
+      return kept;
+    }
+    const id = nextId();
+    return [...kept, { id: `staged-${id}`, url, body: { ...body } }];
   }
 
   // Taking a price further (send, approve, start using) adds steps to the one entry for that price.
@@ -327,10 +350,12 @@ export function applyStaged(
             (b.acceptableVarianceLitres as string | null | undefined) ?? null,
           varianceRedLitres: (b.varianceRedLitres as string | null | undefined) ?? null,
           status: 'ACTIVE',
+          unused: true,
         });
         break;
       case 'UpdateTank':
         tanks = patch(tanks, str(b.tankId), {
+          ...(str(b.productId) ? { productId: str(b.productId) } : {}),
           code: str(b.code),
           capacityLitres: str(b.capacityLitres),
           reorderLevelLitres: (b.reorderLevelLitres as string | null | undefined) ?? null,
@@ -339,13 +364,24 @@ export function applyStaged(
           varianceRedLitres: (b.varianceRedLitres as string | null | undefined) ?? null,
         });
         break;
+      case 'DeleteTank':
+        tanks = tanks.filter((t) => t.id !== str(b.tankId));
+        break;
       case 'CreatePump':
         pumps.push({
           id: change.standIn!,
           number: str(b.number),
           name: (b.name as string | null | undefined) ?? null,
           status: 'ACTIVE',
+          unused: true,
         });
+        break;
+      case 'DeletePump':
+        pumps = pumps.filter((p) => p.id !== str(b.pumpId));
+        nozzles = nozzles.filter((n) => n.pumpId !== str(b.pumpId));
+        break;
+      case 'DeleteNozzle':
+        nozzles = nozzles.filter((n) => n.id !== str(b.nozzleId));
         break;
       case 'UpdatePump':
         pumps = patch(pumps, str(b.pumpId), {
@@ -363,6 +399,7 @@ export function applyStaged(
           meterSerialNumber: str(b.meterSerialNumber) || null,
           meterWorkingSince: str(b.meterWorkingSinceDate) || null,
           meterWorkingSinceEditable: true,
+          unused: true,
         });
         break;
       case 'UpdateNozzle':
@@ -412,6 +449,8 @@ const litres = (value: unknown): string => {
 export function describeStaged(
   change: StagedChange,
   data: ConfigurationSetupOverview,
+  /** What is saved now. A delete is described from it, since the preview no longer has the item. */
+  saved: ConfigurationSetupOverview = data,
 ): { title: string; detail?: string } {
   const b = change.body;
   const fuel = (id: unknown) => data.products?.find((p) => p.id === id)?.name ?? 'the fuel';
@@ -432,7 +471,9 @@ export function describeStaged(
         title: `${b.status === 'ACTIVE' ? 'Show' : 'Hide'} ${fuel(b.productId)}`,
       };
     case 'DeleteProduct':
-      return { title: `Delete ${fuel(b.productId)}` };
+      return {
+        title: `Delete ${saved.products?.find((p) => p.id === b.productId)?.name ?? fuel(b.productId)}`,
+      };
     case 'DraftPriceChange': {
       const unit =
         data.products?.find((p) => p.id === b.productId)?.unit === 'KILOGRAMS' ? 'kg' : 'L';
@@ -462,8 +503,40 @@ export function describeStaged(
         title: `Add tank: ${str(b.code)}`,
         detail: `${fuel(b.productId)}, holds ${litres(b.capacityLitres)}`,
       };
-    case 'UpdateTank':
-      return { title: `Change tank: ${str(b.code)}`, detail: `Holds ${litres(b.capacityLitres)}` };
+    case 'UpdateTank': {
+      const tank = data.tanks?.find((t) => t.id === b.tankId);
+      const moved = str(b.productId) && tank && str(b.productId) !== tank.productId;
+      return {
+        title: `Change tank: ${str(b.code)}`,
+        detail: moved
+          ? `Now holds ${fuel(b.productId)} (was ${fuel(tank.productId)}), ${litres(b.capacityLitres)}`
+          : `Holds ${litres(b.capacityLitres)}`,
+      };
+    }
+    case 'DeleteTank': {
+      const tank = saved.tanks?.find((t) => t.id === b.tankId);
+      return {
+        title: `Delete tank: ${tank?.code ?? 'a tank'}`,
+        detail: tank ? fuel(tank.productId) : undefined,
+      };
+    }
+    case 'DeletePump': {
+      const count = saved.nozzles?.filter((n) => n.pumpId === b.pumpId).length ?? 0;
+      return {
+        title: `Delete pump ${saved.pumps?.find((p) => p.id === b.pumpId)?.number ?? ''}`.trim(),
+        detail: count > 0 ? `And its ${count === 1 ? 'nozzle' : `${count} nozzles`}` : undefined,
+      };
+    }
+    case 'DeleteNozzle': {
+      const nozzle = saved.nozzles?.find((n) => n.id === b.nozzleId);
+      const onPump = saved.pumps?.find((p) => p.id === nozzle?.pumpId)?.number;
+      return {
+        title: `Delete nozzle ${nozzle?.number ?? ''}`.trim(),
+        detail: nozzle
+          ? `${fuel(nozzle.productId)}${onPump ? `, on pump ${onPump}` : ''}`
+          : undefined,
+      };
+    }
     case 'CreatePump':
       return { title: `Add pump ${str(b.number)}` };
     case 'UpdatePump':

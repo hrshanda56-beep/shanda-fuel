@@ -100,6 +100,7 @@ describe('buildGuidedSteps', () => {
       reorderLevelLitres: null,
       acceptableVarianceLitres: null,
       varianceRedLitres: null,
+      unused: true,
       status: 'ACTIVE',
     };
     const open = byId(buildGuidedSteps({ ...base, products: [diesel], tanks: [tank] }), 'tanks');
@@ -117,7 +118,7 @@ describe('buildGuidedSteps', () => {
   });
 
   it('requires a nozzle on every pump', () => {
-    const pump = { id: 'u1', number: '1', name: null, status: 'ACTIVE' };
+    const pump = { id: 'u1', number: '1', name: null, status: 'ACTIVE', unused: true };
     const nozzle = {
       id: 'n1',
       pumpId: 'u1',
@@ -127,6 +128,7 @@ describe('buildGuidedSteps', () => {
       meterSerialNumber: 'SN1',
       meterWorkingSince: null,
       meterWorkingSinceEditable: false,
+      unused: true,
     };
     const without = byId(buildGuidedSteps({ ...base, products: [diesel], pumps: [pump] }), 'pumps');
     expect(without.status).toBe('todo');
@@ -188,6 +190,7 @@ describe('buildFuelCards', () => {
     reorderLevelLitres: null,
     acceptableVarianceLitres: tolerance,
     varianceRedLitres: null,
+    unused: true,
     status: 'ACTIVE',
   });
   const nozzle = (productId: string) => ({
@@ -199,6 +202,7 @@ describe('buildFuelCards', () => {
     meterSerialNumber: 'SN',
     meterWorkingSince: null,
     meterWorkingSinceEditable: false,
+    unused: true,
   });
   const price = (productId: string) => ({
     id: `x-${productId}`,

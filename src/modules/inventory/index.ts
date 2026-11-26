@@ -19,6 +19,7 @@ export {
   confirmDeliveryFromRequest,
   correctDeliverySupplierFromRequest,
   deactivateTankFromRequest,
+  deleteTankFromRequest,
   approveInventoryCostRevaluationFromRequest,
   postInventoryAdjustmentFromRequest,
   postInventoryCostRevaluationFromRequest,

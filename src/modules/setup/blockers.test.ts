@@ -53,6 +53,7 @@ describe('computeSetupBlockers', () => {
           meterSerialNumber: 'x',
           meterWorkingSince: null,
           meterWorkingSinceEditable: false,
+          unused: true,
         },
       ],
       prices: [

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { Field, NumericInput } from '@/design-system/primitives';
+import { Button, Field, NumericInput } from '@/design-system/primitives';
 import {
   WizardActions,
   WizardNotice,
@@ -30,17 +30,23 @@ import {
   checkReminder,
   checkSentence,
   checkSize,
+  deleteTankCommand,
   reminderSentence,
   reorderSuggestions,
   tankCommand,
+  tankFuelMismatch,
   tankSteps,
   withSeparators,
   type ReorderChoice,
   type TankAnswers,
+  type TankExtraScreen,
   type TankStep,
 } from '../tank-wizard';
 
-type Screen = TankStep | 'pick' | 'done';
+type Screen = TankStep | TankExtraScreen | 'pick' | 'done';
+
+/** A fuel the tank could hold. */
+export type TankFuel = { id: string; name: string; kind?: string | null };
 
 /** Saves one command; resolves true when it went through. Provided by the screen that owns saving. */
 export type SaveCommand = (body: Record<string, unknown>, success: string) => Promise<boolean>;
@@ -59,6 +65,8 @@ export function TankWizard({
   word,
   tanks,
   allCodes,
+  fuels,
+  allTanks,
   canManage,
   save,
   busy,
@@ -75,6 +83,10 @@ export function TankWizard({
   tanks: readonly SetupTank[];
   /** Every tank name at the station, so a new one never repeats one. */
   allCodes: readonly string[];
+  /** The station's active fuels, to name the fuel and to move an unused tank to another (#315). */
+  fuels: readonly TankFuel[];
+  /** Every active tank at the station, so a tank is never moved onto a fuel that has one. */
+  allTanks: readonly SetupTank[];
   canManage: boolean;
   save: SaveCommand;
   busy: boolean;
@@ -94,6 +106,9 @@ export function TankWizard({
   const [answers, setAnswers] = useState<TankAnswers>(BLANK_TANK);
   const [editing, setEditing] = useState<SetupTank | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  /** The fuel the tank will hold: the one the wizard was opened for, unless changed (#315). */
+  const [fuelId, setFuelId] = useState(productId);
+  const [fuelPick, setFuelPick] = useState<string | null>(productId);
   const set = (patch: Partial<TankAnswers>) => setAnswers((current) => ({ ...current, ...patch }));
   const errors = wizard.errors;
   const upper = word.charAt(0).toUpperCase() + word.slice(1);
@@ -104,7 +119,16 @@ export function TankWizard({
   /** Screens that are not one of the numbered steps (the pick list and the ending). */
   const alone = { ...wizard, position: 1, total: 0 };
 
+  const fuelOf = (id: string) => fuels.find((f) => f.id === id);
+  const chosenFuel = fuelOf(fuelId) ?? { id: fuelId, name: 'this fuel' };
+  /** A new tank, or one with no stock records yet, may still change fuel or be deleted. */
+  const canMove = !editing || editing.unused;
+  const otherTankOn = (id: string) =>
+    allTanks.find((t) => t.status === 'ACTIVE' && t.productId === id && t.id !== editing?.id);
+
   function startFrom(choice: string) {
+    setFuelId(productId);
+    setFuelPick(productId);
     if (choice === NEW_TANK) {
       setEditing(null);
       setAnswers(BLANK_TANK);
@@ -121,12 +145,21 @@ export function TankWizard({
       answers,
       tenantId,
       stationId,
-      productId,
       existingCodes: others,
-      ...(editing ? { tankId: editing.id } : {}),
+      productId: fuelId,
+      ...(editing ? { tankId: editing.id, currentProductId: editing.productId } : {}),
     });
     const name = answers.name.trim();
     const saved = await save(command, editing ? `${name} was changed.` : `${name} was added.`);
+    if (saved) wizard.go('done');
+  }
+
+  async function remove() {
+    if (!editing) return;
+    const saved = await save(
+      deleteTankCommand({ tenantId, stationId, tankId: editing.id }),
+      `${editing.code} was deleted.`,
+    );
     if (saved) wizard.go('done');
   }
 
@@ -315,20 +348,103 @@ export function TankWizard({
     );
   }
 
+  if (wizard.step === 'fuel') {
+    return (
+      <WizardStep
+        wizard={alone}
+        title={`Which fuel is in ${answers.name.trim() || 'this tank'}?`}
+        hint="Choose the fuel the tank really holds."
+      >
+        <WizardOptions<string>
+          label="Fuel"
+          name="tank-fuel"
+          value={fuelPick}
+          onPick={setFuelPick}
+          options={fuels.map((fuel) => ({
+            value: fuel.id,
+            label: fuel.name,
+            detail: otherTankOn(fuel.id)
+              ? `Already has ${otherTankOn(fuel.id)!.code}`
+              : fuel.id === fuelId
+                ? 'Chosen now'
+                : undefined,
+          }))}
+        />
+        {errors.fuel ? (
+          <p className="field-error" role="alert">
+            {errors.fuel}
+          </p>
+        ) : null}
+        <WizardActions
+          wizard={wizard}
+          onContinue={() => {
+            if (!fuelPick) return wizard.setErrors({ fuel: 'Choose a fuel.' });
+            const clash = otherTankOn(fuelPick);
+            if (clash && fuelPick !== fuelId) {
+              return wizard.setErrors({
+                fuel: `${fuelOf(fuelPick)?.name ?? 'That fuel'} already has a tank (${clash.code}). Two tanks of one fuel cannot be tracked yet.`,
+              });
+            }
+            setFuelId(fuelPick);
+            // Back to the check screen it was opened from, without adding it to the trail again.
+            wizard.back();
+          }}
+        />
+      </WizardStep>
+    );
+  }
+
+  if (wizard.step === 'delete' && editing) {
+    return (
+      <WizardStep wizard={alone} title={`Delete ${editing.code}?`}>
+        <WizardNotice>
+          {editing.code} has no stock records yet, so it can be deleted completely. This cannot be
+          undone, but you can add the tank again later.
+        </WizardNotice>
+        <WizardActions
+          wizard={wizard}
+          busy={busy}
+          continueLabel="Delete the tank"
+          onContinue={() => void remove()}
+        />
+      </WizardStep>
+    );
+  }
+
   if (wizard.step === 'review') {
+    const mismatch = tankFuelMismatch(answers.name, chosenFuel, fuels);
     return (
       <WizardStep
         wizard={shown}
         title={editing ? `Check the changes to ${editing.code}` : 'Check the new tank'}
         hint={WIZARD_REVIEW_HINT}
       >
-        {editing ? (
+        {editing && !editing.unused ? (
           <WizardNotice>
-            The fuel in a tank cannot be changed because past stock records use it. To store a
+            The fuel in this tank cannot be changed because past stock records use it. To store a
             different fuel, add a new tank.
           </WizardNotice>
         ) : null}
+        {mismatch ? (
+          <WizardNotice>
+            The name {answers.name.trim()} sounds like {mismatch.name}, but this tank is set to hold{' '}
+            {chosenFuel.name}. If it holds {mismatch.name}, change the fuel below.
+          </WizardNotice>
+        ) : null}
         <WizardSummary>
+          <WizardSummaryRow
+            label="Fuel"
+            {...(canMove && fuels.length > 1
+              ? {
+                  onChange: () => {
+                    setFuelPick(fuelId);
+                    wizard.go('fuel');
+                  },
+                }
+              : {})}
+          >
+            {chosenFuel.name}
+          </WizardSummaryRow>
           <WizardSummaryRow label="Name" onChange={() => wizard.change('name')}>
             {answers.name.trim()}
           </WizardSummaryRow>
@@ -348,6 +464,11 @@ export function TankWizard({
           continueLabel={editing ? 'Save changes' : 'Add the tank'}
           onContinue={() => void finish()}
         />
+        {editing?.unused ? (
+          <Button variant="quiet" onClick={() => wizard.go('delete')}>
+            Delete this tank
+          </Button>
+        ) : null}
       </WizardStep>
     );
   }

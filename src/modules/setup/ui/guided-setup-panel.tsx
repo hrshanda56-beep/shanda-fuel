@@ -184,27 +184,56 @@ function priceWord(data: ConfigurationSetupOverview, productId?: string): string
   return unit === 'KILOGRAMS' ? 'kilogram' : unit === 'LITRES' ? 'litre' : 'litre or kilogram';
 }
 
-/** "What do you want to change?" for one fuel, on its own: the question, the options, Cancel. */
+type ChangeKind = 'price' | 'tanks' | 'pumps' | 'fuel';
+
+/**
+ * "What do you want to change for Diesel?" for one fuel, on its own: the question, the options,
+ * Cancel. The fuel is named everywhere (#318), and when the station has other fuels the last option
+ * switches to one of them, so nobody is stuck on the fuel they opened.
+ */
 function ChangePart({
+  fuelName,
   unitWord,
+  otherFuels,
   onPick,
+  onSwitch,
   onCancel,
 }: {
+  fuelName: string;
   unitWord: string;
-  onPick: (kind: 'price' | 'tanks' | 'pumps' | 'fuel') => void;
+  otherFuels: { id: string; name: string }[];
+  onPick: (kind: ChangeKind) => void;
+  onSwitch: () => void;
   onCancel: () => void;
 }) {
   return (
-    <WizardMenu<'price' | 'tanks' | 'pumps' | 'fuel'>
-      title="What do you want to change?"
+    <WizardMenu<ChangeKind | 'switch'>
+      title={`What do you want to change for ${fuelName}?`}
       name="fuel-change"
-      onPick={onPick}
+      onPick={(value) => (value === 'switch' ? onSwitch() : onPick(value))}
       onCancel={onCancel}
       options={[
-        { value: 'price', label: 'The price', detail: `What a ${unitWord} costs` },
-        { value: 'tanks', label: 'The tanks', detail: 'Add or change a tank' },
-        { value: 'pumps', label: 'Pumps & Nozzles', detail: 'Add or change a nozzle' },
-        { value: 'fuel', label: 'The fuel itself', detail: 'Name, type, how it is measured, hide' },
+        { value: 'price', label: `The price of ${fuelName}`, detail: `What a ${unitWord} costs` },
+        { value: 'tanks', label: `The ${fuelName} tanks`, detail: 'Add or change a tank' },
+        {
+          value: 'pumps',
+          label: 'Pumps & Nozzles',
+          detail: `Add or change the ${fuelName} nozzles`,
+        },
+        {
+          value: 'fuel',
+          label: `${fuelName} itself`,
+          detail: 'Name, type, how it is measured, hide',
+        },
+        ...(otherFuels.length > 0
+          ? [
+              {
+                value: 'switch' as const,
+                label: 'A different fuel',
+                detail: otherFuels.map((f) => f.name).join(', '),
+              },
+            ]
+          : []),
       ]}
     />
   );
@@ -299,6 +328,7 @@ function PumpPart({
       stationId={ctx.stationId}
       productId={productId}
       fuelName={(ctx.data.products ?? []).find((p) => p.id === productId)?.name ?? 'this fuel'}
+      fuels={activeProducts(ctx.data).map((p) => ({ id: p.id, name: p.name }))}
       pumps={(ctx.data.pumps ?? []).filter((p) => p.status === 'ACTIVE')}
       nozzles={(ctx.data.nozzles ?? []).filter((n) => n.status === 'ACTIVE')}
       canManage={ctx.data.capabilities.forecourt}
@@ -337,6 +367,8 @@ function TankPart({
       word={quantityWord(ctx.data, productId)}
       tanks={tanks}
       allCodes={(ctx.data.tanks ?? []).map((t) => t.code)}
+      fuels={activeProducts(ctx.data).map((p) => ({ id: p.id, name: p.name, kind: p.kind }))}
+      allTanks={ctx.data.tanks ?? []}
       canManage={ctx.data.capabilities.tanks}
       busy={busy}
       save={(body, success) =>
@@ -446,6 +478,8 @@ export type WizardPart =
   | { kind: 'addFuel' }
   /** "Which fuel's price do you want to change?", from a link on another page. */
   | { kind: 'pickPrice' }
+  /** "Which fuel do you want to change?", from "A different fuel" on a fuel's change menu. */
+  | { kind: 'pickFuel' }
   | { kind: 'shifts' }
   | { kind: 'inCharge' }
   | { kind: 'openingBalances' };
@@ -492,13 +526,15 @@ export function StationWizardPage({
       ? 'Add a fuel'
       : current.kind === 'pickPrice'
         ? 'Change a price'
-        : current.kind === 'shifts'
-          ? 'Shifts'
-          : current.kind === 'inCharge'
-            ? 'Who is in charge'
-            : current.kind === 'openingBalances'
-              ? 'Opening balances'
-              : (product?.name ?? 'Fuel');
+        : current.kind === 'pickFuel'
+          ? 'Change a fuel'
+          : current.kind === 'shifts'
+            ? 'Shifts'
+            : current.kind === 'inCharge'
+              ? 'Who is in charge'
+              : current.kind === 'openingBalances'
+                ? 'Opening balances'
+                : (product?.name ?? 'Fuel');
 
   let body: ReactNode = null;
   if (current.kind === 'addFuel') {
@@ -577,12 +613,29 @@ export function StationWizardPage({
         onCancel={onClose}
       />
     );
+  } else if (current.kind === 'pickFuel') {
+    body = (
+      <WizardMenu<string>
+        title="Which fuel do you want to change?"
+        name="change-fuel"
+        onPick={(productId) => choose(productId)}
+        onCancel={onClose}
+        options={(data.products ?? [])
+          .filter((p) => p.status === 'ACTIVE')
+          .map((p) => ({ value: p.id, label: p.name }))}
+      />
+    );
   } else if (current.kind === 'choose') {
     const productId = current.productId;
     body = (
       <ChangePart
+        fuelName={product?.name ?? 'this fuel'}
         unitWord={priceWord(data, productId)}
+        otherFuels={(data.products ?? [])
+          .filter((p) => p.status === 'ACTIVE' && p.id !== productId)
+          .map((p) => ({ id: p.id, name: p.name }))}
         onPick={(kind) => setCurrent({ kind, productId })}
+        onSwitch={() => setCurrent({ kind: 'pickFuel' })}
         onCancel={onClose}
       />
     );
@@ -751,7 +804,7 @@ export function StationStaging({
       return;
     }
     if (result.status === 403) onDenied();
-    const failed = describeStaged(result.remaining[0]!, data).title;
+    const failed = describeStaged(result.remaining[0]!, data, serverData).title;
     setProblem(
       `${failed} could not be saved. ${friendlySetupError(result.status, result.message)}${
         remaining.length < sending.length ? ' Everything before it was saved.' : ''
@@ -759,7 +812,7 @@ export function StationStaging({
     );
   }
 
-  const lines = queue.map((change) => ({ change, ...describeStaged(change, data) }));
+  const lines = queue.map((change) => ({ change, ...describeStaged(change, data, serverData) }));
   const count = queue.length;
 
   const host = useMemo<StagingHostApi>(

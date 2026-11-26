@@ -19,12 +19,16 @@ export type SetupTank = Readonly<{
   acceptableVarianceLitres: string | null;
   varianceRedLitres: string | null;
   status: string;
+  /** True while nothing has been recorded against the tank, so it may be deleted or move fuel. */
+  unused: boolean;
 }>;
 export type SetupPump = Readonly<{
   id: string;
   number: string;
   name: string | null;
   status: string;
+  /** True while none of its nozzles has been used, so it may be deleted with them. */
+  unused: boolean;
 }>;
 export type SetupNozzle = Readonly<{
   id: string;
@@ -37,6 +41,8 @@ export type SetupNozzle = Readonly<{
   meterWorkingSince: string | null;
   /** True while the date can still be corrected (one meter, nothing recorded against it). */
   meterWorkingSinceEditable: boolean;
+  /** True while no reading, sale or meter change has been recorded, so it may be deleted. */
+  unused: boolean;
 }>;
 export type SetupShiftTemplate = Readonly<{
   id: string;

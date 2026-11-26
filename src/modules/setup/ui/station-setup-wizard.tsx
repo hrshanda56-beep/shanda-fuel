@@ -33,6 +33,7 @@ import {
   type FuelUnitChoice,
 } from '../guided-setup';
 import type { StagedChange } from '../staged-changes';
+import { tankFuelMismatch } from '../tank-wizard';
 import {
   NEW_PUMP,
   blankFuel,
@@ -278,6 +279,19 @@ export function StationSetupWizard({
     <WizardActions wizard={wizard} onContinue={next} continueLabel={label} extra={extra} />
   );
   const fuelName = fuel.name.trim() || 'this fuel';
+  /** The fuels being set up and those already saved, to catch a tank put under the wrong one. */
+  const fuelChoices = [
+    ...fuels.map((f) => ({ id: `draft:${f.key}`, name: f.name.trim(), kind: f.kind })),
+    ...(data.products ?? []).map((p) => ({ id: p.id, name: p.name, kind: p.kind })),
+  ];
+  const wrongFuel = (draft: FuelDraft) =>
+    draft.tank?.name.trim()
+      ? tankFuelMismatch(
+          draft.tank.name,
+          { id: `draft:${draft.key}`, name: draft.name.trim(), kind: draft.kind },
+          fuelChoices,
+        )
+      : null;
 
   return (
     <form
@@ -410,6 +424,12 @@ export function StationSetupWizard({
                 }
               />
             </Field>
+            {wrongFuel(fuel) ? (
+              <WizardNotice>
+                {tankValue.name.trim()} sounds like a tank for {wrongFuel(fuel)!.name}, but you are
+                setting up {fuelName}. Only add the tank that holds {fuelName} here.
+              </WizardNotice>
+            ) : null}
             <NumericInput
               id="ssw-capacity"
               label={`How many ${unitWord(fuel.unit)} the tank holds`}
@@ -684,6 +704,7 @@ export function StationSetupWizard({
                   item={item}
                   number={i + 1}
                   pumpName={(id) => savedPumps.find((p) => p.id === id)?.number ?? ''}
+                  wrongFuel={wrongFuel(item)?.name ?? null}
                   onChange={wizard.change}
                 />
               ))}
@@ -711,11 +732,14 @@ function FuelSummary({
   item,
   number,
   pumpName,
+  wrongFuel,
   onChange,
 }: {
   item: FuelDraft;
   number: number;
   pumpName: (pumpId: string) => string;
+  /** The fuel the tank's name points to when it is not this one (#315). */
+  wrongFuel: string | null;
   onChange: (to: Step, index: number) => void;
 }) {
   const index = number - 1;
@@ -736,6 +760,12 @@ function FuelSummary({
         {item.tank
           ? `${item.tank.name} · holds ${item.tank.capacity} ${unitWord(item.unit)}`
           : 'Add later'}
+        {wrongFuel ? (
+          <small role="note">
+            Check this: the name sounds like a tank for {wrongFuel}, but it is listed under{' '}
+            {item.name || 'this fuel'}.
+          </small>
+        ) : null}
       </WizardSummaryRow>
       <WizardSummaryRow label="Pump and nozzle" onChange={() => onChange('pump', index)}>
         {item.nozzle

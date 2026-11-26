@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { Field } from '@/design-system/primitives';
+import { Button, Field } from '@/design-system/primitives';
 import {
   WizardActions,
   WizardNotice,
@@ -34,6 +34,8 @@ import {
   checkWhen,
   nextNumber,
   planAddNozzle,
+  planDeleteNozzle,
+  planDeletePump,
   planRenumber,
   planSince,
   pumpLabel,
@@ -51,19 +53,21 @@ import {
 } from '../pump-wizard';
 import type { StagedChange } from '../staged-changes';
 
-type Screen = 'menu' | 'done' | AddStep | RenumberStep | SinceStep;
+type Screen = 'menu' | 'done' | 'moreNozzles' | AddStep | RenumberStep | SinceStep;
 
 /**
- * The pumps and nozzles of one fuel, one question at a time (#249): add a nozzle (on a pump you
- * have or a new one), change a pump or nozzle number, or correct the day a meter started working.
- * Ends with "Do you want to change something else?". Nothing is saved here; the page that opens it
- * keeps the changes in its list of waiting changes.
+ * The pumps and nozzles, one question at a time (#249, #317): add a pump and then its nozzles, add
+ * nozzles to a pump you have, change or remove a pump (removing only while nothing was recorded on
+ * it, #315), or correct the day a meter started working. Ends with "Do you want to change something
+ * else?". Nothing is saved here; the page that opens it keeps the changes in its list of waiting
+ * changes.
  */
 export function PumpWizard({
   tenantId,
   stationId,
   productId,
   fuelName,
+  fuels,
   pumps,
   nozzles,
   canManage,
@@ -77,6 +81,8 @@ export function PumpWizard({
   stationId: string;
   productId: string;
   fuelName: string;
+  /** The station's active fuels, so a pump's other nozzles can be added in one go. */
+  fuels: readonly { id: string; name: string }[];
   /** Every active pump at the station: a nozzle for this fuel can go on any of them. */
   pumps: readonly SetupPump[];
   /** Every active nozzle at the station, so numbers stay unique on a pump. */
@@ -90,7 +96,10 @@ export function PumpWizard({
   onCancel: () => void;
 }) {
   const own = nozzles.filter((n) => n.productId === productId);
-  const ownPumps = pumps.filter((p) => own.some((n) => n.pumpId === p.id));
+  /** Pumps with a nozzle of this fuel, and pumps with no nozzle at all (so they can be removed). */
+  const ownPumps = pumps.filter(
+    (p) => own.some((n) => n.pumpId === p.id) || !nozzles.some((n) => n.pumpId === p.id),
+  );
   const editable = own.filter((n) => n.meterWorkingSinceEditable);
   const where = { tenantId, stationId };
 
@@ -103,16 +112,23 @@ export function PumpWizard({
     direct && editable.length === 1 ? { nozzleId: editable[0]!.id, date: '' } : BLANK_SINCE,
   );
   const [menuPick, setMenuPick] = useState<PumpFlow | null>(null);
+  /** The fuel of the nozzle being added: this page's fuel, or another one on the same pump. */
+  const [nozzleFuel, setNozzleFuel] = useState(productId);
+  const [morePick, setMorePick] = useState<string | null>(null);
+  const [removeNozzleId, setRemoveNozzleId] = useState<string | null>(null);
+  const nozzleFuelName = fuels.find((f) => f.id === nozzleFuel)?.name ?? fuelName;
 
   const hasPumps = pumps.length > 0;
   const sequence: readonly Screen[] =
     flow === 'add'
-      ? addSteps(add, hasPumps)
-      : flow === 'renumber'
-        ? renumberSteps()
-        : flow === 'since'
-          ? sinceSteps()
-          : [];
+      ? addSteps(add, true)
+      : flow === 'addPump'
+        ? addSteps(add, false)
+        : flow === 'renumber'
+          ? renumberSteps()
+          : flow === 'since'
+            ? sinceSteps()
+            : [];
   const wizard = useWizard<Screen>({
     start: direct ? (editable.length === 1 ? 'date' : 'pickNozzle') : 'menu',
     sequence,
@@ -135,12 +151,14 @@ export function PumpWizard({
 
   function startFlow(choice: PumpFlow) {
     setFlow(choice);
-    if (choice === 'add') {
+    setNozzleFuel(productId);
+    if (choice === 'addPump' || (choice === 'add' && !hasPumps)) {
+      setFlow('addPump');
+      setAdd({ ...BLANK_ADD, pump: NEW_PUMP, pumpNumber: nextNumber(pumps.map((p) => p.number)) });
+      wizard.go('newPump');
+    } else if (choice === 'add') {
       setAdd(BLANK_ADD);
-      if (!hasPumps) {
-        setAdd({ ...BLANK_ADD, pump: NEW_PUMP, pumpNumber: nextNumber([]) });
-        wizard.go('newPump');
-      } else wizard.go('pump');
+      wizard.go('pump');
     } else if (choice === 'renumber') {
       const only = ownPumps.length === 1 ? ownPumps[0]! : null;
       if (only) {
@@ -176,23 +194,29 @@ export function PumpWizard({
   /* ------------------------------- the menu ------------------------------- */
   if (wizard.step === 'menu') {
     return (
-      <WizardStep
-        wizard={alone}
-        title={`What do you want to do with the pumps and nozzles of ${fuelName}?`}
-      >
+      <WizardStep wizard={alone} title="What do you want to do with the pumps and nozzles?">
         <WizardOptions<PumpFlow>
           label="What to do"
           name="pump-flow"
           value={menuPick}
           onPick={setMenuPick}
           options={[
-            { value: 'add', label: 'Add a nozzle', detail: 'On a pump you have, or a new pump' },
+            { value: 'addPump', label: 'Add a pump', detail: 'Then add the nozzles on it' },
+            ...(hasPumps
+              ? [
+                  {
+                    value: 'add' as const,
+                    label: 'Add nozzles to a pump',
+                    detail: 'A pump you have already added',
+                  },
+                ]
+              : []),
             ...(ownPumps.length > 0
               ? [
                   {
                     value: 'renumber' as const,
-                    label: 'Change a pump or nozzle number',
-                    detail: 'Rename a pump or renumber its nozzles',
+                    label: 'Change or remove a pump',
+                    detail: 'Its number, name or nozzles, or delete one added by mistake',
                   },
                 ]
               : []),
@@ -225,7 +249,7 @@ export function PumpWizard({
   /* ----------------------------- add a nozzle ----------------------------- */
   if (wizard.step === 'pump') {
     return (
-      <WizardStep wizard={shown} title="Which pump is the nozzle on?">
+      <WizardStep wizard={shown} title="Which pump are you adding a nozzle to?">
         <WizardOptions<string>
           label="Pump"
           name="nozzle-pump"
@@ -238,14 +262,11 @@ export function PumpWizard({
                 : {}),
             })
           }
-          options={[
-            ...pumps.map((pump) => ({
-              value: pump.id,
-              label: pumpLabel(pump),
-              detail: `${numbersOn(pump.id).length} nozzle${numbersOn(pump.id).length === 1 ? '' : 's'} now`,
-            })),
-            { value: NEW_PUMP, label: 'A new pump', detail: 'A pump that is not listed here' },
-          ]}
+          options={pumps.map((pump) => ({
+            value: pump.id,
+            label: pumpLabel(pump),
+            detail: `${numbersOn(pump.id).length} nozzle${numbersOn(pump.id).length === 1 ? '' : 's'} now`,
+          }))}
         />
         {errors.pump ? (
           <p className="field-error" role="alert">
@@ -259,7 +280,7 @@ export function PumpWizard({
             if (!found.pump && add.pump !== NEW_PUMP && !add.nozzleNumber) {
               setA({ nozzleNumber: nextNumber(numbersOn(add.pump)) });
             }
-            wizard.advance(found, add.pump === NEW_PUMP ? 'newPump' : 'nozzle');
+            wizard.advance(found, 'nozzle');
           }}
         />
       </WizardStep>
@@ -268,7 +289,11 @@ export function PumpWizard({
 
   if (wizard.step === 'newPump') {
     return (
-      <WizardStep wizard={shown} title="What is the new pump called?">
+      <WizardStep
+        wizard={shown}
+        title="What number is on the new pump?"
+        hint="You add the nozzles on it next."
+      >
         <Field id="pumpNumber" label="Pump number" error={errors.pumpNumber} required>
           <input
             id="pumpNumber"
@@ -310,7 +335,16 @@ export function PumpWizard({
 
   if (wizard.step === 'nozzle') {
     return (
-      <WizardStep wizard={shown} title={`What is the number of the ${fuelName} nozzle?`}>
+      <WizardStep
+        wizard={shown}
+        title={`What is the number of the ${nozzleFuelName} nozzle on ${
+          add.pump === NEW_PUMP
+            ? pumpLabel({ number: add.pumpNumber.trim(), name: add.pumpName.trim() || null })
+            : chosenPump
+              ? pumpLabel(chosenPump)
+              : 'the pump'
+        }?`}
+      >
         <Field id="nozzleNumber" label="Nozzle number" error={errors.nozzleNumber} required>
           <input
             id="nozzleNumber"
@@ -400,7 +434,11 @@ export function PumpWizard({
 
   if (wizard.step === 'review') {
     return (
-      <WizardStep wizard={shown} title="Check the new nozzle" hint={WIZARD_REVIEW_HINT}>
+      <WizardStep
+        wizard={shown}
+        title={add.pump === NEW_PUMP ? 'Check the new pump and its nozzle' : 'Check the new nozzle'}
+        hint={WIZARD_REVIEW_HINT}
+      >
         <WizardSummary>
           <WizardSummaryRow
             label="Pump"
@@ -413,7 +451,7 @@ export function PumpWizard({
                 : ''}
           </WizardSummaryRow>
           <WizardSummaryRow label="Nozzle" onChange={() => wizard.change('nozzle')}>
-            {add.nozzleNumber.trim()} ({fuelName})
+            {add.nozzleNumber.trim()} ({nozzleFuelName})
           </WizardSummaryRow>
           <WizardSummaryRow label="Meter" onChange={() => wizard.change('meter')}>
             {add.meter.trim()}
@@ -424,9 +462,106 @@ export function PumpWizard({
         </WizardSummary>
         <WizardActions
           wizard={wizard}
-          continueLabel="Add the nozzle"
+          continueLabel={add.pump === NEW_PUMP ? 'Add the pump and nozzle' : 'Add the nozzle'}
           onContinue={() => {
-            onStage(planAddNozzle({ ...where, productId, answers: add }));
+            onStage(planAddNozzle({ ...where, productId: nozzleFuel, answers: add }));
+            setMorePick(null);
+            wizard.go('moreNozzles');
+          }}
+        />
+      </WizardStep>
+    );
+  }
+
+  /* -------------------- another nozzle on the same pump -------------------- */
+  if (wizard.step === 'moreNozzles') {
+    const label =
+      add.pump === NEW_PUMP
+        ? pumpLabel({ number: add.pumpNumber.trim(), name: add.pumpName.trim() || null })
+        : chosenPump
+          ? pumpLabel(chosenPump)
+          : 'this pump';
+    // The pump just added is in the list now, under a stand-in id until everything is saved.
+    const pumpId =
+      add.pump === NEW_PUMP ? pumps.find((p) => p.number === add.pumpNumber.trim())?.id : add.pump;
+    return (
+      <WizardStep wizard={alone} title={`Does ${label} have another nozzle?`}>
+        <WizardOptions<string>
+          label="Another nozzle"
+          name="more-nozzles"
+          value={morePick}
+          onPick={setMorePick}
+          options={[
+            ...fuels.map((fuel) => ({ value: fuel.id, label: `Yes, one for ${fuel.name}` })),
+            { value: 'no', label: 'No, that is all' },
+          ]}
+        />
+        {errors.more ? (
+          <p className="field-error" role="alert">
+            {errors.more}
+          </p>
+        ) : null}
+        <WizardActions
+          wizard={wizard}
+          onContinue={() => {
+            if (!morePick) return wizard.setErrors({ more: 'Choose an answer.' });
+            if (morePick === 'no' || !pumpId) return wizard.go('done');
+            setNozzleFuel(morePick);
+            setFlow('add');
+            setAdd({ ...BLANK_ADD, pump: pumpId, nozzleNumber: nextNumber(numbersOn(pumpId)) });
+            wizard.go('nozzle');
+          }}
+        />
+      </WizardStep>
+    );
+  }
+
+  /* ------------------------- remove (#315) ------------------------- */
+  if (wizard.step === 'removePump') {
+    const pump = pumpOf(renumber.pumpId);
+    const onPump = nozzles.filter((n) => n.pumpId === renumber.pumpId);
+    return (
+      <WizardStep wizard={alone} title={pump ? `Delete ${pumpLabel(pump)}?` : 'Delete the pump?'}>
+        <WizardNotice>
+          Nothing has been recorded on this pump yet, so it can be deleted completely
+          {onPump.length > 0
+            ? `, together with ${onPump.length === 1 ? 'its nozzle' : `its ${onPump.length} nozzles`} (${onPump
+                .map(
+                  (n) =>
+                    `nozzle ${n.number}, ${fuels.find((f) => f.id === n.productId)?.name ?? 'a fuel'}`,
+                )
+                .join('; ')})`
+            : ''}
+          . You can add it again later.
+        </WizardNotice>
+        <WizardActions
+          wizard={wizard}
+          continueLabel="Delete the pump"
+          onContinue={() => {
+            if (renumber.pumpId) onStage(planDeletePump({ ...where, pumpId: renumber.pumpId }));
+            wizard.go('done');
+          }}
+        />
+      </WizardStep>
+    );
+  }
+
+  if (wizard.step === 'removeNozzle') {
+    const nozzle = nozzles.find((n) => n.id === removeNozzleId);
+    return (
+      <WizardStep
+        wizard={alone}
+        title={nozzle ? `Delete ${nozzleLabel(nozzle)}?` : 'Delete the nozzle?'}
+      >
+        <WizardNotice>
+          No readings or sales have been recorded on this nozzle yet, so it can be deleted with its
+          meter. You can add it again later.
+        </WizardNotice>
+        <WizardActions
+          wizard={wizard}
+          continueLabel="Delete the nozzle"
+          onContinue={() => {
+            if (removeNozzleId) onStage(planDeleteNozzle({ ...where, nozzleId: removeNozzleId }));
             wizard.go('done');
           }}
         />
@@ -437,7 +572,7 @@ export function PumpWizard({
   /* --------------------------- change the numbers --------------------------- */
   if (wizard.step === 'pickPump') {
     return (
-      <WizardStep wizard={shown} title="Which pump do you want to change?">
+      <WizardStep wizard={shown} title="Which pump do you want to change or remove?">
         <WizardOptions<string>
           label="Pump"
           name="renumber-pump"
@@ -456,10 +591,11 @@ export function PumpWizard({
           options={ownPumps.map((pump) => ({
             value: pump.id,
             label: pumpLabel(pump),
-            detail: own
-              .filter((n) => n.pumpId === pump.id)
-              .map((n) => `nozzle ${n.number}`)
-              .join(', '),
+            detail:
+              own
+                .filter((n) => n.pumpId === pump.id)
+                .map((n) => `nozzle ${n.number}`)
+                .join(', ') || 'No nozzles yet',
           }))}
         />
         {errors.pickPump ? (
@@ -509,25 +645,47 @@ export function PumpWizard({
           />
         </Field>
         {mine.map((n) => (
-          <Field
-            key={n.id}
-            id={`nozzle-${n.id}`}
-            label={`Nozzle number (${fuelName})`}
-            hint="The fuel and meter of a nozzle cannot be changed because sales use them."
-            error={errors[`nozzle-${n.id}`]}
-            required
-          >
-            <input
+          <div key={n.id}>
+            <Field
               id={`nozzle-${n.id}`}
-              value={renumber.nozzles[n.id] ?? ''}
-              maxLength={MAX_NUMBER}
-              autoComplete="off"
-              onChange={(event) =>
-                setR({ nozzles: { ...renumber.nozzles, [n.id]: event.target.value } })
+              label={`Nozzle number (${fuelName})`}
+              hint={
+                n.unused
+                  ? 'Nothing has been recorded on this nozzle yet, so it can still be deleted.'
+                  : 'The fuel and meter of a nozzle cannot be changed because sales use them.'
               }
-            />
-          </Field>
+              error={errors[`nozzle-${n.id}`]}
+              required
+            >
+              <input
+                id={`nozzle-${n.id}`}
+                value={renumber.nozzles[n.id] ?? ''}
+                maxLength={MAX_NUMBER}
+                autoComplete="off"
+                onChange={(event) =>
+                  setR({ nozzles: { ...renumber.nozzles, [n.id]: event.target.value } })
+                }
+              />
+            </Field>
+            {n.unused ? (
+              <Button
+                variant="quiet"
+                size="sm"
+                onClick={() => {
+                  setRemoveNozzleId(n.id);
+                  wizard.go('removeNozzle');
+                }}
+              >
+                Delete nozzle {n.number}
+              </Button>
+            ) : null}
+          </div>
         ))}
+        {pump?.unused ? (
+          <Button variant="quiet" onClick={() => wizard.go('removePump')}>
+            Delete {pumpLabel(pump)}
+          </Button>
+        ) : null}
         <WizardActions
           wizard={wizard}
           onContinue={() =>

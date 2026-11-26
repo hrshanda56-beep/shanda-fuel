@@ -99,6 +99,15 @@ describe('PostgreSQL integration harness', () => {
               // Rewritten as a set while the delivery is a draft; the status guard blocks it after.
               'fuel_delivery_compartments',
               'fuel_delivery_compartment_seals',
+              // Setup removes a fuel, tank, pump or nozzle only while nothing refers to it (0122);
+              // NO ACTION foreign keys and the tank history trigger refuse anything with history.
+              'products',
+              'tanks',
+              'tank_calibration_points',
+              'pumps',
+              'nozzles',
+              'meters',
+              'meter_installations',
             ]).has(row.table_name) &&
           !row.can_truncate &&
           !row.can_trigger,

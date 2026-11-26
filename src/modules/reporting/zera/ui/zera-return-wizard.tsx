@@ -633,8 +633,8 @@ export function ZeraReturnWizard({ tenantId, stations, months }: Props) {
                 >
                   Fuels
                 </Link>
-                : open the fuel, choose Yes, Change It, then The fuel itself and Change the type of
-                fuel. Then come back here.
+                : open the fuel, choose Yes, Change It, then the fuel&apos;s own name (for example
+                Diesel itself) and Change the type of fuel. Then come back here.
               </WizardNotice>
             ) : null}
             {result.missingDays.length > 0 ? (
