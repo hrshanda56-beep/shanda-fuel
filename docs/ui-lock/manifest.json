@@ -275,7 +275,7 @@
     "src/modules/forecourt/ui/daily-operations-save.ts": "168d2ec7870e60eae1a69b62402483c5b101797b3eb4ed2482991a01aa2a9a3b",
     "src/modules/forecourt/ui/daily-operations-state.ts": "e2e4af39416f8a1124da77f0b9f58fd8353ba67bf88b4cfc75fffc0d8c9b41e0",
     "src/modules/forecourt/ui/daily-operations-workspace.tsx": "8f528e5c0ca11a70d67c8db93cc6e0d904c4df63f6a9c7bfe4632a9471337d39",
-    "src/modules/forecourt/ui/daily-report.tsx": "c44301f8804eba7927b799ddc269d3147ca80dbf5174f5bc6559432c5c3647ea",
+    "src/modules/forecourt/ui/daily-report.tsx": "a464e513e80ae93b3df6340d2766e40b873eb517e0bfec96e5b1e7689f7c40d3",
     "src/modules/forecourt/ui/daily-tank-dips.tsx": "ad0a5618266c602b92d4aa7544e7d97134961c2eb95b5ab36e416fec8f21ae3e",
     "src/modules/forecourt/ui/figures-screens.tsx": "f2845bfe179807bac5adadf121c949adfe5134c6af4ed88dfd3b9679a266eced",
     "src/modules/forecourt/ui/figures-wizard.ts": "e1510c7736f6562056297b3724680c0ac3e6c371a55d4053df9be7dc308a243a",

@@ -107,7 +107,8 @@ export async function getDailyReportFromRequest(
         transaction.execute<
           Omit<DailyReportInput['dips'][number], 'measuredAt'> & { measuredAt: Date | string }
         >(sql`
-          select t.code as "tankCode", pr.name as "productName", pr.unit as "fuelUnit",
+          select t.code as "tankCode", (t.status = 'RETIRED') as "tankRetired",
+                 pr.name as "productName", pr.unit as "fuelUnit",
                  d.measured_at as "measuredAt",
                  d.raw_measurement::text as "rawMeasurement", d.measurement_unit as "measurementUnit",
                  d.physical_litres::text as "physicalLitres"

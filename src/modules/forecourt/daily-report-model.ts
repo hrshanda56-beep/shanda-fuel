@@ -35,6 +35,8 @@ export type DailyReportInput = Readonly<{
   }>;
   dips: ReadonlyArray<{
     tankCode: string;
+    /** True once the tank was retired; its past readings still show. */
+    tankRetired?: boolean;
     productName: string;
     fuelUnit?: 'LITRES' | 'KILOGRAMS';
     measuredAt: string;
@@ -76,6 +78,8 @@ export type DailyReportProduct = Readonly<{
 
 export type DailyReportDip = Readonly<{
   tankCode: string;
+  /** The tank is no longer in use; shown as a note beside its past readings. */
+  retired: boolean;
   productName: string;
   /** With two or more dips the first is opening and the last is closing; a lone dip is shown as it is. */
   opening: DailyReportDipReading | null;
@@ -179,6 +183,7 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
       const last = ordered[ordered.length - 1]!;
       return {
         tankCode,
+        retired: ordered.some((row) => row.tankRetired === true),
         productName: first.productName,
         opening: ordered.length > 1 ? reading(first) : null,
         closing: reading(last),

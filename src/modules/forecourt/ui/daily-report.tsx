@@ -254,6 +254,7 @@ export function DailyReportView({ report }: { report: DailyReport }) {
                 <tr key={dip.tankCode}>
                   <th scope="row">
                     {dip.productName} · {dip.tankCode}
+                    {dip.retired ? ' (no longer in use)' : ''}
                   </th>
                   <td data-label="Opening">
                     {dip.opening ? dipLabel(dip.opening) : 'No opening dip'}
