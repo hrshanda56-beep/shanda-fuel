@@ -1285,3 +1285,14 @@ Date: 2026-11-21. Source: the owner's feedback round (issue #258) and the owner'
 4. **Kept as filed.** Each save is a new version; versions are never edited or deleted by the application role.
 5. **Downloads** need a fresh identity check and are written to the signed audit log.
 6. **Due date.** The screen quotes ZERA's own sentence from the form word for word and works out no date itself (owner's instruction, 2026-11-21). The form also says "on or before the 3rd of every second month" elsewhere; only the section-43 sentence is shown.
+
+## DEC-058 — More than one tank of the same fuel at a station: check stock per fuel (option B) (#314, 2026-11-26)
+
+Date: 2026-11-26. Source: the client's feedback round (issue #314) and the owner's instruction in chat ("option B").
+**Status:** direction ACCEPTED; **not built**. The build waits on the open point in item 4 and needs the owner's answer.
+
+1. **Today.** A station can have one active tank per fuel. Adding a second is refused with a plain message (reworded in this change). Pumps and nozzles are not linked to tanks, so a day's sales of a fuel cannot be split between two tanks.
+2. **Direction (option B).** Keep the stock check per fuel, not per tank: add up the tanks' opening stock, deliveries, adjustments and closing dips for a fuel and compare the total with that fuel's sales. Nozzles are **not** linked to tanks.
+3. **What this touches.** The day's stock check (`daily-reconciliation.ts`, which now subtracts all of a fuel's sales from each tank), the production reconciliation (it refuses a sale whose fuel has more than one active tank, and leaves a tank's expected stock empty when it shares its fuel), tank dips and deliveries (still recorded per tank), variance and alerts, and reports that show a tank's gap. A per-tank gap cannot be told under option B, so screens show the gap for the fuel and each tank's dip separately.
+4. **Open point, needs the owner.** Fuel cost is tracked per tank (cost streams, sale cost attribution). With two tanks of one fuel, a sale has no single source tank. Choose before building: (a) cost the fuel as one pool across its tanks, or (b) assign each sale to the tank with the oldest stock first. This changes cost of sales and profit, so it must not be guessed.
+5. **Until then.** The one-tank limit stays and its message says so in plain words.

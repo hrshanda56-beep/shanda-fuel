@@ -266,6 +266,6 @@ describe('inventory integrity (PostgreSQL)', { timeout: 120_000 }, () => {
       'inv-two-tanks-create',
     );
     expect(second.response.status, JSON.stringify(second.body)).toBe(409);
-    expect(JSON.stringify(second.body)).toContain('already has an active tank for this fuel');
+    expect(JSON.stringify(second.body)).toContain('can only track one tank for each fuel for now');
   });
 });
