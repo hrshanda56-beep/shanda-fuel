@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte } from 'drizzle-orm';
 import { AppError } from '../../platform/errors';
 import {
   assertMovementFitsTank,
@@ -8,7 +8,7 @@ import {
   validateMovementQuantity,
   type InventoryMovementType,
 } from './domain';
-import { litres } from '../../platform/domain/primitives';
+import { ExactDecimal, litres } from '../../platform/domain/primitives';
 import type { InventoryCommandContext, InventoryTransaction } from './application';
 import { withTenantTransaction } from '../../platform/db/transaction';
 import { products } from '../../platform/db/schema/a3';
@@ -25,6 +25,8 @@ export type TankRecord = Readonly<{
   acceptableVarianceLitres: string | null;
   varianceRedLitres: string | null;
   status: string;
+  /** The tank this tank's cost pool is kept on: its own id when it is on its own (DEC-058). */
+  costPoolTankId: string;
   version: number;
 }>;
 
@@ -82,6 +84,7 @@ async function loadTank(
       acceptableVarianceLitres: tanks.acceptableVarianceLitres,
       varianceRedLitres: tanks.varianceRedLitres,
       status: tanks.status,
+      costPoolTankId: tanks.costPoolTankId,
       version: tanks.version,
     })
     .from(tanks)
@@ -95,12 +98,64 @@ async function loadTank(
   const rows = await (lock ? query.for('update') : query);
   const tank = rows[0];
   if (!tank) throw new AppError('NOT_FOUND', 'The requested tank was not found');
-  return tank;
+  return { ...tank, costPoolTankId: tank.costPoolTankId ?? tank.id };
+}
+
+/**
+ * The tanks that share one stock and cost pool with this tank (DEC-058), the tank itself included,
+ * and the room they have together. A tank on its own is a pool of one, so its room is its capacity.
+ */
+async function loadPool(
+  transaction: InventoryTransaction,
+  input: { tenantId: string; stationId: string; tankId: string },
+): Promise<{
+  poolTankId: string;
+  tankIds: readonly string[];
+  /** Tanks that can hold fuel: not retired. */
+  openTankIds: readonly string[];
+  capacityLitres: string;
+}> {
+  const own = await transaction
+    .select({ id: tanks.id, costPoolTankId: tanks.costPoolTankId })
+    .from(tanks)
+    .where(
+      and(
+        eq(tanks.tenantId, input.tenantId),
+        eq(tanks.stationId, input.stationId),
+        eq(tanks.id, input.tankId),
+      ),
+    );
+  if (!own[0]) throw new AppError('NOT_FOUND', 'The requested tank was not found');
+  const poolTankId = own[0].costPoolTankId ?? own[0].id;
+  const members = await transaction
+    .select({ id: tanks.id, capacityLitres: tanks.capacityLitres, status: tanks.status })
+    .from(tanks)
+    .where(
+      and(
+        eq(tanks.tenantId, input.tenantId),
+        eq(tanks.stationId, input.stationId),
+        eq(tanks.costPoolTankId, poolTankId),
+      ),
+    )
+    .orderBy(asc(tanks.createdAt), asc(tanks.id));
+  const open = members.filter((tank) => tank.status !== 'RETIRED' || tank.id === input.tankId);
+  const capacity =
+    open.length === 1
+      ? open[0]!.capacityLitres
+      : open
+          .reduce((total, tank) => total.add(litres(tank.capacityLitres)), new ExactDecimal('0'))
+          .toString();
+  return {
+    poolTankId,
+    tankIds: members.length > 0 ? members.map((tank) => tank.id) : [input.tankId],
+    openTankIds: open.map((tank) => tank.id),
+    capacityLitres: capacity,
+  };
 }
 
 async function movementRows(
   transaction: InventoryTransaction,
-  input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
+  input: { tenantId: string; stationId: string; tankIds: readonly string[]; asOf?: Date },
 ): Promise<readonly TimedStockMovement[]> {
   const rows = await transaction
     .select({
@@ -113,7 +168,7 @@ async function movementRows(
       and(
         eq(inventoryMovements.tenantId, input.tenantId),
         eq(inventoryMovements.stationId, input.stationId),
-        eq(inventoryMovements.tankId, input.tankId),
+        inArray(inventoryMovements.tankId, [...input.tankIds]),
         input.asOf ? lte(inventoryMovements.effectiveAt, input.asOf) : undefined,
       ),
     )
@@ -129,7 +184,11 @@ export async function getExpectedTankStockInTransaction(
   transaction: InventoryTransaction,
   input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
 ): Promise<string> {
-  return deriveExpectedTankStock(undefined, await movementRows(transaction, input));
+  const pool = await loadPool(transaction, input);
+  return deriveExpectedTankStock(
+    undefined,
+    await movementRows(transaction, { ...input, tankIds: pool.tankIds }),
+  );
 }
 
 async function latestDip(
@@ -169,13 +228,30 @@ export async function getTankStockPositionInTransaction(
   input: { tenantId: string; stationId: string; tankId: string; asOf?: Date },
 ): Promise<StockPosition> {
   const tank = await loadTankForRead(transaction, input);
-  const dip = await latestDip(transaction, input);
-  const physicalLitres = dip?.physicalLitres ?? null;
+  const pool = await loadPool(transaction, input);
+  // A pool of several tanks is one stock: the dips of all its tanks together are compared with the
+  // books. If any open tank has no dip yet there is no honest total, so none is given.
+  const dips = await Promise.all(
+    pool.openTankIds.map((tankId) => latestDip(transaction, { ...input, tankId })),
+  );
+  const measured = dips.filter((dip): dip is NonNullable<typeof dip> => dip !== null);
+  const complete = measured.length === dips.length && measured.length > 0;
+  const physicalLitres = complete
+    ? measured
+        .reduce((total, dip) => total.add(litres(dip.physicalLitres)), new ExactDecimal('0'))
+        .toString()
+    : null;
+  const dipAt = complete
+    ? measured.reduce(
+        (latest, dip) => (dip.measuredAt > latest ? dip.measuredAt : latest),
+        measured[0]!.measuredAt,
+      )
+    : undefined;
   // The books are compared at the moment of the dip, not today: stock sold or delivered since the
   // dip would otherwise show up as a false shortage or surplus.
   const expectedLitres = await getExpectedTankStockInTransaction(transaction, {
     ...input,
-    asOf: dip?.measuredAt ?? input.asOf,
+    asOf: dipAt ?? input.asOf,
   });
   return {
     tankId: tank.id,
@@ -240,7 +316,7 @@ export async function getStationProductStock(
 ): Promise<readonly StockPosition[]> {
   return withTenantTransaction(context.authority.transaction, async (transaction) => {
     const stationTanks = await transaction
-      .select({ id: tanks.id })
+      .select({ id: tanks.id, costPoolTankId: tanks.costPoolTankId })
       .from(tanks)
       .where(
         and(
@@ -250,8 +326,15 @@ export async function getStationProductStock(
         ),
       )
       .orderBy(asc(tanks.code));
+    // Tanks that share a pool are one stock, so each pool is listed once.
+    const onePerPool = stationTanks.filter(
+      (tank, index, all) =>
+        all.findIndex(
+          (other) => (other.costPoolTankId ?? other.id) === (tank.costPoolTankId ?? tank.id),
+        ) === index,
+    );
     return Promise.all(
-      stationTanks.map((tank) =>
+      onePerPool.map((tank) =>
         getTankStockPositionInTransaction(transaction, {
           tenantId: context.tenantId,
           stationId: context.stationId,
@@ -294,14 +377,15 @@ export async function postInventoryMovementInTransaction(
     throw new AppError('CONFLICT', 'Retired tanks cannot receive new inventory movements');
   }
   const quantityLitres = validateMovementQuantity(input.movementType, input.quantityLitres);
+  const pool = await loadPool(transaction, input);
   assertMovementFitsTank(
-    await movementRows(transaction, input),
+    await movementRows(transaction, { ...input, tankIds: pool.tankIds }),
     {
       movementType: input.movementType,
       quantityLitres,
       effectiveAt: input.effectiveAt,
     },
-    tank.capacityLitres,
+    pool.capacityLitres,
   );
   const rows = await transaction
     .insert(inventoryMovements)

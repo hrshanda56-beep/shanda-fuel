@@ -37,6 +37,12 @@ export const tanks = appSchema.table(
     /** Red: a difference above this is urgent. Empty means twice the yellow limit. */
     varianceRedLitres: litresColumn('variance_red_litres'),
     status: text('status').notNull().default('ACTIVE'),
+    /**
+     * The tank this tank's cost pool is kept on (DEC-058). The tanks of one fuel that share a pool
+     * are one for stock and cost. A tank on its own is its own pool. The database fills it in with
+     * the tank's own id when it is left out, and it is never empty there.
+     */
+    costPoolTankId: uuid('cost_pool_tank_id'),
     createdBy: uuid('created_by').notNull(),
     updatedBy: uuid('updated_by').notNull(),
     version: integer('version').notNull().default(0),

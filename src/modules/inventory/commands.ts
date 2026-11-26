@@ -329,28 +329,42 @@ function assertVarianceLimits(
 }
 
 /**
- * Pumps are not linked to individual tanks, so the day's stock check cannot tell two tanks of one
- * fuel apart and would refuse to close the day. Refuse the second tank up front instead.
+ * The cost pool a tank of this fuel joins (DEC-058). The tanks of one fuel at a station are one
+ * stock and one cost: a tank added to a fuel that already has a tank joins that tank's pool, and the
+ * first tank of a fuel is its own pool. Retired tanks are left out, so a tank added after the old one
+ * was retired starts a fresh pool.
  */
-async function assertNoOtherActiveTankForFuel(
+async function poolForNewTank(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
   productId: string,
   exceptTankId?: string,
-): Promise<void> {
-  const sameFuel = await transaction.execute<{ code: string }>(sql`
-    select code from app.tanks
+): Promise<string | null> {
+  const sameFuel = await transaction.execute<{ pool: string }>(sql`
+    select cost_pool_tank_id as pool from app.tanks
     where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
-      and product_id = ${productId} and status = 'ACTIVE'
+      and product_id = ${productId} and status <> 'RETIRED'
       and (${exceptTankId ?? null}::uuid is null or id <> ${exceptTankId ?? null}::uuid)
+    order by created_at, id
     limit 1
   `);
-  if (sameFuel[0]) {
-    throw new AppError(
-      'CONFLICT',
-      `This station already has an active tank for this fuel (${sameFuel[0].code}). Two tanks of the same fuel cannot be tracked yet. Ask the owner before adding another.`,
-    );
-  }
+  return sameFuel[0]?.pool ?? null;
+}
+
+/** A tank that other tanks of its fuel share the cost pool of cannot leave its fuel or be deleted. */
+async function assertNoTankSharesPool(
+  transaction: InventoryTransaction,
+  context: InventoryCommandContext,
+  tankId: string,
+  refusal: string,
+): Promise<void> {
+  const sharing = await transaction.execute<{ code: string }>(sql`
+    select code from app.tanks
+    where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+      and cost_pool_tank_id = ${tankId} and id <> ${tankId}
+    limit 1
+  `);
+  if (sharing[0]) throw new AppError('CONFLICT', refusal);
 }
 
 /** Refuses a change that only an unused tank may have (#315): a new fuel, or being deleted. */
@@ -399,8 +413,9 @@ async function insertTank(
     throw new AppError('VALIDATION_FAILED', 'Acceptable variance cannot be negative');
   }
   assertVarianceLimits(payload.acceptableVarianceLitres, payload.varianceRedLitres);
-  await assertNoOtherActiveTankForFuel(transaction, context, payload.productId);
   const tankId = randomUUID();
+  // The second tank of a fuel joins the first one's pool: one stock, one cost.
+  const poolTankId = (await poolForNewTank(transaction, context, payload.productId)) ?? tankId;
   try {
     await transaction.insert(tanks).values({
       id: tankId,
@@ -419,6 +434,7 @@ async function insertTank(
         ? litres(payload.varianceRedLitres).toString()
         : null,
       status: 'ACTIVE',
+      costPoolTankId: poolTankId,
       createdBy: context.authority.membership.membershipId,
       updatedBy: context.authority.membership.membershipId,
     });
@@ -525,15 +541,21 @@ export async function updateTankFromRequest(request: Request, input: unknown) {
           tank.id,
           'This tank already has stock records, so its fuel cannot be changed. Retire it and add a new tank for the other fuel.',
         );
-        if (tank.status === 'ACTIVE') {
-          await assertNoOtherActiveTankForFuel(transaction, context, newFuel, tank.id);
-        }
+        await assertNoTankSharesPool(
+          transaction,
+          context,
+          tank.id,
+          'Other tanks share the stock of this tank, so its fuel cannot be changed. Change or remove those tanks first.',
+        );
       }
+      const newPoolTankId = newFuel
+        ? ((await poolForNewTank(transaction, context, newFuel, tank.id)) ?? tank.id)
+        : null;
       try {
         await transaction
           .update(tanks)
           .set({
-            ...(newFuel ? { productId: newFuel } : {}),
+            ...(newFuel ? { productId: newFuel, costPoolTankId: newPoolTankId! } : {}),
             code: payload.code,
             capacityLitres: capacity.toString(),
             reorderLevelLitres: payload.reorderLevelLitres
@@ -616,6 +638,12 @@ export async function deleteTankFromRequest(request: Request, input: unknown) {
         tankId: payload.tankId,
       });
       await assertTankUnused(transaction, context, tank.id, refusal);
+      await assertNoTankSharesPool(
+        transaction,
+        context,
+        tank.id,
+        'Other tanks share the stock of this tank, so it cannot be deleted. Delete or change those tanks first.',
+      );
       try {
         await transaction.execute(sql`
           delete from app.tank_calibration_points
@@ -1822,7 +1850,7 @@ export async function postInventoryAdjustmentFromRequest(request: Request, input
 async function assertNoCostRecordBlocksAdjustment(
   transaction: InventoryTransaction,
   context: InventoryCommandContext,
-  tank: { id: string; productId: string },
+  tank: { id: string; productId: string; costPoolTankId: string },
 ): Promise<void> {
   const costed = await transaction
     .select({ tankId: inventoryCostStreamState.tankId })
@@ -1831,7 +1859,7 @@ async function assertNoCostRecordBlocksAdjustment(
       and(
         eq(inventoryCostStreamState.tenantId, context.tenantId),
         eq(inventoryCostStreamState.stationId, context.stationId),
-        eq(inventoryCostStreamState.tankId, tank.id),
+        eq(inventoryCostStreamState.tankId, tank.costPoolTankId),
         eq(inventoryCostStreamState.productId, tank.productId),
       ),
     )

@@ -8,6 +8,7 @@ import { classifyStockVariance, type StockSignal } from '../approvals/operations
 import { withInventoryReadContext } from './application';
 import { expectedClosingStock } from './expected-closing-stock';
 import { ExactDecimal } from '../../platform/domain/primitives';
+import { poolSumSql, poolTankIdsSql } from './tank-pool-sql';
 
 const scopeInput = z.object({
   tenantId: z.string().uuid(),
@@ -93,15 +94,21 @@ export async function queryTankDetail(input: {
         reorder: string | null;
         yellow: string | null;
         red: string | null;
+        /** The limits of all the pool's tanks added up: what a shared pool is judged against. */
+        pool_yellow: string | null;
+        pool_red: string | null;
         book: string;
         has_chart: boolean;
       }>(sql`
         select t.id, t.code, t.status, t.product_id, p.name as product_name, p.unit as unit,
           t.capacity_litres::text as capacity, t.reorder_level_litres::text as reorder,
           t.acceptable_variance_litres::text as yellow, t.variance_red_litres::text as red,
+          ${poolSumSql('t', 'acceptable_variance_litres', 'NOT_RETIRED')}::text as pool_yellow,
+          ${poolSumSql('t', 'variance_red_litres', 'NOT_RETIRED')}::text as pool_red,
+          -- Tanks of one fuel that share a cost pool are one stock (DEC-058): the books are the pool's.
           coalesce((select sum(m.quantity_litres) from app.inventory_movements m
             where m.tenant_id = t.tenant_id and m.station_id = t.station_id
-              and m.tank_id = t.id and m.product_id = t.product_id
+              and m.tank_id in ${poolTankIdsSql('t')} and m.product_id = t.product_id
               and m.business_date <= (now() at time zone station.timezone)::date::text), 0)::text as book,
           exists (select 1 from app.tank_calibration_points c
             where c.tenant_id = t.tenant_id and c.tank_id = t.id) as has_chart
@@ -122,6 +129,9 @@ export async function queryTankDetail(input: {
         unit: string | null;
         book: string;
         variance: string;
+        /** The pool's dips added together at this moment; empty when a tank of it has no dip yet. */
+        pool_physical: string | null;
+        shared: boolean;
         opening: string;
         deliveries: string;
         adjustments: string;
@@ -136,7 +146,24 @@ export async function queryTankDetail(input: {
           coalesce(b.sold, 0)::text as sold,
           (d.physical_litres - (coalesce(b.opening, 0) + coalesce(b.deliveries, 0) + coalesce(b.adjustments, 0) - coalesce(b.sold, 0)))::text as variance,
           (coalesce(b.opening, 0) + coalesce(b.deliveries, 0) + coalesce(b.adjustments, 0) - coalesce(b.sold, 0))::text as book,
-          d.notes
+          d.notes,
+          (select count(*) > 1 from app.tanks st
+            where st.tenant_id = t.tenant_id and st.station_id = t.station_id
+              and st.cost_pool_tank_id = t.cost_pool_tank_id and st.status <> 'RETIRED') as shared,
+          (select case when count(*) = (
+                    select count(*) from app.tanks ot
+                    where ot.tenant_id = t.tenant_id and ot.station_id = t.station_id
+                      and ot.cost_pool_tank_id = t.cost_pool_tank_id and ot.status <> 'RETIRED')
+                  then sum(ld.physical_litres)::text end
+           from app.tanks pt
+           cross join lateral (
+             select d2.physical_litres from app.tank_dips d2
+             where d2.tenant_id = pt.tenant_id and d2.station_id = pt.station_id and d2.tank_id = pt.id
+               and d2.voided_at is null and d2.measured_at <= d.measured_at
+             order by d2.measured_at desc, d2.id desc limit 1
+           ) ld
+           where pt.tenant_id = t.tenant_id and pt.station_id = t.station_id
+             and pt.cost_pool_tank_id = t.cost_pool_tank_id and pt.status <> 'RETIRED') as pool_physical
         from app.tank_dips d
         join app.tanks t on t.tenant_id=d.tenant_id and t.station_id=d.station_id and t.id=d.tank_id
         left join lateral (
@@ -152,7 +179,7 @@ export async function queryTankDetail(input: {
                and sale_bd.business_date <= d.business_date) as sold
           from app.inventory_movements m
           where m.tenant_id = d.tenant_id and m.station_id = d.station_id
-            and m.tank_id = d.tank_id
+            and m.tank_id in ${poolTankIdsSql('t')}
             -- A movement may be approved after the dip was entered.  Its station
             -- business date is the accounting date, so a late approval must still
             -- be included in that day's books.
@@ -192,7 +219,13 @@ export async function queryTankDetail(input: {
           m.quantity_litres::text as quantity, m.source_type
         from app.inventory_movements m
         where m.tenant_id = ${context.tenantId} and m.station_id = ${context.stationId}
-          and m.tank_id = ${parsed.tankId}
+          and m.tank_id in (
+            select pt.id from app.tanks pt
+            where pt.tenant_id = ${context.tenantId} and pt.station_id = ${context.stationId}
+              and pt.cost_pool_tank_id = (
+                select cost_pool_tank_id from app.tanks
+                where tenant_id = ${context.tenantId} and station_id = ${context.stationId}
+                  and id = ${parsed.tankId}))
         order by m.effective_at desc, m.id desc
         limit 100
       `);
@@ -231,10 +264,16 @@ export async function queryTankDetail(input: {
             litresSold: row.sold,
             approvedAdjustmentsLitres: row.adjustments,
           });
-          const variance = new ExactDecimal(row.physical)
-            .subtract(new ExactDecimal(book))
-            .quantize({ name: 'Litres', precision: 18, scale: 3 })
-            .toString();
+          // A tank that shares a pool is judged with the other tanks: all their dips against the one
+          // set of books. Until every tank of the pool has a dip there is nothing honest to compare.
+          const measured = row.shared ? row.pool_physical : row.physical;
+          const variance =
+            measured === null
+              ? 'n/a'
+              : new ExactDecimal(measured)
+                  .subtract(new ExactDecimal(book))
+                  .quantize({ name: 'Litres', precision: 18, scale: 3 })
+                  .toString();
           return {
             id: row.id,
             measuredAt: new Date(row.measured_at).toISOString(),
@@ -244,7 +283,11 @@ export async function queryTankDetail(input: {
             measurementUnit: row.unit,
             bookLitres: book,
             varianceLitres: variance,
-            signal: classifyStockVariance(variance, tank.yellow, tank.red),
+            signal: classifyStockVariance(
+              measured === null ? null : variance,
+              row.shared ? tank.pool_yellow : tank.yellow,
+              row.shared ? tank.pool_red : tank.red,
+            ),
             notes: row.notes,
           };
         }),

@@ -1,5 +1,9 @@
 # Shanda Fuel — Current Status
 
+## Several tanks of one fuel, one cost pool (#314, DEC-058) — 2026-11-26 (branch `feat/one-cost-pool-314`, migration 0124, uncommitted, not pushed)
+
+A station can now have more than one tank of a fuel. The tanks share one cost pool and one price per fuel: a sale has no source tank, so one tank can be empty while another holds fuel. Built: `app.tanks.cost_pool_tank_id`; cost streams, stock-below-zero checks (DB trigger and app replay), capacity, the day's stock check and the readers all work per pool; pooled tanks show as one row or card in reports. Validated: full integration suite on a clean database (629 passed, 45 intentional skips, 0 failed), 2610 unit tests, typecheck, lint and prettier clean, plus a new two-tank test file. Not done: UI polish for multi-tank screens (needs owner review); production has not been contacted and 0124 is applied nowhere but local test databases.
+
 ## Daily operations wizard, part 1: one next step, opening readings, change a price (#253) — 2026-11-21 (branch `feat/daily-ops-wizard-253`, from `main` ff83c5ba, uncommitted)
 
 First slice of Phase 6. (1) **One next step on the home screen.** For anyone who runs the shift

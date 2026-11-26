@@ -10,6 +10,12 @@ import { equalsClause, reconciliationNarrowing } from './read-extra';
 import { buildStationDailyRows, type DailyReportExpense } from './station-daily-report';
 import { stockVarianceRow, tankWithoutDipRow } from './stock-variance';
 import { productOrderSql } from '../../../platform/domain/product-order-sql';
+import {
+  isPoolRepresentativeSql,
+  poolSumSql,
+  poolTankCodesSql,
+  poolTankIdsSql,
+} from '../../inventory/tank-pool-sql';
 
 const limit = sql.raw(String(TABLE_REPORT_ROW_LIMIT + 1));
 
@@ -86,12 +92,18 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     red: string | null;
     day_approved: boolean;
   }>(sql`
-    select d.business_date::text as date, s.name as station, t.code as tank, p.name as product, p.unit as unit,
-      d.physical_litres::text as physical,
+    -- Tanks that share a cost pool are one stock (DEC-058): one row for the pool, with the dips of all
+    -- its tanks added together against the one set of books. A tank on its own is a pool of one.
+    select d.business_date::text as date, s.name as station,
+      coalesce(${poolTankCodesSql('t', 'NOT_RETIRED')}, t.code) as tank, p.name as product, p.unit as unit,
+      (case when t.status = 'RETIRED' then d.physical_litres else pd.physical end)::text as physical,
       coalesce(book.expected, 0)::text as expected,
-      (d.physical_litres - coalesce(book.expected, 0))::text as variance,
-      t.acceptable_variance_litres::text as tolerance,
-      t.variance_red_litres::text as red,
+      ((case when t.status = 'RETIRED' then d.physical_litres else pd.physical end)
+        - coalesce(book.expected, 0))::text as variance,
+      (case when t.status = 'RETIRED' then t.acceptable_variance_litres
+        else ${poolSumSql('t', 'acceptable_variance_litres', 'NOT_RETIRED')} end)::text as tolerance,
+      (case when t.status = 'RETIRED' then t.variance_red_litres
+        else ${poolSumSql('t', 'variance_red_litres', 'NOT_RETIRED')} end)::text as red,
       exists (
         select 1 from app.reconciliation_dip_refs ref
         join app.reconciliations r
@@ -105,9 +117,29 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
     join app.tanks t on t.tenant_id = d.tenant_id and t.station_id = d.station_id and t.id = d.tank_id
     join app.products p on p.tenant_id = t.tenant_id and p.id = t.product_id
     left join lateral (
+      select case
+               when (select count(*) from app.tanks ot
+                 where ot.tenant_id = t.tenant_id and ot.station_id = t.station_id
+                   and ot.cost_pool_tank_id = t.cost_pool_tank_id and ot.status <> 'RETIRED') <= 1
+               then d.physical_litres
+               when count(*) = (select count(*) from app.tanks ot
+                 where ot.tenant_id = t.tenant_id and ot.station_id = t.station_id
+                   and ot.cost_pool_tank_id = t.cost_pool_tank_id and ot.status <> 'RETIRED')
+               then sum(ld.physical_litres) end as physical
+      from app.tanks pt
+      cross join lateral (
+        select d2.physical_litres from app.tank_dips d2
+        where d2.tenant_id = pt.tenant_id and d2.station_id = pt.station_id and d2.tank_id = pt.id
+          and d2.voided_at is null and d2.measured_at <= d.measured_at
+        order by d2.measured_at desc, d2.id desc limit 1
+      ) ld
+      where pt.tenant_id = t.tenant_id and pt.station_id = t.station_id
+        and pt.cost_pool_tank_id = t.cost_pool_tank_id and pt.status <> 'RETIRED'
+    ) pd on true
+    left join lateral (
       select sum(m.quantity_litres) as expected from app.inventory_movements m
       where m.tenant_id = d.tenant_id and m.station_id = d.station_id
-        and m.tank_id = d.tank_id and m.product_id = t.product_id
+        and m.tank_id in ${poolTankIdsSql('t')} and m.product_id = t.product_id
         -- Inventory recognition is dated by the station business date.  A sale
         -- approved later still belongs to the business day shown by the dip.
         and m.business_date <= d.business_date
@@ -116,6 +148,8 @@ export const readStockVariance: TableReportReader = async (transaction, filters)
       and d.business_date between ${filters.fromDate} and ${filters.toDate}
       ${stationClause('d', filters.stationIds)}
       ${equalsClause('t.product_id::text', filters.productId)}
+      -- One row per pool: its first tank stands for it, and a row waits until every tank has a dip.
+      and (t.status = 'RETIRED' or (${isPoolRepresentativeSql('t', 'NOT_RETIRED')} and pd.physical is not null))
     order by d.business_date desc, s.name, t.code, d.measured_at desc
     limit ${limit}
   `);

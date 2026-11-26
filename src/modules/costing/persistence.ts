@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { AppError } from '../../platform/errors';
 import { hasAlternateApprover } from '../../platform/security/separation-of-duties';
@@ -46,6 +46,8 @@ type StreamInput = Readonly<{
   movements: readonly CostingMovement[];
   costEvents: readonly CostingEvent[];
   projectionVersion: number;
+  /** The tank each movement was really posted to. The stream's own key names only the pool tank. */
+  movementTankIds: ReadonlyMap<string, string>;
 }>;
 
 type CostProjectionWrite = Readonly<{
@@ -91,26 +93,17 @@ function sameDecimal(left: string | null, right: string | null): boolean {
   return left !== null && right !== null && new ExactDecimal(left).equals(new ExactDecimal(right));
 }
 
-function streamKey(input: {
-  tenantId: string;
-  stationId: string;
-  tankId: string;
-  productId: string;
-}): InventoryStreamKey {
-  return {
-    tenantId: input.tenantId,
-    stationId: input.stationId,
-    tankId: input.tankId,
-    productId: input.productId,
-  };
-}
-
-async function lockTankForStream(
+/**
+ * A fuel has one cost pool, however many tanks it has (DEC-058). Each tank records the tank its pool
+ * is kept on (`cost_pool_tank_id`). A tank on its own is its own pool, exactly as before. A second
+ * tank of the same fuel joins the first tank's pool, so its stock and cost are one number.
+ */
+export async function resolvePoolTankId(
   transaction: CostingTransaction,
-  input: { tenantId: string; stationId: string; tankId: string; productId?: string },
-): Promise<void> {
+  input: { tenantId: string; stationId: string; tankId: string },
+): Promise<string> {
   const rows = await transaction
-    .select({ id: tanks.id, productId: tanks.productId, status: tanks.status })
+    .select({ id: tanks.id, costPoolTankId: tanks.costPoolTankId })
     .from(tanks)
     .where(
       and(
@@ -118,13 +111,74 @@ async function lockTankForStream(
         eq(tanks.stationId, input.stationId),
         eq(tanks.id, input.tankId),
       ),
-    )
-    .for('update');
+    );
   const tank = rows[0];
+  if (!tank) throw new AppError('NOT_FOUND', 'The costing tank was not found');
+  return tank.costPoolTankId ?? tank.id;
+}
+
+/** The key of the cost pool a tank belongs to. Every tank of one pool gives the same key. */
+async function poolKey(
+  transaction: CostingTransaction,
+  input: { tenantId: string; stationId: string; tankId: string; productId: string },
+): Promise<InventoryStreamKey> {
+  return {
+    tenantId: input.tenantId,
+    stationId: input.stationId,
+    tankId: await resolvePoolTankId(transaction, input),
+    productId: input.productId,
+  };
+}
+
+/** The tanks that share a cost pool (the pool's own tank included). */
+function tanksOfPool(transaction: CostingTransaction, key: InventoryStreamKey) {
+  return transaction
+    .select({ id: tanks.id })
+    .from(tanks)
+    .where(
+      and(
+        eq(tanks.tenantId, key.tenantId),
+        eq(tanks.stationId, key.stationId),
+        eq(tanks.costPoolTankId, key.tankId),
+      ),
+    );
+}
+
+/**
+ * Locks the fuel's cost pool: the row of the tank it is kept on. Everyone who writes to the pool
+ * takes this same lock, so they queue up. The tank given must exist and belong to the fuel.
+ */
+async function lockTankForStream(
+  transaction: CostingTransaction,
+  input: { tenantId: string; stationId: string; tankId: string; productId?: string },
+): Promise<void> {
+  const given = await transaction
+    .select({ id: tanks.id, productId: tanks.productId })
+    .from(tanks)
+    .where(
+      and(
+        eq(tanks.tenantId, input.tenantId),
+        eq(tanks.stationId, input.stationId),
+        eq(tanks.id, input.tankId),
+      ),
+    );
+  const tank = given[0];
   if (!tank) throw new AppError('NOT_FOUND', 'The costing tank was not found');
   if (input.productId && tank.productId !== input.productId) {
     throw new AppError('INVARIANT_VIOLATION', 'The costing product does not match the tank');
   }
+  const poolTankId = await resolvePoolTankId(transaction, input);
+  await transaction
+    .select({ id: tanks.id })
+    .from(tanks)
+    .where(
+      and(
+        eq(tanks.tenantId, input.tenantId),
+        eq(tanks.stationId, input.stationId),
+        eq(tanks.id, poolTankId),
+      ),
+    )
+    .for('update');
 }
 
 async function loadStreamInput(
@@ -133,7 +187,10 @@ async function loadStreamInput(
 ): Promise<StreamInput> {
   // No row lock here: the application role may only read this table (it is written through the
   // projection writer function), and `FOR UPDATE` needs the update privilege. Every writer of a
-  // stream already holds the tank's own row lock, which is what serialises them.
+  // stream already holds the pool tank's row lock, which is what serialises them.
+  //
+  // The stream is the whole pool (DEC-058): the movements and cost events of every tank in it, in
+  // one order. For a tank on its own that is exactly that tank's rows, as before.
   const stateRows = await transaction
     .select({ projectionVersion: inventoryCostStreamState.projectionVersion })
     .from(inventoryCostStreamState)
@@ -155,13 +212,14 @@ async function loadStreamInput(
         businessDate: inventoryMovements.businessDate,
         sourceType: inventoryMovements.sourceType,
         sourceId: inventoryMovements.sourceId,
+        tankId: inventoryMovements.tankId,
       })
       .from(inventoryMovements)
       .where(
         and(
           eq(inventoryMovements.tenantId, key.tenantId),
           eq(inventoryMovements.stationId, key.stationId),
-          eq(inventoryMovements.tankId, key.tankId),
+          inArray(inventoryMovements.tankId, tanksOfPool(transaction, key)),
           eq(inventoryMovements.productId, key.productId),
         ),
       )
@@ -182,7 +240,7 @@ async function loadStreamInput(
         and(
           eq(inventoryCostEvents.tenantId, key.tenantId),
           eq(inventoryCostEvents.stationId, key.stationId),
-          eq(inventoryCostEvents.tankId, key.tankId),
+          inArray(inventoryCostEvents.tankId, tanksOfPool(transaction, key)),
           eq(inventoryCostEvents.productId, key.productId),
         ),
       )
@@ -213,6 +271,7 @@ async function loadStreamInput(
       currency: currency(row.currency),
     })),
     projectionVersion: Number(stateRows[0]?.projectionVersion ?? 0),
+    movementTankIds: new Map(movementRows.map((row) => [row.id, row.tankId])),
   };
 }
 
@@ -243,8 +302,9 @@ async function persistProjectionInTransaction(
 
 async function projectAndPersist(
   transaction: CostingTransaction,
-  key: InventoryStreamKey,
+  requestedKey: InventoryStreamKey,
 ): Promise<CostStreamProjection> {
+  const key = await poolKey(transaction, requestedKey);
   const input = await loadStreamInput(transaction, key);
   const projection = input.costEvents.some((event) => event.eventType === 'COGS_REVALUATION')
     ? projectInventoryCostWithRevaluations(input)
@@ -261,7 +321,7 @@ export async function persistHistoricalLateSourceUnvaluedProjectionInTransaction
   transaction: CostingTransaction,
   input: InventoryStreamKey & { sourceType: string; sourceId: string },
 ): Promise<boolean> {
-  const stream = await loadStreamInput(transaction, input);
+  const stream = await loadStreamInput(transaction, await poolKey(transaction, input));
   const sourceMovement = stream.movements.find(
     (movement) => movement.sourceType === input.sourceType && movement.sourceId === input.sourceId,
   );
@@ -351,16 +411,16 @@ async function loadMovementBySource(
 
 async function assertNoLateCostRevaluation(
   transaction: CostingTransaction,
-  input: { tenantId: string; stationId: string; tankId: string; effectiveAt: Date },
+  input: { key: InventoryStreamKey; effectiveAt: Date },
 ): Promise<void> {
   const laterSales = await transaction
     .select({ id: inventoryMovements.id })
     .from(inventoryMovements)
     .where(
       and(
-        eq(inventoryMovements.tenantId, input.tenantId),
-        eq(inventoryMovements.stationId, input.stationId),
-        eq(inventoryMovements.tankId, input.tankId),
+        eq(inventoryMovements.tenantId, input.key.tenantId),
+        eq(inventoryMovements.stationId, input.key.stationId),
+        inArray(inventoryMovements.tankId, tanksOfPool(transaction, input.key)),
         eq(inventoryMovements.movementType, 'SALE'),
         eq(inventoryMovements.sourceType, 'METER_SEGMENT_SALE'),
         gte(inventoryMovements.effectiveAt, input.effectiveAt),
@@ -379,6 +439,8 @@ async function insertOrVerifyCostEvent(
   transaction: CostingTransaction,
   input: {
     key: InventoryStreamKey;
+    /** The tank the event belongs to: the tank of the movement it prices. */
+    tankId: string;
     eventType: 'OPENING_COST' | 'RECEIPT_COST' | 'SALE_COGS';
     sourceType: string;
     sourceId: string;
@@ -413,7 +475,7 @@ async function insertOrVerifyCostEvent(
   if (row) {
     if (
       row.stationId !== input.key.stationId ||
-      row.tankId !== input.key.tankId ||
+      row.tankId !== input.tankId ||
       row.productId !== input.key.productId ||
       !new ExactDecimal(row.amount).equals(new ExactDecimal(input.amount)) ||
       !sameCurrency(row.currency, input.currency) ||
@@ -433,7 +495,7 @@ async function insertOrVerifyCostEvent(
     id,
     tenantId: input.key.tenantId,
     stationId: input.key.stationId,
-    tankId: input.key.tankId,
+    tankId: input.tankId,
     productId: input.key.productId,
     eventType: input.eventType,
     sourceType: input.sourceType,
@@ -458,7 +520,8 @@ async function loadLateCostSourceForUpdate(
   input: {
     tenantId: string;
     stationId: string;
-    tankId: string;
+    /** Given when asked for a tank's own movement. Left out once the pool tank is the envelope's. */
+    tankId?: string;
     productId: string;
     sourceType: string;
     sourceId: string;
@@ -477,7 +540,7 @@ async function loadLateCostSourceForUpdate(
       and(
         eq(inventoryMovements.tenantId, input.tenantId),
         eq(inventoryMovements.stationId, input.stationId),
-        eq(inventoryMovements.tankId, input.tankId),
+        ...(input.tankId ? [eq(inventoryMovements.tankId, input.tankId)] : []),
         eq(inventoryMovements.productId, input.productId),
         eq(inventoryMovements.sourceType, input.sourceType),
         eq(inventoryMovements.sourceId, input.sourceId),
@@ -506,7 +569,7 @@ async function loadLateCostSourceForUpdate(
         and(
           eq(fuelDeliveryAllocations.tenantId, input.tenantId),
           eq(fuelDeliveryAllocations.stationId, input.stationId),
-          eq(fuelDeliveryAllocations.tankId, input.tankId),
+          ...(input.tankId ? [eq(fuelDeliveryAllocations.tankId, input.tankId)] : []),
           eq(fuelDeliveryAllocations.productId, input.productId),
           eq(fuelDeliveryAllocations.id, input.sourceId),
         ),
@@ -546,6 +609,7 @@ async function assertLateCostSourceIsRequired(
     effectiveAt: Date;
   },
 ): Promise<void> {
+  const poolTankId = await resolvePoolTankId(transaction, input);
   const existingCost = await transaction
     .select({ id: inventoryCostEvents.id })
     .from(inventoryCostEvents)
@@ -570,7 +634,11 @@ async function assertLateCostSourceIsRequired(
      and attribution.inventory_movement_id = movement.id
     where movement.tenant_id = ${input.tenantId}
       and movement.station_id = ${input.stationId}
-      and movement.tank_id = ${input.tankId}
+      and movement.tank_id in (
+        select id from app.tanks
+        where tenant_id = ${input.tenantId} and station_id = ${input.stationId}
+          and cost_pool_tank_id = ${poolTankId}
+      )
       and movement.product_id = ${input.productId}
       and movement.movement_type = 'SALE'
       and movement.source_type = 'METER_SEGMENT_SALE'
@@ -590,6 +658,8 @@ async function insertOrVerifyCogsRevaluationEvent(
   transaction: CostingTransaction,
   input: {
     key: InventoryStreamKey;
+    /** The tank of the sale being restated. */
+    tankId: string;
     id: string;
     sourceId: string;
     effectiveAt: Date;
@@ -615,7 +685,7 @@ async function insertOrVerifyCogsRevaluationEvent(
     if (
       row.id !== input.id ||
       row.stationId !== input.key.stationId ||
-      row.tankId !== input.key.tankId ||
+      row.tankId !== input.tankId ||
       row.productId !== input.key.productId ||
       !new ExactDecimal(row.amount).equals(new ExactDecimal(input.amount)) ||
       !sameCurrency(row.currency, input.currency) ||
@@ -633,7 +703,7 @@ async function insertOrVerifyCogsRevaluationEvent(
     id: input.id,
     tenantId: input.key.tenantId,
     stationId: input.key.stationId,
-    tankId: input.key.tankId,
+    tankId: input.tankId,
     productId: input.key.productId,
     eventType: 'COGS_REVALUATION',
     sourceType: 'INVENTORY_COST_REVALUATION_LINE',
@@ -658,7 +728,7 @@ async function loadOriginalSaleAttributions(
       and(
         eq(inventorySaleCostAttributions.tenantId, key.tenantId),
         eq(inventorySaleCostAttributions.stationId, key.stationId),
-        eq(inventorySaleCostAttributions.tankId, key.tankId),
+        inArray(inventorySaleCostAttributions.tankId, tanksOfPool(transaction, key)),
         eq(inventorySaleCostAttributions.productId, key.productId),
       ),
     )
@@ -715,7 +785,11 @@ async function loadPostedRevaluationEvidence(
      and attribution.id = line.sale_attribution_id
     where line.tenant_id = ${key.tenantId}
       and line.station_id = ${key.stationId}
-      and line.tank_id = ${key.tankId}
+      and line.tank_id in (
+        select id from app.tanks
+        where tenant_id = ${key.tenantId} and station_id = ${key.stationId}
+          and cost_pool_tank_id = ${key.tankId}
+      )
       and line.product_id = ${key.productId}
       and revaluation.status = 'POSTED'
     order by revaluation.posted_at, line.id
@@ -761,6 +835,8 @@ export async function requestInventoryCostRevaluationInTransaction(
     ...input,
     effectiveAt: movement.effectiveAt,
   });
+  // The restated sales are the pool's, so the workflow is filed on the pool's tank.
+  const poolTankId = await resolvePoolTankId(transaction, input);
   const existing = await transaction
     .select({ id: inventoryCostRevaluations.id, status: inventoryCostRevaluations.status })
     .from(inventoryCostRevaluations)
@@ -780,7 +856,7 @@ export async function requestInventoryCostRevaluationInTransaction(
     id: revaluationId,
     tenantId: input.tenantId,
     stationId: input.stationId,
-    tankId: input.tankId,
+    tankId: poolTankId,
     productId: input.productId,
     reason: input.reason,
     status: 'REQUESTED',
@@ -885,7 +961,6 @@ export async function postInventoryCostRevaluationInTransaction(
   const movement = await loadLateCostSourceForUpdate(transaction, {
     tenantId: envelope.tenantId,
     stationId: envelope.stationId,
-    tankId: envelope.tankId,
     productId: envelope.productId,
     sourceType: envelope.sourceType,
     sourceId: envelope.sourceId,
@@ -911,7 +986,7 @@ export async function postInventoryCostRevaluationInTransaction(
     throw new AppError('CONFLICT', 'The authoritative source belongs to another revaluation');
   }
 
-  const key = streamKey(movement);
+  const key = await poolKey(transaction, movement);
   const stream = await loadStreamInput(transaction, key);
   const existingLateEvents = stream.costEvents.filter(
     (event) =>
@@ -931,6 +1006,7 @@ export async function postInventoryCostRevaluationInTransaction(
     ? { id: lateEventRow.id, inserted: false }
     : await insertOrVerifyCostEvent(transaction, {
         key,
+        tankId: movement.tankId,
         eventType: envelope.sourceType === 'OPENING_BALANCE' ? 'OPENING_COST' : 'RECEIPT_COST',
         sourceType: movement.sourceType,
         sourceId: movement.sourceId,
@@ -1000,8 +1076,10 @@ export async function postInventoryCostRevaluationInTransaction(
       `a12.4:revaluation-line:${envelope.id}:${line.saleMovementId}`,
     );
     const eventId = deterministicUuid(`a12.4:revaluation-event:${lineId}`);
+    const saleTankId = stream.movementTankIds.get(line.saleMovementId) ?? key.tankId;
     await insertOrVerifyCogsRevaluationEvent(transaction, {
       key,
+      tankId: saleTankId,
       id: eventId,
       sourceId: lineId,
       effectiveAt: new Date(line.saleEffectiveAt),
@@ -1043,7 +1121,7 @@ export async function postInventoryCostRevaluationInTransaction(
         id: lineId,
         tenantId: key.tenantId,
         stationId: key.stationId,
-        tankId: key.tankId,
+        tankId: saleTankId,
         productId: key.productId,
         revaluationId: envelope.id,
         saleMovementId: line.saleMovementId,
@@ -1131,9 +1209,10 @@ export async function postOpeningInventoryCostInTransaction(
       'The cost source is not the requested opening balance',
     );
   }
-  const key = streamKey(movement);
+  const key = await poolKey(transaction, movement);
   const event = await insertOrVerifyCostEvent(transaction, {
     key,
+    tankId: movement.tankId,
     eventType: 'OPENING_COST',
     sourceType: movement.sourceType,
     sourceId: movement.sourceId,
@@ -1145,9 +1224,7 @@ export async function postOpeningInventoryCostInTransaction(
   });
   if (event.inserted) {
     await assertNoLateCostRevaluation(transaction, {
-      tenantId: input.tenantId,
-      stationId: input.stationId,
-      tankId: input.tankId,
+      key,
       effectiveAt: movement.effectiveAt,
     });
   }
@@ -1218,9 +1295,10 @@ export async function postReceiptCostInTransaction(
       'The delivery allocation has no canonical positive A4 movement',
     );
   }
-  const key = streamKey(movement);
+  const key = await poolKey(transaction, movement);
   const event = await insertOrVerifyCostEvent(transaction, {
     key,
+    tankId: movement.tankId,
     eventType: 'RECEIPT_COST',
     sourceType: movement.sourceType,
     sourceId: movement.sourceId,
@@ -1232,9 +1310,7 @@ export async function postReceiptCostInTransaction(
   });
   if (event.inserted) {
     await assertNoLateCostRevaluation(transaction, {
-      tenantId: input.tenantId,
-      stationId: input.stationId,
-      tankId: movement.tankId,
+      key,
       effectiveAt: movement.effectiveAt,
     });
   }
@@ -1289,7 +1365,7 @@ export async function postCanonicalSaleCostInTransaction(
     );
   }
 
-  const key = streamKey(sale);
+  const key = await poolKey(transaction, sale);
   const fullInput = await loadStreamInput(transaction, key);
   const saleMovement = fullInput.movements.find((movement) => movement.id === sale.id);
   if (!saleMovement)
@@ -1323,6 +1399,7 @@ export async function postCanonicalSaleCostInTransaction(
   });
   const event = await insertOrVerifyCostEvent(transaction, {
     key,
+    tankId: sale.tankId,
     eventType: 'SALE_COGS',
     sourceType: 'METER_SEGMENT_SALE',
     sourceId: input.meterSegmentId,
