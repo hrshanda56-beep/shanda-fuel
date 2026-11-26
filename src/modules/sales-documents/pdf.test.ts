@@ -137,6 +137,40 @@ describe('company numbers on the letterhead', () => {
   });
 });
 
+describe('long names are written out in full', () => {
+  const company = 'Triumph Energy Investments (Private) Limited';
+  const customer = 'Tandamanzi Drilling and Mining Services (Private) Limited';
+  const long = {
+    ...base,
+    recipientName: customer,
+    letterhead: { ...base.letterhead, displayName: company },
+  } as SalesDocumentDetail;
+
+  const textOf = (buf: Buffer): string =>
+    [...buf.toString('latin1').matchAll(/\(((?:\\.|[^\\)])*)\) Tj/g)]
+      .map((m) => m[1]!.replace(/\\(.)/g, '$1'))
+      .join(' ');
+
+  it('never cuts a company or customer name short with dots', () => {
+    const text = textOf(buildSalesDocumentPdf(long));
+    expect(text).not.toContain('...');
+    // Wrapped onto several lines, but every word of both names is present, in order.
+    for (const name of [company, customer]) {
+      const words = name.split(' ');
+      let at = 0;
+      for (const word of words) {
+        at = text.indexOf(word, at);
+        expect(at, word).toBeGreaterThanOrEqual(0);
+        at += word.length;
+      }
+    }
+  });
+
+  it('keeps a short name on one line, as before', () => {
+    expect(textOf(buildSalesDocumentPdf(base))).toContain('Acme (Pvt) Ltd');
+  });
+});
+
 describe('logo and brand colour', () => {
   // A minimal JPEG header: SOI, then a start-of-frame for a 64 x 32 RGB picture.
   const jpeg = Buffer.from([
@@ -194,6 +228,19 @@ describe('page balance', () => {
     }).toString('latin1');
     expect(Number(/\/Count (\d+)/.exec(text)![1])).toBe(1);
     expect(yOf(text, 'Thank you')).toBeLessThan(yOf(text, 'Terms'));
+  });
+
+  it('leaves clear space between the prices and the notes, terms and payment details', () => {
+    const text = buildSalesDocumentPdf({
+      ...base,
+      docType: 'QUOTATION',
+      docNumber: 'QT-2026-0001',
+      notes: 'Price delivered.',
+    }).toString('latin1');
+    const total = yOf(text, 'Total \\\\\\(USD\\\\\\)');
+    // Notes sit well below the Total, and each block has room before the next.
+    expect(total - yOf(text, 'Notes')).toBeGreaterThanOrEqual(40);
+    expect(yOf(text, 'Terms') - yOf(text, 'Payment details')).toBeGreaterThanOrEqual(40);
   });
 
   it('lets the foot flow on when the body leaves no room for it', () => {
