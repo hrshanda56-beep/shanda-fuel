@@ -370,4 +370,215 @@ describe('tanks of one fuel share one cost pool', () => {
     );
     expect(lone).toEqual([{ pool: loneId }]);
   });
+
+  async function addSecondTank(
+    ctx: Awaited<ReturnType<typeof createQa1ScenarioContext>>,
+    tag: string,
+  ) {
+    const created = await inventory(
+      ctx,
+      {
+        commandType: 'CreateTank',
+        tenantId: ctx.tenantId,
+        stationId: ctx.stationId,
+        code: `${tag}-B-${ctx.runId.slice(0, 6)}`,
+        productId: ctx.productId,
+        capacityLitres: '10000',
+        reorderLevelLitres: '500',
+        acceptableVarianceLitres: '10',
+      },
+      `${tag}-create-tank-b`,
+    );
+    expectStatus(created, 200);
+    return created.body.tankId as string;
+  }
+
+  const errorText = (body: unknown) => JSON.stringify(body);
+
+  async function addOtherFuel(ctx: Awaited<ReturnType<typeof createQa1ScenarioContext>>) {
+    const id = randomUUID();
+    await client.unsafe(
+      `insert into app.products (id, tenant_id, code, name, status)
+       values ('${id}', '${ctx.tenantId}', 'POOL-PETROL-${ctx.runId.slice(0, 8)}', 'Pool Petrol', 'ACTIVE')`,
+    );
+    return id;
+  }
+
+  it('keeps a late-costed delivery in one tank inside the single pool cost record', async () => {
+    const ctx = await createQa1ScenarioContext(client, 'pool-late');
+    const tankA = ctx.tankId;
+    await postOpeningPosition(client, ctx, 'pool-late', '1000.000', '1000.0000');
+    const tankB = await addSecondTank(ctx, 'POOL-LATE');
+    const sup = await supplier(
+      ctx,
+      {
+        commandType: 'CreateSupplier',
+        tenantId: ctx.tenantId,
+        legalEntityId: ctx.legalEntityId,
+        code: `POOL-LATE-SUP-${ctx.runId.slice(0, 8)}`,
+        legalName: 'Pool Late Supplier',
+      },
+      'pool-late-supplier',
+    );
+    expectStatus(sup, 201);
+    const delivery = await createDelivery({ ...ctx, tankId: tankB }, 'pool-late-b', {
+      quantityLitres: '500.000',
+      deliveredAt: '2026-09-26T05:30:00.000Z',
+      supplierId: sup.body.supplierId as string,
+    });
+    await confirmDelivery(ctx, delivery.deliveryId, 'pool-late-b-confirm');
+
+    // The litres are in tank B but their cost is not known yet: the whole fuel is UNVALUED, and
+    // there is still only one record, on the pool's tank.
+    const streamRows = () =>
+      client.unsafe<
+        {
+          tank_id: string;
+          quantity_litres: string;
+          inventory_value: string | null;
+          valuation_status: string;
+        }[]
+      >(
+        `select tank_id, quantity_litres, inventory_value, valuation_status
+         from app.inventory_cost_stream_state
+         where tenant_id='${ctx.tenantId}' and station_id='${ctx.stationId}' and product_id='${ctx.productId}'`,
+      );
+    const before = await streamRows();
+    expect(before).toHaveLength(1);
+    expect(before[0]).toMatchObject({ tank_id: tankA, valuation_status: 'UNVALUED' });
+
+    // The cost arrives late: the same single record becomes valued for 1500 L.
+    await recordReceiptCost(ctx, delivery.allocationId, '1000.0000', 'pool-late-b-cost');
+    const after = await streamRows();
+    expect(after).toEqual([
+      {
+        tank_id: tankA,
+        quantity_litres: '1500.000',
+        inventory_value: '2000.0000',
+        valuation_status: 'VALUED',
+      },
+    ]);
+  });
+
+  it('adds a tank for a different fuel as its own pool, and refuses a repeated name', async () => {
+    const ctx = await createQa1ScenarioContext(client, 'pool-create');
+    const tankA = ctx.tankId;
+    const otherFuel = await addOtherFuel(ctx);
+    {
+      const created = await inventory(
+        ctx,
+        {
+          commandType: 'CreateTank',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          code: `POOL-OTHER-${ctx.runId.slice(0, 6)}`,
+          productId: otherFuel,
+          capacityLitres: '5000',
+        },
+        'pool-create-other-fuel',
+      );
+      expectStatus(created, 200);
+      const row = await client.unsafe<{ pool: string }[]>(
+        `select cost_pool_tank_id as pool from app.tanks where id='${created.body.tankId}'`,
+      );
+      expect(row).toEqual([{ pool: created.body.tankId }]);
+    }
+    const tankB = await addSecondTank(ctx, 'POOL-DUP');
+    const code = (
+      await client.unsafe<{ code: string }[]>(`select code from app.tanks where id='${tankB}'`)
+    )[0]!.code;
+    const again = await inventory(
+      ctx,
+      {
+        commandType: 'CreateTank',
+        tenantId: ctx.tenantId,
+        stationId: ctx.stationId,
+        code,
+        productId: ctx.productId,
+        capacityLitres: '10000',
+      },
+      'pool-create-duplicate',
+    );
+    expectStatus(again, 409);
+    expect(errorText(again.body)).toMatch(/already exists/);
+    // The first tank is still its own pool; the refused tank changed nothing.
+    const pools = await client.unsafe<{ id: string; pool: string }[]>(
+      `select id, cost_pool_tank_id as pool from app.tanks
+       where tenant_id='${ctx.tenantId}' and station_id='${ctx.stationId}' and product_id='${ctx.productId}'
+       order by created_at, id`,
+    );
+    expect(pools).toEqual([
+      { id: tankA, pool: tankA },
+      { id: tankB, pool: tankA },
+    ]);
+  });
+
+  it('refuses to change the fuel of, or delete, a tank whose pool another tank shares', async () => {
+    const ctx = await createQa1ScenarioContext(client, 'pool-refuse');
+    const tankA = ctx.tankId;
+    const tankB = await addSecondTank(ctx, 'POOL-REF');
+    const otherFuel = await addOtherFuel(ctx);
+    const codeA = (
+      await client.unsafe<{ code: string }[]>(`select code from app.tanks where id='${tankA}'`)
+    )[0]!.code;
+
+    // Tank A holds the pool; tank B joined it. Deleting A would orphan B's pool.
+    const del = await inventory(
+      ctx,
+      {
+        commandType: 'DeleteTank',
+        tenantId: ctx.tenantId,
+        stationId: ctx.stationId,
+        tankId: tankA,
+      },
+      'pool-refuse-delete-a',
+    );
+    expectStatus(del, 409);
+    expect(errorText(del.body)).toMatch(/share the stock/);
+
+    {
+      const move = await inventory(
+        ctx,
+        {
+          commandType: 'UpdateTank',
+          tenantId: ctx.tenantId,
+          stationId: ctx.stationId,
+          tankId: tankA,
+          code: codeA,
+          capacityLitres: '10000',
+          reorderLevelLitres: null,
+          acceptableVarianceLitres: null,
+          varianceRedLitres: null,
+          productId: otherFuel,
+        },
+        'pool-refuse-move-a',
+      );
+      expectStatus(move, 409);
+    }
+    const still = await client.unsafe<{ id: string; product_id: string; pool: string }[]>(
+      `select id, product_id, cost_pool_tank_id as pool from app.tanks
+       where id in ('${tankA}','${tankB}') order by created_at, id`,
+    );
+    expect(still).toEqual([
+      { id: tankA, product_id: ctx.productId, pool: tankA },
+      { id: tankB, product_id: ctx.productId, pool: tankA },
+    ]);
+
+    // The joiner (tank B, nothing recorded) can still be removed; then tank A is on its own again.
+    const delB = await inventory(
+      ctx,
+      {
+        commandType: 'DeleteTank',
+        tenantId: ctx.tenantId,
+        stationId: ctx.stationId,
+        tankId: tankB,
+      },
+      'pool-refuse-delete-b',
+    );
+    expectStatus(delB, 200);
+    const delAAfter = await client.unsafe<{ id: string }[]>(
+      `select id from app.tanks where id='${tankB}'`,
+    );
+    expect(delAAfter).toEqual([]);
+  });
 });
