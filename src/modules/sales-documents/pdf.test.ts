@@ -34,6 +34,8 @@ const base: SalesDocumentDetail = {
     email: null,
     taxLabel: 'VAT',
     taxNumber: 'V1',
+    tin: null,
+    registrationNumber: null,
     bankDetails: 'Bank 1234',
     footer: 'Thank you',
   },
@@ -94,6 +96,31 @@ describe('buildSalesDocumentPdf', () => {
     for (const over of variants) {
       expect(buildSalesDocumentPdf({ ...base, ...over }).length).toBeGreaterThan(500);
     }
+  });
+});
+
+describe('company numbers on the letterhead', () => {
+  const withNumbers = {
+    ...base,
+    letterhead: { ...base.letterhead, tin: '1234567890', registrationNumber: '1234/2020' },
+  } as SalesDocumentDetail;
+
+  it('prints the TIN and company registration number under the contact lines', () => {
+    const text = buildSalesDocumentPdf(withNumbers).toString('latin1');
+    expect(text).toContain('(TIN: 1234567890)');
+    expect(text).toContain('(Company reg. no.: 1234/2020)');
+    expect(text).toContain('(VAT: V1)');
+  });
+
+  it('prints nothing for numbers that were not given, and for older issued letterheads', () => {
+    const text = buildSalesDocumentPdf(base).toString('latin1');
+    expect(text).not.toContain('TIN:');
+    expect(text).not.toContain('Company reg. no.');
+    const old = {
+      ...base,
+      letterhead: { displayName: 'Old Co', taxLabel: 'VAT', taxNumber: 'V9' },
+    } as SalesDocumentDetail;
+    expect(buildSalesDocumentPdf(old).toString('latin1')).toContain('(VAT: V9)');
   });
 });
 

@@ -35,6 +35,8 @@ type ProfileRow = {
   email: string | null;
   tax_label: string;
   tax_number: string | null;
+  tin: string | null;
+  registration_number: string | null;
   default_tax_rate: string;
   bank_details: string | null;
   default_terms: string | null;
@@ -52,7 +54,7 @@ type ProfileRow = {
 
 async function loadProfile(tx: Tx, ctx: Ctx): Promise<ProfileRow | undefined> {
   const rows = await tx.execute<ProfileRow>(sql`
-    select id, display_name, address, phone, email, tax_label, tax_number, default_tax_rate,
+    select id, display_name, address, phone, email, tax_label, tax_number, tin, registration_number, default_tax_rate,
            bank_details, default_terms, footer, logo_jpeg_base64, app_logo_png_base64, brand_colour, quotation_prefix,
            invoice_prefix, receipt_prefix, default_valid_days, default_due_days, version
     from app.sales_doc_profiles
@@ -81,6 +83,8 @@ function letterheadSnapshot(profile: ProfileRow) {
     email: profile.email,
     taxLabel: profile.tax_label,
     taxNumber: profile.tax_number,
+    tin: profile.tin,
+    registrationNumber: profile.registration_number,
     bankDetails: profile.bank_details,
     footer: profile.footer,
     logoJpegBase64: profile.logo_jpeg_base64,
@@ -99,6 +103,8 @@ export async function saveSalesDocProfileInTransaction(
     phone: input.phone ?? null,
     email: input.email ?? null,
     taxNumber: input.taxNumber ?? null,
+    tin: input.tin ?? null,
+    registrationNumber: input.registrationNumber ?? null,
     bankDetails: input.bankDetails ?? null,
     defaultTerms: input.defaultTerms ?? null,
     footer: input.footer ?? null,
@@ -117,12 +123,12 @@ export async function saveSalesDocProfileInTransaction(
     const profileId = randomUUID();
     await tx.execute(sql`
       insert into app.sales_doc_profiles (
-        id, tenant_id, legal_entity_id, display_name, address, phone, email, tax_label, tax_number,
+        id, tenant_id, legal_entity_id, display_name, address, phone, email, tax_label, tax_number, tin, registration_number,
         default_tax_rate, bank_details, default_terms, footer, logo_jpeg_base64, app_logo_png_base64, brand_colour,
         quotation_prefix, invoice_prefix, receipt_prefix, default_valid_days, default_due_days, version, updated_by
       ) values (
         ${profileId}, ${ctx.tenantId}, ${ctx.legalEntityId}, ${input.displayName}, ${values.address},
-        ${values.phone}, ${values.email}, ${input.taxLabel}, ${values.taxNumber},
+        ${values.phone}, ${values.email}, ${input.taxLabel}, ${values.taxNumber}, ${values.tin}, ${values.registrationNumber},
         ${input.defaultTaxRate}, ${values.bankDetails}, ${values.defaultTerms}, ${values.footer},
         ${values.logo}, ${values.appLogo}, ${values.colour}, ${input.quotationPrefix}, ${input.invoicePrefix}, ${input.receiptPrefix},
         ${input.defaultValidDays}, ${input.defaultDueDays}, 0, ${actorId(ctx)}
@@ -134,7 +140,8 @@ export async function saveSalesDocProfileInTransaction(
   await tx.execute(sql`
     update app.sales_doc_profiles set
       display_name = ${input.displayName}, address = ${values.address}, phone = ${values.phone},
-      email = ${values.email}, tax_label = ${input.taxLabel}, tax_number = ${values.taxNumber},
+      email = ${values.email}, tax_label = ${input.taxLabel}, tax_number = ${values.taxNumber}, tin = ${values.tin},
+      registration_number = ${values.registrationNumber},
       default_tax_rate = ${input.defaultTaxRate}, bank_details = ${values.bankDetails},
       default_terms = ${values.defaultTerms}, footer = ${values.footer},
       logo_jpeg_base64 = ${values.logo}, app_logo_png_base64 = ${values.appLogo}, brand_colour = ${values.colour},

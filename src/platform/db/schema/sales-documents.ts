@@ -41,6 +41,8 @@ export const salesDocProfiles = appSchema.table(
     email: text('email'),
     taxLabel: text('tax_label').notNull().default('VAT'),
     taxNumber: text('tax_number'),
+    tin: text('tin'),
+    registrationNumber: text('registration_number'),
     defaultTaxRate: percent('default_tax_rate').notNull().default('0'),
     bankDetails: text('bank_details'),
     defaultTerms: text('default_terms'),

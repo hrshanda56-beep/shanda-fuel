@@ -65,6 +65,8 @@ export const saveSalesDocProfileSchema = z.object({
   email: optionalText(200),
   taxLabel: text(30).min(1).default('VAT'),
   taxNumber: optionalText(60),
+  tin: optionalText(60),
+  registrationNumber: optionalText(60),
   defaultTaxRate: percent.default('0'),
   bankDetails: optionalText(1000),
   defaultTerms: optionalText(2000),
