@@ -448,6 +448,15 @@ const CELL_PADDING = 3;
 
 const round = (value: number): number => Math.round(value * 100) / 100;
 
+const BRAND = '0.13 0.32 0.26';
+
+/** "station_code" is shown as "Station code"; titles that are already written for people stay as they are. */
+function prettyHeader(cell: string): string {
+  if (!/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(cell)) return cell;
+  const words = cell.split('_').join(' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /**
  * Same PDF, from CSV text the repository itself produced: a landscape A4 table with a title
  * block, shaded header row repeated on every page, aligned columns (numbers on the right) and
@@ -456,7 +465,7 @@ const round = (value: number): number => Math.round(value * 100) / 100;
  */
 export function buildPdfFromCsv(csv: string, meta?: ReportExportMeta): Buffer {
   const rows = parseCsv(csv);
-  const header = rows[0] ?? [];
+  const header = (rows[0] ?? []).map(prettyHeader);
   const body = rows.slice(1);
   const columnCount = Math.max(1, ...rows.map((row) => row.length));
   const usable = PAGE_WIDTH - 2 * PAGE_MARGIN;
@@ -482,6 +491,11 @@ export function buildPdfFromCsv(csv: string, meta?: ReportExportMeta): Buffer {
     widths = widths.map((width) => width * stretch);
   }
   const lefts = widths.map((_, index) => PAGE_MARGIN + total(widths.slice(0, index)));
+  // A column whose every filled cell is a number is right-aligned, header included.
+  const numeric = Array.from({ length: columnCount }, (_, column) => {
+    const cells = body.map((row) => row[column] ?? '').filter((cell) => cell !== '');
+    return cells.length > 0 && cells.every(isSpreadsheetNumber);
+  });
 
   const rowHeight = fontSize + 7;
   const headerHeight = rowHeight + 3;
@@ -491,7 +505,7 @@ export function buildPdfFromCsv(csv: string, meta?: ReportExportMeta): Buffer {
   const pageCount = Math.max(1, Math.ceil(body.length / rowsPerPage));
 
   const pageContent = (pageIndex: number): Buffer => {
-    const ops: string[] = [];
+    const ops: string[] = [`${BRAND} rg 0 ${PAGE_HEIGHT - 5} ${PAGE_WIDTH} 5 re f`];
     if (meta) {
       ops.push(
         `BT /F2 15 Tf 0.1 0.16 0.18 rg ${PAGE_MARGIN} ${PAGE_HEIGHT - PAGE_MARGIN - 8} Td (${pdfText(fitText(meta.title, usable, 15, true))}) Tj ET`,
@@ -507,13 +521,19 @@ export function buildPdfFromCsv(csv: string, meta?: ReportExportMeta): Buffer {
       `0.9 0.93 0.94 rg ${PAGE_MARGIN} ${round(headerBottom)} ${usable} ${headerHeight} re f`,
     );
     header.forEach((cell, column) => {
-      const text = pdfText(fitText(cell, widths[column]! - 2 * CELL_PADDING, fontSize, true));
+      const shown = fitText(cell, widths[column]! - 2 * CELL_PADDING, fontSize, true);
+      const x = numeric[column]
+        ? lefts[column]! +
+          widths[column]! -
+          CELL_PADDING -
+          (textUnits(shown, true) / 1000) * fontSize
+        : lefts[column]! + CELL_PADDING;
       ops.push(
-        `BT /F2 ${fontSize} Tf 0.1 0.16 0.18 rg ${round(lefts[column]! + CELL_PADDING)} ${round(headerBottom + (headerHeight - fontSize) / 2 + 0.2 * fontSize)} Td (${text}) Tj ET`,
+        `BT /F2 ${fontSize} Tf 0.1 0.16 0.18 rg ${round(x)} ${round(headerBottom + (headerHeight - fontSize) / 2 + 0.2 * fontSize)} Td (${pdfText(shown)}) Tj ET`,
       );
     });
     ops.push(
-      `0.48 0.54 0.56 RG 0.6 w ${PAGE_MARGIN} ${round(headerBottom)} m ${PAGE_MARGIN + usable} ${round(headerBottom)} l S`,
+      `${BRAND} RG 1 w ${PAGE_MARGIN} ${round(headerBottom)} m ${PAGE_MARGIN + usable} ${round(headerBottom)} l S`,
     );
 
     const pageRows = body.slice(pageIndex * rowsPerPage, (pageIndex + 1) * rowsPerPage);
@@ -538,12 +558,22 @@ export function buildPdfFromCsv(csv: string, meta?: ReportExportMeta): Buffer {
         );
       });
     });
+    if (pageRows.length > 0) {
+      const last = headerBottom - pageRows.length * rowHeight;
+      ops.push(
+        `0.48 0.54 0.56 RG 0.6 w ${PAGE_MARGIN} ${round(last)} m ${PAGE_MARGIN + usable} ${round(last)} l S`,
+      );
+    }
     if (body.length === 0) {
       ops.push(
         `BT /F1 ${fontSize} Tf 0.35 0.4 0.42 rg ${PAGE_MARGIN + CELL_PADDING} ${round(headerBottom - rowHeight + 3)} Td (No rows for this period.) Tj ET`,
       );
     }
     const footer = `Page ${pageIndex + 1} of ${pageCount}`;
+    ops.push(
+      `0.85 0.88 0.89 RG 0.5 w ${PAGE_MARGIN} ${PAGE_MARGIN - 8} m ${PAGE_MARGIN + usable} ${PAGE_MARGIN - 8} l S`,
+      `BT /F1 8 Tf 0.35 0.4 0.42 rg ${PAGE_MARGIN} ${PAGE_MARGIN - 18} Td (Prepared with Shanda Fuel) Tj ET`,
+    );
     ops.push(
       `BT /F1 8 Tf 0.35 0.4 0.42 rg ${round(PAGE_MARGIN + usable - (textUnits(footer) / 1000) * 8)} ${PAGE_MARGIN - 18} Td (${footer}) Tj ET`,
     );
