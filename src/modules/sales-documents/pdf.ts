@@ -19,6 +19,11 @@ const M = 40;
 const USABLE = W - 2 * M;
 const INK = '0.1 0.16 0.18';
 const MUTED = '0.35 0.4 0.42';
+/** The lowest y a body line may use; the page footer sits below it. */
+const FLOOR = M + 24;
+/** Every logo is scaled to fit this box, keeping its shape. */
+const LOGO_W = 140;
+const LOGO_H = 56;
 
 const round = (n: number): number => Math.round(n * 100) / 100;
 const width = (text: string, size: number, bold = false): number =>
@@ -168,7 +173,7 @@ class Pages {
 
   /** Makes sure `need` points are free, otherwise starts a new page. Returns true if it did. */
   ensure(need: number): boolean {
-    if (this.y - need >= M + 24) return false;
+    if (this.y - need >= FLOOR) return false;
     this.newPage();
     return true;
   }
@@ -189,7 +194,7 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
   let textX = M;
   let logoBottom = top;
   if (logo) {
-    const scale = Math.min(150 / logo.width, 50 / logo.height);
+    const scale = Math.min(LOGO_W / logo.width, LOGO_H / logo.height);
     const lw = logo.width * scale;
     const lhh = logo.height * scale;
     p.image(M, top - lhh, lw, lhh);
@@ -197,8 +202,10 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
     logoBottom = top - lhh - 6;
   }
   const textWidth = USABLE * 0.55 - (textX - M);
-  p.text(textX, top - 14, fitText(companyName, textWidth, 16, true), 16, { bold: true });
-  let leftY = top - 30;
+  // The full company name is always written out: a long one wraps onto more lines, never cut short.
+  const nameLines = wrap(companyName, textWidth, 16, true);
+  nameLines.forEach((line, i) => p.text(textX, top - 14 - i * 18, line, 16, { bold: true }));
+  let leftY = top - 14 - (nameLines.length - 1) * 18 - 16;
   const companyLines = [
     ...(lh?.address ? wrap(lh.address, textWidth, 9) : []),
     lh?.phone ? `Tel: ${lh.phone}` : '',
@@ -255,8 +262,10 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
     { color: MUTED, bold: true },
   );
   p.y -= 13;
-  p.text(M, p.y, fitText(doc.recipientName, USABLE * 0.6, 11, true), 11, { bold: true });
-  p.y -= 13;
+  for (const line of wrap(doc.recipientName, USABLE * 0.6, 11, true)) {
+    p.text(M, p.y, line, 11, { bold: true });
+    p.y -= 13;
+  }
   const recipientLines = [
     ...(doc.recipientAddress ? wrap(doc.recipientAddress, USABLE * 0.6, 9) : []),
     doc.recipientEmail ?? '',
@@ -283,32 +292,55 @@ export function buildSalesDocumentPdf(doc: SalesDocumentDetail): Buffer {
     drawTotals(p, doc);
   }
 
-  // ---- Notes / terms / bank / footer ----
-  const blocks: [string, string | null | undefined][] = [
-    ['Notes', doc.notes],
-    ['Terms', doc.terms],
-    ['Payment details', doc.docType === 'RECEIPT' ? null : lh?.bankDetails],
-    ['Reason voided', doc.status === 'VOIDED' ? doc.voidReason : null],
-  ];
-  for (const [label, text] of blocks) {
-    if (!text) continue;
-    const lines = wrap(text, USABLE, 9);
-    p.ensure(20 + lines.length * 12);
-    p.text(M, p.y, label, 8, { color: MUTED, bold: true });
-    p.y -= 12;
+  // ---- Notes follow the totals; terms, payment details and the closing note sit at the foot ----
+  // Generous breathing room: well clear of the prices, and between each block.
+  const AFTER_TOTALS_GAP = 64;
+  const BLOCK_GAP = 40;
+  const DIVIDER = 18;
+  if (doc.notes || doc.terms || lh?.bankDetails) p.y -= AFTER_TOTALS_GAP;
+  const drawBlock = (label: string, text: string): void => {
+    const lines = wrap(text, USABLE, 9.5);
+    p.ensure(24 + lines.length * 14);
+    p.text(M, p.y, label, 8.5, { color: MUTED, bold: true });
+    p.y -= 17;
     for (const line of lines) {
-      p.text(M, p.y, line, 9);
-      p.y -= 12;
+      p.text(M, p.y, line, 9.5);
+      p.y -= 14;
     }
-    p.y -= 6;
+    p.y -= BLOCK_GAP;
+  };
+  if (doc.notes) drawBlock('Notes', doc.notes);
+
+  const footBlocks: [string, string][] = (
+    [
+      ['Reason voided', doc.status === 'VOIDED' ? doc.voidReason : null],
+      ['Terms', doc.terms],
+      ['Payment details', doc.docType === 'RECEIPT' ? null : lh?.bankDetails],
+    ] as [string, string | null | undefined][]
+  ).filter((b): b is [string, string] => Boolean(b[1]));
+  const closing = lh?.footer ? wrap(lh.footer, USABLE, 8) : [];
+  const footHeight =
+    footBlocks.reduce(
+      (sum, [, text]) => sum + 17 + BLOCK_GAP + wrap(text, USABLE, 9.5).length * 14,
+      0,
+    ) +
+    (footBlocks.length ? DIVIDER : 0) +
+    (closing.length ? closing.length * 11 + 16 : 0);
+  // When the whole foot fits on this page, sit it at the bottom; otherwise let it flow on.
+  const footTop = FLOOR + footHeight;
+  if (footHeight > 0 && p.y - 8 >= footTop) p.y = footTop;
+  if (footBlocks.length) {
+    p.ensure(DIVIDER + 40);
+    p.line(M, p.y, W - M, '0.85 0.88 0.89');
+    p.y -= DIVIDER;
   }
-  if (lh?.footer) {
-    const lines = wrap(lh.footer, USABLE, 8);
-    p.ensure(lines.length * 11 + 8);
+  for (const [label, text] of footBlocks) drawBlock(label, text);
+  if (closing.length) {
+    p.ensure(closing.length * 11 + 8);
     p.y -= 4;
     p.line(M, p.y, W - M, '0.85 0.88 0.89');
     p.y -= 12;
-    for (const line of lines) {
+    for (const line of closing) {
       p.text(M, p.y, line, 8, { color: MUTED });
       p.y -= 11;
     }
@@ -358,10 +390,10 @@ function drawLines(p: Pages, doc: SalesDocumentDetail): void {
   }
   doc.lines.forEach((line, index) => {
     const lines = wrap(line.description, descW - 4, 9);
-    const height = Math.max(1, lines.length) * 12 + 6;
+    const height = Math.max(1, lines.length) * 12 + 10;
     if (p.ensure(height)) header();
     if (index % 2 === 1) p.rect(M, p.y - height + 4, USABLE, height, '0.965 0.972 0.975');
-    const baseline = p.y - 9;
+    const baseline = p.y - 11;
     lines.forEach((l, i) => p.text(xDesc, baseline - i * 12, l, 9));
     const qty = `${formatAmount(line.quantity, 3, 0)}${line.unitLabel ? ` ${line.unitLabel}` : ''}`;
     p.right(xQtyR - 2, baseline, fitText(qty, cols.qty - 4, 9), 9);
@@ -381,7 +413,7 @@ function drawLines(p: Pages, doc: SalesDocumentDetail): void {
     p.y -= height;
   });
   p.line(M, p.y + 2, W - M);
-  p.y -= 10;
+  p.y -= 22;
 }
 
 const money2 = (v: string): string => formatAmount(v, 2);
@@ -399,13 +431,13 @@ function drawTotals(p: Pages, doc: SalesDocumentDetail): void {
     rows.push(['Paid so far', money2(subtract(doc.total, doc.balance ?? doc.total)), false]);
     rows.push([`Balance due (${doc.currency})`, money2(doc.balance ?? doc.total), true]);
   }
-  p.ensure(rows.length * 16 + 12);
+  p.ensure(rows.length * 20 + 12);
   const xLabel = W - M - 220;
   for (const [label, value, bold] of rows) {
-    if (bold) p.line(xLabel, p.y + 11, W - M);
+    if (bold) p.line(xLabel, p.y + 14, W - M);
     p.text(xLabel, p.y, label, bold ? 10.5 : 9, { bold, color: bold ? INK : MUTED });
     p.right(W - M - 4, p.y, value, bold ? 10.5 : 9, { bold });
-    p.y -= 16;
+    p.y -= 20;
   }
   p.y -= 8;
 }
