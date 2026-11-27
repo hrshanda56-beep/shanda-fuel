@@ -138,6 +138,44 @@
   background: var(--accent-subtle);
 }
 
+/* A row with buttons on the right: the padding moves inside so the whole left side picks the row. */
+.choiceWithActions {
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 0;
+}
+
+.choiceMain {
+  display: flex;
+  flex: 1 1 12rem;
+  align-items: center;
+  align-self: stretch;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
+  cursor: pointer;
+}
+
+.choiceActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: auto;
+  padding: var(--space-2) var(--space-3);
+}
+
+/* The removing button (Delete, Stop using): the same outlined button, tinted red. */
+.choiceActions .rowDanger {
+  border-color: var(--tone-critical-border);
+  background: var(--tone-critical-bg);
+  color: var(--tone-critical-text);
+}
+
+.choiceActions .rowDanger:hover:not(:disabled) {
+  border-color: var(--tone-critical-fg);
+  background: var(--tone-critical-bg);
+}
+
 .choiceText {
   display: grid;
   gap: var(--space-1);
