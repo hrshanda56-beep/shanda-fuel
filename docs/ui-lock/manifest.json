@@ -348,7 +348,7 @@
     "src/modules/sales-documents/ui/company-form.tsx": "9f0deb90b00322fb5eb47353f757894466a995d0ffd753af4509595e0684156d",
     "src/modules/sales-documents/ui/company-wizard.tsx": "a2df72d7d641ca473c1058c191cb973f8b81303b6dd24c4cff607d68d8d6c02d",
     "src/modules/sales-documents/ui/document-detail.tsx": "652f6eefdaa4136180c6377af19641d572a8d9148790fdbfb967fb24def98ef6",
-    "src/modules/sales-documents/ui/document-editor.tsx": "dce39a086e2e584b5f0186b9a98806f245c42cf8591c96bc1679896b15cb49cf",
+    "src/modules/sales-documents/ui/document-editor.tsx": "30f35d9bdb1b656c432bfacd9f2e7e591b28445fde35c510037314b8b1d6a3c5",
     "src/modules/sales-documents/ui/document-list.tsx": "a8b46e553ab51f1bddc756d35d23a9ae674af537cc775f14e1f16b14bea302c0",
     "src/modules/sales-documents/ui/print-preview.tsx": "178941650a4be7633c283542a2b1ff9cf31add3b3411926570bf4436c7033104",
     "src/modules/sales-documents/ui/sales-documents-workspace.tsx": "098b53bc94b0b0cced8c8e9bd5aa89c258f44b3b530e2d2ecde57a5637a613a5",

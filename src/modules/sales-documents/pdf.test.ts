@@ -87,6 +87,19 @@ describe('buildSalesDocumentPdf', () => {
     expect(text).toContain('INV-2026-0001');
   });
 
+  it('prints the unit after the quantity on an "Other" line', () => {
+    const doc: SalesDocumentDetail = {
+      ...base,
+      lines: [
+        { ...base.lines[0]!, description: 'Transport', quantity: '2.000', unitLabel: 'trip' },
+        { ...base.lines[0]!, lineNo: 2, description: 'Handling', unitLabel: null },
+      ],
+    };
+    const text = buildSalesDocumentPdf(doc).toString('latin1');
+    expect(text).toContain('(2 trip)');
+    expect(text).toContain('(10)');
+  });
+
   it('renders quotation, receipt and void variants', () => {
     const variants: Partial<SalesDocumentDetail>[] = [
       { docType: 'QUOTATION', validUntil: '2026-12-01', docNumber: null, status: 'DRAFT' },
