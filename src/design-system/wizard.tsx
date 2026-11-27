@@ -350,7 +350,10 @@ export function WizardChoices({ label, children }: { label: string; children: Re
   );
 }
 
-/** One big, easy-to-tap answer. */
+/**
+ * One big, easy-to-tap answer. `actions` adds small buttons on the right of the row (for example
+ * Edit and Delete): they sit beside the pick, not inside it, so tapping one never picks the row.
+ */
 export function WizardChoice({
   id,
   name,
@@ -358,6 +361,7 @@ export function WizardChoice({
   onPick,
   children,
   detail,
+  actions,
 }: {
   id?: string;
   name?: string;
@@ -365,15 +369,31 @@ export function WizardChoice({
   onPick: () => void;
   children: ReactNode;
   detail?: ReactNode;
+  actions?: ReactNode;
 }) {
-  return (
-    <label className={styles.choice} htmlFor={id}>
+  const body = (
+    <>
       <input id={id} name={name} type="radio" checked={checked} onChange={onPick} />
       <span className={styles.choiceText}>
         <span>{children}</span>
         {detail ? <span className={styles.choiceDetail}>{detail}</span> : null}
       </span>
-    </label>
+    </>
+  );
+  if (!actions) {
+    return (
+      <label className={styles.choice} htmlFor={id}>
+        {body}
+      </label>
+    );
+  }
+  return (
+    <div className={`${styles.choice} ${styles.choiceWithActions}`}>
+      <label className={styles.choiceMain} htmlFor={id}>
+        {body}
+      </label>
+      <span className={styles.choiceActions}>{actions}</span>
+    </div>
   );
 }
 
