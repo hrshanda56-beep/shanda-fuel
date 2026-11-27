@@ -15,6 +15,7 @@ import {
 import {
   WizardAnother,
   WizardOptions,
+  WizardRowAction,
   WizardUsualOrOwn,
   WizardYesNo,
 } from '@/design-system/wizard-kit';
@@ -141,6 +142,15 @@ export function TankWizard({
     wizard.go('name');
   }
 
+  /** Delete (or stop using) from the list of tanks: straight to that screen, Back returns here. */
+  function quickRemove(tank: SetupTank) {
+    setFuelId(productId);
+    setFuelPick(productId);
+    setEditing(tank);
+    setAnswers(answersFromTank(tank));
+    wizard.go(tank.unused ? 'delete' : 'retire');
+  }
+
   async function finish() {
     const command = tankCommand({
       answers,
@@ -186,6 +196,23 @@ export function TankWizard({
               value: tank.id,
               label: tank.code,
               detail: `Holds ${withSeparators(tank.capacityLitres)} ${word}`,
+              actions: (
+                <>
+                  <WizardRowAction
+                    aria-label={`Edit ${tank.code}`}
+                    onClick={() => startFrom(tank.id)}
+                  >
+                    Edit
+                  </WizardRowAction>
+                  <WizardRowAction
+                    danger
+                    aria-label={`${tank.unused ? 'Delete' : 'Stop using'} ${tank.code}`}
+                    onClick={() => quickRemove(tank)}
+                  >
+                    {tank.unused ? 'Delete' : 'Stop using'}
+                  </WizardRowAction>
+                </>
+              ),
             })),
             { value: NEW_TANK, label: 'Add a new tank', detail: 'A tank that is not listed here' },
           ]}

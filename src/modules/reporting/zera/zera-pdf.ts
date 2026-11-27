@@ -125,16 +125,16 @@ export function buildZeraPdf(input: ZeraPdfInput): Buffer {
     ops = [];
     pages.push(ops);
     if (first) {
-      rect(0, H - 150, W, 150, BRAND);
-      rect(0, H - 150, W, 3, '0.55 0.78 0.67');
-      text('ZERA MONTHLY RETURN', MARGIN, H - 54, 8.5, {
+      rect(0, H - 132, W, 132, BRAND);
+      rect(0, H - 132, W, 3, '0.55 0.78 0.67');
+      text('ZERA MONTHLY RETURN', MARGIN, H - 46, 8.5, {
         bold: true,
         color: '0.78 0.9 0.84',
         track: 1.6,
       });
-      text(input.periodLabel, MARGIN, H - 92, 28, { bold: true, color: '1 1 1' });
-      text(input.stationName, MARGIN, H - 118, 12.5, { color: '0.88 0.95 0.91' });
-      y = H - 150 - 30;
+      text(input.periodLabel, MARGIN, H - 80, 28, { bold: true, color: '1 1 1' });
+      text(input.stationName, MARGIN, H - 104, 12.5, { color: '0.88 0.95 0.91' });
+      y = H - 132 - 26;
     } else {
       text(`ZERA Monthly Return · ${input.periodLabel}`, MARGIN, H - 40, 8.5, { color: MUTED });
       line(MARGIN, H - 50, W - MARGIN, RULE);
@@ -161,9 +161,9 @@ export function buildZeraPdf(input: ZeraPdfInput): Buffer {
     const shown = wrap(value, colW - 12, 11, true)[0]!;
     text(shown, x, y - 16, 11, { bold: true });
   });
-  y -= 34;
+  y -= 30;
   line(MARGIN, y, W - MARGIN, RULE);
-  y -= 22;
+  y -= 18;
 
   // ZERA's own wording, set apart as a note.
   const noteLines = wrap(ZERA_DEADLINE_WORDING, INNER - 28, 9);
@@ -174,7 +174,7 @@ export function buildZeraPdf(input: ZeraPdfInput): Buffer {
   noteLines.forEach((row, index) => {
     text(row, MARGIN + 16, y - 29 - index * 13, 9, { color: '0.22 0.27 0.25' });
   });
-  y -= noteHeight + 30;
+  y -= noteHeight + 24;
 
   const used = new Set<number>();
   for (const section of ZERA_SECTIONS) {
@@ -191,35 +191,36 @@ export function buildZeraPdf(input: ZeraPdfInput): Buffer {
       const filled = Boolean(answer.value.trim());
       // Long free text (the notes) reads better under its label than beside it.
       const stacked = section.stacked === true;
-      const labelLines = wrap(shortLabel(answer.label), stacked ? INNER : LABEL_W, 9.5);
+      // A stacked answer whose label just repeats the section heading needs no label of its own.
+      const repeatsHeading =
+        stacked && shortLabel(answer.label).trim().toLowerCase() === section.title.toLowerCase();
+      const labelLines = repeatsHeading
+        ? []
+        : wrap(shortLabel(answer.label), stacked ? INNER : LABEL_W, 9.5);
       const valueLines = wrap(value, stacked ? INNER : VALUE_W, 10.5, !stacked);
       const count = stacked
         ? labelLines.length + valueLines.length
         : Math.max(labelLines.length, valueLines.length);
-      const height = count * 14 + 11 + (stacked ? 4 : 0);
+      const height = count * 14 + 8 + (stacked ? 4 : 0);
       ensure(Math.min(height, 120));
       const color = filled ? INK : '0.6 0.64 0.62';
       if (stacked) {
-        labelLines.forEach((row, i) =>
-          text(row, MARGIN, y - 17 - i * 14 + 6, 9.5, { color: MUTED }),
-        );
+        labelLines.forEach((row, i) => text(row, MARGIN, y - 14 - i * 14, 9.5, { color: MUTED }));
         valueLines.forEach((row, i) => {
-          const baseline = y - 21 - (labelLines.length + i) * 14 + 6;
+          const baseline = y - 18 - (labelLines.length + i) * 14;
           if (baseline < BOTTOM - 10) return;
           text(row, MARGIN, baseline, 10.5, { color });
         });
       } else {
-        labelLines.forEach((row, i) =>
-          text(row, MARGIN, y - 17 - i * 14 + 6, 9.5, { color: MUTED }),
-        );
+        labelLines.forEach((row, i) => text(row, MARGIN, y - 14 - i * 14, 9.5, { color: MUTED }));
         valueLines.forEach((row, i) =>
-          text(row, VALUE_X, y - 17 - i * 14 + 6, 10.5, { bold: filled, color }),
+          text(row, VALUE_X, y - 14 - i * 14, 10.5, { bold: filled, color }),
         );
       }
       y -= height;
       line(MARGIN, y, W - MARGIN, RULE, 0.4);
     }
-    y -= 24;
+    y -= 22;
   }
 
   // Footer on every page.
