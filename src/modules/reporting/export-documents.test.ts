@@ -8,6 +8,7 @@ import {
   parseReportExportFormat,
   reportExportFilename,
   reportExportMeta,
+  textUnits,
 } from './export-documents';
 import type { ManagementReport } from './contracts';
 
@@ -160,6 +161,28 @@ describe('report document layout', () => {
     expect(text).toContain('(Station) Tj');
     expect(text).toContain('No rows for this period.');
     expect(text).toContain('Page 1 of 1');
+  });
+
+  it('shows snake_case column names as readable titles and right-aligns number headings', () => {
+    const text = buildPdfFromCsv('station_code,litres,note\r\nHRE-01,1200.500,ok\r\n').toString(
+      'latin1',
+    );
+    expect(text).toContain('(Station code) Tj');
+    expect(text).not.toContain('station_code');
+    expect(text).toContain('(Litres) Tj');
+    const x = (label: string): number =>
+      Number(new RegExp(`rg ([\\d.]+) [\\d.]+ Td \\(${label}\\) Tj`).exec(text)![1]);
+    // "Litres" is a numeric column, so it ends where its numbers end; "Note" starts at its column.
+    const litresEnd = x('Litres') + (textUnits('Litres', true) / 1000) * 9;
+    const numberEnd = x('1200.500') + (textUnits('1200.500') / 1000) * 9;
+    expect(litresEnd).toBeCloseTo(numberEnd, 0);
+  });
+
+  it('carries a brand bar, a closing rule and a footer on every page', () => {
+    const text = buildPdfFromCsv(csv, meta).toString('latin1');
+    const pages = Number(/\/Count (\d+)/.exec(text)![1]);
+    expect(text.split('0.13 0.32 0.26 rg 0 590 842 5 re f').length - 1).toBe(pages);
+    expect(text.split('(Prepared with Shanda Fuel) Tj').length - 1).toBe(pages);
   });
 
   it('never prints text wider than its column', () => {
