@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { Checkbox } from './forms';
 import { Button } from './primitives';
 import {
@@ -31,6 +31,8 @@ export type WizardOption<V extends string = string> = {
   value: V;
   label: ReactNode;
   detail?: ReactNode;
+  /** Small buttons on the right of the row, e.g. Edit and Delete. */
+  actions?: ReactNode;
 };
 
 /** A list of big answers where exactly one is picked. The first screen of a flow often is one. */
@@ -57,11 +59,31 @@ export function WizardOptions<V extends string>({
           checked={value === option.value}
           onPick={() => onPick(option.value)}
           detail={option.detail}
+          actions={option.actions}
         >
           {option.label}
         </WizardChoice>
       ))}
     </WizardChoices>
+  );
+}
+
+/**
+ * A small button for the right of a row (see `WizardOption.actions`). `danger` tints the one that
+ * removes something (Delete, Stop using) red, so it is not mistaken for Edit.
+ */
+export function WizardRowAction({
+  danger = false,
+  ...props
+}: Omit<ComponentProps<typeof Button>, 'variant' | 'size'> & { danger?: boolean }) {
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      {...props}
+      className={[props.className, danger ? styles.rowDanger : ''].filter(Boolean).join(' ')}
+    />
   );
 }
 
