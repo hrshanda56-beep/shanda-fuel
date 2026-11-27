@@ -187,7 +187,14 @@ export function planAddNozzle(input: {
 
 /* --------------------------- change numbers --------------------------- */
 
-export type RenumberStep = 'pickPump' | 'numbers' | 'reviewNumbers' | 'removePump' | 'removeNozzle';
+export type RenumberStep =
+  | 'pickPump'
+  | 'numbers'
+  | 'reviewNumbers'
+  | 'removePump'
+  | 'removeNozzle'
+  | 'retirePump'
+  | 'retireNozzle';
 
 export type RenumberAnswers = {
   pumpId: string | null;
@@ -326,6 +333,38 @@ export function planDeleteNozzle(input: {
       id: `staged-${nextId()}`,
       url: '/api/setup/commands',
       body: { commandType: 'DeleteNozzle', ...input },
+    },
+  ];
+}
+
+/* --------------------- stop using, keeping history (#316) --------------------- */
+
+/** Stops using a pump that has history, and its nozzles. Past records keep it. */
+export function planRetirePump(input: {
+  tenantId: string;
+  stationId: string;
+  pumpId: string;
+}): StagedChange[] {
+  return [
+    {
+      id: `staged-${nextId()}`,
+      url: '/api/setup/commands',
+      body: { commandType: 'RetirePump', ...input },
+    },
+  ];
+}
+
+/** Stops using a nozzle that has history. Past records keep it. */
+export function planRetireNozzle(input: {
+  tenantId: string;
+  stationId: string;
+  nozzleId: string;
+}): StagedChange[] {
+  return [
+    {
+      id: `staged-${nextId()}`,
+      url: '/api/setup/commands',
+      body: { commandType: 'RetireNozzle', ...input },
     },
   ];
 }

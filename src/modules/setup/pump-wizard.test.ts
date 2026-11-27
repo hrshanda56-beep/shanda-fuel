@@ -19,6 +19,8 @@ import {
   planAddNozzle,
   planDeleteNozzle,
   planDeletePump,
+  planRetireNozzle,
+  planRetirePump,
   planRenumber,
   planSince,
   pumpLabel,
@@ -333,6 +335,23 @@ describe('removing a pump or nozzle (#315)', () => {
     });
     expect(planDeleteNozzle({ tenantId: 't', stationId: 's', nozzleId: 'n1' })[0]!.body).toEqual({
       commandType: 'DeleteNozzle',
+      tenantId: 't',
+      stationId: 's',
+      nozzleId: 'n1',
+    });
+  });
+});
+
+describe('stopping use of a pump or nozzle that has history (#316)', () => {
+  it('plans the retires', () => {
+    expect(planRetirePump({ tenantId: 't', stationId: 's', pumpId: 'p1' })[0]!.body).toEqual({
+      commandType: 'RetirePump',
+      tenantId: 't',
+      stationId: 's',
+      pumpId: 'p1',
+    });
+    expect(planRetireNozzle({ tenantId: 't', stationId: 's', nozzleId: 'n1' })[0]!.body).toEqual({
+      commandType: 'RetireNozzle',
       tenantId: 't',
       stationId: 's',
       nozzleId: 'n1',

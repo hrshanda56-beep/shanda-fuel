@@ -1296,3 +1296,12 @@ Date: 2026-11-26. Source: the client's feedback round (issue #314) and the owner
 3. **What this touches.** The day's stock check (`daily-reconciliation.ts`, which now subtracts all of a fuel's sales from each tank), the production reconciliation (it refuses a sale whose fuel has more than one active tank, and leaves a tank's expected stock empty when it shares its fuel), tank dips and deliveries (still recorded per tank), variance and alerts, and reports that show a tank's gap. A per-tank gap cannot be told under option B, so screens show the gap for the fuel and each tank's dip separately.
 4. **Cost: one pool per fuel (owner's answer, 2026-11-26).** Tanks of the same fuel are treated as one for cost. The fuel has one cost pool across its tanks, and the tanks are shown separately only so stock can be dipped and delivered into each one. A tank may be empty while another holds the fuel. The selling price is per fuel, so every tank of a fuel has the same price. A sale has no source tank. It draws on the fuel's pool. This changes cost of sales and profit, so the build must prove old single-tank figures do not change.
 5. **Until it is built.** The one-tank limit stays and its message says so in plain words.
+
+## Addendum to DEC-052 — Stop using a pump or nozzle that has history (#316, 2026-11-26)
+
+Date: 2026-11-26. Source: the client's feedback ("History is good") and the owner's go-ahead to build the pump and nozzle part. **Status:** built on branch `feat/retire-equipment-316`, stacked on #319; PROPOSED until merged. No migration.
+
+1. **Rule.** A pump or nozzle with readings or sales cannot be deleted (#315). It can be set to "no longer in use": it leaves new readings, prices and the setup lists, and every past record keeps it. Retiring a pump retires its nozzles.
+2. **Safety.** Refused while any shift is open at the station, because that shift could not then be closed with a reading for it.
+3. **Fuels** already can be hidden once nothing active uses them (DEC-052). **Tanks** already have an inactive and retired state; the settle-first rules for a tank that still holds fuel need the client's agreement and are **not** built.
+4. **Not built yet:** bringing a retired pump or nozzle back, and a "No longer in use" badge on past-record screens.

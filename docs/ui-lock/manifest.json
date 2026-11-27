@@ -382,7 +382,7 @@
     "src/modules/setup/ui/payment-wizards.tsx": "0c330d1496d15f2c6e51e214df2773863c3d70f3b5469da57463008713358b56",
     "src/modules/setup/ui/payments-panel.tsx": "af8eade03c48e09c1bd73e9420e1b033a8174a56ff1dcf949d375e3eeee30d53",
     "src/modules/setup/ui/price-wizard.tsx": "f107731e074a511e3837dc69ae188040ac5c57b797fa59fd7deaff41f22ae416",
-    "src/modules/setup/ui/pump-wizard.tsx": "5953afe6d32e3bffceaf6afc315c5bbdf4ba665d65280e0a9993459019fba6d3",
+    "src/modules/setup/ui/pump-wizard.tsx": "c52f2b281b518e704503769c4d5b4b83fc25e87722ea59f81ace10966999a092",
     "src/modules/setup/ui/readiness-panel.tsx": "4abc03dd55dc233c2d73e53694c44f6ce1a986322cd5cb18f89e8c31f88af5b7",
     "src/modules/setup/ui/setup-hub.module.css": "0173df3b4a88e842d8739a12c91fd4deda9d03e8502d635b9cd7c4912ea22e2d",
     "src/modules/setup/ui/setup.module.css": "733cfc2ebdc8a3515276628bbf9b54a3152a7b6f8e4e8ad22e03ad46aff8fb3d",
