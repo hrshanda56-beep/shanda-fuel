@@ -396,3 +396,46 @@ describe('stopping use of a pump or nozzle with history (#316)', () => {
     expect(describeStaged(q[0]!, view, saved).title).toBe('Stop using pump 1');
   });
 });
+
+describe('stopping use of a tank with history (#316)', () => {
+  const saved = {
+    ...empty,
+    tanks: [
+      {
+        id: 'tank-1',
+        code: 'DIESEL1',
+        productId: 'p1',
+        capacityLitres: '10000',
+        reorderLevelLitres: null,
+        acceptableVarianceLitres: null,
+        varianceRedLitres: null,
+        status: 'ACTIVE',
+        unused: false,
+      },
+    ],
+  } as unknown as ConfigurationSetupOverview;
+
+  it('marks the tank retired, drops waiting edits to it, and says what is kept', () => {
+    let q = addStaged([], '/api/inventory/commands', {
+      tenantId: 't',
+      stationId: 's',
+      commandType: 'UpdateTank',
+      tankId: 'tank-1',
+      code: 'D1',
+      capacityLitres: '9000',
+    });
+    q = addStaged(q, '/api/inventory/commands', {
+      tenantId: 't',
+      stationId: 's',
+      commandType: 'RetireTank',
+      tankId: 'tank-1',
+    });
+    expect(q.map((c) => c.body.commandType)).toEqual(['RetireTank']);
+    const view = applyStaged(saved, q);
+    expect(view.tanks?.[0]?.status).toBe('RETIRED');
+    expect(describeStaged(q[0]!, view, saved)).toEqual({
+      title: 'Stop using tank: DIESEL1',
+      detail: 'Diesel. Past records are kept.',
+    });
+  });
+});

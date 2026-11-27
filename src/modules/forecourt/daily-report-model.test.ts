@@ -93,6 +93,16 @@ describe('buildDailyReport', () => {
     expect(single.dips[0]!.opening).toBeNull();
   });
 
+  it('marks a retired tank but keeps its readings, and leaves other tanks unmarked', () => {
+    const retired = buildDailyReport({
+      ...base,
+      dips: base.dips.map((dip, index) => (index === 0 ? { ...dip, tankRetired: true } : dip)),
+    });
+    expect(retired.dips[0]!.retired).toBe(true);
+    expect(retired.dips[0]!.closing.litres).toBeDefined();
+    expect(buildDailyReport(base).dips.every((dip) => dip.retired === false)).toBe(true);
+  });
+
   it('totals expenses and drops, and reports none as null, never zero', () => {
     expect(report.expenses.total).toBe('21.00');
     expect(report.drops.total).toBe('2673.00');

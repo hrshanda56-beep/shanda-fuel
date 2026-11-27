@@ -9,6 +9,7 @@ import {
   checkSentence,
   checkSize,
   deleteTankCommand,
+  retireTankCommand,
   limitValues,
   plainNumber,
   reminderSentence,
@@ -280,6 +281,15 @@ describe('moving or deleting an unused tank (#315)', () => {
       currentProductId: 'diesel',
     });
     expect(kept).not.toHaveProperty('productId');
+  });
+
+  it('builds the stop-using command', () => {
+    expect(retireTankCommand({ tenantId: 't', stationId: 's', tankId: 'tank-1' })).toEqual({
+      commandType: 'RetireTank',
+      tenantId: 't',
+      stationId: 's',
+      tankId: 'tank-1',
+    });
   });
 
   it('builds the delete command', () => {
