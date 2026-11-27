@@ -12,7 +12,7 @@ import {
   WizardSummaryRow,
   useWizard,
 } from '@/design-system/wizard';
-import { WizardAnother, WizardOptions } from '@/design-system/wizard-kit';
+import { WizardAnother, WizardOptions, WizardRowAction } from '@/design-system/wizard-kit';
 import type { SetupNozzle, SetupPump } from '../contracts';
 import { describeMeterWorkingSince } from '../meter-working-since';
 import {
@@ -131,11 +131,20 @@ export function PumpWizard({
           : flow === 'since'
             ? sinceSteps()
             : [];
-  const wizard = useWizard<Screen>({
+  const base = useWizard<Screen>({
     start: direct ? (editable.length === 1 ? 'date' : 'pickNozzle') : 'menu',
     sequence,
     onCancel,
   });
+  // Back from an edit or delete opened on the list of pumps returns to that list, which belongs to
+  // the add-a-nozzle steps, so put the step count right again as it goes.
+  const wizard = {
+    ...base,
+    back: () => {
+      if (base.trail[base.trail.length - 1]?.step === 'pump') setFlow('add');
+      base.back();
+    },
+  };
   const shown = { ...wizard, total: sequence.length };
   const alone = { ...wizard, position: 1, total: 0 };
   const errors = wizard.errors;
@@ -182,6 +191,30 @@ export function PumpWizard({
     }
   }
 
+  /**
+   * Edit or delete from the list of pumps (the buttons on each row): straight to the same screens
+   * the "Change or remove a pump" menu leads to, with Back returning to the list.
+   */
+  function quickEdit(pump: SetupPump) {
+    setFlow('renumber');
+    setRenumber(
+      renumberFrom(
+        pump,
+        own.filter((n) => n.pumpId === pump.id),
+      ),
+    );
+    wizard.go('numbers');
+  }
+  function quickRemove(pump: SetupPump) {
+    setFlow('renumber');
+    setRenumber(
+      renumberFrom(
+        pump,
+        own.filter((n) => n.pumpId === pump.id),
+      ),
+    );
+    wizard.go(pump.unused ? 'removePump' : 'retirePump');
+  }
   if (!canManage) {
     return (
       <WizardStep wizard={alone} title="You cannot change pumps or nozzles">
@@ -268,6 +301,23 @@ export function PumpWizard({
             value: pump.id,
             label: pumpLabel(pump),
             detail: `${numbersOn(pump.id).length} nozzle${numbersOn(pump.id).length === 1 ? '' : 's'} now`,
+            actions: (
+              <>
+                <WizardRowAction
+                  aria-label={`Edit ${pumpLabel(pump)}`}
+                  onClick={() => quickEdit(pump)}
+                >
+                  Edit
+                </WizardRowAction>
+                <WizardRowAction
+                  danger
+                  aria-label={`${pump.unused ? 'Delete' : 'Stop using'} ${pumpLabel(pump)}`}
+                  onClick={() => quickRemove(pump)}
+                >
+                  {pump.unused ? 'Delete' : 'Stop using'}
+                </WizardRowAction>
+              </>
+            ),
           }))}
         />
         {errors.pump ? (

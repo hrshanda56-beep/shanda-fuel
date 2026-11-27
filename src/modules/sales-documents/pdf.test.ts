@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { textUnits } from '../reporting/export-documents';
 import { buildSalesDocumentPdf, formatAmount, readJpeg } from './pdf';
 import type { SalesDocumentDetail } from './queries';
 
@@ -215,7 +216,8 @@ describe('page balance', () => {
     const bank = yOf(text, 'Payment details');
     const closing = yOf(text, 'Thank you');
     expect(terms).toBeLessThan(notes);
-    expect(bank).toBeLessThan(terms);
+    // Short terms and one bank share a row, so neither is above the other.
+    expect(bank).toBe(terms);
     expect(closing).toBeLessThan(bank);
     expect(terms).toBeLessThan(250);
   });
@@ -240,6 +242,14 @@ describe('page balance', () => {
     const total = yOf(text, 'Total \\\\\\(USD\\\\\\)');
     // Notes sit well below the Total, and each block has room before the next.
     expect(total - yOf(text, 'Notes')).toBeGreaterThanOrEqual(40);
+    expect(yOf(text, 'Terms')).toBeLessThan(yOf(text, 'Notes') - 40);
+  });
+
+  it('keeps room between stacked blocks when long terms cannot share a row', () => {
+    const text = buildSalesDocumentPdf({
+      ...base,
+      terms: 'Payment is due within thirty days of the invoice date. '.repeat(8),
+    }).toString('latin1');
     expect(yOf(text, 'Terms') - yOf(text, 'Payment details')).toBeGreaterThanOrEqual(40);
   });
 
@@ -300,5 +310,323 @@ describe('logo box', () => {
     expect(dw).toBeLessThanOrEqual(140.01);
     expect(dh).toBeLessThanOrEqual(56.01);
     expect(dw / dh).toBeCloseTo(w / h, 1);
+  });
+});
+
+describe('foot blocks use the width of the page', () => {
+  const twoBanks =
+    'Stanbic Bank Zimbabwe:\nBranch: Borrowdale\nAccount Type: USD\nAccount No. 9140010619679\n\n' +
+    'Ecobank Zimbabwe\nBranch: Borrowdale\nAccount Type: USD\nAccount No. 5712000024500';
+  const withBanks = (bankDetails: string, over: Partial<SalesDocumentDetail> = {}) =>
+    ({
+      ...base,
+      docType: 'QUOTATION',
+      docNumber: 'QT-2026-0003',
+      ...over,
+      letterhead: { ...base.letterhead!, bankDetails },
+    }) as SalesDocumentDetail;
+
+  type Op = { x: number; y: number; size: number; text: string };
+  const opsOf = (buf: Buffer): Op[] =>
+    [
+      ...buf
+        .toString('latin1')
+        .matchAll(/\/F\d ([\d.]+) Tf [\d. ]+ rg ([\d.]+) ([\d.]+) Td \(((?:\\.|[^\\)])*)\) Tj/g),
+    ].map((m) => ({
+      size: Number(m[1]),
+      x: Number(m[2]),
+      y: Number(m[3]),
+      text: m[4]!.replace(/\\(.)/g, '$1'),
+    }));
+  const at = (ops: Op[], text: string): Op => {
+    const op = ops.find((o) => o.text === text);
+    if (!op) throw new Error(`${text} not found`);
+    return op;
+  };
+
+  it('puts two banks side by side, each kept together under one heading', () => {
+    const ops = opsOf(buildSalesDocumentPdf(withBanks(twoBanks)));
+    const stanbic = at(ops, 'Stanbic Bank Zimbabwe:');
+    const eco = at(ops, 'Ecobank Zimbabwe');
+    expect(eco.y).toBe(stanbic.y);
+    expect(eco.x).toBeGreaterThan(stanbic.x + 200);
+    // Each bank's own lines stay in its column, in order.
+    for (const [first, line] of [
+      [stanbic, 'Account No. 9140010619679'],
+      [eco, 'Account No. 5712000024500'],
+    ] as const) {
+      const row = at(ops, line);
+      expect(row.x).toBe(first.x);
+      expect(row.y).toBeLessThan(first.y);
+    }
+    expect(at(ops, 'Branch: Borrowdale').y).toBeLessThan(stanbic.y);
+    // One heading for the whole block, above both banks.
+    expect(ops.filter((o) => o.text === 'Payment details')).toHaveLength(1);
+    expect(at(ops, 'Payment details').y).toBeGreaterThan(stanbic.y);
+  });
+
+  it('is shorter than the old stacked layout and stays on one page', () => {
+    const text = buildSalesDocumentPdf(withBanks(twoBanks)).toString('latin1');
+    expect(Number(/\/Count (\d+)/.exec(text)![1])).toBe(1);
+  });
+
+  it('puts three banks in three columns, four as two by two, five three across then two', () => {
+    const banks = (n: number) =>
+      Array.from({ length: n }, (_, i) => `Bank ${i + 1}\nAccount ${i + 1}`).join('\n\n');
+    const place = (n: number) => {
+      const ops = opsOf(buildSalesDocumentPdf(withBanks(banks(n))));
+      return Array.from({ length: n }, (_, i) => at(ops, `Bank ${i + 1}`));
+    };
+    const three = place(3);
+    expect(new Set(three.map((b) => b.y)).size).toBe(1);
+    expect(new Set(three.map((b) => b.x)).size).toBe(3);
+    const four = place(4);
+    expect(new Set(four.map((b) => b.x)).size).toBe(2);
+    expect(new Set(four.map((b) => b.y)).size).toBe(2);
+    const five = place(5);
+    expect(five[0]!.y).toBe(five[2]!.y);
+    expect(five[3]!.y).toBeLessThan(five[0]!.y);
+    expect(five[3]!.x).toBe(five[0]!.x);
+  });
+
+  it('never lets a column run past the page margins, even with long lines', () => {
+    const long = `${'Very long bank name '.repeat(6)}\nAccount ${'9'.repeat(60)}`;
+    for (const doc of [
+      withBanks(`${long}\n\n${long}\n\n${long}`),
+      withBanks(long, { terms: 'T '.repeat(80) }),
+      withBanks(long),
+    ]) {
+      for (const op of opsOf(buildSalesDocumentPdf(doc))) {
+        const right = op.x + (textUnits(op.text, false) / 1000) * op.size;
+        expect(op.x, op.text).toBeGreaterThanOrEqual(40);
+        // Bold text is a little wider than regular; the margin is 555.
+        expect(right, op.text).toBeLessThanOrEqual(556);
+      }
+    }
+  });
+
+  it('keeps a single bank beside short terms, and below long terms', () => {
+    const one = 'Bank 1234\nBranch: Main';
+    const short = opsOf(buildSalesDocumentPdf(withBanks(one, { terms: 'Net 30' })));
+    expect(at(short, 'Payment details').y).toBe(at(short, 'Terms').y);
+    expect(at(short, 'Payment details').x).toBeGreaterThan(at(short, 'Terms').x);
+
+    const longTerms = 'Goods remain the property of the seller until paid in full. '.repeat(10);
+    const long = opsOf(buildSalesDocumentPdf(withBanks(one, { terms: longTerms })));
+    expect(at(long, 'Payment details').y).toBeLessThan(at(long, 'Terms').y);
+    expect(at(long, 'Payment details').x).toBe(at(long, 'Terms').x);
+  });
+
+  it('prints every word of the terms and the banks exactly once', () => {
+    const ops = opsOf(buildSalesDocumentPdf(withBanks(twoBanks, { terms: 'Net 30 days' })));
+    const printed = ops.map((o) => o.text).join('\n');
+    for (const line of twoBanks.split('\n').filter(Boolean)) {
+      expect(printed.split(line).length - 1, line).toBeGreaterThanOrEqual(1);
+    }
+    expect(printed).toContain('Net 30 days');
+  });
+
+  it('leaves blank lines and stray spacing out of the columns', () => {
+    const ops = opsOf(
+      buildSalesDocumentPdf(withBanks('\n\nBank A\nAcc 1\n\n\n\n  Bank B\nAcc 2\n\n')),
+    );
+    expect(at(ops, 'Bank B').y).toBe(at(ops, 'Bank A').y);
+  });
+
+  it('shows no payment details on a receipt or when none were given', () => {
+    const receipt = opsOf(
+      buildSalesDocumentPdf(
+        withBanks(twoBanks, { docType: 'RECEIPT', paidOn: '2026-11-19', lines: [] }),
+      ),
+    );
+    expect(receipt.some((o) => o.text === 'Payment details')).toBe(false);
+    const none = opsOf(buildSalesDocumentPdf(withBanks('')));
+    expect(none.some((o) => o.text === 'Payment details')).toBe(false);
+  });
+
+  it('still shows the reason a document was voided, full width above the terms', () => {
+    const ops = opsOf(
+      buildSalesDocumentPdf(withBanks(twoBanks, { status: 'VOIDED', voidReason: 'Duplicate' })),
+    );
+    expect(at(ops, 'Reason voided').y).toBeGreaterThan(at(ops, 'Terms').y);
+    expect(at(ops, 'Reason voided').x).toBe(40);
+  });
+});
+
+describe('a finished, branded document', () => {
+  const full = {
+    ...base,
+    notes: 'Delivery to the depot between 6am and 10am.',
+    terms: 'Payment is due within 30 days of the invoice date.',
+    letterhead: {
+      ...base.letterhead!,
+      brandColour: '#1A7F5A',
+      bankDetails: 'CBZ Bank\nAccount no: 0123456789\n\nStanbic Bank\nAccount no: 9140001234567',
+    },
+  } as SalesDocumentDetail;
+  const opsOf = (buf: Buffer) =>
+    [
+      ...buf
+        .toString('latin1')
+        .matchAll(/\/F\d ([\d.]+) Tf [\d. ]+ rg ([\d.]+) ([\d.]+) Td \(((?:\\.|[^\\)])*)\) Tj/g),
+    ].map((m) => ({ x: Number(m[2]), y: Number(m[3]), text: m[4]!.replace(/\\(.)/g, '$1') }));
+
+  it('keeps an ordinary invoice with notes, terms and two banks on one page', () => {
+    const text = buildSalesDocumentPdf(full).toString('latin1');
+    expect(Number(/\/Count (\d+)/.exec(text)![1])).toBe(1);
+  });
+
+  it('puts short notes beside short terms', () => {
+    const ops = opsOf(buildSalesDocumentPdf(full));
+    const notes = ops.find((o) => o.text === 'Notes')!;
+    const terms = ops.find((o) => o.text === 'Terms')!;
+    expect(terms.y).toBe(notes.y);
+    expect(terms.x).toBeGreaterThan(notes.x + 200);
+    // The payment details stay together underneath, full width.
+    expect(ops.find((o) => o.text === 'Payment details')!.y).toBeLessThan(notes.y);
+  });
+
+  it('draws a slim bar in the brand colour across the top of every page', () => {
+    const many = {
+      ...full,
+      lines: Array.from({ length: 60 }, (_, i) => ({ ...base.lines[0]!, lineNo: i + 1 })),
+    };
+    const text = buildSalesDocumentPdf(many).toString('latin1');
+    const pages = Number(/\/Count (\d+)/.exec(text)![1]);
+    expect(pages).toBeGreaterThan(1);
+    expect(text.split('0.102 0.498 0.353 rg 0 836 595 6 re f').length - 1).toBe(pages);
+  });
+
+  it('falls back to a dark bar when the company has no brand colour', () => {
+    const text = buildSalesDocumentPdf(base).toString('latin1');
+    expect(text).toContain('0.1 0.16 0.18 rg 0 836 595 6 re f');
+  });
+
+  it('leaves long notes and long terms at full width, one under the other', () => {
+    const ops = opsOf(
+      buildSalesDocumentPdf({
+        ...full,
+        notes: 'A long note about the delivery. '.repeat(12),
+        terms: 'Goods remain the property of the seller until paid in full. '.repeat(10),
+      }),
+    );
+    const notes = ops.find((o) => o.text === 'Notes')!;
+    const terms = ops.find((o) => o.text === 'Terms')!;
+    expect(terms.x).toBe(notes.x);
+    expect(terms.y).toBeLessThan(notes.y);
+  });
+});
+
+describe('a block taller than a page', () => {
+  const opsOf = (buf: Buffer) =>
+    [
+      ...buf
+        .toString('latin1')
+        .matchAll(/\/F\d ([\d.]+) Tf [\d. ]+ rg ([\d.]+) ([\d.]+) Td \(((?:\\.|[^\\)])*)\) Tj/g),
+    ].map((m) => ({ y: Number(m[3]), text: m[4]!.replace(/\\(.)/g, '$1') }));
+  const tall = (over: Partial<SalesDocumentDetail> = {}) =>
+    ({
+      ...base,
+      notes: Array.from({ length: 60 }, (_, i) => `Condition ${i + 1} of the delivery.`).join(
+        '\n\n',
+      ),
+      ...over,
+    }) as SalesDocumentDetail;
+
+  it('carries on over further pages and prints every line exactly once', () => {
+    const pdf = buildSalesDocumentPdf(tall());
+    const text = pdf.toString('latin1');
+    expect(Number(/\/Count (\d+)/.exec(text)![1])).toBeGreaterThan(1);
+    const printed = opsOf(pdf).map((o) => o.text);
+    for (let i = 1; i <= 60; i += 1) {
+      expect(
+        printed.filter((t) => t === `Condition ${i} of the delivery.`),
+        String(i),
+      ).toHaveLength(1);
+    }
+    expect(printed).toContain('Notes (continued)');
+  });
+
+  it('never draws body text into the page footer or off the bottom edge', () => {
+    for (const doc of [tall(), tall({ terms: 'Net 30 days. '.repeat(120) })]) {
+      for (const op of opsOf(buildSalesDocumentPdf(doc))) {
+        // The page footer sits at y 22; everything else stays above the floor of 64.
+        expect(op.y === 22 || op.y >= 64, `${op.text} at ${op.y}`).toBe(true);
+      }
+    }
+  });
+
+  it('flows a very tall payment block too, column by column', () => {
+    const banks = Array.from({ length: 3 }, (_, b) =>
+      Array.from({ length: 70 }, (_, i) => `Bank ${b + 1} line ${i + 1}`).join('\n'),
+    ).join('\n\n');
+    const pdf = buildSalesDocumentPdf({
+      ...base,
+      notes: '',
+      terms: '',
+      letterhead: { ...base.letterhead!, bankDetails: banks },
+    } as SalesDocumentDetail);
+    const printed = opsOf(pdf).map((o) => o.text);
+    for (let b = 1; b <= 3; b += 1) {
+      expect(printed).toContain(`Bank ${b} line 1`);
+      expect(printed).toContain(`Bank ${b} line 70`);
+    }
+    for (const op of opsOf(pdf)) expect(op.y === 22 || op.y >= 64, `${op.text}`).toBe(true);
+  });
+});
+
+describe('very large figures', () => {
+  it('prints a huge quantity and amount in full, never cut with dots', () => {
+    const doc = {
+      ...base,
+      lines: [{ ...base.lines[0]!, quantity: '9999999.999', unitPrice: '123456.7890' }],
+    } as SalesDocumentDetail;
+    const text = buildSalesDocumentPdf(doc).toString('latin1');
+    expect(text).toContain('(9,999,999.999 L)');
+    expect(text).toContain('(123,456.789)');
+    expect(text).not.toMatch(/\d\.\.\.\)/);
+  });
+});
+
+describe('spacing adapts to a full page', () => {
+  const banks =
+    'CBZ Bank\nAccount name: Tei Energy\nAccount no: 0123456789\nBranch: Msasa\n\nStanbic Bank\nAccount name: Tei Energy\nAccount no: 9140001234567\nBranch: Harare Main';
+  const pages = (doc: SalesDocumentDetail): number =>
+    Number(/\/Count (\d+)/.exec(buildSalesDocumentPdf(doc).toString('latin1'))![1]);
+  const withText = (notes: string, terms: string): SalesDocumentDetail =>
+    ({
+      ...base,
+      docType: 'QUOTATION',
+      notes,
+      terms,
+      discountTotal: '0.0000',
+      taxTotal: '0.0000',
+      receipts: [],
+      lines: [
+        {
+          ...base.lines[0]!,
+          description: 'Diesel 50',
+          discountAmount: '0.0000',
+          taxRate: '0.0000',
+        },
+      ],
+      letterhead: { ...base.letterhead!, bankDetails: banks },
+    }) as SalesDocumentDetail;
+
+  it('keeps a heavily worded quotation with two banks on one page by tightening the gaps', () => {
+    const note = 'Delivery will be made to the depot between 6am and 10am on weekdays. '.repeat(16);
+    expect(note.length).toBeGreaterThan(1000);
+    expect(pages(withText(note, 'Net 30 days. '.repeat(20)))).toBe(1);
+  });
+
+  it('keeps the generous gaps when there is room', () => {
+    const text = buildSalesDocumentPdf(withText('Thanks.', 'Net 30')).toString('latin1');
+    const y = (label: string): number =>
+      Number(new RegExp(`([\\d.]+) ([\\d.]+) Td \\(${label}\\) Tj`).exec(text)![2]);
+    expect(y('Notes') - y('Payment details')).toBeGreaterThanOrEqual(40);
+  });
+
+  it('still moves to a second page when even tight gaps cannot fit', () => {
+    expect(pages(withText('A long note. '.repeat(150), 'Goods stay ours. '.repeat(110)))).toBe(2);
   });
 });
